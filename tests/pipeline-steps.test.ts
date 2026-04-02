@@ -52,7 +52,8 @@ describe("pipeline-steps component data", () => {
 		const showBadge = reviewIteration > 1;
 		expect(showBadge).toBe(true);
 
-		const noBadge = 1 > 1;
+		const iterationOne = 1;
+		const noBadge = iterationOne > 1;
 		expect(noBadge).toBe(false);
 	});
 });

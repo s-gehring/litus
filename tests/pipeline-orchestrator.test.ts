@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { CLICallbacks } from "../src/cli-runner";
-import {
-	PipelineOrchestrator,
-	type PipelineCallbacks,
-} from "../src/pipeline-orchestrator";
-import type { PipelineStepName, Question, ReviewSeverity, Workflow, WorkflowStatus } from "../src/types";
+import { type PipelineCallbacks, PipelineOrchestrator } from "../src/pipeline-orchestrator";
+import type {
+	PipelineStepName,
+	Question,
+	ReviewSeverity,
+	Workflow,
+	WorkflowStatus,
+} from "../src/types";
 import { PIPELINE_STEP_DEFINITIONS, REVIEW_CYCLE_MAX_ITERATIONS } from "../src/types";
 
 // ── Fake dependencies (no mock.module — uses DI) ──────────────────────
@@ -38,7 +41,11 @@ function createFakeEngine() {
 					completedAt: null,
 				})),
 				currentStepIndex: 0,
-				reviewCycle: { iteration: 1, maxIterations: REVIEW_CYCLE_MAX_ITERATIONS, lastSeverity: null },
+				reviewCycle: {
+					iteration: 1,
+					maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
+					lastSeverity: null,
+				},
 				createdAt: now,
 				updatedAt: now,
 			};
@@ -48,19 +55,34 @@ function createFakeEngine() {
 			if (workflow) workflow.status = status;
 		},
 		updateLastOutput: (_id: string, text: string) => {
-			if (workflow) { workflow.lastOutput = text; workflow.updatedAt = new Date().toISOString(); }
+			if (workflow) {
+				workflow.lastOutput = text;
+				workflow.updatedAt = new Date().toISOString();
+			}
 		},
 		setQuestion: (_id: string, question: Question) => {
-			if (workflow) { workflow.pendingQuestion = question; workflow.updatedAt = new Date().toISOString(); }
+			if (workflow) {
+				workflow.pendingQuestion = question;
+				workflow.updatedAt = new Date().toISOString();
+			}
 		},
 		clearQuestion: (_id: string) => {
-			if (workflow) { workflow.pendingQuestion = null; workflow.updatedAt = new Date().toISOString(); }
+			if (workflow) {
+				workflow.pendingQuestion = null;
+				workflow.updatedAt = new Date().toISOString();
+			}
 		},
 		setSessionId: (_id: string, sessionId: string) => {
-			if (workflow) { workflow.sessionId = sessionId; workflow.updatedAt = new Date().toISOString(); }
+			if (workflow) {
+				workflow.sessionId = sessionId;
+				workflow.updatedAt = new Date().toISOString();
+			}
 		},
 		updateSummary: (_id: string, summary: string) => {
-			if (workflow) { workflow.summary = summary; workflow.updatedAt = new Date().toISOString(); }
+			if (workflow) {
+				workflow.summary = summary;
+				workflow.updatedAt = new Date().toISOString();
+			}
 		},
 		// Expose for test assertions
 		_getWorkflow: () => workflow,
@@ -95,7 +117,8 @@ function createFakeQuestionDetector() {
 function createFakeReviewClassifier() {
 	const classifyResults: ReviewSeverity[] = [];
 	return {
-		classify: async (_output: string): Promise<ReviewSeverity> => classifyResults.shift() ?? "minor",
+		classify: async (_output: string): Promise<ReviewSeverity> =>
+			classifyResults.shift() ?? "minor",
 		_pushClassifyResult: (r: ReviewSeverity) => classifyResults.push(r),
 	};
 }
@@ -117,6 +140,13 @@ function makeCallbacks(): PipelineCallbacks {
 	};
 }
 
+/** Get the mock workflow, throwing if null (avoids non-null assertions in tests) */
+function getWf(eng: ReturnType<typeof createFakeEngine>): Workflow {
+	const wf = eng._getWorkflow();
+	if (!wf) throw new Error("Expected workflow to exist");
+	return wf;
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────
 
 describe("PipelineOrchestrator", () => {
@@ -136,21 +166,22 @@ describe("PipelineOrchestrator", () => {
 		rc = createFakeReviewClassifier();
 		summarizer = createFakeSummarizer();
 
-		// biome-ignore lint: DI with compatible fakes
-		orchestrator = new PipelineOrchestrator(callbacks, {
-			engine: engine as any,
-			cliRunner: cli as any,
-			questionDetector: qd as any,
-			reviewClassifier: rc as any,
-			summarizer: summarizer as any,
-		});
+		// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
+		const deps: Record<string, any> = {
+			engine,
+			cliRunner: cli,
+			questionDetector: qd,
+			reviewClassifier: rc,
+			summarizer,
+		};
+		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});
 
 	// T009: Step sequencing
 	describe("step sequencing", () => {
 		test("startPipeline creates workflow and starts first step", async () => {
 			await orchestrator.startPipeline("Build a login page");
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			expect(wf).not.toBeNull();
 			expect(wf.steps[0].status).toBe("running");
@@ -160,18 +191,24 @@ describe("PipelineOrchestrator", () => {
 
 		test("pipeline has 8 steps in correct order", async () => {
 			await orchestrator.startPipeline("test");
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			const expectedOrder: PipelineStepName[] = [
-				"specify", "clarify", "plan", "tasks",
-				"implement", "review", "implement-review", "commit-push-pr",
+				"specify",
+				"clarify",
+				"plan",
+				"tasks",
+				"implement",
+				"review",
+				"implement-review",
+				"commit-push-pr",
 			];
 			expect(wf.steps.map((s) => s.name)).toEqual(expectedOrder);
 		});
 
 		test("advancing step moves to next step", async () => {
 			await orchestrator.startPipeline("test");
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			cli.getLastCallbacks().onComplete();
 
@@ -204,7 +241,7 @@ describe("PipelineOrchestrator", () => {
 	describe("Q&A loop", () => {
 		test("detects question after step output and pauses", async () => {
 			await orchestrator.startPipeline("test");
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			const question: Question = {
 				id: "q1",
@@ -241,7 +278,7 @@ describe("PipelineOrchestrator", () => {
 
 		test("Q&A loop pauses again on second question", async () => {
 			await orchestrator.startPipeline("test");
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			cli.getLastCallbacks().onSessionId("sess-123");
 
@@ -270,14 +307,14 @@ describe("PipelineOrchestrator", () => {
 			for (let i = 0; i < 5; i++) {
 				cli.getLastCallbacks().onComplete();
 			}
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 			expect(wf.currentStepIndex).toBe(5);
 			expect(wf.steps[5].name).toBe("review");
 		}
 
 		test("re-cycles on critical severity", async () => {
 			await advanceToReview();
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			rc._pushClassifyResult("critical");
 			cli.getLastCallbacks().onComplete();
@@ -290,7 +327,7 @@ describe("PipelineOrchestrator", () => {
 
 		test("re-cycles on major severity", async () => {
 			await advanceToReview();
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			rc._pushClassifyResult("major");
 			cli.getLastCallbacks().onComplete();
@@ -302,7 +339,7 @@ describe("PipelineOrchestrator", () => {
 
 		test("stops cycling on minor severity → advances to commit-push-pr", async () => {
 			await advanceToReview();
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			rc._pushClassifyResult("minor");
 			cli.getLastCallbacks().onComplete();
@@ -314,7 +351,7 @@ describe("PipelineOrchestrator", () => {
 
 		test("stops cycling on trivial severity", async () => {
 			await advanceToReview();
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			rc._pushClassifyResult("trivial");
 			cli.getLastCallbacks().onComplete();
@@ -325,7 +362,7 @@ describe("PipelineOrchestrator", () => {
 
 		test("stops cycling on nit severity", async () => {
 			await advanceToReview();
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			rc._pushClassifyResult("nit");
 			cli.getLastCallbacks().onComplete();
@@ -336,7 +373,7 @@ describe("PipelineOrchestrator", () => {
 
 		test("caps review cycling at maxIterations", async () => {
 			await advanceToReview();
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			wf.reviewCycle.iteration = 16;
 
@@ -352,7 +389,7 @@ describe("PipelineOrchestrator", () => {
 	describe("step failure and retry", () => {
 		test("step failure sets step to error state", async () => {
 			await orchestrator.startPipeline("test");
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			cli.getLastCallbacks().onError("CLI crashed");
 
@@ -363,7 +400,7 @@ describe("PipelineOrchestrator", () => {
 
 		test("retry re-runs the failed step", async () => {
 			await orchestrator.startPipeline("test");
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			cli.getLastCallbacks().onError("CLI crashed");
 
@@ -377,7 +414,7 @@ describe("PipelineOrchestrator", () => {
 
 		test("completed steps are preserved on retry", async () => {
 			await orchestrator.startPipeline("test");
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			// Complete step 0
 			cli.getLastCallbacks().onComplete();
@@ -399,7 +436,7 @@ describe("PipelineOrchestrator", () => {
 	describe("cancellation", () => {
 		test("cancelPipeline kills CLI process and sets cancelled state", async () => {
 			await orchestrator.startPipeline("test");
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			orchestrator.cancelPipeline("test-wf-id");
 
@@ -411,7 +448,7 @@ describe("PipelineOrchestrator", () => {
 
 		test("cancellation during Q&A sets cancelled state", async () => {
 			await orchestrator.startPipeline("test");
-			const wf = engine._getWorkflow()!;
+			const wf = getWf(engine);
 
 			const question: Question = {
 				id: "q1",

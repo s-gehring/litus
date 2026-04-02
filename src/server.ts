@@ -1,7 +1,7 @@
 import type { ServerWebSocket } from "bun";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { getMimeType, resolveStaticPath } from "./static-files";
-import type { ClientMessage, PipelineStepName, ServerMessage, WorkflowState } from "./types";
+import type { ClientMessage, ServerMessage, WorkflowState } from "./types";
 
 type WsData = Record<string, never>;
 
@@ -22,13 +22,13 @@ const orchestrator = new PipelineOrchestrator({
 	onOutput: (workflowId, text) => {
 		broadcast({ type: "workflow:output", workflowId, text });
 	},
-	onComplete: (workflowId) => {
+	onComplete: (_workflowId) => {
 		broadcastState();
 	},
-	onError: (workflowId, error) => {
+	onError: (_workflowId, _error) => {
 		broadcastState();
 	},
-	onStateChange: (workflowId) => {
+	onStateChange: (_workflowId) => {
 		broadcastState();
 	},
 });
@@ -161,7 +161,7 @@ const server = Bun.serve<WsData>({
 			return Response.json({
 				status: "ok",
 				activeWorkflow: isActive ? workflow.id : null,
-				currentStep: isActive ? workflow.steps[workflow.currentStepIndex]?.name ?? null : null,
+				currentStep: isActive ? (workflow.steps[workflow.currentStepIndex]?.name ?? null) : null,
 				reviewIteration: isActive ? workflow.reviewCycle.iteration : null,
 			});
 		}

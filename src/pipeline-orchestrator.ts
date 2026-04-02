@@ -1,5 +1,5 @@
-import { CLIRunner } from "./cli-runner";
 import type { CLICallbacks } from "./cli-runner";
+import { CLIRunner } from "./cli-runner";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
 import { Summarizer } from "./summarizer";
@@ -135,8 +135,7 @@ export class PipelineOrchestrator {
 	private startStep(workflow: Workflow): void {
 		const step = workflow.steps[workflow.currentStepIndex];
 		const previousIndex = workflow.currentStepIndex - 1;
-		const previousStep =
-			previousIndex >= 0 ? workflow.steps[previousIndex].name : null;
+		const previousStep = previousIndex >= 0 ? workflow.steps[previousIndex].name : null;
 
 		step.status = "running";
 		step.startedAt = new Date().toISOString();
@@ -230,7 +229,12 @@ export class PipelineOrchestrator {
 
 	private pauseForQuestion(
 		workflowId: string,
-		question: { id: string; content: string; confidence: "certain" | "uncertain"; detectedAt: string },
+		question: {
+			id: string;
+			content: string;
+			confidence: "certain" | "uncertain";
+			detectedAt: string;
+		},
 	): void {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
@@ -281,9 +285,7 @@ export class PipelineOrchestrator {
 			workflow.reviewCycle.iteration++;
 
 			const reviewIndex = workflow.steps.findIndex((s) => s.name === "review");
-			const implReviewIndex = workflow.steps.findIndex(
-				(s) => s.name === "implement-review",
-			);
+			const implReviewIndex = workflow.steps.findIndex((s) => s.name === "implement-review");
 
 			for (const idx of [implReviewIndex, reviewIndex]) {
 				workflow.steps[idx].status = "pending";
@@ -297,9 +299,7 @@ export class PipelineOrchestrator {
 			workflow.currentStepIndex = implReviewIndex;
 			this.startStep(workflow);
 		} else {
-			const commitIndex = workflow.steps.findIndex(
-				(s) => s.name === "commit-push-pr",
-			);
+			const commitIndex = workflow.steps.findIndex((s) => s.name === "commit-push-pr");
 			workflow.currentStepIndex = commitIndex;
 			this.startStep(workflow);
 		}
