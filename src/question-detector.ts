@@ -20,8 +20,10 @@ const UNCERTAIN_PATTERNS = [
 ];
 
 // Patterns that indicate the text is NOT a question to the user (agent narration)
+// Note: "let me (?!know\b)" uses negative lookahead — excludes "let me read/create/..."
+// but allows "let me know" to pass through as a potential question indicator.
 const EXCLUSION_PATTERNS = [
-  /^(here'?s?|this is|i('ll| will)|let me (?!know\b)|now i|i('m| am))\b/i, // Agent narrating its actions (not "let me know")
+  /^(here'?s?|this is|i('ll| will)|let me (?!know\b)|now i|i('m| am))\b/i, // Agent narrating its actions
   /^\[tool:/i,                                                       // Tool use output
   /^(reading|writing|creating|updating|deleting|installing)\b/i,    // Agent action descriptions
 ];

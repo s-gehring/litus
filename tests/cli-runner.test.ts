@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { CLIRunner } from "../src/cli-runner";
 import type { CLICallbacks } from "../src/cli-runner";
+import type { Workflow } from "../src/types";
 
 const originalSpawn = Bun.spawn;
 
@@ -8,6 +9,33 @@ function createDeferredPromise<T = void>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((r) => { resolve = r; });
   return { promise, resolve };
+}
+
+function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
+  return {
+    id,
+    specification: "test",
+    status: "running",
+    sessionId: null,
+    worktreePath: "/tmp/test-worktree",
+    worktreeBranch: "test-branch",
+    summary: "",
+    pendingQuestion: null,
+    lastOutput: "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function makeCallbacks(overrides?: Partial<CLICallbacks>): CLICallbacks {
+  return {
+    onOutput: () => {},
+    onComplete: () => {},
+    onError: () => {},
+    onSessionId: () => {},
+    ...overrides,
+  };
 }
 
 describe("CLIRunner", () => {
@@ -44,28 +72,9 @@ describe("CLIRunner", () => {
         pid: 1,
       });
 
-      const callbacks: CLICallbacks = {
-        onOutput: () => {},
-        onComplete: () => {},
-        onError: () => {},
-        onSessionId: (id) => { resolveSession(id); },
-      };
-
       runner.start(
-        {
-          id: "w1",
-          specification: "test",
-          status: "running",
-          sessionId: null,
-          worktreePath: "/tmp/test",
-          worktreeBranch: "test-branch",
-          summary: "",
-          pendingQuestion: null,
-          lastOutput: "",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        callbacks
+        makeWorkflow("w1"),
+        makeCallbacks({ onSessionId: (id) => resolveSession(id) })
       );
 
       const sessionId = await sessionPromise;
@@ -102,27 +111,12 @@ describe("CLIRunner", () => {
         pid: 1,
       });
 
-      const callbacks: CLICallbacks = {
-        onOutput: (text) => outputs.push(text),
-        onComplete: () => resolveComplete(),
-        onError: () => {},
-      };
-
       runner.start(
-        {
-          id: "w2",
-          specification: "test",
-          status: "running",
-          sessionId: null,
-          worktreePath: null,
-          worktreeBranch: "test",
-          summary: "",
-          pendingQuestion: null,
-          lastOutput: "",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        callbacks
+        makeWorkflow("w2", { worktreePath: null }),
+        makeCallbacks({
+          onOutput: (text) => outputs.push(text),
+          onComplete: () => resolveComplete(),
+        })
       );
 
       await completePromise;
@@ -142,24 +136,8 @@ describe("CLIRunner", () => {
       });
 
       runner.start(
-        {
-          id: "w3",
-          specification: "test",
-          status: "running",
-          sessionId: null,
-          worktreePath: null,
-          worktreeBranch: "test",
-          summary: "",
-          pendingQuestion: null,
-          lastOutput: "",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          onOutput: () => {},
-          onComplete: () => resolveComplete(),
-          onError: () => {},
-        }
+        makeWorkflow("w3", { worktreePath: null }),
+        makeCallbacks({ onComplete: () => resolveComplete() })
       );
 
       await completePromise;
@@ -183,24 +161,8 @@ describe("CLIRunner", () => {
       });
 
       runner.start(
-        {
-          id: "w4",
-          specification: "test",
-          status: "running",
-          sessionId: null,
-          worktreePath: null,
-          worktreeBranch: "test",
-          summary: "",
-          pendingQuestion: null,
-          lastOutput: "",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          onOutput: () => {},
-          onComplete: () => {},
-          onError: (err) => resolveError(err),
-        }
+        makeWorkflow("w4", { worktreePath: null }),
+        makeCallbacks({ onError: (err) => resolveError(err) })
       );
 
       const errorMsg = await errorPromise;
@@ -220,20 +182,8 @@ describe("CLIRunner", () => {
       });
 
       runner.start(
-        {
-          id: "w5",
-          specification: "test",
-          status: "running",
-          sessionId: null,
-          worktreePath: null,
-          worktreeBranch: "test",
-          summary: "",
-          pendingQuestion: null,
-          lastOutput: "",
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        { onOutput: () => {}, onComplete: () => {}, onError: () => {} }
+        makeWorkflow("w5", { worktreePath: null }),
+        makeCallbacks()
       );
 
       runner.kill("w5");
@@ -256,26 +206,102 @@ describe("CLIRunner", () => {
         pid: 1,
       });
 
-      const makeWorkflow = (id: string) => ({
-        id,
-        specification: "test",
-        status: "running" as const,
-        sessionId: null,
-        worktreePath: null,
-        worktreeBranch: "test",
-        summary: "",
-        pendingQuestion: null,
-        lastOutput: "",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-
-      const cb = { onOutput: () => {}, onComplete: () => {}, onError: () => {} };
-      runner.start(makeWorkflow("a"), cb);
-      runner.start(makeWorkflow("b"), cb);
+      runner.start(makeWorkflow("a"), makeCallbacks());
+      runner.start(makeWorkflow("b"), makeCallbacks());
 
       runner.killAll();
       expect(killed.length).toBe(2);
+    });
+  });
+
+  describe("sendAnswer", () => {
+    test("kills old process and spawns new one with --resume and correct cwd", async () => {
+      let oldKilled = false;
+      const spawnArgs: any[] = [];
+
+      // First spawn: the initial start
+      let spawnCount = 0;
+      (globalThis as any).Bun.spawn = (args: string[], opts: any) => {
+        spawnCount++;
+        if (spawnCount === 1) {
+          // Initial start — provide a session_id in the stream
+          const streamContent = [
+            JSON.stringify({ session_id: "sess-123", type: "system" }),
+            "",
+          ].join("\n");
+          return {
+            stdout: new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode(streamContent));
+                // Don't close — keep the process "running"
+              },
+            }),
+            stderr: new ReadableStream({ start() {} }),
+            exited: new Promise(() => {}), // never resolves — process stays alive
+            kill: () => { oldKilled = true; },
+            pid: 1,
+          };
+        }
+        // Second spawn: the resume after sendAnswer
+        spawnArgs.push({ args, opts });
+        return {
+          stdout: new ReadableStream({ start(c) { c.close(); } }),
+          stderr: new ReadableStream({ start(c) { c.close(); } }),
+          exited: Promise.resolve(0),
+          kill: () => {},
+          pid: 2,
+        };
+      };
+
+      const { promise: sessionPromise, resolve: resolveSession } = createDeferredPromise<string>();
+
+      runner.start(
+        makeWorkflow("w-answer", { worktreePath: "/tmp/my-worktree" }),
+        makeCallbacks({ onSessionId: (id) => resolveSession(id) })
+      );
+
+      // Wait for session ID to be extracted from the stream
+      const sessionId = await sessionPromise;
+      expect(sessionId).toBe("sess-123");
+
+      // Now send an answer
+      runner.sendAnswer("w-answer", "Use Tailwind CSS");
+
+      expect(oldKilled).toBe(true);
+      expect(spawnArgs.length).toBe(1);
+
+      const resumeArgs = spawnArgs[0].args;
+      expect(resumeArgs).toContain("--resume");
+      expect(resumeArgs).toContain("sess-123");
+      expect(resumeArgs).toContain("Use Tailwind CSS");
+
+      const resumeOpts = spawnArgs[0].opts;
+      expect(resumeOpts.cwd).toBe("/tmp/my-worktree");
+    });
+
+    test("calls onError when no session ID is available", () => {
+      let errorMsg = "";
+      (globalThis as any).Bun.spawn = () => ({
+        stdout: new ReadableStream({ start() {} }),
+        stderr: new ReadableStream({ start() {} }),
+        exited: new Promise(() => {}),
+        kill: () => {},
+        pid: 1,
+      });
+
+      runner.start(
+        makeWorkflow("w-no-session"),
+        makeCallbacks({ onError: (err) => { errorMsg = err; } })
+      );
+
+      // sendAnswer without having received a session ID
+      runner.sendAnswer("w-no-session", "some answer");
+      expect(errorMsg).toContain("session ID");
+    });
+
+    test("does nothing for non-existent workflow", () => {
+      // Should not throw
+      runner.sendAnswer("nonexistent", "answer");
     });
   });
 });

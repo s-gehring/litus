@@ -89,45 +89,23 @@ export class WorkflowEngine {
     return this.workflow;
   }
 
-  async removeWorktree(workflowId: string): Promise<void> {
-    const w = this.workflow;
-    if (!w || w.id !== workflowId || !w.worktreePath) return;
-
-    try {
-      const proc = Bun.spawn(["git", "worktree", "remove", w.worktreePath, "--force"], {
-        cwd: process.cwd(),
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      await proc.exited;
-    } catch {
-      // Best-effort cleanup
-    }
-  }
-
-  private createWorktree(branchName: string): Promise<string> {
-    return new Promise((res, reject) => {
-      const worktreePath = `.worktrees/${branchName.replaceAll("/", "-")}`;
-      const proc = Bun.spawn(["git", "worktree", "add", worktreePath, "-b", branchName], {
-        cwd: process.cwd(),
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      proc.exited.then((code) => {
-        if (code === 0) {
-          const absPath = resolve(process.cwd(), worktreePath);
-          res(absPath);
-        } else {
-          const stderrStream = proc.stderr;
-          const stderrPromise = stderrStream && typeof stderrStream !== "number"
-            ? new Response(stderrStream as ReadableStream).text()
-            : Promise.resolve("");
-          stderrPromise.then((stderr) => {
-            reject(new Error(stderr.trim() || `git worktree add failed with code ${code}`));
-          });
-        }
-      });
+  private async createWorktree(branchName: string): Promise<string> {
+    const worktreePath = `.worktrees/${branchName.replaceAll("/", "-")}`;
+    const proc = Bun.spawn(["git", "worktree", "add", worktreePath, "-b", branchName], {
+      cwd: process.cwd(),
+      stdout: "pipe",
+      stderr: "pipe",
     });
+
+    const code = await proc.exited;
+    if (code === 0) {
+      return resolve(process.cwd(), worktreePath);
+    }
+
+    const stderrStream = proc.stderr;
+    const stderr = stderrStream && typeof stderrStream !== "number"
+      ? await new Response(stderrStream as ReadableStream).text()
+      : "";
+    throw new Error(stderr.trim() || `git worktree add failed with code ${code}`);
   }
 }

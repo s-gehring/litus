@@ -20,18 +20,8 @@ let assistantTextBuffer = "";
 function getWorkflowState(): WorkflowState | null {
   const w = engine.getWorkflow();
   if (!w) return null;
-  return {
-    id: w.id,
-    status: w.status,
-    specification: w.specification,
-    summary: w.summary,
-    pendingQuestion: w.pendingQuestion,
-    lastOutput: w.lastOutput,
-    worktreePath: w.worktreePath,
-    worktreeBranch: w.worktreeBranch,
-    createdAt: w.createdAt,
-    updatedAt: w.updatedAt,
-  };
+  const { sessionId: _, ...state } = w;
+  return state;
 }
 
 function broadcast(msg: ServerMessage) {
@@ -51,8 +41,6 @@ function cleanupWorkflow(workflowId: string) {
   summarizer.cleanup(workflowId);
   questionDetector.reset();
   assistantTextBuffer = "";
-  // CR2-008: Clean up git worktree on terminal states
-  engine.removeWorktree(workflowId).catch(() => {});
 }
 
 async function handleStart(ws: ServerWebSocket<{}>, specification: string) {
@@ -95,6 +83,9 @@ async function handleStart(ws: ServerWebSocket<{}>, specification: string) {
             if (question.confidence === "uncertain") {
               questionDetector.classifyWithHaiku(question.content).then((isQuestion) => {
                 if (!isQuestion) return;
+                // CR3-002: Guard against stale workflow state after async Haiku call
+                const current = engine.getWorkflow();
+                if (!current || current.id !== w.id || current.status !== "running") return;
                 try {
                   engine.setQuestion(w.id, question);
                   engine.transition(w.id, "waiting_for_input");

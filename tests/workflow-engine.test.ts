@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { WorkflowEngine } from "../src/workflow-engine";
 import type { Question } from "../src/types";
 
@@ -210,6 +210,3 @@ describe("WorkflowEngine", () => {
     await expect(engine.createWorkflow("test")).rejects.toThrow("Failed to create git worktree");
   });
 });
-
-// Import afterAll for cleanup
-import { afterAll } from "bun:test";

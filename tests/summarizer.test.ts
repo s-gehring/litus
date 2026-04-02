@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, mock, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { Summarizer } from "../src/summarizer";
 
 // Mock the Anthropic SDK
@@ -13,6 +13,13 @@ mock.module("@anthropic-ai/sdk", () => ({
     messages = { create: mockCreate };
   },
 }));
+
+// Flush microtask queue to let fire-and-forget promises resolve
+async function flushAsync() {
+  // Two ticks: one for the API call promise, one for the .then() callback
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 describe("Summarizer", () => {
   let summarizer: Summarizer;
@@ -34,8 +41,7 @@ describe("Summarizer", () => {
     const longText = "x".repeat(250);
     summarizer.maybeSummarize("w1", longText, callback);
 
-    // Wait for the async summary generation
-    await new Promise((r) => setTimeout(r, 50));
+    await flushAsync();
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const callArgs = mockCreate.mock.calls[0][0] as any;
@@ -52,7 +58,7 @@ describe("Summarizer", () => {
     // Second call immediately — pendingSummary should block it
     summarizer.maybeSummarize("w1", longText, callback);
 
-    await new Promise((r) => setTimeout(r, 50));
+    await flushAsync();
 
     // Only one API call despite two maybeSummarize calls
     expect(mockCreate).toHaveBeenCalledTimes(1);
@@ -63,13 +69,13 @@ describe("Summarizer", () => {
     const longText = "x".repeat(250);
 
     summarizer.maybeSummarize("w1", longText, callback);
-    await new Promise((r) => setTimeout(r, 50));
+    await flushAsync();
 
     // First summary completed, but within INTERVAL_MS
     mockCreate.mockClear();
     summarizer.maybeSummarize("w1", longText, callback);
 
-    await new Promise((r) => setTimeout(r, 50));
+    await flushAsync();
     // Should not trigger again within interval
     expect(mockCreate).not.toHaveBeenCalled();
   });
@@ -82,7 +88,7 @@ describe("Summarizer", () => {
     summarizer.maybeSummarize("w1", longText, cb1);
     summarizer.maybeSummarize("w2", longText, cb2);
 
-    await new Promise((r) => setTimeout(r, 50));
+    await flushAsync();
 
     // Both workflows should trigger independently
     expect(mockCreate).toHaveBeenCalledTimes(2);
@@ -109,7 +115,7 @@ describe("Summarizer", () => {
     const longText = "x".repeat(250);
     summarizer.maybeSummarize("w1", longText, callback);
 
-    await new Promise((r) => setTimeout(r, 50));
+    await flushAsync();
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(callback).not.toHaveBeenCalled();

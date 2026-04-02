@@ -1,11 +1,25 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, mock } from "bun:test";
 import { QuestionDetector } from "../src/question-detector";
+
+// Mock the Anthropic SDK for classifyWithHaiku tests
+const mockCreate = mock(() =>
+  Promise.resolve({
+    content: [{ type: "text" as const, text: "yes" }],
+  })
+);
+
+mock.module("@anthropic-ai/sdk", () => ({
+  default: class MockAnthropic {
+    messages = { create: mockCreate };
+  },
+}));
 
 describe("QuestionDetector", () => {
   let detector: QuestionDetector;
 
   beforeEach(() => {
     detector = new QuestionDetector();
+    mockCreate.mockClear();
   });
 
   describe("certain question detection", () => {
@@ -144,6 +158,59 @@ describe("QuestionDetector", () => {
       detector.reset();
       const q2 = detector.detect("Should I use Y?");
       expect(q1!.id).not.toBe(q2!.id);
+    });
+  });
+
+  describe("classifyWithHaiku", () => {
+    test("returns true when Haiku confirms a question", async () => {
+      mockCreate.mockImplementationOnce(() =>
+        Promise.resolve({ content: [{ type: "text" as const, text: "yes" }] })
+      );
+
+      const result = await detector.classifyWithHaiku("Should I use Tailwind?");
+      expect(result).toBe(true);
+
+      expect(mockCreate).toHaveBeenCalledTimes(1);
+      const callArgs = mockCreate.mock.calls[0][0] as any;
+      expect(callArgs.model).toBe("claude-haiku-4-5-20251001");
+      expect(callArgs.max_tokens).toBe(10);
+    });
+
+    test("returns false when Haiku rejects a question", async () => {
+      mockCreate.mockImplementationOnce(() =>
+        Promise.resolve({ content: [{ type: "text" as const, text: "no" }] })
+      );
+
+      const result = await detector.classifyWithHaiku("Looking at the code, this seems fine");
+      expect(result).toBe(false);
+    });
+
+    test("returns false on API error", async () => {
+      mockCreate.mockImplementationOnce(() => Promise.reject(new Error("API error")));
+
+      const result = await detector.classifyWithHaiku("Should I use X?");
+      expect(result).toBe(false);
+    });
+
+    test("prevents concurrent classifications", async () => {
+      // Create a deferred promise to control when the first call resolves
+      let resolveFirst!: (value: any) => void;
+      mockCreate.mockImplementationOnce(
+        () => new Promise((r) => { resolveFirst = r; })
+      );
+
+      const promise1 = detector.classifyWithHaiku("Question 1?");
+      const promise2 = detector.classifyWithHaiku("Question 2?");
+
+      // Second call should return false immediately because first is pending
+      expect(await promise2).toBe(false);
+
+      // Resolve the first call
+      resolveFirst({ content: [{ type: "text", text: "yes" }] });
+      expect(await promise1).toBe(true);
+
+      // Only one API call was made
+      expect(mockCreate).toHaveBeenCalledTimes(1);
     });
   });
 });

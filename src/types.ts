@@ -40,19 +40,8 @@ export interface Workflow {
   updatedAt: string;
 }
 
-// Serializable workflow state for WebSocket messages
-export interface WorkflowState {
-  id: string;
-  status: WorkflowStatus;
-  specification: string;
-  summary: string;
-  pendingQuestion: Question | null;
-  lastOutput: string;
-  worktreePath: string | null;
-  worktreeBranch: string;
-  createdAt: string;
-  updatedAt: string;
-}
+// Serializable workflow state for WebSocket messages (all Workflow fields except sessionId)
+export type WorkflowState = Omit<Workflow, "sessionId">;
 
 // Server → Client messages
 export type ServerMessage =

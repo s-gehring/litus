@@ -1,10 +1,20 @@
 import type { Workflow } from "./types";
 
+// Claude Code CLI stream-json event shape (loosely typed — the CLI format is not formally documented)
+interface CLIStreamEvent {
+  type: string;
+  session_id?: string;
+  message?: { content?: Array<{ type: string; text?: string; name?: string }> };
+  delta?: { text?: string };
+  result?: unknown;
+  [key: string]: unknown;
+}
+
 export interface CLICallbacks {
   onOutput: (text: string) => void;
   onComplete: () => void;
   onError: (error: string) => void;
-  onSessionId?: (sessionId: string) => void;
+  onSessionId: (sessionId: string) => void;
 }
 
 interface RunningProcess {
@@ -13,6 +23,9 @@ interface RunningProcess {
   sessionId: string | null;
   cwd: string;
   callbacks: CLICallbacks;
+  stale: boolean;
+  deltaBuffer: string;
+  deltaFlushTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export class CLIRunner {
@@ -41,6 +54,9 @@ export class CLIRunner {
       sessionId: null,
       cwd,
       callbacks,
+      stale: false,
+      deltaBuffer: "",
+      deltaFlushTimer: null,
     };
 
     this.running.set(workflow.id, entry);
@@ -51,7 +67,8 @@ export class CLIRunner {
     const entry = this.running.get(workflowId);
     if (!entry) return;
 
-    // Kill current process and resume with answer
+    // Mark as stale to prevent buffered output from old reader interleaving
+    entry.stale = true;
     entry.process.kill();
     this.running.delete(workflowId);
 
@@ -83,6 +100,9 @@ export class CLIRunner {
       sessionId,
       cwd: entry.cwd,
       callbacks: entry.callbacks,
+      stale: false,
+      deltaBuffer: "",
+      deltaFlushTimer: null,
     };
 
     this.running.set(workflowId, newEntry);
@@ -92,6 +112,8 @@ export class CLIRunner {
   kill(workflowId: string): void {
     const entry = this.running.get(workflowId);
     if (entry) {
+      entry.stale = true;
+      if (entry.deltaFlushTimer) clearTimeout(entry.deltaFlushTimer);
       entry.process.kill();
       this.running.delete(workflowId);
     }
@@ -122,13 +144,13 @@ export class CLIRunner {
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (!line.trim()) continue;
+          if (!line.trim() || entry.stale) continue;
           try {
             const event = JSON.parse(line);
             this.handleStreamEvent(entry, event);
           } catch {
             // Non-JSON line, treat as raw output
-            callbacks.onOutput(line);
+            if (!entry.stale) callbacks.onOutput(line);
           }
         }
       }
@@ -145,6 +167,9 @@ export class CLIRunner {
     } catch (err) {
       // Stream read error
     }
+
+    // Flush any remaining batched delta text
+    this.flushDeltaBuffer(entry);
 
     const exitCode = await proc.exited;
     const currentEntry = this.running.get(workflowId);
@@ -164,15 +189,29 @@ export class CLIRunner {
     }
   }
 
-  private handleStreamEvent(entry: RunningProcess, event: any): void {
+  private flushDeltaBuffer(entry: RunningProcess): void {
+    if (entry.deltaFlushTimer) {
+      clearTimeout(entry.deltaFlushTimer);
+      entry.deltaFlushTimer = null;
+    }
+    if (entry.deltaBuffer && !entry.stale) {
+      entry.callbacks.onOutput(entry.deltaBuffer);
+      entry.deltaBuffer = "";
+    }
+  }
+
+  private handleStreamEvent(entry: RunningProcess, event: CLIStreamEvent): void {
+    if (entry.stale) return;
+
     // Extract session ID from the stream
     if (event.session_id && !entry.sessionId) {
       entry.sessionId = event.session_id;
-      entry.callbacks.onSessionId?.(event.session_id);
+      entry.callbacks.onSessionId(event.session_id);
     }
 
     // Handle different event types from stream-json format
     if (event.type === "assistant" && event.message?.content) {
+      this.flushDeltaBuffer(entry);
       for (const block of event.message.content) {
         if (block.type === "text" && block.text) {
           entry.callbacks.onOutput(block.text);
@@ -181,8 +220,12 @@ export class CLIRunner {
         }
       }
     } else if (event.type === "content_block_delta" && event.delta?.text) {
-      entry.callbacks.onOutput(event.delta.text);
-    } else if (event.type === "result" && event.result) {
+      // Batch delta fragments to reduce DOM element count (CR3-010)
+      entry.deltaBuffer += event.delta.text;
+      if (entry.deltaFlushTimer) clearTimeout(entry.deltaFlushTimer);
+      entry.deltaFlushTimer = setTimeout(() => this.flushDeltaBuffer(entry), 50);
+    } else if (event.type === "result" && event.result !== undefined) {
+      this.flushDeltaBuffer(entry);
       // Final result message
       if (event.session_id) {
         entry.sessionId = event.session_id;
