@@ -1,3 +1,23 @@
+// Audit event types
+export type AuditEventType = "pipeline_start" | "pipeline_end" | "query" | "answer" | "commit";
+
+export interface AuditEvent {
+	timestamp: string;
+	eventType: AuditEventType;
+	runId: string;
+	pipelineName: string;
+	branch: string | null;
+	commitHash: string | null;
+	stepName: string | null;
+	sequenceNumber: number;
+	content: string | null;
+	metadata: Record<string, unknown> | null;
+}
+
+export interface AuditConfig {
+	auditDir?: string;
+}
+
 // Workflow status enum
 export type WorkflowStatus =
 	| "idle"

@@ -1,3 +1,4 @@
+import { AuditLogger } from "./audit-logger";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
 import { QuestionDetector } from "./question-detector";
@@ -26,6 +27,7 @@ export interface PipelineDeps {
 	questionDetector?: QuestionDetector;
 	reviewClassifier?: ReviewClassifier;
 	summarizer?: Summarizer;
+	auditLogger?: AuditLogger;
 }
 
 export class PipelineOrchestrator {
@@ -34,8 +36,10 @@ export class PipelineOrchestrator {
 	private questionDetector: QuestionDetector;
 	private reviewClassifier: ReviewClassifier;
 	private summarizer: Summarizer;
+	private auditLogger: AuditLogger;
 	private callbacks: PipelineCallbacks;
 	private assistantTextBuffer = "";
+	private currentAuditRunId: string | null = null;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -43,6 +47,7 @@ export class PipelineOrchestrator {
 		this.questionDetector = deps?.questionDetector ?? new QuestionDetector();
 		this.reviewClassifier = deps?.reviewClassifier ?? new ReviewClassifier();
 		this.summarizer = deps?.summarizer ?? new Summarizer();
+		this.auditLogger = deps?.auditLogger ?? new AuditLogger();
 		this.callbacks = callbacks;
 	}
 
@@ -54,9 +59,28 @@ export class PipelineOrchestrator {
 		const workflow = await this.engine.createWorkflow(specification);
 		this.engine.transition(workflow.id, "running");
 
+		const branch = await this.getBranch(workflow.worktreePath || process.cwd());
+		this.currentAuditRunId = this.auditLogger.startRun(workflow.worktreeBranch, branch);
+
 		this.startStep(workflow);
 
 		return workflow;
+	}
+
+	private async getBranch(cwd: string): Promise<string | null> {
+		try {
+			const proc = Bun.spawn(["git", "rev-parse", "--abbrev-ref", "HEAD"], {
+				cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			const code = await proc.exited;
+			if (code !== 0) return null;
+			const text = await new Response(proc.stdout as ReadableStream).text();
+			return text.trim() || null;
+		} catch {
+			return null;
+		}
 	}
 
 	answerQuestion(workflowId: string, questionId: string, answer: string): void {
@@ -64,6 +88,11 @@ export class PipelineOrchestrator {
 
 		if (!workflow.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
 			return;
+		}
+
+		if (this.currentAuditRunId) {
+			const stepName = workflow.steps[workflow.currentStepIndex]?.name ?? null;
+			this.auditLogger.logAnswer(this.currentAuditRunId, answer, stepName);
 		}
 
 		this.engine.clearQuestion(workflowId);
@@ -112,6 +141,11 @@ export class PipelineOrchestrator {
 
 	cancelPipeline(workflowId: string): void {
 		const workflow = this.getWorkflowOrThrow(workflowId);
+
+		if (this.currentAuditRunId) {
+			this.auditLogger.endRun(this.currentAuditRunId, { cancelled: true });
+			this.currentAuditRunId = null;
+		}
 
 		this.cliRunner.kill(workflowId);
 		this.summarizer.cleanup(workflowId);
@@ -240,6 +274,11 @@ export class PipelineOrchestrator {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
 
+		if (this.currentAuditRunId) {
+			const stepName = workflow.steps[workflow.currentStepIndex]?.name ?? null;
+			this.auditLogger.logQuery(this.currentAuditRunId, question.content, stepName);
+		}
+
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "waiting_for_input";
 		workflow.updatedAt = new Date().toISOString();
@@ -322,6 +361,13 @@ export class PipelineOrchestrator {
 		const nextIndex = workflow.currentStepIndex + 1;
 
 		if (nextIndex >= workflow.steps.length) {
+			if (this.currentAuditRunId) {
+				this.auditLogger.endRun(this.currentAuditRunId, {
+					totalSteps: workflow.steps.length,
+					reviewIterations: workflow.reviewCycle.iteration,
+				});
+				this.currentAuditRunId = null;
+			}
 			try {
 				this.engine.transition(workflow.id, "completed");
 			} catch (e) {
@@ -341,6 +387,11 @@ export class PipelineOrchestrator {
 	private handleStepError(workflowId: string, error: string): void {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId) return;
+
+		if (this.currentAuditRunId) {
+			this.auditLogger.endRun(this.currentAuditRunId, { error });
+			this.currentAuditRunId = null;
+		}
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "error";

@@ -123,6 +123,18 @@ function createFakeSummarizer() {
 	};
 }
 
+function createFakeAuditLogger() {
+	return {
+		startRun: mock((_pipelineName: string, _branch: string | null) => "fake-audit-run-id"),
+		endRun: mock((_runId: string, _metadata?: Record<string, unknown>) => {}),
+		logQuery: mock((_runId: string, _content: string, _stepName: string | null) => {}),
+		logAnswer: mock((_runId: string, _content: string, _stepName: string | null) => {}),
+		logCommit: mock(
+			(_runId: string, _hash: string, _msg: string | null, _step: string | null) => {},
+		),
+	};
+}
+
 function makeCallbacks(): PipelineCallbacks {
 	return {
 		onStepChange: mock(() => {}),
@@ -150,6 +162,7 @@ describe("PipelineOrchestrator", () => {
 	let qd: ReturnType<typeof createFakeQuestionDetector>;
 	let rc: ReturnType<typeof createFakeReviewClassifier>;
 	let summarizer: ReturnType<typeof createFakeSummarizer>;
+	let auditLogger: ReturnType<typeof createFakeAuditLogger>;
 
 	beforeEach(() => {
 		callbacks = makeCallbacks();
@@ -158,6 +171,7 @@ describe("PipelineOrchestrator", () => {
 		qd = createFakeQuestionDetector();
 		rc = createFakeReviewClassifier();
 		summarizer = createFakeSummarizer();
+		auditLogger = createFakeAuditLogger();
 
 		// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
 		const deps: Record<string, any> = {
@@ -166,6 +180,7 @@ describe("PipelineOrchestrator", () => {
 			questionDetector: qd,
 			reviewClassifier: rc,
 			summarizer,
+			auditLogger,
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});
@@ -572,6 +587,94 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete();
 
 			expect(callbacks.onComplete).toHaveBeenCalled();
+		});
+	});
+
+	// Audit trail integration
+	describe("audit trail wiring", () => {
+		test("startPipeline calls auditLogger.startRun", async () => {
+			await orchestrator.startPipeline("Build a feature");
+
+			expect(auditLogger.startRun).toHaveBeenCalledTimes(1);
+			expect(auditLogger.startRun.mock.calls[0][0]).toBe("crab-studio/test");
+		});
+
+		test("pipeline completion calls auditLogger.endRun", async () => {
+			await orchestrator.startPipeline("test");
+
+			// Complete steps 0–4
+			for (let i = 0; i < 5; i++) {
+				cli.getLastCallbacks().onComplete();
+			}
+
+			// Review → minor → commit-push-pr
+			rc._pushClassifyResult("minor");
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			// commit-push-pr completes
+			cli.getLastCallbacks().onComplete();
+
+			expect(auditLogger.endRun).toHaveBeenCalledTimes(1);
+			expect(auditLogger.endRun.mock.calls[0][0]).toBe("fake-audit-run-id");
+		});
+
+		test("cancelPipeline calls auditLogger.endRun with cancelled metadata", async () => {
+			await orchestrator.startPipeline("test");
+
+			orchestrator.cancelPipeline("test-wf-id");
+
+			expect(auditLogger.endRun).toHaveBeenCalledWith("fake-audit-run-id", { cancelled: true });
+		});
+
+		test("step error calls auditLogger.endRun with error metadata", async () => {
+			await orchestrator.startPipeline("test");
+
+			cli.getLastCallbacks().onError("CLI crashed");
+
+			expect(auditLogger.endRun).toHaveBeenCalledWith("fake-audit-run-id", {
+				error: "CLI crashed",
+			});
+		});
+
+		test("pauseForQuestion calls auditLogger.logQuery", async () => {
+			await orchestrator.startPipeline("test");
+
+			const question: Question = {
+				id: "q1",
+				content: "Should I use React?",
+				confidence: "certain",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			cli.getLastCallbacks().onComplete();
+
+			expect(auditLogger.logQuery).toHaveBeenCalledWith(
+				"fake-audit-run-id",
+				"Should I use React?",
+				"specify",
+			);
+		});
+
+		test("answerQuestion calls auditLogger.logAnswer", async () => {
+			await orchestrator.startPipeline("test");
+
+			const question: Question = {
+				id: "q1",
+				content: "Should I use React?",
+				confidence: "certain",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			cli.getLastCallbacks().onComplete();
+
+			orchestrator.answerQuestion("test-wf-id", "q1", "Yes, use React");
+
+			expect(auditLogger.logAnswer).toHaveBeenCalledWith(
+				"fake-audit-run-id",
+				"Yes, use React",
+				"specify",
+			);
 		});
 	});
 
