@@ -83,11 +83,15 @@ describe("ReviewClassifier", () => {
 		await classifier.classify("Test review output");
 
 		expect(mockCreate).toHaveBeenCalledTimes(1);
-		const callArgs = mockCreate.mock.calls[0][0] as {
-			model: string;
-			max_tokens: number;
-			messages: Array<{ role: string; content: string }>;
-		};
+		const callArgs = (
+			mockCreate.mock.calls as unknown as Array<
+				Array<{
+					model: string;
+					max_tokens: number;
+					messages: Array<{ role: string; content: string }>;
+				}>
+			>
+		)[0][0];
 		expect(callArgs.model).toBe("claude-haiku-4-5-20251001");
 		expect(callArgs.messages[0].content).toContain("Test review output");
 	});

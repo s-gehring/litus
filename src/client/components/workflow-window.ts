@@ -77,10 +77,7 @@ function renderStepHistory(workflow: WorkflowState | null): void {
 			const output = document.createElement("div");
 			output.className = "step-history-output";
 			// Show last 500 chars to keep it manageable
-			const trimmed =
-				step.output.length > 500
-					? `...${step.output.slice(-500)}`
-					: step.output;
+			const trimmed = step.output.length > 500 ? `...${step.output.slice(-500)}` : step.output;
 			output.textContent = trimmed;
 			item.appendChild(output);
 		}
