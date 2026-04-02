@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>crab-studio</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>crab-studio</h1>
+      <div id="connection-status" class="status-dot disconnected" title="Disconnected"></div>
+    </header>
+
+    <main class="workflow-window">
+      <!-- Status area -->
+      <div id="status-area" class="status-area">
+        <span class="status-label">Status:</span>
+        <span id="workflow-status" class="status-badge idle">idle</span>
+        <span id="workflow-summary" class="summary-text"></span>
+      </div>
+
+      <!-- Output area -->
+      <div id="output-area" class="output-area">
+        <div id="output-log" class="output-log"></div>
+      </div>
+
+      <!-- Question panel -->
+      <div id="question-panel" class="question-panel hidden">
+        <div class="question-header">
+          <span class="question-label">Agent Question</span>
+          <span id="question-confidence" class="confidence-badge"></span>
+        </div>
+        <p id="question-content" class="question-content"></p>
+        <div class="question-actions">
+          <textarea id="answer-input" class="answer-input" placeholder="Type your answer..." rows="2"></textarea>
+          <div class="question-buttons">
+            <button id="btn-submit-answer" class="btn btn-primary">Submit</button>
+            <button id="btn-skip-question" class="btn btn-secondary hidden">Skip</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input area -->
+      <div id="input-area" class="input-area">
+        <textarea id="specification-input" class="spec-input" placeholder="Enter your task specification..." rows="3"></textarea>
+        <div class="input-actions">
+          <button id="btn-start" class="btn btn-primary">Start</button>
+          <button id="btn-cancel" class="btn btn-danger hidden">Cancel</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
