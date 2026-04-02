@@ -195,7 +195,7 @@ describe("QuestionDetector", () => {
 
 		test("prevents concurrent classifications", async () => {
 			// Create a deferred promise to control when the first call resolves
-			let resolveFirst!: (value: unknown) => void;
+			let resolveFirst!: (value: { content: { type: "text"; text: string }[] }) => void;
 			mockCreate.mockImplementationOnce(
 				() =>
 					new Promise((r) => {
