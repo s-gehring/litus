@@ -3,41 +3,31 @@
 Auto-generated from all feature plans. Last updated: 2026-04-02
 
 ## Active Technologies
-- TypeScript, Bun 1.2.12 (pinned in CI)
-- `@anthropic-ai/sdk` (Haiku API for summaries and question classification)
-- `@biomejs/biome` (linter + formatter)
-- Bun.serve built-in (no web framework)
-- In-memory only (no database; single workflow at a time)
+- TypeScript, Bun 1.0+ + `@anthropic-ai/sdk` (Haiku API), no web framework (Bun.serve built-in) (001-build-multi-llm)
+- In-memory only (no database; single workflow at a time) (001-build-multi-llm)
+
+- [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION] + [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION] (001-build-multi-llm)
 
 ## Project Structure
 
 ```text
-src/              # Server + client source
-tests/            # Bun test files
-.github/          # CI workflows, Dependabot config
+backend/
+frontend/
+tests/
 ```
 
 ## Commands
 
-```bash
-bun install              # Install dependencies
-bun test                 # Run tests
-bun run tsc --noEmit     # Type check
-bunx biome ci .          # Lint & format check (CI mode)
-bunx biome check --write . # Auto-fix lint & format issues
-bun audit                # Dependency vulnerability check
-```
+cd src; pytest; ruff check .
 
 ## Code Style
 
-TypeScript: Enforced by Biome (`bunx biome ci .`)
+[e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]: Follow standard conventions
 
+## Recent Changes
+- 001-build-multi-llm: Added TypeScript, Bun 1.0+ + `@anthropic-ai/sdk` (Haiku API), no web framework (Bun.serve built-in)
 
+- 001-build-multi-llm: Added [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION] + [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
 
 <!-- MANUAL ADDITIONS START -->
-- Make atomic and small commits!
-- Every commit message MUST begin with one of the following prefixes:
-  `feat:`, `chore:`, `bug:`, `docs:`.
-- Messages MUST be short and concise — a few words describing what
-  happened. No long explanations.
 <!-- MANUAL ADDITIONS END -->
