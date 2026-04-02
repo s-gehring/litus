@@ -1,0 +1,13 @@
+.worktrees/
+node_modules/
+dist/
+public/app.js
+*.log
+.env*
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/
+bun.lockb
