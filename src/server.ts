@@ -22,8 +22,11 @@ let assistantTextBuffer = "";
 function getWorkflowState(): WorkflowState | null {
 	const w = engine.getWorkflow();
 	if (!w) return null;
-	const { sessionId: _, ...state } = w;
-	return state;
+	const { sessionId: _, steps, ...rest } = w;
+	return {
+		...rest,
+		steps: steps.map(({ sessionId: _sid, ...step }) => step),
+	};
 }
 
 function broadcast(msg: ServerMessage) {

@@ -20,10 +20,13 @@ describe("VALID_TRANSITIONS", () => {
 		expect(VALID_TRANSITIONS.waiting_for_input).toEqual(["running", "cancelled"]);
 	});
 
-	test("terminal states have no transitions", () => {
+	test("completed and cancelled are terminal states", () => {
 		expect(VALID_TRANSITIONS.completed).toEqual([]);
 		expect(VALID_TRANSITIONS.cancelled).toEqual([]);
-		expect(VALID_TRANSITIONS.error).toEqual([]);
+	});
+
+	test("error can transition to running (retry)", () => {
+		expect(VALID_TRANSITIONS.error).toEqual(["running"]);
 	});
 
 	test("all workflow statuses are covered", () => {

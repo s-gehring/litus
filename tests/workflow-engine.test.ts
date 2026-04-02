@@ -125,11 +125,12 @@ describe("WorkflowEngine", () => {
 			expect(() => engine.transition(w.id, "running")).toThrow("Invalid transition");
 		});
 
-		test("error → running throws", async () => {
+		test("error → running is allowed (retry)", async () => {
 			const w = await engine.createWorkflow("test");
 			engine.transition(w.id, "running");
 			engine.transition(w.id, "error");
-			expect(() => engine.transition(w.id, "running")).toThrow("Invalid transition");
+			engine.transition(w.id, "running");
+			expect(engine.getWorkflow()?.status).toBe("running");
 		});
 
 		test("idle → waiting_for_input throws", async () => {

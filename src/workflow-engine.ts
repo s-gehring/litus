@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import type { Question, Workflow, WorkflowStatus } from "./types";
-import { VALID_TRANSITIONS as transitions } from "./types";
+import {
+	PIPELINE_STEP_DEFINITIONS,
+	REVIEW_CYCLE_MAX_ITERATIONS,
+	VALID_TRANSITIONS as transitions,
+} from "./types";
 
 export class WorkflowEngine {
 	private workflow: Workflow | null = null;
@@ -35,6 +39,23 @@ export class WorkflowEngine {
 			summary: "",
 			pendingQuestion: null,
 			lastOutput: "",
+			steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
+				name: def.name,
+				displayName: def.displayName,
+				status: "pending" as const,
+				prompt: def.name === "specify" ? `${def.prompt} ${specification}` : def.prompt,
+				sessionId: null,
+				output: "",
+				error: null,
+				startedAt: null,
+				completedAt: null,
+			})),
+			currentStepIndex: 0,
+			reviewCycle: {
+				iteration: 1,
+				maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
+				lastSeverity: null,
+			},
 			createdAt: now,
 			updatedAt: now,
 		};
