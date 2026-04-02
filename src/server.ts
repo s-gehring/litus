@@ -1,26 +1,40 @@
 import type { ServerWebSocket } from "bun";
-import { CLIRunner } from "./cli-runner";
-import { QuestionDetector } from "./question-detector";
+import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { getMimeType, resolveStaticPath } from "./static-files";
-import { Summarizer } from "./summarizer";
-import type { ClientMessage, ServerMessage, WorkflowState } from "./types";
-import { WorkflowEngine } from "./workflow-engine";
+import type { ClientMessage, PipelineStepName, ServerMessage, WorkflowState } from "./types";
 
 type WsData = Record<string, never>;
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const WS_TOPIC = "workflow";
 
-const engine = new WorkflowEngine();
-const cliRunner = new CLIRunner();
-const questionDetector = new QuestionDetector();
-const summarizer = new Summarizer();
-
-// Accumulated assistant text for question detection (CR-004)
-let assistantTextBuffer = "";
+const orchestrator = new PipelineOrchestrator({
+	onStepChange: (workflowId, previousStep, currentStep, currentStepIndex, reviewIteration) => {
+		broadcast({
+			type: "workflow:step-change",
+			workflowId,
+			previousStep,
+			currentStep,
+			currentStepIndex,
+			reviewIteration,
+		});
+	},
+	onOutput: (workflowId, text) => {
+		broadcast({ type: "workflow:output", workflowId, text });
+	},
+	onComplete: (workflowId) => {
+		broadcastState();
+	},
+	onError: (workflowId, error) => {
+		broadcastState();
+	},
+	onStateChange: (workflowId) => {
+		broadcastState();
+	},
+});
 
 function getWorkflowState(): WorkflowState | null {
-	const w = engine.getWorkflow();
+	const w = orchestrator.getEngine().getWorkflow();
 	if (!w) return null;
 	const { sessionId: _, steps, ...rest } = w;
 	return {
@@ -41,115 +55,21 @@ function broadcastState() {
 	broadcast({ type: "workflow:state", workflow: getWorkflowState() });
 }
 
-function cleanupWorkflow(workflowId: string) {
-	cliRunner.kill(workflowId);
-	summarizer.cleanup(workflowId);
-	questionDetector.reset();
-	assistantTextBuffer = "";
-}
-
 async function handleStart(ws: ServerWebSocket<WsData>, specification: string) {
 	if (!specification.trim()) {
 		sendTo(ws, { type: "error", message: "Specification must be non-empty" });
 		return;
 	}
 
-	const workflow = engine.getWorkflow();
+	const workflow = orchestrator.getEngine().getWorkflow();
 	if (workflow && (workflow.status === "running" || workflow.status === "waiting_for_input")) {
 		sendTo(ws, { type: "error", message: "A workflow is already active" });
 		return;
 	}
 
-	// Clean up previous workflow resources if any (CR-009)
-	if (workflow) {
-		cleanupWorkflow(workflow.id);
-	}
-
 	try {
-		const w = await engine.createWorkflow(specification.trim());
-		engine.transition(w.id, "running");
+		await orchestrator.startPipeline(specification.trim());
 		broadcastState();
-
-		cliRunner.start(w, {
-			onOutput: (text) => {
-				engine.updateLastOutput(w.id, text);
-				broadcast({ type: "workflow:output", workflowId: w.id, text });
-
-				// Accumulate text for question detection (CR-004)
-				assistantTextBuffer += `${text}\n`;
-				if (assistantTextBuffer.length > 500) {
-					const bufferSnapshot = assistantTextBuffer;
-					// CR2-003: Retain trailing text for cross-boundary detection
-					assistantTextBuffer = assistantTextBuffer.slice(-200);
-
-					const question = questionDetector.detect(bufferSnapshot);
-					if (question) {
-						// CR2-001: Use Haiku fallback for uncertain detections
-						if (question.confidence === "uncertain") {
-							questionDetector
-								.classifyWithHaiku(question.content)
-								.then((isQuestion) => {
-									if (!isQuestion) return;
-									// CR3-002: Guard against stale workflow state after async Haiku call
-									const current = engine.getWorkflow();
-									if (!current || current.id !== w.id || current.status !== "running") return;
-									try {
-										engine.setQuestion(w.id, question);
-										engine.transition(w.id, "waiting_for_input");
-										broadcast({ type: "workflow:question", workflowId: w.id, question });
-										broadcastState();
-									} catch {
-										// Workflow may have ended
-									}
-								})
-								.catch(() => {});
-						} else {
-							try {
-								engine.setQuestion(w.id, question);
-								engine.transition(w.id, "waiting_for_input");
-								broadcast({ type: "workflow:question", workflowId: w.id, question });
-								broadcastState();
-							} catch {
-								// Transition may fail if workflow already ended
-							}
-						}
-					}
-				}
-
-				// Trigger summary generation periodically
-				summarizer.maybeSummarize(w.id, text, (summary) => {
-					try {
-						engine.updateSummary(w.id, summary);
-						broadcast({ type: "workflow:summary", workflowId: w.id, summary });
-						broadcastState();
-					} catch {
-						// Workflow may have ended
-					}
-				});
-			},
-			onComplete: () => {
-				try {
-					engine.transition(w.id, "completed");
-				} catch {
-					// Already in terminal state
-				}
-				broadcastState();
-				cleanupWorkflow(w.id);
-			},
-			onError: (error) => {
-				engine.updateLastOutput(w.id, error);
-				try {
-					engine.transition(w.id, "error");
-				} catch {
-					// Already in terminal state
-				}
-				broadcastState();
-				cleanupWorkflow(w.id);
-			},
-			onSessionId: (sessionId) => {
-				engine.setSessionId(w.id, sessionId);
-			},
-		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : "Failed to start workflow";
 		sendTo(ws, { type: "error", message });
@@ -167,7 +87,7 @@ function handleAnswer(
 		return;
 	}
 
-	const workflow = engine.getWorkflow();
+	const workflow = orchestrator.getEngine().getWorkflow();
 	if (!workflow || workflow.id !== workflowId) {
 		sendTo(ws, { type: "error", message: "Workflow not found" });
 		return;
@@ -178,19 +98,11 @@ function handleAnswer(
 		return;
 	}
 
-	engine.clearQuestion(workflowId);
-	try {
-		engine.transition(workflowId, "running");
-	} catch {
-		// Race condition — workflow may have ended
-	}
-	broadcastState();
-
-	cliRunner.sendAnswer(workflowId, answer.trim());
+	orchestrator.answerQuestion(workflowId, questionId, answer.trim());
 }
 
 function handleSkip(ws: ServerWebSocket<WsData>, workflowId: string, questionId: string) {
-	const workflow = engine.getWorkflow();
+	const workflow = orchestrator.getEngine().getWorkflow();
 	if (!workflow || workflow.id !== workflowId) {
 		sendTo(ws, { type: "error", message: "Workflow not found" });
 		return;
@@ -201,34 +113,32 @@ function handleSkip(ws: ServerWebSocket<WsData>, workflowId: string, questionId:
 		return;
 	}
 
-	engine.clearQuestion(workflowId);
-	try {
-		engine.transition(workflowId, "running");
-	} catch {
-		// Race condition
-	}
-	broadcastState();
-
-	cliRunner.sendAnswer(
-		workflowId,
-		"The user has chosen not to answer this question. Continue with your best judgment.",
-	);
+	orchestrator.skipQuestion(workflowId, questionId);
 }
 
 function handleCancel(ws: ServerWebSocket<WsData>, workflowId: string) {
-	const workflow = engine.getWorkflow();
+	const workflow = orchestrator.getEngine().getWorkflow();
 	if (!workflow || workflow.id !== workflowId) {
 		sendTo(ws, { type: "error", message: "Workflow not found" });
 		return;
 	}
 
-	cleanupWorkflow(workflowId);
-	try {
-		engine.transition(workflowId, "cancelled");
-	} catch {
-		// Already in terminal state
+	orchestrator.cancelPipeline(workflowId);
+}
+
+function handleRetry(ws: ServerWebSocket<WsData>, workflowId: string) {
+	const workflow = orchestrator.getEngine().getWorkflow();
+	if (!workflow || workflow.id !== workflowId) {
+		sendTo(ws, { type: "error", message: "Workflow not found" });
+		return;
 	}
-	broadcastState();
+
+	if (workflow.status !== "error") {
+		sendTo(ws, { type: "error", message: "No failed step to retry" });
+		return;
+	}
+
+	orchestrator.retryStep(workflowId);
 }
 
 const server = Bun.serve<WsData>({
@@ -245,13 +155,14 @@ const server = Bun.serve<WsData>({
 
 		// Health endpoint
 		if (url.pathname === "/health") {
-			const workflow = engine.getWorkflow();
+			const workflow = orchestrator.getEngine().getWorkflow();
+			const isActive =
+				workflow && (workflow.status === "running" || workflow.status === "waiting_for_input");
 			return Response.json({
 				status: "ok",
-				activeWorkflow:
-					workflow && (workflow.status === "running" || workflow.status === "waiting_for_input")
-						? workflow.id
-						: null,
+				activeWorkflow: isActive ? workflow.id : null,
+				currentStep: isActive ? workflow.steps[workflow.currentStepIndex]?.name ?? null : null,
+				reviewIteration: isActive ? workflow.reviewCycle.iteration : null,
 			});
 		}
 
@@ -271,7 +182,6 @@ const server = Bun.serve<WsData>({
 	websocket: {
 		open(ws: ServerWebSocket<WsData>) {
 			ws.subscribe(WS_TOPIC);
-			// Send current state on connect
 			ws.send(
 				JSON.stringify({
 					type: "workflow:state",
@@ -285,7 +195,6 @@ const server = Bun.serve<WsData>({
 
 				switch (msg.type) {
 					case "workflow:start":
-						// CR-005: catch async rejections
 						handleStart(ws, msg.specification).catch((err) => {
 							const text = err instanceof Error ? err.message : "Internal error";
 							sendTo(ws, { type: "error", message: text });
@@ -299,6 +208,9 @@ const server = Bun.serve<WsData>({
 						break;
 					case "workflow:cancel":
 						handleCancel(ws, msg.workflowId);
+						break;
+					case "workflow:retry":
+						handleRetry(ws, msg.workflowId);
 						break;
 					default:
 						sendTo(ws, { type: "error", message: "Unknown message type" });
