@@ -46,13 +46,3 @@ export function renderPipelineSteps(workflow: WorkflowState | null): void {
 		container.appendChild(el);
 	}
 }
-
-export function updateCurrentStep(stepIndex: number): void {
-	const container = $("#pipeline-steps");
-	if (!container) return;
-
-	const steps = container.querySelectorAll(".pipeline-step");
-	for (let i = 0; i < steps.length; i++) {
-		steps[i].classList.toggle("step-current", i === stepIndex);
-	}
-}

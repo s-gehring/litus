@@ -130,15 +130,9 @@ describe("ReviewCycle shape", () => {
 		expect(severities).toHaveLength(5);
 	});
 
-	test("critical and major trigger re-cycle", () => {
-		const reCycleSeverities: ReviewSeverity[] = ["critical", "major"];
-		const passSeverities: ReviewSeverity[] = ["minor", "trivial", "nit"];
-		// Document the re-cycle logic: critical/major → re-cycle, others → pass
-		for (const sev of reCycleSeverities) {
-			expect(["critical", "major"]).toContain(sev);
-		}
-		for (const sev of passSeverities) {
-			expect(["minor", "trivial", "nit"]).toContain(sev);
-		}
+	test("review severity type covers all five levels", () => {
+		const allSeverities: ReviewSeverity[] = ["critical", "major", "minor", "trivial", "nit"];
+		expect(allSeverities).toHaveLength(5);
+		expect(new Set(allSeverities).size).toBe(5);
 	});
 });

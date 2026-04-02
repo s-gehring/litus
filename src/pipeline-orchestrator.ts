@@ -263,8 +263,20 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		if (step.name === "review") {
-			this.handleReviewComplete(workflow);
+			this.handleReviewComplete(workflow).catch((err) =>
+				this.handleStepError(workflowId, err instanceof Error ? err.message : String(err)),
+			);
 			return;
+		}
+
+		// After implement-review completes during a re-cycle, route back to review
+		if (step.name === "implement-review" && workflow.reviewCycle.iteration > 1) {
+			const reviewIndex = workflow.steps.findIndex((s) => s.name === "review");
+			if (reviewIndex >= 0 && workflow.steps[reviewIndex].status === "pending") {
+				workflow.currentStepIndex = reviewIndex;
+				this.startStep(workflow);
+				return;
+			}
 		}
 
 		this.advanceToNextStep(workflow);

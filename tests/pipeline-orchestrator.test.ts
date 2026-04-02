@@ -432,6 +432,77 @@ describe("PipelineOrchestrator", () => {
 		});
 	});
 
+	// skipQuestion
+	describe("skipQuestion", () => {
+		test("skipQuestion delegates to answerQuestion with canned message", async () => {
+			await orchestrator.startPipeline("test");
+
+			cli.getLastCallbacks().onSessionId("sess-skip");
+
+			const question: Question = {
+				id: "q-skip",
+				content: "Which framework?",
+				confidence: "certain",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			cli.getLastCallbacks().onComplete();
+
+			orchestrator.skipQuestion("test-wf-id", "q-skip");
+
+			expect(cli.sendAnswer).toHaveBeenCalledWith(
+				"test-wf-id",
+				"The user has chosen not to answer this question. Continue with your best judgment.",
+			);
+		});
+	});
+
+	// Full re-cycle integration test
+	describe("full re-cycle loop", () => {
+		test("review → critical → implement-review → review → minor → commit-push-pr → complete", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			// Complete steps 0-4 (specify → implement)
+			for (let i = 0; i < 5; i++) {
+				cli.getLastCallbacks().onComplete();
+			}
+
+			expect(wf.currentStepIndex).toBe(5);
+			expect(wf.steps[5].name).toBe("review");
+
+			// First review: critical → triggers re-cycle
+			rc._pushClassifyResult("critical");
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.reviewCycle.iteration).toBe(2);
+			expect(wf.currentStepIndex).toBe(6); // implement-review
+			expect(wf.steps[6].status).toBe("running");
+
+			// implement-review completes → routes back to review
+			cli.getLastCallbacks().onComplete();
+
+			expect(wf.steps[6].status).toBe("completed");
+			expect(wf.currentStepIndex).toBe(5); // review again
+			expect(wf.steps[5].status).toBe("running");
+
+			// Second review: minor → advance to commit-push-pr
+			rc._pushClassifyResult("minor");
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.reviewCycle.lastSeverity).toBe("minor");
+			expect(wf.currentStepIndex).toBe(7); // commit-push-pr
+			expect(wf.steps[7].name).toBe("commit-push-pr");
+
+			// commit-push-pr completes → pipeline done
+			cli.getLastCallbacks().onComplete();
+
+			expect(callbacks.onComplete).toHaveBeenCalled();
+		});
+	});
+
 	// T026: Cancellation
 	describe("cancellation", () => {
 		test("cancelPipeline kills CLI process and sets cancelled state", async () => {

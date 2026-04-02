@@ -103,9 +103,9 @@ export interface Workflow {
 	updatedAt: string;
 }
 
-// Serializable workflow state for WebSocket messages (strips sessionId from workflow and steps)
+// Serializable workflow state for WebSocket messages (strips internal fields from workflow and steps)
 export type WorkflowState = Omit<Workflow, "sessionId" | "steps"> & {
-	steps: Omit<PipelineStep, "sessionId">[];
+	steps: Omit<PipelineStep, "sessionId" | "prompt">[];
 };
 
 // Server → Client messages
@@ -121,7 +121,7 @@ export type ServerMessage =
 			currentStep: PipelineStepName;
 			currentStepIndex: number;
 			reviewIteration: number;
-		}
+	  }
 	| { type: "error"; message: string };
 
 // Client → Server messages
