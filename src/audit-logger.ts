@@ -12,7 +12,7 @@ interface RunState {
 }
 
 export class AuditLogger {
-	private auditDir: string;
+	readonly auditDir: string;
 	private runs: Map<string, RunState> = new Map();
 
 	constructor(config?: AuditConfig) {
@@ -26,7 +26,8 @@ export class AuditLogger {
 
 	startRun(pipelineName: string, branch: string | null): string {
 		const runId = crypto.randomUUID();
-		this.runs.set(runId, { pipelineName, branch, sequence: 0 });
+		const safeName = pipelineName.replace(/[/\\:*?"<>|]/g, "--");
+		this.runs.set(runId, { pipelineName: safeName, branch, sequence: 0 });
 		this.writeEvent(runId, {
 			eventType: "pipeline_start",
 			content: null,
@@ -68,6 +69,7 @@ export class AuditLogger {
 		});
 	}
 
+	// TODO: Wire logCommit into pipeline commit callbacks once commit detection is implemented
 	logCommit(
 		runId: string,
 		commitHash: string,

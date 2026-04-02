@@ -119,7 +119,7 @@ export class PipelineOrchestrator {
 		);
 	}
 
-	retryStep(workflowId: string): void {
+	async retryStep(workflowId: string): Promise<void> {
 		const workflow = this.getWorkflowOrThrow(workflowId);
 
 		if (workflow.status !== "error") return;
@@ -131,12 +131,16 @@ export class PipelineOrchestrator {
 		step.startedAt = new Date().toISOString();
 		workflow.updatedAt = new Date().toISOString();
 
+		const cwd = workflow.worktreePath || process.cwd();
+		const branch = await this.getBranch(cwd);
+		this.currentAuditRunId = this.auditLogger.startRun(workflow.worktreeBranch, branch);
+
 		this.engine.transition(workflowId, "running");
 		this.callbacks.onStateChange(workflowId);
 		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
 
-		this.runStep(workflow, step.prompt, workflow.worktreePath || process.cwd());
+		this.runStep(workflow, step.prompt, cwd);
 	}
 
 	cancelPipeline(workflowId: string): void {

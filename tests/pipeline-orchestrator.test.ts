@@ -492,11 +492,23 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onError("CLI crashed");
 
 			const callsBefore = cli._startCalls.length;
-			orchestrator.retryStep("test-wf-id");
+			await orchestrator.retryStep("test-wf-id");
 
 			expect(cli._startCalls.length).toBe(callsBefore + 1);
 			expect(wf.steps[0].status).toBe("running");
 			expect(wf.steps[0].error).toBeNull();
+		});
+
+		test("retry starts a new audit run after error", async () => {
+			await orchestrator.startPipeline("test");
+
+			// Error ends the audit run
+			cli.getLastCallbacks().onError("CLI crashed");
+			expect(auditLogger.endRun).toHaveBeenCalledTimes(1);
+
+			// Retry should start a new audit run
+			await orchestrator.retryStep("test-wf-id");
+			expect(auditLogger.startRun).toHaveBeenCalledTimes(2);
 		});
 
 		test("completed steps are preserved on retry", async () => {
@@ -513,7 +525,7 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.steps[1].status).toBe("error");
 
 			// Retry step 1
-			orchestrator.retryStep("test-wf-id");
+			await orchestrator.retryStep("test-wf-id");
 			expect(wf.steps[0].status).toBe("completed");
 			expect(wf.steps[1].status).toBe("running");
 		});

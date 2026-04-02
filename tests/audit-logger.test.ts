@@ -110,31 +110,31 @@ describe("logCommit", () => {
 // T021 — US4: default audit directory path
 describe("default audit directory", () => {
 	it("resolves to $HOME/.crab-studio/audit by default", () => {
-		// Verify the default path by using a custom dir that mirrors the expected structure
-		// and confirming the constructor works without config
-		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
-		const runId = logger.startRun("default-path-test", null);
-		logger.endRun(runId);
-
-		const events = readEvents("default-path-test");
-		expect(events).toHaveLength(2);
-
-		// Verify the expected default path calculation matches $HOME/.crab-studio/audit
+		const logger = new AuditLogger();
 		const expectedDefault = join(homedir(), ".crab-studio", "audit");
-		expect(expectedDefault).toContain(".crab-studio");
-		expect(expectedDefault).toContain("audit");
+		expect(logger.auditDir).toBe(expectedDefault);
 	});
 });
 
 // T022 — US4: custom auditDir config
 describe("custom auditDir config", () => {
-	it("respects AuditConfig.auditDir override", () => {
-		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
+	it("respects AuditConfig.auditDir override and writes to the specified directory", () => {
+		const customDir = join(homedir(), ".crab-studio", "audit-test-custom");
+		const logger = new AuditLogger({ auditDir: customDir });
+		expect(logger.auditDir).toBe(customDir);
+
 		const runId = logger.startRun("custom-dir-test", null);
 		logger.endRun(runId);
 
-		const events = readEvents("custom-dir-test");
-		expect(events).toHaveLength(2);
+		const filePath = join(customDir, "custom-dir-test.jsonl");
+		const content = readFileSync(filePath, "utf-8").trim();
+		expect(content.split("\n")).toHaveLength(2);
+
+		// Verify default dir was NOT used
+		const defaultFile = join(homedir(), ".crab-studio", "audit", "custom-dir-test.jsonl");
+		expect(() => readFileSync(defaultFile)).toThrow();
+
+		rmSync(customDir, { recursive: true, force: true });
 	});
 });
 
@@ -148,6 +148,21 @@ describe("file naming", () => {
 		const filePath = join(TEST_AUDIT_DIR, "my-pipeline.jsonl");
 		const content = readFileSync(filePath, "utf-8");
 		expect(content.trim().split("\n")).toHaveLength(2);
+	});
+});
+
+// Pipeline name sanitization (review issue #5)
+describe("pipeline name sanitization", () => {
+	it("replaces path separators in pipeline name for filesystem safety", () => {
+		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
+		const runId = logger.startRun("crab-studio/test", "main");
+		logger.endRun(runId);
+
+		const filePath = join(TEST_AUDIT_DIR, "crab-studio--test.jsonl");
+		const content = readFileSync(filePath, "utf-8").trim();
+		const events: AuditEvent[] = content.split("\n").map((line) => JSON.parse(line));
+		expect(events).toHaveLength(2);
+		expect(events[0].pipelineName).toBe("crab-studio--test");
 	});
 });
 
