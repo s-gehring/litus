@@ -4,6 +4,12 @@ import type { CLICallbacks } from "../src/cli-runner";
 
 const originalSpawn = Bun.spawn;
 
+function createDeferredPromise<T = void>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
 describe("CLIRunner", () => {
   let runner: CLIRunner;
 
@@ -17,7 +23,7 @@ describe("CLIRunner", () => {
 
   describe("handleStreamEvent (via streamOutput)", () => {
     test("extracts session_id from stream events", async () => {
-      let capturedSessionId: string | null = null;
+      const { promise: sessionPromise, resolve: resolveSession } = createDeferredPromise<string>();
 
       const streamContent = [
         JSON.stringify({ session_id: "sess-abc-123", type: "system", message: {} }),
@@ -42,7 +48,7 @@ describe("CLIRunner", () => {
         onOutput: () => {},
         onComplete: () => {},
         onError: () => {},
-        onSessionId: (id) => { capturedSessionId = id; },
+        onSessionId: (id) => { resolveSession(id); },
       };
 
       runner.start(
@@ -62,13 +68,13 @@ describe("CLIRunner", () => {
         callbacks
       );
 
-      // Wait for stream processing
-      await new Promise((r) => setTimeout(r, 100));
-      expect(capturedSessionId).toBe("sess-abc-123");
+      const sessionId = await sessionPromise;
+      expect(sessionId).toBe("sess-abc-123");
     });
 
     test("emits text content from assistant messages", async () => {
       const outputs: string[] = [];
+      const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
 
       const streamContent = [
         JSON.stringify({
@@ -98,7 +104,7 @@ describe("CLIRunner", () => {
 
       const callbacks: CLICallbacks = {
         onOutput: (text) => outputs.push(text),
-        onComplete: () => {},
+        onComplete: () => resolveComplete(),
         onError: () => {},
       };
 
@@ -119,13 +125,13 @@ describe("CLIRunner", () => {
         callbacks
       );
 
-      await new Promise((r) => setTimeout(r, 100));
+      await completePromise;
       expect(outputs).toContain("I'll create the file now");
       expect(outputs).toContain("[Tool: write_file]");
     });
 
     test("calls onComplete on successful exit", async () => {
-      let completed = false;
+      const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
 
       (globalThis as any).Bun.spawn = () => ({
         stdout: new ReadableStream({ start(c) { c.close(); } }),
@@ -151,17 +157,17 @@ describe("CLIRunner", () => {
         },
         {
           onOutput: () => {},
-          onComplete: () => { completed = true; },
+          onComplete: () => resolveComplete(),
           onError: () => {},
         }
       );
 
-      await new Promise((r) => setTimeout(r, 100));
-      expect(completed).toBe(true);
+      await completePromise;
+      // If we reach here, onComplete was called
     });
 
     test("calls onError on non-zero exit", async () => {
-      let errorMsg = "";
+      const { promise: errorPromise, resolve: resolveError } = createDeferredPromise<string>();
 
       (globalThis as any).Bun.spawn = () => ({
         stdout: new ReadableStream({ start(c) { c.close(); } }),
@@ -193,11 +199,11 @@ describe("CLIRunner", () => {
         {
           onOutput: () => {},
           onComplete: () => {},
-          onError: (err) => { errorMsg = err; },
+          onError: (err) => resolveError(err),
         }
       );
 
-      await new Promise((r) => setTimeout(r, 100));
+      const errorMsg = await errorPromise;
       expect(errorMsg).toContain("process crashed");
     });
   });

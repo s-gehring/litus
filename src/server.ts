@@ -4,7 +4,7 @@ import { WorkflowEngine } from "./workflow-engine";
 import { CLIRunner } from "./cli-runner";
 import { QuestionDetector } from "./question-detector";
 import { Summarizer } from "./summarizer";
-import { resolve, normalize } from "path";
+import { resolveStaticPath, getMimeType } from "./static-files";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const WS_TOPIC = "workflow";
@@ -51,6 +51,8 @@ function cleanupWorkflow(workflowId: string) {
   summarizer.cleanup(workflowId);
   questionDetector.reset();
   assistantTextBuffer = "";
+  // CR2-008: Clean up git worktree on terminal states
+  engine.removeWorktree(workflowId).catch(() => {});
 }
 
 async function handleStart(ws: ServerWebSocket<{}>, specification: string) {
@@ -83,18 +85,36 @@ async function handleStart(ws: ServerWebSocket<{}>, specification: string) {
         // Accumulate text for question detection (CR-004)
         assistantTextBuffer += text + "\n";
         if (assistantTextBuffer.length > 500) {
-          const question = questionDetector.detect(assistantTextBuffer);
+          const bufferSnapshot = assistantTextBuffer;
+          // CR2-003: Retain trailing text for cross-boundary detection
+          assistantTextBuffer = assistantTextBuffer.slice(-200);
+
+          const question = questionDetector.detect(bufferSnapshot);
           if (question) {
-            try {
-              engine.setQuestion(w.id, question);
-              engine.transition(w.id, "waiting_for_input");
-              broadcast({ type: "workflow:question", workflowId: w.id, question });
-              broadcastState();
-            } catch {
-              // Transition may fail if workflow already ended
+            // CR2-001: Use Haiku fallback for uncertain detections
+            if (question.confidence === "uncertain") {
+              questionDetector.classifyWithHaiku(question.content).then((isQuestion) => {
+                if (!isQuestion) return;
+                try {
+                  engine.setQuestion(w.id, question);
+                  engine.transition(w.id, "waiting_for_input");
+                  broadcast({ type: "workflow:question", workflowId: w.id, question });
+                  broadcastState();
+                } catch {
+                  // Workflow may have ended
+                }
+              }).catch(() => {});
+            } else {
+              try {
+                engine.setQuestion(w.id, question);
+                engine.transition(w.id, "waiting_for_input");
+                broadcast({ type: "workflow:question", workflowId: w.id, question });
+                broadcastState();
+              } catch {
+                // Transition may fail if workflow already ended
+              }
             }
           }
-          assistantTextBuffer = "";
         }
 
         // Trigger summary generation periodically
@@ -185,7 +205,7 @@ function handleSkip(ws: ServerWebSocket<{}>, workflowId: string, questionId: str
   }
   broadcastState();
 
-  cliRunner.sendAnswer(workflowId, "(skipped by user)");
+  cliRunner.sendAnswer(workflowId, "The user has chosen not to answer this question. Continue with your best judgment.");
 }
 
 function handleCancel(ws: ServerWebSocket<{}>, workflowId: string) {
@@ -202,27 +222,6 @@ function handleCancel(ws: ServerWebSocket<{}>, workflowId: string) {
     // Already in terminal state
   }
   broadcastState();
-}
-
-function getMimeType(path: string): string {
-  if (path.endsWith(".html")) return "text/html";
-  if (path.endsWith(".css")) return "text/css";
-  if (path.endsWith(".js")) return "application/javascript";
-  if (path.endsWith(".json")) return "application/json";
-  if (path.endsWith(".svg")) return "image/svg+xml";
-  if (path.endsWith(".png")) return "image/png";
-  if (path.endsWith(".ico")) return "image/x-icon";
-  return "application/octet-stream";
-}
-
-const publicDir = resolve(process.cwd(), "public");
-
-function resolveStaticPath(pathname: string): string | null {
-  const filePath = pathname === "/" ? "/index.html" : pathname;
-  const resolved = resolve(publicDir, "." + filePath);
-  const normalized = normalize(resolved);
-  if (!normalized.startsWith(publicDir)) return null;
-  return normalized;
 }
 
 const server = Bun.serve<{}>({

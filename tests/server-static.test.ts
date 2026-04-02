@@ -1,16 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { resolve, normalize } from "path";
-
-// Test the path traversal prevention logic directly (extracted from server.ts)
-const publicDir = resolve(process.cwd(), "public");
-
-function resolveStaticPath(pathname: string): string | null {
-  const filePath = pathname === "/" ? "/index.html" : pathname;
-  const resolved = resolve(publicDir, "." + filePath);
-  const normalized = normalize(resolved);
-  if (!normalized.startsWith(publicDir)) return null;
-  return normalized;
-}
+import { resolve } from "path";
+import { resolveStaticPath, publicDir } from "../src/static-files";
 
 describe("resolveStaticPath (path traversal prevention)", () => {
   test("resolves / to index.html", () => {

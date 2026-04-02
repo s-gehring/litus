@@ -38,7 +38,7 @@ export function appendOutput(text: string, type: "normal" | "error" | "system" =
 
 export function clearOutput(): void {
   const log = $("#output-log");
-  log.innerHTML = "";
+  log.replaceChildren();
 }
 
 export function updateSummary(summary: string): void {

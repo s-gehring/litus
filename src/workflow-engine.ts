@@ -89,9 +89,25 @@ export class WorkflowEngine {
     return this.workflow;
   }
 
+  async removeWorktree(workflowId: string): Promise<void> {
+    const w = this.workflow;
+    if (!w || w.id !== workflowId || !w.worktreePath) return;
+
+    try {
+      const proc = Bun.spawn(["git", "worktree", "remove", w.worktreePath, "--force"], {
+        cwd: process.cwd(),
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      await proc.exited;
+    } catch {
+      // Best-effort cleanup
+    }
+  }
+
   private createWorktree(branchName: string): Promise<string> {
     return new Promise((res, reject) => {
-      const worktreePath = `.worktrees/${branchName.replace("/", "-")}`;
+      const worktreePath = `.worktrees/${branchName.replaceAll("/", "-")}`;
       const proc = Bun.spawn(["git", "worktree", "add", worktreePath, "-b", branchName], {
         cwd: process.cwd(),
         stdout: "pipe",

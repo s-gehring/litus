@@ -32,7 +32,7 @@ export class CLIRunner {
       cwd,
       stdout: "pipe",
       stderr: "pipe",
-      env: { ...process.env },
+      env: process.env,
     });
 
     const entry: RunningProcess = {
@@ -74,7 +74,7 @@ export class CLIRunner {
       cwd: entry.cwd,
       stdout: "pipe",
       stderr: "pipe",
-      env: { ...process.env },
+      env: process.env,
     });
 
     const newEntry: RunningProcess = {
@@ -98,7 +98,7 @@ export class CLIRunner {
   }
 
   killAll(): void {
-    for (const [id, entry] of this.running) {
+    for (const entry of this.running.values()) {
       entry.process.kill();
     }
     this.running.clear();

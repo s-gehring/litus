@@ -1,37 +1,91 @@
-import { describe, test, expect, beforeEach, mock } from "bun:test";
+import { describe, test, expect, beforeEach, mock, afterEach } from "bun:test";
 import { Summarizer } from "../src/summarizer";
+
+// Mock the Anthropic SDK
+const mockCreate = mock(() =>
+  Promise.resolve({
+    content: [{ type: "text" as const, text: "Setting up project" }],
+  })
+);
+
+mock.module("@anthropic-ai/sdk", () => ({
+  default: class MockAnthropic {
+    messages = { create: mockCreate };
+  },
+}));
 
 describe("Summarizer", () => {
   let summarizer: Summarizer;
 
   beforeEach(() => {
     summarizer = new Summarizer();
+    mockCreate.mockClear();
   });
 
   test("does not trigger summary below MIN_CHARS threshold", () => {
     const callback = mock(() => {});
     summarizer.maybeSummarize("w1", "short text", callback);
-    // callback should not be called synchronously or at all for short text
     expect(callback).not.toHaveBeenCalled();
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
-  test("does not trigger summary within INTERVAL_MS", () => {
+  test("triggers summary when enough text accumulated", async () => {
     const callback = mock(() => {});
-    // Accumulate enough text
     const longText = "x".repeat(250);
     summarizer.maybeSummarize("w1", longText, callback);
-    // First call may trigger (enough chars, no previous time)
-    // But a second call immediately should not
-    summarizer.maybeSummarize("w1", longText, callback);
-    // The second should not double-trigger because pendingSummary is true
+
+    // Wait for the async summary generation
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const callArgs = mockCreate.mock.calls[0][0] as any;
+    expect(callArgs.model).toBe("claude-haiku-4-5-20251001");
+    expect(callArgs.max_tokens).toBe(50);
+    expect(callback).toHaveBeenCalledWith("Setting up project");
   });
 
-  test("accumulates text per workflow ID", () => {
+  test("does not double-trigger while summary is pending", async () => {
+    const callback = mock(() => {});
+    const longText = "x".repeat(250);
+
+    summarizer.maybeSummarize("w1", longText, callback);
+    // Second call immediately — pendingSummary should block it
+    summarizer.maybeSummarize("w1", longText, callback);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Only one API call despite two maybeSummarize calls
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  test("throttles by INTERVAL_MS after a completed summary", async () => {
+    const callback = mock(() => {});
+    const longText = "x".repeat(250);
+
+    summarizer.maybeSummarize("w1", longText, callback);
+    await new Promise((r) => setTimeout(r, 50));
+
+    // First summary completed, but within INTERVAL_MS
+    mockCreate.mockClear();
+    summarizer.maybeSummarize("w1", longText, callback);
+
+    await new Promise((r) => setTimeout(r, 50));
+    // Should not trigger again within interval
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test("accumulates text per workflow ID independently", async () => {
     const cb1 = mock(() => {});
     const cb2 = mock(() => {});
-    summarizer.maybeSummarize("w1", "text for w1", cb1);
-    summarizer.maybeSummarize("w2", "text for w2", cb2);
-    // Both should accumulate independently (no cross-contamination)
+    const longText = "x".repeat(250);
+
+    summarizer.maybeSummarize("w1", longText, cb1);
+    summarizer.maybeSummarize("w2", longText, cb2);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Both workflows should trigger independently
+    expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 
   test("cleanup removes workflow state", () => {
@@ -40,11 +94,24 @@ describe("Summarizer", () => {
     summarizer.maybeSummarize("w1", longText, callback);
     summarizer.cleanup("w1");
     // After cleanup, workflow buffers should be gone
-    // Calling again should start fresh accumulation
     summarizer.maybeSummarize("w1", "short", callback);
+    // Short text after cleanup should not trigger (fresh accumulation)
   });
 
   test("cleanup for non-existent workflow does not throw", () => {
     expect(() => summarizer.cleanup("nonexistent")).not.toThrow();
+  });
+
+  test("handles API error gracefully without calling callback", async () => {
+    mockCreate.mockImplementationOnce(() => Promise.reject(new Error("API down")));
+
+    const callback = mock(() => {});
+    const longText = "x".repeat(250);
+    summarizer.maybeSummarize("w1", longText, callback);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(callback).not.toHaveBeenCalled();
   });
 });
