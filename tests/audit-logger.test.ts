@@ -162,7 +162,7 @@ describe("pipeline name sanitization", () => {
 		const content = readFileSync(filePath, "utf-8").trim();
 		const events: AuditEvent[] = content.split("\n").map((line) => JSON.parse(line));
 		expect(events).toHaveLength(2);
-		expect(events[0].pipelineName).toBe("crab-studio--test");
+		expect(events[0].pipelineName).toBe("crab-studio/test");
 	});
 });
 

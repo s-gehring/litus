@@ -7,6 +7,7 @@ const DEFAULT_AUDIT_DIR = join(homedir(), ".crab-studio", "audit");
 
 interface RunState {
 	pipelineName: string;
+	safeFileName: string;
 	branch: string | null;
 	sequence: number;
 }
@@ -26,8 +27,8 @@ export class AuditLogger {
 
 	startRun(pipelineName: string, branch: string | null): string {
 		const runId = crypto.randomUUID();
-		const safeName = pipelineName.replace(/[/\\:*?"<>|]/g, "--");
-		this.runs.set(runId, { pipelineName: safeName, branch, sequence: 0 });
+		const safeFileName = pipelineName.replace(/[/\\:*?"<>|]/g, "--");
+		this.runs.set(runId, { pipelineName, safeFileName, branch, sequence: 0 });
 		this.writeEvent(runId, {
 			eventType: "pipeline_start",
 			content: null,
@@ -39,6 +40,7 @@ export class AuditLogger {
 	}
 
 	endRun(runId: string, metadata?: Record<string, unknown>): void {
+		const hadRun = this.runs.has(runId);
 		this.writeEvent(runId, {
 			eventType: "pipeline_end",
 			content: null,
@@ -46,7 +48,9 @@ export class AuditLogger {
 			commitHash: null,
 			metadata: metadata ?? null,
 		});
-		this.runs.delete(runId);
+		if (hadRun) {
+			this.runs.delete(runId);
+		}
 	}
 
 	logQuery(runId: string, content: string, stepName: string | null): void {
@@ -69,7 +73,7 @@ export class AuditLogger {
 		});
 	}
 
-	// TODO: Wire logCommit into pipeline commit callbacks once commit detection is implemented
+	// TODO(US2/T020): Wire logCommit into pipeline callbacks when commit detection is built (spec 004, Phase 4)
 	logCommit(
 		runId: string,
 		commitHash: string,
@@ -118,7 +122,7 @@ export class AuditLogger {
 				metadata: fields.metadata,
 			};
 
-			const filePath = join(this.auditDir, `${run.pipelineName}.jsonl`);
+			const filePath = join(this.auditDir, `${run.safeFileName}.jsonl`);
 			appendFileSync(filePath, `${JSON.stringify(event)}\n`);
 		} catch (err) {
 			console.warn(`[audit] Failed to write event: ${err}`);
