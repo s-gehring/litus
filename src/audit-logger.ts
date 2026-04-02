@@ -27,7 +27,7 @@ export class AuditLogger {
 
 	startRun(pipelineName: string, branch: string | null): string {
 		const runId = crypto.randomUUID();
-		const safeFileName = pipelineName.replace(/[/\\:*?"<>|]/g, "--");
+		const safeFileName = pipelineName.replace(/[/\\:*?"<>|]+/g, "--");
 		this.runs.set(runId, { pipelineName, safeFileName, branch, sequence: 0 });
 		this.writeEvent(runId, {
 			eventType: "pipeline_start",
@@ -73,7 +73,7 @@ export class AuditLogger {
 		});
 	}
 
-	// TODO(US2/T020): Wire logCommit into pipeline callbacks when commit detection is built (spec 004, Phase 4)
+	// Note: logCommit is not yet wired into the pipeline — requires commit detection in CLI output (deferred)
 	logCommit(
 		runId: string,
 		commitHash: string,

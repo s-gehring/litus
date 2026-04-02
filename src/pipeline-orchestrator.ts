@@ -40,6 +40,7 @@ export class PipelineOrchestrator {
 	private callbacks: PipelineCallbacks;
 	private assistantTextBuffer = "";
 	private currentAuditRunId: string | null = null;
+	private pipelineName: string | null = null;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -59,8 +60,8 @@ export class PipelineOrchestrator {
 		const workflow = await this.engine.createWorkflow(specification);
 		this.engine.transition(workflow.id, "running");
 
-		const branch = await this.getBranch(workflow.worktreePath || process.cwd());
-		this.currentAuditRunId = this.auditLogger.startRun(workflow.worktreeBranch, branch);
+		this.pipelineName = (await this.getBranch(process.cwd())) ?? workflow.worktreeBranch;
+		this.currentAuditRunId = this.auditLogger.startRun(this.pipelineName, workflow.worktreeBranch);
 
 		this.startStep(workflow);
 
@@ -104,6 +105,7 @@ export class PipelineOrchestrator {
 			this.engine.transition(workflowId, "running");
 		} catch (e) {
 			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
+			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
 
 		this.callbacks.onStateChange(workflowId);
@@ -132,8 +134,9 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		const cwd = workflow.worktreePath || process.cwd();
-		const branch = await this.getBranch(cwd);
-		this.currentAuditRunId = this.auditLogger.startRun(workflow.worktreeBranch, branch);
+		const pipelineName =
+			this.pipelineName ?? (await this.getBranch(process.cwd())) ?? workflow.worktreeBranch;
+		this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
 
 		this.engine.transition(workflowId, "running");
 		this.callbacks.onStateChange(workflowId);
@@ -166,6 +169,7 @@ export class PipelineOrchestrator {
 			this.engine.transition(workflowId, "cancelled");
 		} catch (e) {
 			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
+			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
 
 		this.callbacks.onStateChange(workflowId);
@@ -292,6 +296,7 @@ export class PipelineOrchestrator {
 			this.engine.transition(workflowId, "waiting_for_input");
 		} catch (e) {
 			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
+			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
 
 		this.callbacks.onStateChange(workflowId);
@@ -376,6 +381,7 @@ export class PipelineOrchestrator {
 				this.engine.transition(workflow.id, "completed");
 			} catch (e) {
 				if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
+				else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 			}
 			this.cliRunner.kill(workflow.id);
 			this.summarizer.cleanup(workflow.id);
@@ -406,6 +412,7 @@ export class PipelineOrchestrator {
 			this.engine.transition(workflowId, "error");
 		} catch (e) {
 			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
+			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
 
 		this.callbacks.onError(workflowId, error);

@@ -604,11 +604,15 @@ describe("PipelineOrchestrator", () => {
 
 	// Audit trail integration
 	describe("audit trail wiring", () => {
-		test("startPipeline calls auditLogger.startRun", async () => {
+		test("startPipeline calls auditLogger.startRun with original branch as pipelineName", async () => {
 			await orchestrator.startPipeline("Build a feature");
 
 			expect(auditLogger.startRun).toHaveBeenCalledTimes(1);
-			expect(auditLogger.startRun.mock.calls[0][0]).toBe("crab-studio/test");
+			// pipelineName is resolved from the original repo branch, not the worktree branch
+			const pipelineName = auditLogger.startRun.mock.calls[0][0] as string;
+			expect(pipelineName).not.toBe("");
+			// branch arg is the worktree branch
+			expect(auditLogger.startRun.mock.calls[0][1]).toBe("crab-studio/test");
 		});
 
 		test("pipeline completion calls auditLogger.endRun", async () => {

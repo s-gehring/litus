@@ -214,6 +214,22 @@ describe("missing git context", () => {
 	});
 });
 
+// Review #4, Issue #6 — double endRun is a no-op
+describe("double endRun", () => {
+	it("warns and drops the second endRun without throwing", () => {
+		const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
+		const runId = logger.startRun("double-end-test", "main");
+		logger.endRun(runId);
+		logger.endRun(runId); // second call — run already deleted
+
+		const events = readEvents("double-end-test");
+		expect(events).toHaveLength(2); // only start + first end
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Unknown runId"));
+		warnSpy.mockRestore();
+	});
+});
+
 // Sequence number ordering
 describe("sequence numbers", () => {
 	it("increments monotonically within a run", () => {
