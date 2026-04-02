@@ -193,6 +193,53 @@ describe("WorkflowEngine", () => {
 		expect(engine.getWorkflow()?.specification).toBe("second");
 	});
 
+	describe("pipeline fields", () => {
+		test("createWorkflow initializes steps array with 8 entries", async () => {
+			const w = await engine.createWorkflow("Build a login page");
+			expect(w.steps).toHaveLength(8);
+			expect(w.steps[0].name).toBe("specify");
+			expect(w.steps[7].name).toBe("commit-push-pr");
+		});
+
+		test("all steps start as pending", async () => {
+			const w = await engine.createWorkflow("test");
+			for (const step of w.steps) {
+				expect(step.status).toBe("pending");
+			}
+		});
+
+		test("specify step prompt includes specification text", async () => {
+			const w = await engine.createWorkflow("Build a login page");
+			expect(w.steps[0].prompt).toBe("/speckit.specify Build a login page");
+		});
+
+		test("non-specify steps have bare prompts", async () => {
+			const w = await engine.createWorkflow("test");
+			expect(w.steps[1].prompt).toBe("/speckit.clarify");
+			expect(w.steps[2].prompt).toBe("/speckit.plan");
+		});
+
+		test("currentStepIndex starts at 0", async () => {
+			const w = await engine.createWorkflow("test");
+			expect(w.currentStepIndex).toBe(0);
+		});
+
+		test("reviewCycle initializes correctly", async () => {
+			const w = await engine.createWorkflow("test");
+			expect(w.reviewCycle.iteration).toBe(1);
+			expect(w.reviewCycle.maxIterations).toBe(16);
+			expect(w.reviewCycle.lastSeverity).toBeNull();
+		});
+
+		test("error → running transition works (retry support)", async () => {
+			const w = await engine.createWorkflow("test");
+			engine.transition(w.id, "running");
+			engine.transition(w.id, "error");
+			engine.transition(w.id, "running");
+			expect(engine.getWorkflow()?.status).toBe("running");
+		});
+	});
+
 	test("worktree creation failure throws descriptive error", async () => {
 		BunGlobal.Bun.spawn = (..._args: unknown[]) => {
 			return {
