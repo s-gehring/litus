@@ -23,7 +23,6 @@ function createFakeEngine() {
 				id: "test-wf-id",
 				specification: spec,
 				status: "idle" as WorkflowStatus,
-				sessionId: null,
 				worktreePath: "/tmp/test-worktree",
 				worktreeBranch: "crab-studio/test",
 				summary: "",
@@ -69,12 +68,6 @@ function createFakeEngine() {
 		clearQuestion: (_id: string) => {
 			if (workflow) {
 				workflow.pendingQuestion = null;
-				workflow.updatedAt = new Date().toISOString();
-			}
-		},
-		setSessionId: (_id: string, sessionId: string) => {
-			if (workflow) {
-				workflow.sessionId = sessionId;
 				workflow.updatedAt = new Date().toISOString();
 			}
 		},
@@ -274,6 +267,85 @@ describe("PipelineOrchestrator", () => {
 			orchestrator.answerQuestion("test-wf-id", "q1", "Yes, use React");
 
 			expect(cli.sendAnswer).toHaveBeenCalledWith("test-wf-id", "Yes, use React");
+		});
+
+		test("session ID is preserved after answering question", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			cli.getLastCallbacks().onSessionId("sess-123");
+
+			const question: Question = {
+				id: "q1",
+				content: "Should I use React?",
+				confidence: "certain",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			cli.getLastCallbacks().onComplete();
+
+			orchestrator.answerQuestion("test-wf-id", "q1", "Yes");
+
+			expect(wf.steps[0].sessionId).toBe("sess-123");
+		});
+
+		test("answering question resets cooldown for next detection", async () => {
+			await orchestrator.startPipeline("test");
+
+			cli.getLastCallbacks().onSessionId("sess-123");
+
+			const question: Question = {
+				id: "q1",
+				content: "Should I use React?",
+				confidence: "certain",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			cli.getLastCallbacks().onComplete();
+
+			orchestrator.answerQuestion("test-wf-id", "q1", "Yes");
+
+			expect(qd.reset).toHaveBeenCalled();
+		});
+
+		test("uncertain question confirmed by Haiku pauses pipeline", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			const question: Question = {
+				id: "q-uncertain",
+				content: "Any preference on the styling approach?",
+				confidence: "uncertain",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.steps[0].status).toBe("waiting_for_input");
+			expect(wf.pendingQuestion).toEqual(question);
+		});
+
+		test("uncertain question rejected by Haiku advances step", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			const question: Question = {
+				id: "q-uncertain",
+				content: "What do you think about this?",
+				confidence: "uncertain",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(false));
+
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.steps[0].status).toBe("completed");
+			expect(wf.currentStepIndex).toBe(1);
 		});
 
 		test("Q&A loop pauses again on second question", async () => {

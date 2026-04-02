@@ -37,7 +37,6 @@ describe("WorkflowEngine", () => {
 		expect(w.id).toBeTruthy();
 		expect(w.specification).toBe("Build a login page");
 		expect(w.status).toBe("idle");
-		expect(w.sessionId).toBeNull();
 		expect(w.worktreePath).toBeTruthy();
 		expect(w.worktreeBranch).toMatch(/^crab-studio\//);
 		expect(w.summary).toBe("");
@@ -169,12 +168,6 @@ describe("WorkflowEngine", () => {
 
 		engine.clearQuestion(w.id);
 		expect(engine.getWorkflow()?.pendingQuestion).toBeNull();
-	});
-
-	test("setSessionId updates the workflow", async () => {
-		const w = await engine.createWorkflow("test");
-		engine.setSessionId(w.id, "session-123");
-		expect(engine.getWorkflow()?.sessionId).toBe("session-123");
 	});
 
 	test("updatedAt changes on mutations", async () => {

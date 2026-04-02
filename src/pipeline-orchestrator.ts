@@ -73,11 +73,12 @@ export class PipelineOrchestrator {
 
 		try {
 			this.engine.transition(workflowId, "running");
-		} catch {
-			// May already be running
+		} catch (e) {
+			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
 		}
 
 		this.callbacks.onStateChange(workflowId);
+		this.questionDetector.reset();
 		this.cliRunner.sendAnswer(workflowId, answer);
 	}
 
@@ -125,8 +126,8 @@ export class PipelineOrchestrator {
 
 		try {
 			this.engine.transition(workflowId, "cancelled");
-		} catch {
-			// Already in terminal state
+		} catch (e) {
+			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
 		}
 
 		this.callbacks.onStateChange(workflowId);
@@ -194,8 +195,8 @@ export class PipelineOrchestrator {
 			try {
 				this.engine.updateSummary(workflowId, summary);
 				this.callbacks.onStateChange(workflowId);
-			} catch {
-				// Workflow may have ended
+			} catch (e) {
+				if (e instanceof Error && !e.message.includes("not found")) throw e;
 			}
 		});
 	}
@@ -246,8 +247,8 @@ export class PipelineOrchestrator {
 		this.engine.setQuestion(workflowId, question);
 		try {
 			this.engine.transition(workflowId, "waiting_for_input");
-		} catch {
-			// May already be in a different state
+		} catch (e) {
+			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
 		}
 
 		this.callbacks.onStateChange(workflowId);
@@ -323,8 +324,8 @@ export class PipelineOrchestrator {
 		if (nextIndex >= workflow.steps.length) {
 			try {
 				this.engine.transition(workflow.id, "completed");
-			} catch {
-				// Already completed
+			} catch (e) {
+				if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
 			}
 			this.cliRunner.kill(workflow.id);
 			this.summarizer.cleanup(workflow.id);
@@ -348,8 +349,8 @@ export class PipelineOrchestrator {
 
 		try {
 			this.engine.transition(workflowId, "error");
-		} catch {
-			// Already in error state
+		} catch (e) {
+			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
 		}
 
 		this.callbacks.onError(workflowId, error);
@@ -362,7 +363,6 @@ export class PipelineOrchestrator {
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.sessionId = sessionId;
-		this.engine.setSessionId(workflowId, sessionId);
 	}
 
 	private getWorkflowOrThrow(workflowId: string): Workflow {

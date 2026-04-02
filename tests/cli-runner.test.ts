@@ -21,7 +21,6 @@ function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 		id,
 		specification: "test",
 		status: "running",
-		sessionId: null,
 		worktreePath: "/tmp/test-worktree",
 		worktreeBranch: "test-branch",
 		summary: "",

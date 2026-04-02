@@ -33,7 +33,6 @@ export class WorkflowEngine {
 			id,
 			specification,
 			status: "idle",
-			sessionId: null,
 			worktreePath,
 			worktreeBranch: branchName,
 			summary: "",
@@ -94,12 +93,6 @@ export class WorkflowEngine {
 	clearQuestion(workflowId: string): void {
 		const w = this.requireWorkflow(workflowId);
 		w.pendingQuestion = null;
-		w.updatedAt = new Date().toISOString();
-	}
-
-	setSessionId(workflowId: string, sessionId: string): void {
-		const w = this.requireWorkflow(workflowId);
-		w.sessionId = sessionId;
 		w.updatedAt = new Date().toISOString();
 	}
 

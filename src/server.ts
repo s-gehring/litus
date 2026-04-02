@@ -36,10 +36,10 @@ const orchestrator = new PipelineOrchestrator({
 function getWorkflowState(): WorkflowState | null {
 	const w = orchestrator.getEngine().getWorkflow();
 	if (!w) return null;
-	const { sessionId: _, steps, ...rest } = w;
+	const { steps, ...rest } = w;
 	return {
 		...rest,
-		steps: steps.map(({ sessionId: _sid, ...step }) => step),
+		steps: steps.map(({ sessionId: _sid, prompt: _p, ...step }) => step),
 	};
 }
 

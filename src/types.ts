@@ -90,7 +90,6 @@ export interface Workflow {
 	id: string;
 	specification: string;
 	status: WorkflowStatus;
-	sessionId: string | null;
 	worktreePath: string | null;
 	worktreeBranch: string;
 	summary: string;
@@ -104,7 +103,7 @@ export interface Workflow {
 }
 
 // Serializable workflow state for WebSocket messages (strips internal fields from workflow and steps)
-export type WorkflowState = Omit<Workflow, "sessionId" | "steps"> & {
+export type WorkflowState = Omit<Workflow, "steps"> & {
 	steps: Omit<PipelineStep, "sessionId" | "prompt">[];
 };
 
