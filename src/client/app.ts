@@ -1,6 +1,11 @@
-import type { ServerMessage, ClientMessage, Question } from "../types";
-import { updateWorkflowStatus, appendOutput, clearOutput, updateSummary } from "./components/workflow-window";
-import { showQuestion, hideQuestion, getAnswer } from "./components/question-panel";
+import type { ClientMessage, ServerMessage } from "../types";
+import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
+import {
+	appendOutput,
+	clearOutput,
+	updateSummary,
+	updateWorkflowStatus,
+} from "./components/workflow-window";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -10,167 +15,167 @@ let currentQuestionId: string | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getWsUrl(): string {
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${location.host}/ws`;
+	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+	return `${protocol}//${location.host}/ws`;
 }
 
 function connect(): void {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-    return;
-  }
+	if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+		return;
+	}
 
-  ws = new WebSocket(getWsUrl());
+	ws = new WebSocket(getWsUrl());
 
-  ws.onopen = () => {
-    const dot = $("#connection-status");
-    dot.className = "status-dot connected";
-    dot.title = "Connected";
+	ws.onopen = () => {
+		const dot = $("#connection-status");
+		dot.className = "status-dot connected";
+		dot.title = "Connected";
 
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
-    }
-  };
+		if (reconnectTimer) {
+			clearTimeout(reconnectTimer);
+			reconnectTimer = null;
+		}
+	};
 
-  ws.onclose = () => {
-    const dot = $("#connection-status");
-    dot.className = "status-dot disconnected";
-    dot.title = "Disconnected";
-    scheduleReconnect();
-  };
+	ws.onclose = () => {
+		const dot = $("#connection-status");
+		dot.className = "status-dot disconnected";
+		dot.title = "Disconnected";
+		scheduleReconnect();
+	};
 
-  ws.onerror = () => {
-    // onclose will fire after this
-  };
+	ws.onerror = () => {
+		// onclose will fire after this
+	};
 
-  ws.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data) as ServerMessage;
-      handleMessage(msg);
-    } catch {
-      // Ignore malformed messages
-    }
-  };
+	ws.onmessage = (event) => {
+		try {
+			const msg = JSON.parse(event.data) as ServerMessage;
+			handleMessage(msg);
+		} catch {
+			// Ignore malformed messages
+		}
+	};
 }
 
 function scheduleReconnect(): void {
-  if (reconnectTimer) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connect();
-  }, 2000);
+	if (reconnectTimer) return;
+	reconnectTimer = setTimeout(() => {
+		reconnectTimer = null;
+		connect();
+	}, 2000);
 }
 
 function send(msg: ClientMessage): void {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(msg));
-  }
+	if (ws && ws.readyState === WebSocket.OPEN) {
+		ws.send(JSON.stringify(msg));
+	}
 }
 
 function handleMessage(msg: ServerMessage): void {
-  switch (msg.type) {
-    case "workflow:state":
-      if (msg.workflow) {
-        currentWorkflowId = msg.workflow.id;
-        if (msg.workflow.pendingQuestion) {
-          currentQuestionId = msg.workflow.pendingQuestion.id;
-          showQuestion(msg.workflow.pendingQuestion);
-        } else {
-          currentQuestionId = null;
-          hideQuestion();
-        }
-        if (msg.workflow.summary) {
-          updateSummary(msg.workflow.summary);
-        }
-      } else {
-        currentWorkflowId = null;
-        currentQuestionId = null;
-        hideQuestion();
-      }
-      updateWorkflowStatus(msg.workflow);
-      break;
+	switch (msg.type) {
+		case "workflow:state":
+			if (msg.workflow) {
+				currentWorkflowId = msg.workflow.id;
+				if (msg.workflow.pendingQuestion) {
+					currentQuestionId = msg.workflow.pendingQuestion.id;
+					showQuestion(msg.workflow.pendingQuestion);
+				} else {
+					currentQuestionId = null;
+					hideQuestion();
+				}
+				if (msg.workflow.summary) {
+					updateSummary(msg.workflow.summary);
+				}
+			} else {
+				currentWorkflowId = null;
+				currentQuestionId = null;
+				hideQuestion();
+			}
+			updateWorkflowStatus(msg.workflow);
+			break;
 
-    case "workflow:output":
-      appendOutput(msg.text);
-      break;
+		case "workflow:output":
+			appendOutput(msg.text);
+			break;
 
-    case "workflow:question":
-      currentQuestionId = msg.question.id;
-      showQuestion(msg.question);
-      break;
+		case "workflow:question":
+			currentQuestionId = msg.question.id;
+			showQuestion(msg.question);
+			break;
 
-    case "workflow:summary":
-      updateSummary(msg.summary);
-      break;
+		case "workflow:summary":
+			updateSummary(msg.summary);
+			break;
 
-    case "error":
-      appendOutput(`Error: ${msg.message}`, "error");
-      break;
-  }
+		case "error":
+			appendOutput(`Error: ${msg.message}`, "error");
+			break;
+	}
 }
 
 // Wire up UI events
 document.addEventListener("DOMContentLoaded", () => {
-  const btnStart = $("#btn-start") as HTMLButtonElement;
-  const btnCancel = $("#btn-cancel") as HTMLButtonElement;
-  const btnSubmitAnswer = $("#btn-submit-answer") as HTMLButtonElement;
-  const btnSkip = $("#btn-skip-question") as HTMLButtonElement;
-  const specInput = $("#specification-input") as HTMLTextAreaElement;
+	const btnStart = $("#btn-start") as HTMLButtonElement;
+	const btnCancel = $("#btn-cancel") as HTMLButtonElement;
+	const btnSubmitAnswer = $("#btn-submit-answer") as HTMLButtonElement;
+	const btnSkip = $("#btn-skip-question") as HTMLButtonElement;
+	const specInput = $("#specification-input") as HTMLTextAreaElement;
 
-  btnStart.addEventListener("click", () => {
-    const spec = specInput.value.trim();
-    if (!spec) return;
+	btnStart.addEventListener("click", () => {
+		const spec = specInput.value.trim();
+		if (!spec) return;
 
-    clearOutput();
-    updateSummary("");
-    send({ type: "workflow:start", specification: spec });
-    btnStart.disabled = true;
-  });
+		clearOutput();
+		updateSummary("");
+		send({ type: "workflow:start", specification: spec });
+		btnStart.disabled = true;
+	});
 
-  btnCancel.addEventListener("click", () => {
-    if (currentWorkflowId) {
-      send({ type: "workflow:cancel", workflowId: currentWorkflowId });
-    }
-  });
+	btnCancel.addEventListener("click", () => {
+		if (currentWorkflowId) {
+			send({ type: "workflow:cancel", workflowId: currentWorkflowId });
+		}
+	});
 
-  btnSubmitAnswer.addEventListener("click", () => {
-    const answer = getAnswer();
-    if (!answer || !currentWorkflowId || !currentQuestionId) return;
+	btnSubmitAnswer.addEventListener("click", () => {
+		const answer = getAnswer();
+		if (!answer || !currentWorkflowId || !currentQuestionId) return;
 
-    send({
-      type: "workflow:answer",
-      workflowId: currentWorkflowId,
-      questionId: currentQuestionId,
-      answer,
-    });
-  });
+		send({
+			type: "workflow:answer",
+			workflowId: currentWorkflowId,
+			questionId: currentQuestionId,
+			answer,
+		});
+	});
 
-  btnSkip.addEventListener("click", () => {
-    if (!currentWorkflowId || !currentQuestionId) return;
+	btnSkip.addEventListener("click", () => {
+		if (!currentWorkflowId || !currentQuestionId) return;
 
-    send({
-      type: "workflow:skip",
-      workflowId: currentWorkflowId,
-      questionId: currentQuestionId,
-    });
-  });
+		send({
+			type: "workflow:skip",
+			workflowId: currentWorkflowId,
+			questionId: currentQuestionId,
+		});
+	});
 
-  // Allow Enter to submit answer (Shift+Enter for newline)
-  const answerInput = $("#answer-input") as HTMLTextAreaElement;
-  answerInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      btnSubmitAnswer.click();
-    }
-  });
+	// Allow Enter to submit answer (Shift+Enter for newline)
+	const answerInput = $("#answer-input") as HTMLTextAreaElement;
+	answerInput.addEventListener("keydown", (e) => {
+		if (e.key === "Enter" && !e.shiftKey) {
+			e.preventDefault();
+			btnSubmitAnswer.click();
+		}
+	});
 
-  // Allow Ctrl+Enter to start workflow
-  specInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      btnStart.click();
-    }
-  });
+	// Allow Ctrl+Enter to start workflow
+	specInput.addEventListener("keydown", (e) => {
+		if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+			e.preventDefault();
+			btnStart.click();
+		}
+	});
 
-  connect();
+	connect();
 });
