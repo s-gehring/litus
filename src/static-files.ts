@@ -5,7 +5,9 @@ const publicDir = resolve(process.cwd(), "public");
 export { publicDir };
 
 export function resolveStaticPath(pathname: string): string | null {
-	const filePath = pathname === "/" ? "/index.html" : pathname;
+	// Normalize backslashes to forward slashes to prevent traversal on all platforms
+	const sanitized = pathname.replaceAll("\\", "/");
+	const filePath = sanitized === "/" ? "/index.html" : sanitized;
 	const resolved = resolve(publicDir, `.${filePath}`);
 	const normalized = normalize(resolved);
 	if (!normalized.startsWith(publicDir)) return null;
