@@ -172,7 +172,7 @@ describe("QuestionDetector", () => {
 			expect(result).toBe(true);
 
 			expect(mockCreate).toHaveBeenCalledTimes(1);
-			const callArgs = (mockCreate.mock.calls as any[][])[0][0];
+			const callArgs = (mockCreate.mock.calls as unknown[][])[0][0] as Record<string, unknown>;
 			expect(callArgs.model).toBe("claude-haiku-4-5-20251001");
 			expect(callArgs.max_tokens).toBe(10);
 		});
@@ -195,7 +195,7 @@ describe("QuestionDetector", () => {
 
 		test("prevents concurrent classifications", async () => {
 			// Create a deferred promise to control when the first call resolves
-			let resolveFirst!: (value: any) => void;
+			let resolveFirst!: (value: unknown) => void;
 			mockCreate.mockImplementationOnce(
 				() =>
 					new Promise((r) => {
