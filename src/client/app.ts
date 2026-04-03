@@ -6,6 +6,7 @@ import {
 	appendOutput,
 	clearOutput,
 	updateFlavor,
+	updateStepSummary,
 	updateSummary,
 	updateWorkflowStatus,
 } from "./components/workflow-window";
@@ -156,18 +157,6 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
-		case "workflow:summary": {
-			const entry = workflows.get(msg.workflowId);
-			if (entry) {
-				entry.state.summary = msg.summary;
-				renderCards();
-				if (expandedWorkflowId === msg.workflowId) {
-					updateSummary(msg.summary);
-				}
-			}
-			break;
-		}
-
 		case "workflow:step-change": {
 			const entry = workflows.get(msg.workflowId);
 			if (entry) {
@@ -231,6 +220,7 @@ function renderExpandedView(): void {
 	updateWorkflowStatus(wf);
 	renderPipelineSteps(wf);
 	if (wf.summary) updateSummary(wf.summary);
+	updateStepSummary(wf.stepSummary ?? "");
 	updateFlavor(wf.flavor ?? "");
 
 	// Render output from accumulated lines

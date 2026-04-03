@@ -124,6 +124,7 @@ export interface Workflow {
 	worktreePath: string | null;
 	worktreeBranch: string;
 	summary: string;
+	stepSummary: string;
 	flavor: string;
 	pendingQuestion: Question | null;
 	lastOutput: string;
@@ -148,7 +149,6 @@ export type ServerMessage =
 	| { type: "workflow:created"; workflow: WorkflowState }
 	| { type: "workflow:output"; workflowId: string; text: string }
 	| { type: "workflow:question"; workflowId: string; question: Question }
-	| { type: "workflow:summary"; workflowId: string; summary: string }
 	| {
 			type: "workflow:step-change";
 			workflowId: string;

@@ -65,17 +65,6 @@ describe("Card strip rendering logic", () => {
 		expect(shouldPulse).toBe(false);
 	});
 
-	test("summary truncation for compact card", () => {
-		const longSummary =
-			"This is a very long summary that should be truncated for the compact card display because it exceeds the maximum character limit";
-		const maxLen = 50;
-		const truncated =
-			longSummary.length > maxLen ? `${longSummary.slice(0, maxLen)}...` : longSummary;
-
-		expect(truncated.length).toBeLessThanOrEqual(maxLen + 3);
-		expect(truncated.endsWith("...")).toBe(true);
-	});
-
 	test("status badge maps to correct class", () => {
 		const statusClasses: Record<string, string> = {
 			idle: "card-status-idle",

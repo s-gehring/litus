@@ -31,17 +31,30 @@ export class QuestionDetector {
 		const trimmed = text.trim();
 		if (!trimmed || trimmed.length < 10) return null;
 
-		// Exclude agent narration
+		// Extract the last meaningful block (final paragraph/section) for analysis
+		// Questions appear at the END of agent output, not the beginning
+		const lastBlock = this.extractLastBlock(trimmed);
+		if (!lastBlock || lastBlock.length < 10) return null;
+
+		// Exclude agent narration — apply only to the last block
 		for (const pattern of EXCLUSION_PATTERNS) {
-			if (pattern.test(trimmed)) return null;
+			if (pattern.test(lastBlock)) return null;
 		}
 
 		this.lastQuestionTime = now;
 		return {
 			id: randomUUID(),
-			content: trimmed,
+			content: lastBlock,
 			detectedAt: new Date().toISOString(),
 		};
+	}
+
+	private extractLastBlock(text: string): string {
+		// Split by double newlines (paragraph boundaries) or single newlines with blank lines
+		const blocks = text.split(/\n\s*\n/).filter((b) => b.trim().length > 0);
+		if (blocks.length === 0) return text.trim();
+		// Take the last block, capped at 2000 chars
+		return blocks[blocks.length - 1].trim().slice(0, 2000);
 	}
 
 	async classifyWithHaiku(text: string): Promise<boolean> {
