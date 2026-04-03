@@ -8,6 +8,7 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 	const btnCancel = $("#btn-cancel") as HTMLButtonElement;
 	const btnRetry = $("#btn-retry") as HTMLButtonElement | null;
 	const specInput = $("#specification-input") as HTMLTextAreaElement;
+	const targetRepoInput = $("#target-repo-input") as HTMLInputElement | null;
 
 	const status = workflow?.status || "idle";
 
@@ -29,6 +30,9 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 		btnRetry.classList.toggle("hidden", !isError);
 	}
 	specInput.disabled = isActive;
+	if (targetRepoInput) {
+		targetRepoInput.disabled = isActive;
+	}
 
 	if (canStart) {
 		btnStart.disabled = false;

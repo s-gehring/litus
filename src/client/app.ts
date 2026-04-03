@@ -130,15 +130,22 @@ document.addEventListener("DOMContentLoaded", () => {
 	const btnSubmitAnswer = $("#btn-submit-answer") as HTMLButtonElement;
 	const btnSkip = $("#btn-skip-question") as HTMLButtonElement;
 	const specInput = $("#specification-input") as HTMLTextAreaElement;
+	const targetRepoInput = $("#target-repo-input") as HTMLInputElement;
 
 	btnStart.addEventListener("click", () => {
 		const spec = specInput.value.trim();
 		if (!spec) return;
 
+		const targetRepo = targetRepoInput.value.trim();
 		clearOutput();
 		updateSummary("");
-		send({ type: "workflow:start", specification: spec });
+		send({
+			type: "workflow:start",
+			specification: spec,
+			...(targetRepo ? { targetRepository: targetRepo } : {}),
+		});
 		btnStart.disabled = true;
+		targetRepoInput.disabled = true;
 	});
 
 	btnCancel.addEventListener("click", () => {

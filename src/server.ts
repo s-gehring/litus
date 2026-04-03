@@ -55,7 +55,11 @@ function broadcastState() {
 	broadcast({ type: "workflow:state", workflow: getWorkflowState() });
 }
 
-async function handleStart(ws: ServerWebSocket<WsData>, specification: string) {
+async function handleStart(
+	ws: ServerWebSocket<WsData>,
+	specification: string,
+	targetRepository?: string,
+) {
 	if (!specification.trim()) {
 		sendTo(ws, { type: "error", message: "Specification must be non-empty" });
 		return;
@@ -68,7 +72,7 @@ async function handleStart(ws: ServerWebSocket<WsData>, specification: string) {
 	}
 
 	try {
-		await orchestrator.startPipeline(specification.trim());
+		await orchestrator.startPipeline(specification.trim(), targetRepository);
 		broadcastState();
 	} catch (err) {
 		const message = err instanceof Error ? err.message : "Failed to start workflow";
@@ -195,7 +199,7 @@ const server = Bun.serve<WsData>({
 
 				switch (msg.type) {
 					case "workflow:start":
-						handleStart(ws, msg.specification).catch((err) => {
+						handleStart(ws, msg.specification, msg.targetRepository).catch((err) => {
 							const text = err instanceof Error ? err.message : "Internal error";
 							sendTo(ws, { type: "error", message: text });
 						});

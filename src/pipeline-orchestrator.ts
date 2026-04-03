@@ -56,11 +56,15 @@ export class PipelineOrchestrator {
 		return this.engine;
 	}
 
-	async startPipeline(specification: string): Promise<Workflow> {
-		const workflow = await this.engine.createWorkflow(specification);
+	async startPipeline(
+		specification: string,
+		targetRepository?: string,
+	): Promise<Workflow> {
+		const workflow = await this.engine.createWorkflow(specification, targetRepository);
 		this.engine.transition(workflow.id, "running");
 
-		this.pipelineName = (await this.getBranch(process.cwd())) ?? workflow.worktreeBranch;
+		const branchCwd = targetRepository || process.cwd();
+		this.pipelineName = (await this.getBranch(branchCwd)) ?? workflow.worktreeBranch;
 		this.currentAuditRunId = this.auditLogger.startRun(this.pipelineName, workflow.worktreeBranch);
 
 		this.startStep(workflow);

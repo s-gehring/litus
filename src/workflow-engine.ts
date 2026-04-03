@@ -14,14 +14,19 @@ export class WorkflowEngine {
 		return this.workflow;
 	}
 
-	async createWorkflow(specification: string): Promise<Workflow> {
+	async createWorkflow(
+		specification: string,
+		targetRepository?: string | null,
+	): Promise<Workflow> {
 		const id = randomUUID();
 		const branchName = `crab-studio/${id.slice(0, 8)}`;
 		let worktreePath: string | null = null;
+		const effectiveRepo = targetRepository || null;
+		const baseCwd = targetRepository || process.cwd();
 
 		// Create git worktree
 		try {
-			worktreePath = await this.createWorktree(branchName);
+			worktreePath = await this.createWorktree(branchName, baseCwd);
 		} catch (err) {
 			throw new Error(
 				`Failed to create git worktree: ${err instanceof Error ? err.message : String(err)}`,
@@ -33,6 +38,7 @@ export class WorkflowEngine {
 			id,
 			specification,
 			status: "idle",
+			targetRepository: effectiveRepo,
 			worktreePath,
 			worktreeBranch: branchName,
 			summary: "",
@@ -103,17 +109,17 @@ export class WorkflowEngine {
 		return this.workflow;
 	}
 
-	private async createWorktree(branchName: string): Promise<string> {
+	private async createWorktree(branchName: string, cwd: string): Promise<string> {
 		const worktreePath = `.worktrees/${branchName.replaceAll("/", "-")}`;
 		const proc = Bun.spawn(["git", "worktree", "add", worktreePath, "-b", branchName], {
-			cwd: process.cwd(),
+			cwd,
 			stdout: "pipe",
 			stderr: "pipe",
 		});
 
 		const code = await proc.exited;
 		if (code === 0) {
-			return resolve(process.cwd(), worktreePath);
+			return resolve(cwd, worktreePath);
 		}
 
 		const stderrStream = proc.stderr;

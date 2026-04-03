@@ -195,6 +195,39 @@ header h1 {
   gap: 8px;
 }
 
+/* Target repository input */
+.target-repo-field {
+  margin-bottom: 10px;
+}
+
+.target-repo-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.target-repo-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.target-repo-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.target-repo-input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Input area */
 .input-area {
   padding: 16px;
