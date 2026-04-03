@@ -15,6 +15,10 @@ export class WorkflowEngine {
 		return this.workflow;
 	}
 
+	setWorkflow(workflow: Workflow): void {
+		this.workflow = workflow;
+	}
+
 	async createWorkflow(specification: string, targetRepository?: string | null): Promise<Workflow> {
 		const id = randomUUID();
 		const branchName = `crab-studio/${id.slice(0, 8)}`;
@@ -41,6 +45,7 @@ export class WorkflowEngine {
 			worktreePath,
 			worktreeBranch: branchName,
 			summary: "",
+			flavor: "",
 			pendingQuestion: null,
 			lastOutput: "",
 			steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
@@ -53,6 +58,7 @@ export class WorkflowEngine {
 				error: null,
 				startedAt: null,
 				completedAt: null,
+				pid: null,
 			})),
 			currentStepIndex: 0,
 			reviewCycle: {

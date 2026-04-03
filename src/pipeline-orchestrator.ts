@@ -1,11 +1,13 @@
+import { existsSync } from "node:fs";
 import { AuditLogger } from "./audit-logger";
 import type { CLICallbacks } from "./cli-runner";
-import { CLIRunner } from "./cli-runner";
+import { CLIRunner, isProcessAlive, killProcess } from "./cli-runner";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
 import { Summarizer } from "./summarizer";
 import type { PipelineStepName, Question, Workflow } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
+import { WorkflowStore } from "./workflow-store";
 
 export interface PipelineCallbacks {
 	onStepChange: (
@@ -28,6 +30,7 @@ export interface PipelineDeps {
 	reviewClassifier?: ReviewClassifier;
 	summarizer?: Summarizer;
 	auditLogger?: AuditLogger;
+	workflowStore?: WorkflowStore;
 }
 
 export class PipelineOrchestrator {
@@ -37,10 +40,12 @@ export class PipelineOrchestrator {
 	private reviewClassifier: ReviewClassifier;
 	private summarizer: Summarizer;
 	private auditLogger: AuditLogger;
+	private store: WorkflowStore;
 	private callbacks: PipelineCallbacks;
 	private assistantTextBuffer = "";
 	private currentAuditRunId: string | null = null;
 	private pipelineName: string | null = null;
+	private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -49,6 +54,7 @@ export class PipelineOrchestrator {
 		this.reviewClassifier = deps?.reviewClassifier ?? new ReviewClassifier();
 		this.summarizer = deps?.summarizer ?? new Summarizer();
 		this.auditLogger = deps?.auditLogger ?? new AuditLogger();
+		this.store = deps?.workflowStore ?? new WorkflowStore();
 		this.callbacks = callbacks;
 	}
 
@@ -64,7 +70,19 @@ export class PipelineOrchestrator {
 		this.pipelineName = (await this.getBranch(branchCwd)) ?? workflow.worktreeBranch;
 		this.currentAuditRunId = this.auditLogger.startRun(this.pipelineName, workflow.worktreeBranch);
 
+		this.persistWorkflow(workflow);
 		this.startStep(workflow);
+
+		this.summarizer
+			.generateSpecSummary(specification)
+			.then(({ summary, flavor }) => {
+				if (summary) workflow.summary = summary;
+				if (flavor) workflow.flavor = flavor;
+				workflow.updatedAt = new Date().toISOString();
+				this.persistWorkflow(workflow);
+				this.callbacks.onStateChange(workflow.id);
+			})
+			.catch(() => {});
 
 		return workflow;
 	}
@@ -109,6 +127,7 @@ export class PipelineOrchestrator {
 			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
 
+		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 		this.questionDetector.reset();
 		this.cliRunner.sendAnswer(workflowId, answer);
@@ -159,6 +178,7 @@ export class PipelineOrchestrator {
 		this.summarizer.cleanup(workflowId);
 		this.questionDetector.reset();
 		this.assistantTextBuffer = "";
+		this.engine.clearQuestion(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		if (step.status === "running" || step.status === "waiting_for_input") {
@@ -173,6 +193,8 @@ export class PipelineOrchestrator {
 			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
 
+		step.pid = null;
+		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 	}
 
@@ -186,10 +208,13 @@ export class PipelineOrchestrator {
 		step.output = "";
 		step.error = null;
 		step.sessionId = null;
+		step.pid = null;
 		workflow.updatedAt = new Date().toISOString();
 
 		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
+
+		this.persistWorkflow(workflow);
 
 		this.callbacks.onStepChange(
 			workflow.id,
@@ -216,6 +241,7 @@ export class PipelineOrchestrator {
 			onComplete: () => this.handleStepComplete(workflow.id),
 			onError: (error) => this.handleStepError(workflow.id, error),
 			onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
+			onPid: (pid) => this.handlePid(workflow.id, pid),
 		};
 
 		this.cliRunner.start(stepWorkflow, cliCallbacks);
@@ -231,6 +257,7 @@ export class PipelineOrchestrator {
 
 		this.engine.updateLastOutput(workflowId, text);
 		this.callbacks.onOutput(workflowId, text);
+		this.persistDebounced(workflow);
 
 		this.assistantTextBuffer += `${text}\n`;
 
@@ -289,6 +316,8 @@ export class PipelineOrchestrator {
 			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
 
+		this.flushPersistDebounce(workflow);
+		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 	}
 
@@ -299,7 +328,11 @@ export class PipelineOrchestrator {
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "completed";
 		step.completedAt = new Date().toISOString();
+		step.pid = null;
 		workflow.updatedAt = new Date().toISOString();
+
+		this.flushPersistDebounce(workflow);
+		this.persistWorkflow(workflow);
 
 		if (step.name === "review") {
 			this.handleReviewComplete(workflow).catch((err) => {
@@ -347,13 +380,14 @@ export class PipelineOrchestrator {
 				workflow.steps[idx].sessionId = null;
 				workflow.steps[idx].startedAt = null;
 				workflow.steps[idx].completedAt = null;
+				workflow.steps[idx].pid = null;
 			}
 
 			workflow.currentStepIndex = implReviewIndex;
+			this.persistWorkflow(workflow);
 			this.startStep(workflow);
 		} else {
-			const commitIndex = workflow.steps.findIndex((s) => s.name === "commit-push-pr");
-			workflow.currentStepIndex = commitIndex;
+			workflow.currentStepIndex = workflow.steps.findIndex((s) => s.name === "commit-push-pr");
 			this.startStep(workflow);
 		}
 	}
@@ -377,6 +411,7 @@ export class PipelineOrchestrator {
 			}
 			this.cliRunner.kill(workflow.id);
 			this.summarizer.cleanup(workflow.id);
+			this.persistWorkflow(workflow);
 			this.callbacks.onComplete(workflow.id);
 			this.callbacks.onStateChange(workflow.id);
 			return;
@@ -398,6 +433,7 @@ export class PipelineOrchestrator {
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "error";
 		step.error = error;
+		step.pid = null;
 		workflow.updatedAt = new Date().toISOString();
 
 		try {
@@ -407,8 +443,19 @@ export class PipelineOrchestrator {
 			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
 
+		this.flushPersistDebounce(workflow);
+		this.persistWorkflow(workflow);
 		this.callbacks.onError(workflowId, error);
 		this.callbacks.onStateChange(workflowId);
+	}
+
+	private handlePid(workflowId: string, pid: number): void {
+		const workflow = this.engine.getWorkflow();
+		if (!workflow || workflow.id !== workflowId) return;
+
+		const step = workflow.steps[workflow.currentStepIndex];
+		step.pid = pid;
+		this.persistWorkflow(workflow);
 	}
 
 	private handleSessionId(workflowId: string, sessionId: string): void {
@@ -417,6 +464,115 @@ export class PipelineOrchestrator {
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.sessionId = sessionId;
+		this.persistWorkflow(workflow);
+	}
+
+	private persistWorkflow(workflow: Workflow): void {
+		this.store.save(workflow).catch((err) => {
+			console.error(`[pipeline] Failed to persist workflow: ${err}`);
+		});
+	}
+
+	private async persistWorkflowAsync(workflow: Workflow): Promise<void> {
+		await this.store.save(workflow);
+	}
+
+	private persistDebounced(workflow: Workflow): void {
+		if (this.persistDebounceTimer) {
+			clearTimeout(this.persistDebounceTimer);
+		}
+		this.persistDebounceTimer = setTimeout(() => {
+			this.persistDebounceTimer = null;
+			this.persistWorkflow(workflow);
+		}, 3000);
+	}
+
+	private flushPersistDebounce(workflow: Workflow): void {
+		if (this.persistDebounceTimer) {
+			clearTimeout(this.persistDebounceTimer);
+			this.persistDebounceTimer = null;
+			this.persistWorkflow(workflow);
+		}
+	}
+
+	getStore(): WorkflowStore {
+		return this.store;
+	}
+
+	async restoreWorkflows(): Promise<Workflow[]> {
+		const workflows = await this.store.loadAll();
+
+		// Set the most recent workflow as active before recovery,
+		// so runStep callbacks can find it via engine.getWorkflow()
+		if (workflows.length > 0) {
+			this.engine.setWorkflow(workflows[0]);
+		}
+
+		for (let i = 0; i < workflows.length; i++) {
+			const workflow = workflows[i];
+			// T041: mark errored if worktree no longer exists
+			if (
+				workflow.worktreePath &&
+				workflow.status !== "completed" &&
+				workflow.status !== "cancelled" &&
+				workflow.status !== "error" &&
+				!existsSync(workflow.worktreePath)
+			) {
+				workflow.status = "error";
+				const runningStep = workflow.steps.find((s) => s.status === "running");
+				if (runningStep) {
+					runningStep.status = "error";
+					runningStep.error = "Worktree no longer exists";
+					runningStep.pid = null;
+				}
+				await this.persistWorkflowAsync(workflow);
+				continue;
+			}
+			// Only attempt session resume for the most recent workflow (index 0);
+			// for others, just mark orphans as error
+			await this.recoverOrphans(workflow, i === 0);
+		}
+
+		return workflows;
+	}
+
+	private async recoverOrphans(workflow: Workflow, allowResume = true): Promise<void> {
+		for (const step of workflow.steps) {
+			if (step.status !== "running" || step.pid === null) continue;
+
+			if (isProcessAlive(step.pid)) {
+				killProcess(step.pid);
+			}
+
+			step.pid = null;
+
+			if (allowResume && step.sessionId) {
+				// Resume via session — setWorkflow happens in restoreWorkflows after all recovery
+				const cwd = workflow.worktreePath || process.cwd();
+				try {
+					this.runStep(workflow, step.prompt, cwd);
+					return;
+				} catch {
+					step.status = "error";
+					step.error = "Session resumption failed — needs retry";
+					workflow.status = "error";
+				}
+			} else {
+				step.status = "error";
+				step.error = step.sessionId
+					? "Session resumption skipped — not most recent workflow"
+					: "Process lost — needs retry";
+				workflow.status = "error";
+			}
+
+			await this.persistWorkflowAsync(workflow);
+		}
+
+		// Ensure workflow status is consistent with step states
+		if (workflow.status === "running" && !workflow.steps.some((s) => s.status === "running")) {
+			workflow.status = "error";
+			await this.persistWorkflowAsync(workflow);
+		}
 	}
 
 	private getWorkflowOrThrow(workflowId: string): Workflow {

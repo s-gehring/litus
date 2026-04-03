@@ -3,6 +3,23 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Workflow } from "./types";
 
+export function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export function killProcess(pid: number): void {
+	try {
+		process.kill(pid, "SIGTERM");
+	} catch {
+		// Process already dead
+	}
+}
+
 // Claude Code CLI stream-json event shape (loosely typed — the CLI format is not formally documented)
 interface CLIStreamEvent {
 	type: string;
@@ -18,6 +35,7 @@ export interface CLICallbacks {
 	onComplete: () => void;
 	onError: (error: string) => void;
 	onSessionId: (sessionId: string) => void;
+	onPid?: (pid: number) => void;
 }
 
 interface RunningProcess {
@@ -69,6 +87,7 @@ export class CLIRunner {
 		};
 
 		this.running.set(workflow.id, entry);
+		callbacks.onPid?.(proc.pid);
 		this.streamOutput(entry);
 	}
 
@@ -119,6 +138,7 @@ export class CLIRunner {
 		};
 
 		this.running.set(workflowId, newEntry);
+		entry.callbacks.onPid?.(proc.pid);
 		this.streamOutput(newEntry);
 	}
 

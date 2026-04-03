@@ -27,6 +27,7 @@ function createFakeEngine() {
 				worktreePath: "/tmp/test-worktree",
 				worktreeBranch: "crab-studio/test",
 				summary: "",
+				flavor: "",
 				pendingQuestion: null,
 				lastOutput: "",
 				steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
@@ -39,6 +40,7 @@ function createFakeEngine() {
 					error: null,
 					startedAt: null,
 					completedAt: null,
+					pid: null,
 				})),
 				currentStepIndex: 0,
 				reviewCycle: {
@@ -120,6 +122,7 @@ function createFakeReviewClassifier() {
 function createFakeSummarizer() {
 	return {
 		maybeSummarize: mock(() => {}),
+		generateSpecSummary: mock(async () => ({ summary: "", flavor: "" })),
 		cleanup: mock(() => {}),
 	};
 }
@@ -133,6 +136,16 @@ function createFakeAuditLogger() {
 		logCommit: mock(
 			(_runId: string, _hash: string, _msg: string | null, _step: string | null) => {},
 		),
+	};
+}
+
+function createFakeWorkflowStore() {
+	return {
+		save: mock(async () => {}),
+		load: mock(async () => null),
+		loadAll: mock(async () => []),
+		loadIndex: mock(async () => []),
+		remove: mock(async () => {}),
 	};
 }
 
@@ -182,6 +195,7 @@ describe("PipelineOrchestrator", () => {
 			reviewClassifier: rc,
 			summarizer,
 			auditLogger,
+			workflowStore: createFakeWorkflowStore(),
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});

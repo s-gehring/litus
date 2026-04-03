@@ -4,6 +4,7 @@ import { getAnswer, hideQuestion, showQuestion } from "./components/question-pan
 import {
 	appendOutput,
 	clearOutput,
+	updateFlavor,
 	updateSummary,
 	updateWorkflowStatus,
 } from "./components/workflow-window";
@@ -78,7 +79,11 @@ function handleMessage(msg: ServerMessage): void {
 		case "workflow:state":
 			if (msg.workflow) {
 				currentWorkflowId = msg.workflow.id;
-				if (msg.workflow.pendingQuestion) {
+				const isTerminal =
+					msg.workflow.status === "cancelled" ||
+					msg.workflow.status === "completed" ||
+					msg.workflow.status === "error";
+				if (msg.workflow.pendingQuestion && !isTerminal) {
 					currentQuestionId = msg.workflow.pendingQuestion.id;
 					showQuestion(msg.workflow.pendingQuestion);
 				} else {
@@ -88,10 +93,13 @@ function handleMessage(msg: ServerMessage): void {
 				if (msg.workflow.summary) {
 					updateSummary(msg.workflow.summary);
 				}
+				updateFlavor(msg.workflow.flavor ?? "");
 			} else {
 				currentWorkflowId = null;
 				currentQuestionId = null;
 				hideQuestion();
+				updateSummary("");
+				updateFlavor("");
 			}
 			updateWorkflowStatus(msg.workflow);
 			renderPipelineSteps(msg.workflow);
