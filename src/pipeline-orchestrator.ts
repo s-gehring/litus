@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { AuditLogger } from "./audit-logger";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner, isProcessAlive, killProcess } from "./cli-runner";
@@ -484,14 +485,31 @@ export class PipelineOrchestrator {
 
 	async restoreWorkflows(): Promise<Workflow[]> {
 		const workflows = await this.store.loadAll();
-		if (workflows.length > 0) {
-			// Set most recent as active workflow
-			this.engine.setWorkflow(workflows[0]);
+
+		for (const workflow of workflows) {
+			// T041: mark errored if worktree no longer exists
+			if (
+				workflow.worktreePath &&
+				workflow.status !== "completed" &&
+				workflow.status !== "cancelled" &&
+				workflow.status !== "error" &&
+				!existsSync(workflow.worktreePath)
+			) {
+				workflow.status = "error";
+				const runningStep = workflow.steps.find((s) => s.status === "running");
+				if (runningStep) {
+					runningStep.status = "error";
+					runningStep.error = "Worktree no longer exists";
+					runningStep.pid = null;
+				}
+				this.persistWorkflow(workflow);
+				continue;
+			}
+			await this.recoverOrphans(workflow);
 		}
 
-		// Handle orphan recovery for all restored workflows
-		for (const workflow of workflows) {
-			await this.recoverOrphans(workflow);
+		if (workflows.length > 0) {
+			this.engine.setWorkflow(workflows[0]);
 		}
 
 		return workflows;
