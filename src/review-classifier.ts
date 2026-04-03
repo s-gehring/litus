@@ -21,7 +21,7 @@ ${reviewOutput}`;
 		);
 
 		const code = await proc.exited;
-		if (code !== 0) return "minor";
+		if (code !== 0) return "major";
 
 		const text = await new Response(proc.stdout as ReadableStream).text();
 		const severity = text.trim().toLowerCase() as ReviewSeverity;

@@ -79,12 +79,12 @@ describe("ReviewClassifier", () => {
 		expect(result).toBe("minor");
 	});
 
-	test("defaults to minor on non-zero exit code", async () => {
+	test("defaults to major on non-zero exit code", async () => {
 		spawnMock = mock(() => mockSpawnResponse("", 1));
 		Bun.spawn = spawnMock as typeof Bun.spawn;
 		classifier = new ReviewClassifier();
 		const result = await classifier.classify("Some review output.");
-		expect(result).toBe("minor");
+		expect(result).toBe("major");
 	});
 
 	test("passes review output to claude CLI with haiku model", async () => {

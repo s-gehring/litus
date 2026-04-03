@@ -45,6 +45,7 @@ export class WorkflowEngine {
 			worktreePath,
 			worktreeBranch: branchName,
 			summary: "",
+			stepSummary: "",
 			flavor: "",
 			pendingQuestion: null,
 			lastOutput: "",
@@ -108,6 +109,12 @@ export class WorkflowEngine {
 	updateSummary(workflowId: string, summary: string): void {
 		const w = this.requireWorkflow(workflowId);
 		w.summary = summary;
+		w.updatedAt = new Date().toISOString();
+	}
+
+	updateStepSummary(workflowId: string, stepSummary: string): void {
+		const w = this.requireWorkflow(workflowId);
+		w.stepSummary = stepSummary;
 		w.updatedAt = new Date().toISOString();
 	}
 
