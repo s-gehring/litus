@@ -51,16 +51,18 @@ function renderStepHistory(workflow: WorkflowState | null): void {
 
 	historyContainer.replaceChildren();
 
-	for (let i = 0; i < workflow.currentStepIndex; i++) {
+	for (let i = 0; i < workflow.steps.length; i++) {
 		const step = workflow.steps[i];
-		if (step.status !== "completed") continue;
+		if (step.status !== "completed" && step.status !== "error") continue;
 
 		const item = document.createElement("details");
 		item.className = "step-history-item";
 
 		const summary = document.createElement("summary");
 		summary.className = "step-history-summary";
-		summary.textContent = `${step.displayName} — completed`;
+		const label = step.status === "error" ? "error" : "completed";
+		summary.textContent = `${step.displayName} — ${label}`;
+		if (step.status === "error") summary.classList.add("step-history-error");
 		item.appendChild(summary);
 
 		if (step.output) {
@@ -70,6 +72,13 @@ function renderStepHistory(workflow: WorkflowState | null): void {
 			const trimmed = step.output.length > 500 ? `...${step.output.slice(-500)}` : step.output;
 			output.textContent = trimmed;
 			item.appendChild(output);
+		}
+
+		if (step.error) {
+			const errorDiv = document.createElement("div");
+			errorDiv.className = "step-history-output step-history-error-msg";
+			errorDiv.textContent = `Error: ${step.error}`;
+			item.appendChild(errorDiv);
 		}
 
 		historyContainer.appendChild(item);
@@ -93,6 +102,11 @@ export function clearOutput(): void {
 export function updateSummary(summary: string): void {
 	const el = $("#workflow-summary");
 	el.textContent = summary;
+}
+
+export function updateStepSummary(stepSummary: string): void {
+	const el = $("#workflow-step-summary");
+	if (el) el.textContent = stepSummary;
 }
 
 export function updateFlavor(flavor: string): void {

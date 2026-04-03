@@ -25,6 +25,7 @@ function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 		worktreePath: "/tmp/test-worktree",
 		worktreeBranch: "test-branch",
 		summary: "",
+		stepSummary: "",
 		flavor: "",
 		pendingQuestion: null,
 		lastOutput: "",
@@ -138,6 +139,58 @@ describe("CLIRunner", () => {
 			await completePromise;
 			expect(outputs).toContain("I'll create the file now");
 			expect(outputs).toContain("[Tool: write_file]");
+		});
+
+		test("groups tool_use blocks by name with counts", async () => {
+			const outputs: string[] = [];
+			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
+
+			const streamContent = [
+				JSON.stringify({
+					type: "assistant",
+					message: {
+						content: [
+							{ type: "tool_use", name: "Bash" },
+							{ type: "tool_use", name: "Bash" },
+							{ type: "tool_use", name: "Bash" },
+							{ type: "tool_use", name: "Read" },
+							{ type: "tool_use", name: "Read" },
+							{ type: "tool_use", name: "Write" },
+						],
+					},
+				}),
+				"",
+			].join("\n");
+
+			BunGlobal.Bun.spawn = () => ({
+				stdout: new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode(streamContent));
+						controller.close();
+					},
+				}),
+				stderr: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				exited: Promise.resolve(0),
+				kill: () => {},
+				pid: 1,
+			});
+
+			runner.start(
+				makeWorkflow("w-tools", { worktreePath: null }),
+				makeCallbacks({
+					onOutput: (text) => outputs.push(text),
+					onComplete: () => resolveComplete(),
+				}),
+			);
+
+			await completePromise;
+			// Should have a single grouped output instead of 6 individual lines
+			const toolOutput = outputs.find((o) => o.includes("[Tool:"));
+			expect(toolOutput).toBe("[Tool: Bash x3] [Tool: Read x2] [Tool: Write]");
 		});
 
 		test("calls onComplete on successful exit", async () => {

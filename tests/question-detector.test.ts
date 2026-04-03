@@ -107,6 +107,40 @@ describe("QuestionDetector", () => {
 		});
 	});
 
+	describe("last-block extraction for long buffers (US2)", () => {
+		test("detect processes only the last portion of a long assistant buffer", () => {
+			const longNarration =
+				"I'll start by reading the project structure and understanding the codebase.\n\n" +
+				"Here's the file layout I found:\n- src/\n- tests/\n- package.json\n\n" +
+				"Now I'm analyzing the dependencies...\n\n" +
+				"Should I proceed with React or Vue for the frontend?";
+
+			const q = detector.detect(longNarration);
+			expect(q).not.toBeNull();
+			expect(q?.content).toBe("Should I proceed with React or Vue for the frontend?");
+		});
+
+		test("exclusion patterns do not reject trailing questions after long narration", () => {
+			// Buffer starts with "I'll" (excluded pattern) but ends with a real question
+			const buffer =
+				"I'll create the component now.\n\n" +
+				"Let me set up the project first.\n\n" +
+				"Here's what I've built so far...\n\n" +
+				"Which database would you prefer: PostgreSQL or MongoDB?";
+
+			const q = detector.detect(buffer);
+			expect(q).not.toBeNull();
+			expect(q?.content).toBe("Which database would you prefer: PostgreSQL or MongoDB?");
+		});
+
+		test("still excludes when the last block itself is agent narration", () => {
+			const buffer = "Some earlier output\n\n" + "I'll finish up the implementation now";
+
+			const q = detector.detect(buffer);
+			expect(q).toBeNull();
+		});
+	});
+
 	describe("cooldown behavior", () => {
 		test("respects cooldown period between detections", () => {
 			const q1 = detector.detect("Should I use CSS modules?");

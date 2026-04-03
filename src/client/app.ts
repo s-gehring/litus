@@ -6,6 +6,7 @@ import {
 	appendOutput,
 	clearOutput,
 	updateFlavor,
+	updateStepSummary,
 	updateSummary,
 	updateWorkflowStatus,
 } from "./components/workflow-window";
@@ -156,18 +157,6 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
-		case "workflow:summary": {
-			const entry = workflows.get(msg.workflowId);
-			if (entry) {
-				entry.state.summary = msg.summary;
-				renderCards();
-				if (expandedWorkflowId === msg.workflowId) {
-					updateSummary(msg.summary);
-				}
-			}
-			break;
-		}
-
 		case "workflow:step-change": {
 			const entry = workflows.get(msg.workflowId);
 			if (entry) {
@@ -231,12 +220,28 @@ function renderExpandedView(): void {
 	updateWorkflowStatus(wf);
 	renderPipelineSteps(wf);
 	if (wf.summary) updateSummary(wf.summary);
+	updateStepSummary(wf.stepSummary ?? "");
 	updateFlavor(wf.flavor ?? "");
 
 	// Render output from accumulated lines
 	clearOutput();
-	for (const line of entry.outputLines) {
-		appendOutput(line);
+	if (entry.outputLines.length > 0) {
+		for (const line of entry.outputLines) {
+			appendOutput(line);
+		}
+	} else if (wf.status === "error") {
+		// Restored error workflows have no live output — show step error/output
+		const errorStep = wf.steps.find((s) => s.status === "error");
+		if (errorStep) {
+			if (errorStep.output) {
+				const trimmed =
+					errorStep.output.length > 1000 ? `...${errorStep.output.slice(-1000)}` : errorStep.output;
+				appendOutput(trimmed);
+			}
+			if (errorStep.error) {
+				appendOutput(`Error: ${errorStep.error}`, "error");
+			}
+		}
 	}
 
 	// Question

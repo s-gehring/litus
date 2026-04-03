@@ -123,6 +123,17 @@ describe("Summarizer", () => {
 		expect(() => summarizer.cleanup("nonexistent")).not.toThrow();
 	});
 
+	test("maybeSummarize callback receives summary string for stepSummary use", async () => {
+		const receivedSummaries: string[] = [];
+		const callback = (summary: string) => receivedSummaries.push(summary);
+		const longText = "x".repeat(250);
+		summarizer.maybeSummarize("w1", longText, callback);
+
+		await flushAsync();
+
+		expect(receivedSummaries).toEqual(["Setting up project"]);
+	});
+
 	test("handles CLI error gracefully without calling callback", async () => {
 		spawnMock = mock(() => mockSpawnResponse("", 1));
 		Bun.spawn = spawnMock as typeof Bun.spawn;

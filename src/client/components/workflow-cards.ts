@@ -20,8 +20,6 @@ const STATUS_CLASSES: Record<string, string> = {
 	error: "card-status-error",
 };
 
-const SUMMARY_MAX_LEN = 50;
-
 export function renderCardStrip(
 	workflowOrder: string[],
 	workflows: Map<string, WorkflowClientState>,
@@ -71,15 +69,10 @@ function createCompactCard(
 	badge.textContent = STATUS_LABELS[wf.status] || wf.status;
 	card.appendChild(badge);
 
-	// Summary (truncated)
+	// Summary (full text, no truncation)
 	const summary = document.createElement("span");
 	summary.className = "card-summary";
-	const summaryText = wf.summary || wf.specification;
-	summary.textContent =
-		summaryText.length > SUMMARY_MAX_LEN
-			? `${summaryText.slice(0, SUMMARY_MAX_LEN)}...`
-			: summaryText;
-	summary.title = summaryText;
+	summary.textContent = wf.summary || wf.specification;
 	card.appendChild(summary);
 
 	// Current step

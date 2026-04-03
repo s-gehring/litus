@@ -146,11 +146,10 @@ header h1 {
 .card-status-error { background: rgba(233,69,96,0.2); color: var(--accent); }
 
 .card-summary {
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .card-step {
@@ -221,18 +220,43 @@ header h1 {
 .status-badge.cancelled { background: rgba(136,136,170,0.2); color: var(--text-dim); }
 .status-badge.error { background: rgba(233,69,96,0.2); color: var(--accent); }
 
+.summary-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+  gap: 2px;
+}
+
 .summary-text {
-  font-size: 0.85rem;
+  font-size: 1.1rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.step-summary-text {
+  font-size: 0.78rem;
   color: var(--text-dim);
   font-style: italic;
-  margin-left: auto;
+}
+
+.step-summary-text:empty {
+  display: none;
 }
 
 .flavor-text {
   font-size: 0.75rem;
-  color: var(--accent);
+  color: #b8941f;
   font-style: italic;
-  opacity: 0.7;
+  opacity: 0.8;
+}
+
+.flavor-text::before {
+  content: "** ";
+}
+
+.flavor-text::after {
+  content: " **";
 }
 
 .flavor-text:empty {
@@ -513,6 +537,18 @@ header h1 {
   background: rgba(78,204,163,0.05);
 }
 
+.step-history-summary.step-history-error {
+  color: var(--accent);
+}
+
+.step-history-summary.step-history-error:hover {
+  background: rgba(233,69,96,0.05);
+}
+
+.step-history-error-msg {
+  color: var(--accent);
+}
+
 .step-history-output {
   padding: 8px 16px;
   font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
@@ -523,6 +559,41 @@ header h1 {
   max-height: 200px;
   overflow-y: auto;
   background: var(--bg);
+}
+
+/* ── Styled Scrollbars ─────────────────────────────────── */
+
+/* Firefox */
+.output-log,
+.step-history,
+.step-history-output,
+body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Webkit (Chrome, Edge, Safari) */
+.output-log::-webkit-scrollbar,
+.step-history::-webkit-scrollbar,
+.step-history-output::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.output-log::-webkit-scrollbar-thumb,
+.step-history::-webkit-scrollbar-thumb,
+.step-history-output::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.output-log::-webkit-scrollbar-track,
+.step-history::-webkit-scrollbar-track,
+.step-history-output::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .hidden { display: none !important; }
