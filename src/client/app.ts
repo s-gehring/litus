@@ -1,4 +1,5 @@
 import type { ClientMessage, ServerMessage } from "../types";
+import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
 import {
 	appendOutput,
@@ -93,6 +94,7 @@ function handleMessage(msg: ServerMessage): void {
 				hideQuestion();
 			}
 			updateWorkflowStatus(msg.workflow);
+			renderPipelineSteps(msg.workflow);
 			break;
 
 		case "workflow:output":
@@ -108,6 +110,12 @@ function handleMessage(msg: ServerMessage): void {
 			updateSummary(msg.summary);
 			break;
 
+		case "workflow:step-change":
+			// Clear output for new step
+			clearOutput();
+			appendOutput(`── Step: ${msg.currentStep} ──`, "system");
+			break;
+
 		case "error":
 			appendOutput(`Error: ${msg.message}`, "error");
 			break;
@@ -118,6 +126,7 @@ function handleMessage(msg: ServerMessage): void {
 document.addEventListener("DOMContentLoaded", () => {
 	const btnStart = $("#btn-start") as HTMLButtonElement;
 	const btnCancel = $("#btn-cancel") as HTMLButtonElement;
+	const btnRetry = document.getElementById("btn-retry") as HTMLButtonElement | null;
 	const btnSubmitAnswer = $("#btn-submit-answer") as HTMLButtonElement;
 	const btnSkip = $("#btn-skip-question") as HTMLButtonElement;
 	const specInput = $("#specification-input") as HTMLTextAreaElement;
@@ -137,6 +146,14 @@ document.addEventListener("DOMContentLoaded", () => {
 			send({ type: "workflow:cancel", workflowId: currentWorkflowId });
 		}
 	});
+
+	if (btnRetry) {
+		btnRetry.addEventListener("click", () => {
+			if (currentWorkflowId) {
+				send({ type: "workflow:retry", workflowId: currentWorkflowId });
+			}
+		});
+	}
 
 	btnSubmitAnswer.addEventListener("click", () => {
 		const answer = getAnswer();

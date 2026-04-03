@@ -18,8 +18,15 @@
       <div id="status-area" class="status-area">
         <span class="status-label">Status:</span>
         <span id="workflow-status" class="status-badge idle">idle</span>
+        <span id="current-step-label" class="current-step-label hidden"></span>
         <span id="workflow-summary" class="summary-text"></span>
       </div>
+
+      <!-- Pipeline step indicators -->
+      <div id="pipeline-steps" class="pipeline-steps hidden"></div>
+
+      <!-- Completed step history (collapsed) -->
+      <div id="step-history" class="step-history"></div>
 
       <!-- Output area -->
       <div id="output-area" class="output-area">
@@ -44,10 +51,11 @@
 
       <!-- Input area -->
       <div id="input-area" class="input-area">
-        <textarea id="specification-input" class="spec-input" placeholder="Enter your task specification..." rows="3"></textarea>
+        <textarea id="specification-input" class="spec-input" placeholder="Enter your feature description..." rows="3"></textarea>
         <div class="input-actions">
           <button id="btn-start" class="btn btn-primary">Start</button>
           <button id="btn-cancel" class="btn btn-danger hidden">Cancel</button>
+          <button id="btn-retry" class="btn btn-secondary hidden">Retry</button>
         </div>
       </div>
     </main>

@@ -37,7 +37,6 @@ describe("WorkflowEngine", () => {
 		expect(w.id).toBeTruthy();
 		expect(w.specification).toBe("Build a login page");
 		expect(w.status).toBe("idle");
-		expect(w.sessionId).toBeNull();
 		expect(w.worktreePath).toBeTruthy();
 		expect(w.worktreeBranch).toMatch(/^crab-studio\//);
 		expect(w.summary).toBe("");
@@ -125,11 +124,12 @@ describe("WorkflowEngine", () => {
 			expect(() => engine.transition(w.id, "running")).toThrow("Invalid transition");
 		});
 
-		test("error → running throws", async () => {
+		test("error → running is allowed (retry)", async () => {
 			const w = await engine.createWorkflow("test");
 			engine.transition(w.id, "running");
 			engine.transition(w.id, "error");
-			expect(() => engine.transition(w.id, "running")).toThrow("Invalid transition");
+			engine.transition(w.id, "running");
+			expect(engine.getWorkflow()?.status).toBe("running");
 		});
 
 		test("idle → waiting_for_input throws", async () => {
@@ -170,12 +170,6 @@ describe("WorkflowEngine", () => {
 		expect(engine.getWorkflow()?.pendingQuestion).toBeNull();
 	});
 
-	test("setSessionId updates the workflow", async () => {
-		const w = await engine.createWorkflow("test");
-		engine.setSessionId(w.id, "session-123");
-		expect(engine.getWorkflow()?.sessionId).toBe("session-123");
-	});
-
 	test("updatedAt changes on mutations", async () => {
 		const w = await engine.createWorkflow("test");
 		const initial = w.updatedAt;
@@ -190,6 +184,53 @@ describe("WorkflowEngine", () => {
 		const w2 = await engine.createWorkflow("second");
 		expect(engine.getWorkflow()?.id).toBe(w2.id);
 		expect(engine.getWorkflow()?.specification).toBe("second");
+	});
+
+	describe("pipeline fields", () => {
+		test("createWorkflow initializes steps array with 8 entries", async () => {
+			const w = await engine.createWorkflow("Build a login page");
+			expect(w.steps).toHaveLength(8);
+			expect(w.steps[0].name).toBe("specify");
+			expect(w.steps[7].name).toBe("commit-push-pr");
+		});
+
+		test("all steps start as pending", async () => {
+			const w = await engine.createWorkflow("test");
+			for (const step of w.steps) {
+				expect(step.status).toBe("pending");
+			}
+		});
+
+		test("specify step prompt includes specification text", async () => {
+			const w = await engine.createWorkflow("Build a login page");
+			expect(w.steps[0].prompt).toBe("/speckit.specify Build a login page");
+		});
+
+		test("non-specify steps have bare prompts", async () => {
+			const w = await engine.createWorkflow("test");
+			expect(w.steps[1].prompt).toBe("/speckit.clarify");
+			expect(w.steps[2].prompt).toBe("/speckit.plan");
+		});
+
+		test("currentStepIndex starts at 0", async () => {
+			const w = await engine.createWorkflow("test");
+			expect(w.currentStepIndex).toBe(0);
+		});
+
+		test("reviewCycle initializes correctly", async () => {
+			const w = await engine.createWorkflow("test");
+			expect(w.reviewCycle.iteration).toBe(1);
+			expect(w.reviewCycle.maxIterations).toBe(16);
+			expect(w.reviewCycle.lastSeverity).toBeNull();
+		});
+
+		test("error → running transition works (retry support)", async () => {
+			const w = await engine.createWorkflow("test");
+			engine.transition(w.id, "running");
+			engine.transition(w.id, "error");
+			engine.transition(w.id, "running");
+			expect(engine.getWorkflow()?.status).toBe("running");
+		});
 	});
 
 	test("worktree creation failure throws descriptive error", async () => {
