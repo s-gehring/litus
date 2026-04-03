@@ -79,7 +79,11 @@ ${specification}`;
 			if (code !== 0) return { summary: "", flavor: "" };
 
 			const result = await new Response(proc.stdout as ReadableStream).text();
-			const parsed = JSON.parse(result.trim());
+			const cleaned = result
+				.trim()
+				.replace(/^```(?:json)?\s*\n?/i, "")
+				.replace(/\n?```\s*$/, "");
+			const parsed = JSON.parse(cleaned);
 			return {
 				summary: String(parsed.summary ?? "").slice(0, 50),
 				flavor: String(parsed.flavor ?? "").slice(0, 100),

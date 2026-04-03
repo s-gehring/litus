@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WorkflowIndexEntry } from "../src/types";
@@ -34,9 +34,9 @@ describe("WorkflowStore", () => {
 		const filePath = join(baseDir, `${workflow.id}.json`);
 		expect(existsSync(filePath)).toBe(true);
 
-		// The tmp file should NOT exist (it was renamed)
-		const tmpPath = `${filePath}.tmp`;
-		expect(existsSync(tmpPath)).toBe(false);
+		// No tmp files should remain (they are renamed to the final path)
+		const tmpFiles = readdirSync(baseDir).filter((f) => f.endsWith(".tmp"));
+		expect(tmpFiles).toHaveLength(0);
 
 		// The content should be valid JSON
 		const content = await Bun.file(filePath).text();

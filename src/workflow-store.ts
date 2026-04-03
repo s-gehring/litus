@@ -25,7 +25,8 @@ export class WorkflowStore {
 
 	private async atomicWrite(filePath: string, data: string): Promise<void> {
 		this.ensureDir();
-		const tmpPath = `${filePath}.tmp`;
+		const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const tmpPath = `${filePath}.${suffix}.tmp`;
 		await Bun.write(tmpPath, data);
 		renameSync(tmpPath, filePath);
 	}
