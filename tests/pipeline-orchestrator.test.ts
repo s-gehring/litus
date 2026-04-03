@@ -27,6 +27,7 @@ function createFakeEngine() {
 				worktreePath: "/tmp/test-worktree",
 				worktreeBranch: "crab-studio/test",
 				summary: "",
+				stepSummary: "",
 				flavor: "",
 				pendingQuestion: null,
 				lastOutput: "",
@@ -82,6 +83,12 @@ function createFakeEngine() {
 				workflow.updatedAt = new Date().toISOString();
 			}
 		},
+		updateStepSummary: (_id: string, stepSummary: string) => {
+			if (workflow) {
+				workflow.stepSummary = stepSummary;
+				workflow.updatedAt = new Date().toISOString();
+			}
+		},
 		// Expose for test assertions
 		_getWorkflow: () => workflow,
 	};
@@ -123,7 +130,7 @@ function createFakeReviewClassifier() {
 
 function createFakeSummarizer() {
 	return {
-		maybeSummarize: mock(() => {}),
+		maybeSummarize: mock((_id: string, _text: string, _cb: (s: string) => void) => {}),
 		generateSpecSummary: mock(async () => ({ summary: "", flavor: "" })),
 		cleanup: mock(() => {}),
 	};
@@ -250,12 +257,21 @@ describe("PipelineOrchestrator", () => {
 				cli.getLastCallbacks().onComplete();
 			}
 
-			// Review step (5): classify as minor → skip re-cycle
+			// Review step (5) completes → always routes to implement-review (6)
+			cli.getLastCallbacks().onComplete();
+
+			const wf = getWf(engine);
+			expect(wf.currentStepIndex).toBe(6);
+			expect(wf.steps[6].name).toBe("implement-review");
+
+			// implement-review (6) completes → classify as minor → advance to commit-push-pr
 			rc._pushClassifyResult("minor");
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
-			// commit-push-pr (7) — skips implement-review via minor path
+			expect(wf.currentStepIndex).toBe(7);
+
+			// commit-push-pr (7) completes
 			cli.getLastCallbacks().onComplete();
 
 			expect(callbacks.onComplete).toHaveBeenCalled();
@@ -405,37 +421,57 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.steps[5].name).toBe("review");
 		}
 
-		test("re-cycles on critical severity", async () => {
+		test("review always routes to implement-review first", async () => {
 			await advanceToReview();
 			const wf = getWf(engine);
 
+			// Review completes → always goes to implement-review
+			cli.getLastCallbacks().onComplete();
+
+			expect(wf.reviewCycle.iteration).toBe(2);
+			expect(wf.currentStepIndex).toBe(6); // implement-review
+			expect(wf.steps[6].name).toBe("implement-review");
+			expect(wf.steps[6].status).toBe("running");
+		});
+
+		test("re-cycles on critical severity after implement-review", async () => {
+			await advanceToReview();
+			const wf = getWf(engine);
+
+			// Review completes → implement-review
+			cli.getLastCallbacks().onComplete();
+			expect(wf.currentStepIndex).toBe(6);
+
+			// implement-review completes → classify as critical → loop back to review
 			rc._pushClassifyResult("critical");
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.reviewCycle.iteration).toBe(2);
 			expect(wf.reviewCycle.lastSeverity).toBe("critical");
-			expect(wf.currentStepIndex).toBe(6); // implement-review
+			expect(wf.currentStepIndex).toBe(5); // back to review
+			expect(wf.steps[5].status).toBe("running");
 		});
 
-		test("re-cycles on major severity", async () => {
+		test("re-cycles on major severity after implement-review", async () => {
 			await advanceToReview();
 			const wf = getWf(engine);
 
+			cli.getLastCallbacks().onComplete(); // review → implement-review
 			rc._pushClassifyResult("major");
-			cli.getLastCallbacks().onComplete();
+			cli.getLastCallbacks().onComplete(); // implement-review → classify
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.reviewCycle.iteration).toBe(2);
 			expect(wf.reviewCycle.lastSeverity).toBe("major");
+			expect(wf.currentStepIndex).toBe(5); // back to review
 		});
 
 		test("stops cycling on minor severity → advances to commit-push-pr", async () => {
 			await advanceToReview();
 			const wf = getWf(engine);
 
+			cli.getLastCallbacks().onComplete(); // review → implement-review
 			rc._pushClassifyResult("minor");
-			cli.getLastCallbacks().onComplete();
+			cli.getLastCallbacks().onComplete(); // implement-review → classify
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.currentStepIndex).toBe(7);
@@ -446,8 +482,9 @@ describe("PipelineOrchestrator", () => {
 			await advanceToReview();
 			const wf = getWf(engine);
 
+			cli.getLastCallbacks().onComplete(); // review → implement-review
 			rc._pushClassifyResult("trivial");
-			cli.getLastCallbacks().onComplete();
+			cli.getLastCallbacks().onComplete(); // implement-review → classify
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.currentStepIndex).toBe(7);
@@ -457,8 +494,9 @@ describe("PipelineOrchestrator", () => {
 			await advanceToReview();
 			const wf = getWf(engine);
 
+			cli.getLastCallbacks().onComplete(); // review → implement-review
 			rc._pushClassifyResult("nit");
-			cli.getLastCallbacks().onComplete();
+			cli.getLastCallbacks().onComplete(); // implement-review → classify
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.currentStepIndex).toBe(7);
@@ -470,11 +508,73 @@ describe("PipelineOrchestrator", () => {
 
 			wf.reviewCycle.iteration = 16;
 
+			// Review → implement-review (iteration becomes 17 which exceeds max)
+			cli.getLastCallbacks().onComplete();
+
+			// implement-review completes → classify as critical but capped
 			rc._pushClassifyResult("critical");
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.currentStepIndex).toBe(7); // commit-push-pr despite critical
+		});
+	});
+
+	// T003: Spec summary preservation — maybeSummarize writes to stepSummary, not summary
+	describe("spec summary preservation (US7)", () => {
+		test("maybeSummarize writes to stepSummary, not summary", async () => {
+			// Configure summarizer to call the callback with a step summary
+			summarizer.maybeSummarize.mockImplementation(
+				(_id: string, _text: string, cb: (s: string) => void) => {
+					cb("Editing files");
+				},
+			);
+
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			// Set a spec summary that should persist
+			wf.summary = "Login Page Feature";
+
+			// Simulate step output (triggers maybeSummarize)
+			cli.getLastCallbacks().onOutput("some output text");
+
+			// summary should remain unchanged (spec summary)
+			expect(wf.summary).toBe("Login Page Feature");
+			// stepSummary should have the transient update
+			expect(wf.stepSummary).toBe("Editing files");
+		});
+
+		test("generateSpecSummary sets summary which is never overwritten by step summarizer", async () => {
+			summarizer.generateSpecSummary.mockImplementation(async () => ({
+				summary: "Auth Module",
+				flavor: "Yet another login page",
+			}));
+
+			// Step summarizer should write to stepSummary
+			summarizer.maybeSummarize.mockImplementation(
+				(_id: string, _text: string, cb: (s: string) => void) => {
+					cb("Reading config files");
+				},
+			);
+
+			await orchestrator.startPipeline("Build auth module");
+			const wf = getWf(engine);
+
+			// Wait for generateSpecSummary to resolve
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Spec summary set by generateSpecSummary
+			expect(wf.summary).toBe("Auth Module");
+			expect(wf.flavor).toBe("Yet another login page");
+
+			// Trigger step output after spec summary is set
+			cli.getLastCallbacks().onOutput("more agent output");
+
+			// summary should still be the spec summary
+			expect(wf.summary).toBe("Auth Module");
+			// stepSummary should have the transient update
+			expect(wf.stepSummary).toBe("Reading config files");
 		});
 	});
 
@@ -566,7 +666,7 @@ describe("PipelineOrchestrator", () => {
 
 	// Full re-cycle integration test
 	describe("full re-cycle loop", () => {
-		test("review → critical → implement-review → review → minor → commit-push-pr → complete", async () => {
+		test("review → implement-review → critical → review → implement-review → minor → commit-push-pr → complete", async () => {
 			await orchestrator.startPipeline("test");
 			const wf = getWf(engine);
 
@@ -578,23 +678,30 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.currentStepIndex).toBe(5);
 			expect(wf.steps[5].name).toBe("review");
 
-			// First review: critical → triggers re-cycle
-			rc._pushClassifyResult("critical");
+			// First review completes → always routes to implement-review
 			cli.getLastCallbacks().onComplete();
-			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.reviewCycle.iteration).toBe(2);
 			expect(wf.currentStepIndex).toBe(6); // implement-review
 			expect(wf.steps[6].status).toBe("running");
 
-			// implement-review completes → routes back to review
+			// implement-review completes → classify as critical → loop back to review
+			rc._pushClassifyResult("critical");
 			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.steps[6].status).toBe("completed");
+			expect(wf.reviewCycle.lastSeverity).toBe("critical");
 			expect(wf.currentStepIndex).toBe(5); // review again
 			expect(wf.steps[5].status).toBe("running");
 
-			// Second review: minor → advance to commit-push-pr
+			// Second review completes → implement-review again
+			cli.getLastCallbacks().onComplete();
+
+			expect(wf.reviewCycle.iteration).toBe(3);
+			expect(wf.currentStepIndex).toBe(6); // implement-review
+			expect(wf.steps[6].status).toBe("running");
+
+			// implement-review completes → classify as minor → advance to commit-push-pr
 			rc._pushClassifyResult("minor");
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
@@ -631,9 +738,10 @@ describe("PipelineOrchestrator", () => {
 				cli.getLastCallbacks().onComplete();
 			}
 
-			// Review → minor → commit-push-pr
+			// Review → implement-review → minor → commit-push-pr
+			cli.getLastCallbacks().onComplete(); // review → implement-review
 			rc._pushClassifyResult("minor");
-			cli.getLastCallbacks().onComplete();
+			cli.getLastCallbacks().onComplete(); // implement-review → classify
 			await new Promise((r) => setTimeout(r, 20));
 
 			// commit-push-pr completes

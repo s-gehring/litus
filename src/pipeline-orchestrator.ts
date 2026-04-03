@@ -260,9 +260,9 @@ export class PipelineOrchestrator {
 
 		this.assistantTextBuffer += `${text}\n`;
 
-		this.summarizer.maybeSummarize(workflowId, text, (summary) => {
+		this.summarizer.maybeSummarize(workflowId, text, (stepSummary) => {
 			try {
-				this.engine.updateSummary(workflowId, summary);
+				this.engine.updateStepSummary(workflowId, stepSummary);
 				this.callbacks.onStateChange(workflowId);
 			} catch (e) {
 				if (e instanceof Error && !e.message.includes("not found")) throw e;
@@ -333,56 +333,70 @@ export class PipelineOrchestrator {
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 
+		// After review completes, ALWAYS route to implement-review
 		if (step.name === "review") {
-			this.handleReviewComplete(workflow).catch((err) => {
+			this.routeToImplementReview(workflow);
+			return;
+		}
+
+		// After implement-review completes, classify and decide: loop or advance
+		if (step.name === "implement-review") {
+			this.handleImplementReviewComplete(workflow).catch((err) => {
 				const msg = err instanceof Error ? err.message : String(err);
-				console.error(`[pipeline] Review completion error: ${msg}`);
+				console.error(`[pipeline] Implement-review completion error: ${msg}`);
 				this.handleStepError(workflowId, msg);
 			});
 			return;
 		}
 
-		// After implement-review completes during a re-cycle, route back to review
-		if (step.name === "implement-review" && workflow.reviewCycle.iteration > 1) {
-			const reviewIndex = workflow.steps.findIndex((s) => s.name === "review");
-			if (reviewIndex >= 0 && workflow.steps[reviewIndex].status === "pending") {
-				workflow.currentStepIndex = reviewIndex;
-				this.startStep(workflow);
-				return;
-			}
-		}
-
 		this.advanceToNextStep(workflow);
 	}
 
-	private async handleReviewComplete(workflow: Workflow): Promise<void> {
-		const reviewStep = workflow.steps[workflow.currentStepIndex];
+	private routeToImplementReview(workflow: Workflow): void {
+		workflow.reviewCycle.iteration++;
+
+		const implReviewIndex = workflow.steps.findIndex((s) => s.name === "implement-review");
+
+		// Reset implement-review step for re-use
+		const implStep = workflow.steps[implReviewIndex];
+		implStep.status = "pending";
+		implStep.output = "";
+		implStep.error = null;
+		implStep.sessionId = null;
+		implStep.startedAt = null;
+		implStep.completedAt = null;
+		implStep.pid = null;
+
+		workflow.currentStepIndex = implReviewIndex;
+		this.persistWorkflow(workflow);
+		this.startStep(workflow);
+	}
+
+	private async handleImplementReviewComplete(workflow: Workflow): Promise<void> {
+		// Classify the review step's output to decide whether to loop
+		const reviewIndex = workflow.steps.findIndex((s) => s.name === "review");
+		const reviewStep = workflow.steps[reviewIndex];
 		const severity = await this.reviewClassifier.classify(reviewStep.output);
 
 		workflow.reviewCycle.lastSeverity = severity;
 		workflow.updatedAt = new Date().toISOString();
 
-		const shouldReCycle =
+		const shouldLoop =
 			(severity === "critical" || severity === "major") &&
 			workflow.reviewCycle.iteration < workflow.reviewCycle.maxIterations;
 
-		if (shouldReCycle) {
-			workflow.reviewCycle.iteration++;
+		if (shouldLoop) {
+			// Reset review step and loop back
+			const step = workflow.steps[reviewIndex];
+			step.status = "pending";
+			step.output = "";
+			step.error = null;
+			step.sessionId = null;
+			step.startedAt = null;
+			step.completedAt = null;
+			step.pid = null;
 
-			const reviewIndex = workflow.steps.findIndex((s) => s.name === "review");
-			const implReviewIndex = workflow.steps.findIndex((s) => s.name === "implement-review");
-
-			for (const idx of [implReviewIndex, reviewIndex]) {
-				workflow.steps[idx].status = "pending";
-				workflow.steps[idx].output = "";
-				workflow.steps[idx].error = null;
-				workflow.steps[idx].sessionId = null;
-				workflow.steps[idx].startedAt = null;
-				workflow.steps[idx].completedAt = null;
-				workflow.steps[idx].pid = null;
-			}
-
-			workflow.currentStepIndex = implReviewIndex;
+			workflow.currentStepIndex = reviewIndex;
 			this.persistWorkflow(workflow);
 			this.startStep(workflow);
 		} else {
