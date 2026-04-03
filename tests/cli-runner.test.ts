@@ -25,6 +25,7 @@ function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 		worktreePath: "/tmp/test-worktree",
 		worktreeBranch: "test-branch",
 		summary: "",
+		flavor: "",
 		pendingQuestion: null,
 		lastOutput: "",
 		steps: [],

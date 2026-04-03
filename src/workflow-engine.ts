@@ -45,6 +45,7 @@ export class WorkflowEngine {
 			worktreePath,
 			worktreeBranch: branchName,
 			summary: "",
+			flavor: "",
 			pendingQuestion: null,
 			lastOutput: "",
 			steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({

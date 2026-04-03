@@ -12,6 +12,7 @@ export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 		worktreePath: "/tmp/test-worktree",
 		worktreeBranch: "crab-studio/test",
 		summary: "",
+		flavor: "",
 		pendingQuestion: null,
 		lastOutput: "",
 		steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({

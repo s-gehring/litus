@@ -103,6 +103,17 @@ header h1 {
   margin-left: auto;
 }
 
+.flavor-text {
+  font-size: 0.75rem;
+  color: var(--accent);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.flavor-text:empty {
+  display: none;
+}
+
 .output-area {
   height: 400px;
   overflow: hidden;

@@ -59,6 +59,36 @@ export class Summarizer {
 		}
 	}
 
+	async generateSpecSummary(specification: string): Promise<{ summary: string; flavor: string }> {
+		try {
+			const prompt = `You are given a feature specification. Return a JSON object with two fields:
+- "summary": a 2-5 word description of the feature
+- "flavor": a 4-10 word snarky, insulting comment about the feature
+
+Output ONLY valid JSON, nothing else.
+
+Specification:
+${specification}`;
+
+			const proc = Bun.spawn(
+				["claude", "-p", prompt, "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
+				{ stdout: "pipe", stderr: "pipe" },
+			);
+
+			const code = await proc.exited;
+			if (code !== 0) return { summary: "", flavor: "" };
+
+			const result = await new Response(proc.stdout as ReadableStream).text();
+			const parsed = JSON.parse(result.trim());
+			return {
+				summary: String(parsed.summary ?? "").slice(0, 50),
+				flavor: String(parsed.flavor ?? "").slice(0, 100),
+			};
+		} catch {
+			return { summary: "", flavor: "" };
+		}
+	}
+
 	cleanup(workflowId: string): void {
 		this.outputBuffer.delete(workflowId);
 		this.lastSummaryTime.delete(workflowId);

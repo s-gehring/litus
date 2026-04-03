@@ -124,6 +124,7 @@ export interface Workflow {
 	worktreePath: string | null;
 	worktreeBranch: string;
 	summary: string;
+	flavor: string;
 	pendingQuestion: Question | null;
 	lastOutput: string;
 	steps: PipelineStep[];

@@ -108,3 +108,8 @@ export function updateSummary(summary: string): void {
 	const el = $("#workflow-summary");
 	el.textContent = summary;
 }
+
+export function updateFlavor(flavor: string): void {
+	const el = $("#workflow-flavor");
+	el.textContent = flavor;
+}

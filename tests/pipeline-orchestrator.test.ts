@@ -27,6 +27,7 @@ function createFakeEngine() {
 				worktreePath: "/tmp/test-worktree",
 				worktreeBranch: "crab-studio/test",
 				summary: "",
+				flavor: "",
 				pendingQuestion: null,
 				lastOutput: "",
 				steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
@@ -121,6 +122,7 @@ function createFakeReviewClassifier() {
 function createFakeSummarizer() {
 	return {
 		maybeSummarize: mock(() => {}),
+		generateSpecSummary: mock(async () => ({ summary: "", flavor: "" })),
 		cleanup: mock(() => {}),
 	};
 }
