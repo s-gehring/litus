@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import Anthropic from "@anthropic-ai/sdk";
 import type { Question } from "./types";
 
 // Patterns that indicate the text is NOT a question to the user (agent narration)
@@ -13,7 +12,6 @@ const EXCLUSION_PATTERNS = [
 
 export class QuestionDetector {
 	private lastQuestionTime = 0;
-	private client: Anthropic | null = null;
 	private pendingClassification = false;
 	private readonly COOLDOWN_MS = 15_000;
 
@@ -51,26 +49,18 @@ export class QuestionDetector {
 		this.pendingClassification = true;
 
 		try {
-			if (!this.client) {
-				this.client = new Anthropic();
-			}
+			const prompt = `Is this text a question directed at the user that requires their input to proceed? Answer only "yes" or "no".\n\nText: "${text}"`;
 
-			const response = await this.client.messages.create({
-				model: "claude-haiku-4-5-20251001",
-				max_tokens: 10,
-				messages: [
-					{
-						role: "user",
-						content: `Is this text a question directed at the user that requires their input to proceed? Answer only "yes" or "no".\n\nText: "${text}"`,
-					},
-				],
-			});
+			const proc = Bun.spawn(
+				["claude", "-p", prompt, "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
+				{ stdout: "pipe", stderr: "pipe" },
+			);
 
-			const block = response.content[0];
-			if (block.type === "text") {
-				return block.text.trim().toLowerCase().startsWith("yes");
-			}
-			return false;
+			const code = await proc.exited;
+			if (code !== 0) return false;
+
+			const result = await new Response(proc.stdout as ReadableStream).text();
+			return result.trim().toLowerCase().startsWith("yes");
 		} catch {
 			return false;
 		} finally {
