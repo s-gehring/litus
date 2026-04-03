@@ -1,5 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
-import type { Workflow } from "../../src/types";
+import { describe, expect, test } from "bun:test";
 import { makeWorkflow } from "../helpers";
 
 describe("Timer accumulation", () => {

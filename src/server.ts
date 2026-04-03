@@ -7,7 +7,13 @@ import { ReviewClassifier } from "./review-classifier";
 import { getMimeType, resolveStaticPath } from "./static-files";
 import { Summarizer } from "./summarizer";
 import { validateTargetRepository } from "./target-repo-validator";
-import type { ClientMessage, PipelineStepName, ServerMessage, Workflow, WorkflowState } from "./types";
+import type {
+	ClientMessage,
+	PipelineStepName,
+	ServerMessage,
+	Workflow,
+	WorkflowState,
+} from "./types";
 import { WorkflowStore } from "./workflow-store";
 
 type WsData = Record<string, never>;
@@ -175,7 +181,7 @@ function handleAnswer(
 	}
 
 	const workflow = orch.getEngine().getWorkflow();
-	if (!workflow || !workflow.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
+	if (!workflow?.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
 		sendTo(ws, { type: "error", message: "Question not found or already answered" });
 		return;
 	}
@@ -191,7 +197,7 @@ function handleSkip(ws: ServerWebSocket<WsData>, workflowId: string, questionId:
 	}
 
 	const workflow = orch.getEngine().getWorkflow();
-	if (!workflow || !workflow.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
+	if (!workflow?.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
 		sendTo(ws, { type: "error", message: "Question not found or already answered" });
 		return;
 	}
@@ -333,10 +339,7 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 
 		for (const workflow of allWorkflows) {
 			// Skip terminal workflows — no orchestrator needed
-			if (
-				workflow.status === "completed" ||
-				workflow.status === "cancelled"
-			) {
+			if (workflow.status === "completed" || workflow.status === "cancelled") {
 				continue;
 			}
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { WorkflowClientState, WorkflowState } from "../../src/types";
+import type { WorkflowState } from "../../src/types";
 
 function makeWorkflowState(overrides?: Partial<WorkflowState>): WorkflowState {
 	return {
@@ -88,9 +88,11 @@ describe("Card strip rendering logic", () => {
 	});
 
 	test("summary truncation for compact card", () => {
-		const longSummary = "This is a very long summary that should be truncated for the compact card display because it exceeds the maximum character limit";
+		const longSummary =
+			"This is a very long summary that should be truncated for the compact card display because it exceeds the maximum character limit";
 		const maxLen = 50;
-		const truncated = longSummary.length > maxLen ? `${longSummary.slice(0, maxLen)}...` : longSummary;
+		const truncated =
+			longSummary.length > maxLen ? `${longSummary.slice(0, maxLen)}...` : longSummary;
 
 		expect(truncated.length).toBeLessThanOrEqual(maxLen + 3);
 		expect(truncated.endsWith("...")).toBe(true);

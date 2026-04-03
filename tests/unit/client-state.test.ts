@@ -106,12 +106,17 @@ describe("Multi-workflow client state management", () => {
 		workflows.set("wf-1", { state: wf1, outputLines: [], isExpanded: false });
 		workflows.set("wf-2", { state: wf2, outputLines: [], isExpanded: false });
 
-		workflows.get("wf-1")!.outputLines.push("line 1 for wf-1");
-		workflows.get("wf-2")!.outputLines.push("line 1 for wf-2");
-		workflows.get("wf-1")!.outputLines.push("line 2 for wf-1");
+		const entry1 = workflows.get("wf-1");
+		const entry2 = workflows.get("wf-2");
+		expect(entry1).toBeDefined();
+		expect(entry2).toBeDefined();
 
-		expect(workflows.get("wf-1")!.outputLines).toHaveLength(2);
-		expect(workflows.get("wf-2")!.outputLines).toHaveLength(1);
+		entry1?.outputLines.push("line 1 for wf-1");
+		entry2?.outputLines.push("line 1 for wf-2");
+		entry1?.outputLines.push("line 2 for wf-1");
+
+		expect(entry1?.outputLines).toHaveLength(2);
+		expect(entry2?.outputLines).toHaveLength(1);
 	});
 
 	test("output buffer is bounded to prevent memory exhaustion", () => {
