@@ -32,6 +32,7 @@ function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 		steps: [],
 		currentStepIndex: 0,
 		reviewCycle: { iteration: 1, maxIterations: 16, lastSeverity: null },
+		prUrl: null,
 		activeWorkMs: 0,
 		activeWorkStartedAt: null,
 		createdAt: new Date().toISOString(),

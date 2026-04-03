@@ -32,6 +32,13 @@ export interface PipelineDeps {
 	workflowStore?: WorkflowStore;
 }
 
+const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
+
+export function extractPrUrl(output: string): string | null {
+	const matches = output.match(PR_URL_PATTERN);
+	return matches ? matches[matches.length - 1] : null;
+}
+
 export class PipelineOrchestrator {
 	private engine: WorkflowEngine;
 	private cliRunner: CLIRunner;
@@ -355,6 +362,11 @@ export class PipelineOrchestrator {
 		step.completedAt = new Date().toISOString();
 		step.pid = null;
 		workflow.updatedAt = new Date().toISOString();
+
+		if (step.name === "commit-push-pr") {
+			const url = extractPrUrl(step.output);
+			if (url) workflow.prUrl = url;
+		}
 
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);

@@ -62,6 +62,7 @@ export class WorkflowEngine {
 				pid: null,
 			})),
 			currentStepIndex: 0,
+			prUrl: null,
 			reviewCycle: {
 				iteration: 1,
 				maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,

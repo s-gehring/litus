@@ -131,6 +131,7 @@ export interface Workflow {
 	steps: PipelineStep[];
 	currentStepIndex: number;
 	reviewCycle: ReviewCycle;
+	prUrl: string | null;
 	activeWorkMs: number;
 	activeWorkStartedAt: string | null;
 	createdAt: string;
