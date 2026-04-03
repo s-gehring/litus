@@ -218,9 +218,20 @@ describe("Persistence Integration — US2: Survive Page Reload", () => {
 });
 
 describe("Persistence Integration — US3: Orphan Process Detection", () => {
-	test("T033: orphan detection checks if PID is alive via process.kill(pid, 0)", () => {
-		expect(() => process.kill(process.pid, 0)).not.toThrow();
-		expect(() => process.kill(999999999, 0)).toThrow();
+	let baseDir: string;
+	let store: WorkflowStore;
+
+	beforeEach(() => {
+		baseDir = join(tmpdir(), `persist-us3-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		store = new WorkflowStore(baseDir);
+	});
+
+	afterEach(() => {
+		try {
+			rmSync(baseDir, { recursive: true, force: true });
+		} catch {
+			// cleanup
+		}
 	});
 
 	test("T034: isProcessAlive returns true for alive process and false for dead", async () => {
@@ -229,40 +240,72 @@ describe("Persistence Integration — US3: Orphan Process Detection", () => {
 		expect(isProcessAlive(999999999)).toBe(false);
 	});
 
-	test("T035: dead orphan with no sessionId is handled gracefully", async () => {
-		const dir = join(tmpdir(), `persist-us3-${Date.now()}`);
-		const s = new WorkflowStore(dir);
+	test("T035: dead orphan with no sessionId is marked as error by recoverOrphans", async () => {
+		const { PipelineOrchestrator } = await import("../src/pipeline-orchestrator");
 
-		const workflow = makeWorkflow({ id: "orphan-dead" });
+		const workflow = makeWorkflow({ id: "orphan-dead", worktreePath: baseDir });
 		workflow.status = "running";
 		workflow.steps[0].status = "running";
 		workflow.steps[0].pid = 999999999;
 		workflow.steps[0].sessionId = null;
 
-		await s.save(workflow);
+		await store.save(workflow);
 
-		const restored = await s.load("orphan-dead");
-		assertDefined(restored);
-		expect(restored.steps[0].pid).toBe(999999999);
+		const callbacks = {
+			onStepChange: () => {},
+			onOutput: () => {},
+			onComplete: () => {},
+			onError: () => {},
+			onStateChange: () => {},
+		};
+		const orchestrator = new PipelineOrchestrator(callbacks, { workflowStore: store });
+		const restored = await orchestrator.restoreWorkflows();
 
-		rmSync(dir, { recursive: true, force: true });
+		expect(restored).toHaveLength(1);
+		expect(restored[0].steps[0].status).toBe("error");
+		expect(restored[0].steps[0].error).toContain("needs retry");
+		expect(restored[0].steps[0].pid).toBeNull();
+		expect(restored[0].status).toBe("error");
 	});
 
-	test("T036: failed session resumption marks step as error", () => {
-		const workflow = makeWorkflow({ id: "orphan-fail" });
+	test("T036: dead orphan with sessionId is marked as error by recoverOrphans", async () => {
+		const { PipelineOrchestrator } = await import("../src/pipeline-orchestrator");
+
+		const workflow = makeWorkflow({ id: "orphan-session", worktreePath: baseDir });
 		workflow.status = "running";
 		workflow.steps[0].status = "running";
 		workflow.steps[0].pid = 999999999;
 		workflow.steps[0].sessionId = "dead-session";
 
-		// Simulate marking as error
-		workflow.steps[0].status = "error";
-		workflow.steps[0].error = "Session resumption failed — needs retry";
-		workflow.steps[0].pid = null;
-		workflow.status = "error";
+		await store.save(workflow);
 
-		expect(workflow.steps[0].status).toBe("error");
-		expect(workflow.steps[0].error).toContain("needs retry");
-		expect(workflow.status).toBe("error");
+		// Use a CLI runner that throws on start to simulate resumption failure
+		const fakeCliRunner = {
+			start: () => {
+				throw new Error("CLI not available");
+			},
+			kill: () => {},
+			sendAnswer: () => {},
+			killAll: () => {},
+		};
+		const callbacks = {
+			onStepChange: () => {},
+			onOutput: () => {},
+			onComplete: () => {},
+			onError: () => {},
+			onStateChange: () => {},
+		};
+		const orchestrator = new PipelineOrchestrator(callbacks, {
+			workflowStore: store,
+			// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
+			cliRunner: fakeCliRunner as any,
+		});
+		const restored = await orchestrator.restoreWorkflows();
+
+		expect(restored).toHaveLength(1);
+		expect(restored[0].steps[0].status).toBe("error");
+		expect(restored[0].steps[0].error).toContain("needs retry");
+		expect(restored[0].steps[0].pid).toBeNull();
+		expect(restored[0].status).toBe("error");
 	});
 });

@@ -143,6 +143,14 @@ describe("WorkflowStore", () => {
 		expect(result).toBeNull();
 	});
 
+	test("load returns null for valid JSON with missing required fields", async () => {
+		mkdirSync(baseDir, { recursive: true });
+		writeFileSync(join(baseDir, "invalid-1.json"), JSON.stringify({ foo: "bar" }));
+
+		const result = await store.load("invalid-1");
+		expect(result).toBeNull();
+	});
+
 	test("T008: loadAll skips corrupted files and prunes orphaned index entries", async () => {
 		const good = makeWorkflow({ id: "good-1" });
 		await store.save(good);

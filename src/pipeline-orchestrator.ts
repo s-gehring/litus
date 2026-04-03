@@ -486,7 +486,8 @@ export class PipelineOrchestrator {
 	async restoreWorkflows(): Promise<Workflow[]> {
 		const workflows = await this.store.loadAll();
 
-		for (const workflow of workflows) {
+		for (let i = 0; i < workflows.length; i++) {
+			const workflow = workflows[i];
 			// T041: mark errored if worktree no longer exists
 			if (
 				workflow.worktreePath &&
@@ -505,7 +506,9 @@ export class PipelineOrchestrator {
 				this.persistWorkflow(workflow);
 				continue;
 			}
-			await this.recoverOrphans(workflow);
+			// Only attempt session resume for the most recent workflow (index 0);
+			// for others, just mark orphans as error
+			await this.recoverOrphans(workflow, i === 0);
 		}
 
 		if (workflows.length > 0) {
@@ -515,7 +518,7 @@ export class PipelineOrchestrator {
 		return workflows;
 	}
 
-	private async recoverOrphans(workflow: Workflow): Promise<void> {
+	private async recoverOrphans(workflow: Workflow, allowResume = true): Promise<void> {
 		for (const step of workflow.steps) {
 			if (step.status !== "running" || step.pid === null) continue;
 
@@ -525,7 +528,7 @@ export class PipelineOrchestrator {
 
 			step.pid = null;
 
-			if (step.sessionId) {
+			if (allowResume && step.sessionId) {
 				// Resume via session
 				const cwd = workflow.worktreePath || process.cwd();
 				try {
@@ -539,10 +542,18 @@ export class PipelineOrchestrator {
 				}
 			} else {
 				step.status = "error";
-				step.error = "Process lost — needs retry";
+				step.error = step.sessionId
+					? "Session resumption skipped — not most recent workflow"
+					: "Process lost — needs retry";
 				workflow.status = "error";
 			}
 
+			this.persistWorkflow(workflow);
+		}
+
+		// Ensure workflow status is consistent with step states
+		if (workflow.status === "running" && !workflow.steps.some((s) => s.status === "running")) {
+			workflow.status = "error";
 			this.persistWorkflow(workflow);
 		}
 	}

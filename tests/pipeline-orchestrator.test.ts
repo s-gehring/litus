@@ -137,6 +137,16 @@ function createFakeAuditLogger() {
 	};
 }
 
+function createFakeWorkflowStore() {
+	return {
+		save: mock(async () => {}),
+		load: mock(async () => null),
+		loadAll: mock(async () => []),
+		loadIndex: mock(async () => []),
+		remove: mock(async () => {}),
+	};
+}
+
 function makeCallbacks(): PipelineCallbacks {
 	return {
 		onStepChange: mock(() => {}),
@@ -183,6 +193,7 @@ describe("PipelineOrchestrator", () => {
 			reviewClassifier: rc,
 			summarizer,
 			auditLogger,
+			workflowStore: createFakeWorkflowStore(),
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});

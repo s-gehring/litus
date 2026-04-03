@@ -23,6 +23,7 @@ export class WorkflowStore {
 	}
 
 	private async atomicWrite(filePath: string, data: string): Promise<void> {
+		this.ensureDir();
 		const tmpPath = `${filePath}.tmp`;
 		await Bun.write(tmpPath, data);
 		renameSync(tmpPath, filePath);
@@ -41,7 +42,12 @@ export class WorkflowStore {
 		const filePath = this.workflowPath(id);
 		try {
 			const content = await Bun.file(filePath).text();
-			return JSON.parse(content) as Workflow;
+			const data = JSON.parse(content);
+			if (!data.id || !Array.isArray(data.steps) || !data.status) {
+				console.warn(`[workflow-store] Invalid workflow structure for ${id}`);
+				return null;
+			}
+			return data as Workflow;
 		} catch {
 			console.warn(`[workflow-store] Failed to load workflow ${id}`);
 			return null;
