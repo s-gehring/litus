@@ -130,6 +130,8 @@ export interface Workflow {
 	steps: PipelineStep[];
 	currentStepIndex: number;
 	reviewCycle: ReviewCycle;
+	activeWorkMs: number;
+	activeWorkStartedAt: string | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -142,6 +144,8 @@ export type WorkflowState = Omit<Workflow, "steps"> & {
 // Server → Client messages
 export type ServerMessage =
 	| { type: "workflow:state"; workflow: WorkflowState | null }
+	| { type: "workflow:list"; workflows: WorkflowState[] }
+	| { type: "workflow:created"; workflow: WorkflowState }
 	| { type: "workflow:output"; workflowId: string; text: string }
 	| { type: "workflow:question"; workflowId: string; question: Question }
 	| { type: "workflow:summary"; workflowId: string; summary: string }
@@ -154,6 +158,13 @@ export type ServerMessage =
 			reviewIteration: number;
 	  }
 	| { type: "error"; message: string };
+
+// Client-side per-workflow state (not persisted, not sent over WebSocket)
+export interface WorkflowClientState {
+	state: WorkflowState;
+	outputLines: string[];
+	isExpanded: boolean;
+}
 
 // Client → Server messages
 export type ClientMessage =

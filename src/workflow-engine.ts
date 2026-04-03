@@ -66,6 +66,8 @@ export class WorkflowEngine {
 				maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
 				lastSeverity: null,
 			},
+			activeWorkMs: 0,
+			activeWorkStartedAt: null,
 			createdAt: now,
 			updatedAt: now,
 		};
