@@ -11,7 +11,7 @@ export async function validateTargetRepository(
 	path: string | undefined,
 ): Promise<TargetRepoValidation> {
 	// Empty/whitespace → fall back to CWD
-	if (!path || !path.trim()) {
+	if (!path?.trim()) {
 		return { valid: true, effectivePath: process.cwd() };
 	}
 

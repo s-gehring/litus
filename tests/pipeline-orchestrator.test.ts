@@ -23,6 +23,7 @@ function createFakeEngine() {
 				id: "test-wf-id",
 				specification: spec,
 				status: "idle" as WorkflowStatus,
+				targetRepository: null,
 				worktreePath: "/tmp/test-worktree",
 				worktreeBranch: "crab-studio/test",
 				summary: "",

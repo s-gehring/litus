@@ -251,7 +251,7 @@ describe("WorkflowEngine", () => {
 
 		test("worktree cwd uses targetRepository when provided", async () => {
 			let capturedCwd: string | undefined;
-			BunGlobal.Bun.spawn = (cmd: unknown, opts: { cwd?: string }) => {
+			BunGlobal.Bun.spawn = (_cmd: unknown, opts: { cwd?: string }) => {
 				capturedCwd = opts?.cwd;
 				return {
 					exited: Promise.resolve(0),
@@ -268,7 +268,7 @@ describe("WorkflowEngine", () => {
 
 		test("worktree cwd falls back to process.cwd() when no targetRepository", async () => {
 			let capturedCwd: string | undefined;
-			BunGlobal.Bun.spawn = (cmd: unknown, opts: { cwd?: string }) => {
+			BunGlobal.Bun.spawn = (_cmd: unknown, opts: { cwd?: string }) => {
 				capturedCwd = opts?.cwd;
 				return {
 					exited: Promise.resolve(0),

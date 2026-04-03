@@ -56,10 +56,7 @@ export class PipelineOrchestrator {
 		return this.engine;
 	}
 
-	async startPipeline(
-		specification: string,
-		targetRepository?: string,
-	): Promise<Workflow> {
+	async startPipeline(specification: string, targetRepository?: string): Promise<Workflow> {
 		const workflow = await this.engine.createWorkflow(specification, targetRepository);
 		this.engine.transition(workflow.id, "running");
 

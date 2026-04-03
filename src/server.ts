@@ -76,7 +76,7 @@ async function handleStart(
 	if (targetRepository) {
 		const validation = await validateTargetRepository(targetRepository);
 		if (!validation.valid) {
-			sendTo(ws, { type: "error", message: validation.error! });
+			sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
 			return;
 		}
 	}
