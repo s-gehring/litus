@@ -160,7 +160,6 @@ describe("WorkflowEngine", () => {
 		const question: Question = {
 			id: "q1",
 			content: "Should I use CSS modules?",
-			confidence: "certain",
 			detectedAt: new Date().toISOString(),
 		};
 		engine.setQuestion(w.id, question);

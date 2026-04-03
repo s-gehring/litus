@@ -41,7 +41,6 @@ export const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
 export interface Question {
 	id: string;
 	content: string;
-	confidence: "certain" | "uncertain";
 	detectedAt: string;
 }
 

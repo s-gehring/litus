@@ -22,88 +22,44 @@ describe("QuestionDetector", () => {
 		mockCreate.mockClear();
 	});
 
-	describe("certain question detection", () => {
-		test("detects 'Should I use X?' pattern", () => {
+	describe("pre-filter: passes plausible question candidates", () => {
+		test("passes direct question", () => {
 			const q = detector.detect("Should I use Tailwind CSS for this project?");
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
 			expect(q?.content).toContain("Should I use");
 		});
 
-		test("detects 'Would we like X?' pattern", () => {
-			const q = detector.detect("Would we like to add authentication here?");
-			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
-		});
-
-		test("detects 'please choose' pattern", () => {
-			const q = detector.detect("Please choose between option A and option B");
-			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
-		});
-
-		test("detects 'please select' pattern", () => {
-			const q = detector.detect("Please select your preferred approach");
-			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
-		});
-
-		test("detects 'Which do you prefer?' pattern", () => {
-			const q = detector.detect("Which approach would you prefer?");
-			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
-		});
-
-		test("detects 'Could I use X?' pattern", () => {
-			const q = detector.detect("Could I use a different database here?");
-			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
-		});
-
-		test("detects 'reply with the option letter' pattern", () => {
+		test("passes multi-choice prompt without question mark", () => {
 			const q = detector.detect(
 				'You can reply with the option letter (e.g., "A"), accept the recommendation by saying "yes" or "recommended", or provide your own short answer.',
 			);
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
 		});
 
-		test("detects markdown table with option letters", () => {
+		test("passes markdown table with options", () => {
 			const q = detector.detect(
 				"| Option | Description |\n|--------|-------------|\n| A | Use existing logic |\n| B | Clamp to zero |",
 			);
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
 		});
-	});
 
-	describe("uncertain question detection", () => {
-		test("detects text ending with question mark", () => {
+		test("passes text ending with question mark", () => {
 			const q = detector.detect("Is this the right approach for handling errors?");
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("uncertain");
 		});
 
-		test("detects 'let me know' pattern", () => {
+		test("passes 'let me know' pattern", () => {
 			const q = detector.detect("Let me know if you want me to proceed differently");
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("uncertain");
 		});
 
-		test("detects 'what do you think' pattern", () => {
-			const q = detector.detect("I've structured it this way, what do you think about it");
+		test("passes normal text for Haiku to decide", () => {
+			const q = detector.detect("The implementation uses a factory pattern for creating handlers");
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("uncertain");
-		});
-
-		test("detects 'any preference' pattern", () => {
-			const q = detector.detect("Do you have any preference on naming conventions");
-			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("uncertain");
 		});
 	});
 
-	describe("non-question exclusions", () => {
+	describe("pre-filter: excludes obvious non-questions", () => {
 		test("excludes agent narration starting with 'Here's'", () => {
 			const q = detector.detect("Here's what I've implemented so far");
 			expect(q).toBeNull();
@@ -163,7 +119,6 @@ describe("QuestionDetector", () => {
 			expect(q).not.toBeNull();
 			expect(q?.id).toBeTruthy();
 			expect(q?.content).toBeTruthy();
-			expect(q?.confidence).toBe("certain");
 			expect(q?.detectedAt).toBeTruthy();
 			// Verify detectedAt is a valid ISO date string
 			const detectedAt = q?.detectedAt ?? "";

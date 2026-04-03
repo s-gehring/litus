@@ -246,24 +246,44 @@ describe("PipelineOrchestrator", () => {
 		});
 	});
 
-	// T010: Q&A loop
+	// T010: Q&A loop — all questions are classified by Haiku
 	describe("Q&A loop", () => {
-		test("detects question after step output and pauses", async () => {
+		test("Haiku-confirmed question pauses pipeline", async () => {
 			await orchestrator.startPipeline("test");
 			const wf = getWf(engine);
 
 			const question: Question = {
 				id: "q1",
 				content: "Should I use React?",
-				confidence: "certain",
 				detectedAt: new Date().toISOString(),
 			};
 			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
 
 			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.steps[0].status).toBe("waiting_for_input");
 			expect(wf.pendingQuestion).toEqual(question);
+		});
+
+		test("Haiku-rejected question advances step", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			const question: Question = {
+				id: "q1",
+				content: "What do you think about this?",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(false));
+
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.steps[0].status).toBe("completed");
+			expect(wf.currentStepIndex).toBe(1);
 		});
 
 		test("answering question resumes step via sendAnswer", async () => {
@@ -274,11 +294,13 @@ describe("PipelineOrchestrator", () => {
 			const question: Question = {
 				id: "q1",
 				content: "Should I use React?",
-				confidence: "certain",
 				detectedAt: new Date().toISOString(),
 			};
 			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
 			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
 
 			orchestrator.answerQuestion("test-wf-id", "q1", "Yes, use React");
 
@@ -294,11 +316,13 @@ describe("PipelineOrchestrator", () => {
 			const question: Question = {
 				id: "q1",
 				content: "Should I use React?",
-				confidence: "certain",
 				detectedAt: new Date().toISOString(),
 			};
 			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
 			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
 
 			orchestrator.answerQuestion("test-wf-id", "q1", "Yes");
 
@@ -313,25 +337,6 @@ describe("PipelineOrchestrator", () => {
 			const question: Question = {
 				id: "q1",
 				content: "Should I use React?",
-				confidence: "certain",
-				detectedAt: new Date().toISOString(),
-			};
-			qd._pushDetectResult(question);
-			cli.getLastCallbacks().onComplete();
-
-			orchestrator.answerQuestion("test-wf-id", "q1", "Yes");
-
-			expect(qd.reset).toHaveBeenCalled();
-		});
-
-		test("uncertain question confirmed by Haiku pauses pipeline", async () => {
-			await orchestrator.startPipeline("test");
-			const wf = getWf(engine);
-
-			const question: Question = {
-				id: "q-uncertain",
-				content: "Any preference on the styling approach?",
-				confidence: "uncertain",
 				detectedAt: new Date().toISOString(),
 			};
 			qd._pushDetectResult(question);
@@ -340,28 +345,9 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.steps[0].status).toBe("waiting_for_input");
-			expect(wf.pendingQuestion).toEqual(question);
-		});
+			orchestrator.answerQuestion("test-wf-id", "q1", "Yes");
 
-		test("uncertain question rejected by Haiku advances step", async () => {
-			await orchestrator.startPipeline("test");
-			const wf = getWf(engine);
-
-			const question: Question = {
-				id: "q-uncertain",
-				content: "What do you think about this?",
-				confidence: "uncertain",
-				detectedAt: new Date().toISOString(),
-			};
-			qd._pushDetectResult(question);
-			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(false));
-
-			cli.getLastCallbacks().onComplete();
-			await new Promise((r) => setTimeout(r, 20));
-
-			expect(wf.steps[0].status).toBe("completed");
-			expect(wf.currentStepIndex).toBe(1);
+			expect(qd.reset).toHaveBeenCalled();
 		});
 
 		test("Q&A loop pauses again on second question", async () => {
@@ -370,15 +356,18 @@ describe("PipelineOrchestrator", () => {
 
 			cli.getLastCallbacks().onSessionId("sess-123");
 
-			// First question
+			// First question — Haiku confirms
 			const q1: Question = {
 				id: "q1",
 				content: "Question 1?",
-				confidence: "certain",
 				detectedAt: new Date().toISOString(),
 			};
 			qd._pushDetectResult(q1);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
 			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
 			expect(wf.pendingQuestion).toEqual(q1);
 
 			// Answer → sendAnswer called
@@ -542,11 +531,13 @@ describe("PipelineOrchestrator", () => {
 			const question: Question = {
 				id: "q-skip",
 				content: "Which framework?",
-				confidence: "certain",
 				detectedAt: new Date().toISOString(),
 			};
 			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
 			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
 
 			orchestrator.skipQuestion("test-wf-id", "q-skip");
 
@@ -660,11 +651,13 @@ describe("PipelineOrchestrator", () => {
 			const question: Question = {
 				id: "q1",
 				content: "Should I use React?",
-				confidence: "certain",
 				detectedAt: new Date().toISOString(),
 			};
 			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
 			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
 
 			expect(auditLogger.logQuery).toHaveBeenCalledWith(
 				"fake-audit-run-id",
@@ -679,11 +672,13 @@ describe("PipelineOrchestrator", () => {
 			const question: Question = {
 				id: "q1",
 				content: "Should I use React?",
-				confidence: "certain",
 				detectedAt: new Date().toISOString(),
 			};
 			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
 			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
 
 			orchestrator.answerQuestion("test-wf-id", "q1", "Yes, use React");
 
@@ -716,11 +711,13 @@ describe("PipelineOrchestrator", () => {
 			const question: Question = {
 				id: "q1",
 				content: "Question?",
-				confidence: "certain",
 				detectedAt: new Date().toISOString(),
 			};
 			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
 			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
 
 			orchestrator.cancelPipeline("test-wf-id");
 
