@@ -596,4 +596,20 @@ body::-webkit-scrollbar-track {
   background: transparent;
 }
 
+/* PR link in status area */
+.pr-link {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent-green);
+  text-decoration: none;
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: rgba(78,204,163,0.15);
+  transition: background 0.15s;
+}
+
+.pr-link:hover {
+  background: rgba(78,204,163,0.3);
+}
+
 .hidden { display: none !important; }

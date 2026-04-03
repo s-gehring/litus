@@ -363,6 +363,11 @@ export class PipelineOrchestrator {
 		step.pid = null;
 		workflow.updatedAt = new Date().toISOString();
 
+		if (step.name === "commit-push-pr") {
+			const url = extractPrUrl(step.output);
+			if (url) workflow.prUrl = url;
+		}
+
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 

@@ -36,6 +36,18 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 		}
 	}
 
+	// PR link
+	const prLink = $("#pr-link") as HTMLAnchorElement | null;
+	if (prLink) {
+		if (workflow?.prUrl) {
+			prLink.href = workflow.prUrl;
+			prLink.textContent = "View PR";
+			prLink.classList.remove("hidden");
+		} else {
+			prLink.classList.add("hidden");
+		}
+	}
+
 	// Render collapsed completed steps
 	renderStepHistory(workflow);
 }
