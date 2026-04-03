@@ -73,6 +73,17 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.startStep(workflow);
 
+		this.summarizer
+			.generateSpecSummary(specification)
+			.then(({ summary, flavor }) => {
+				if (summary) workflow.summary = summary;
+				if (flavor) workflow.flavor = flavor;
+				workflow.updatedAt = new Date().toISOString();
+				this.persistWorkflow(workflow);
+				this.callbacks.onStateChange(workflow.id);
+			})
+			.catch(() => {});
+
 		return workflow;
 	}
 
@@ -167,6 +178,7 @@ export class PipelineOrchestrator {
 		this.summarizer.cleanup(workflowId);
 		this.questionDetector.reset();
 		this.assistantTextBuffer = "";
+		this.engine.clearQuestion(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		if (step.status === "running" || step.status === "waiting_for_input") {
