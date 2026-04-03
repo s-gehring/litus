@@ -225,8 +225,23 @@ function renderExpandedView(): void {
 
 	// Render output from accumulated lines
 	clearOutput();
-	for (const line of entry.outputLines) {
-		appendOutput(line);
+	if (entry.outputLines.length > 0) {
+		for (const line of entry.outputLines) {
+			appendOutput(line);
+		}
+	} else if (wf.status === "error") {
+		// Restored error workflows have no live output — show step error/output
+		const errorStep = wf.steps.find((s) => s.status === "error");
+		if (errorStep) {
+			if (errorStep.output) {
+				const trimmed =
+					errorStep.output.length > 1000 ? `...${errorStep.output.slice(-1000)}` : errorStep.output;
+				appendOutput(trimmed);
+			}
+			if (errorStep.error) {
+				appendOutput(`Error: ${errorStep.error}`, "error");
+			}
+		}
 	}
 
 	// Question
