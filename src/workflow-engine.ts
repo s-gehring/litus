@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { cp, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type { Question, Workflow, WorkflowStatus } from "./types";
 import {
 	PIPELINE_STEP_DEFINITIONS,
@@ -21,9 +22,10 @@ export class WorkflowEngine {
 		const effectiveRepo = targetRepository || null;
 		const baseCwd = targetRepository || process.cwd();
 
-		// Create git worktree
+		// Create git worktree and copy gitignored files
 		try {
 			worktreePath = await this.createWorktree(branchName, baseCwd);
+			await this.copyGitignoredFiles(baseCwd, worktreePath);
 		} catch (err) {
 			throw new Error(
 				`Failed to create git worktree: ${err instanceof Error ? err.message : String(err)}`,
@@ -125,5 +127,26 @@ export class WorkflowEngine {
 				? await new Response(stderrStream as ReadableStream).text()
 				: "";
 		throw new Error(stderr.trim() || `git worktree add failed with code ${code}`);
+	}
+
+	private static readonly GITIGNORED_PATHS = [
+		".serena",
+		".specify",
+		".claude",
+		"specs",
+		"CLAUDE.md",
+	];
+
+	private async copyGitignoredFiles(sourceCwd: string, worktreePath: string): Promise<void> {
+		for (const entry of WorkflowEngine.GITIGNORED_PATHS) {
+			const src = join(sourceCwd, entry);
+			const dest = join(worktreePath, entry);
+			try {
+				const s = await stat(src);
+				await cp(src, dest, { recursive: s.isDirectory() });
+			} catch {
+				// Source doesn't exist — skip silently
+			}
+		}
 	}
 }
