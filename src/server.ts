@@ -348,18 +348,28 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 			const orch = createOrchestrator();
 			orch.getEngine().setWorkflow(workflow);
 
-			// Mark previously-running workflows as "error" — CLI process is lost
+			// Resume previously-running workflows via --resume if session ID exists
 			if (workflow.status === "running") {
-				workflow.activeWorkStartedAt = null;
 				const runningStep = workflow.steps.find((s) => s.status === "running");
-				if (runningStep) {
-					runningStep.status = "error";
-					runningStep.error = "Server restarted — process lost";
-					runningStep.pid = null;
+				if (runningStep?.sessionId) {
+					console.log(
+						`[startup] Resuming workflow ${workflow.id} step "${runningStep.name}" (session: ${runningStep.sessionId})`,
+					);
+					orch.resumeStep(workflow.id).catch((err) => {
+						console.error(`[startup] Failed to resume workflow ${workflow.id}: ${err}`);
+					});
+				} else {
+					// No session ID — cannot resume, mark as error
+					workflow.activeWorkStartedAt = null;
+					if (runningStep) {
+						runningStep.status = "error";
+						runningStep.error = "Server restarted — no session to resume";
+						runningStep.pid = null;
+					}
+					workflow.status = "error";
+					workflow.updatedAt = new Date().toISOString();
+					await sharedStore.save(workflow);
 				}
-				workflow.status = "error";
-				workflow.updatedAt = new Date().toISOString();
-				await sharedStore.save(workflow);
 			}
 
 			orchestrators.set(workflow.id, orch);

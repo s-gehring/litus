@@ -142,6 +142,43 @@ export class CLIRunner {
 		this.streamOutput(newEntry);
 	}
 
+	resume(workflowId: string, sessionId: string, cwd: string, callbacks: CLICallbacks): void {
+		const args = [
+			"claude",
+			"-p",
+			"Continue where you left off.",
+			"--output-format",
+			"stream-json",
+			"--verbose",
+			"--include-partial-messages",
+			"--dangerously-skip-permissions",
+			"--resume",
+			sessionId,
+		];
+
+		const proc = Bun.spawn(args, {
+			cwd,
+			stdout: "pipe",
+			stderr: "pipe",
+			env: process.env,
+		});
+
+		const entry: RunningProcess = {
+			process: proc,
+			workflowId,
+			sessionId,
+			cwd,
+			callbacks,
+			stale: false,
+			deltaBuffer: "",
+			deltaFlushTimer: null,
+		};
+
+		this.running.set(workflowId, entry);
+		callbacks.onPid?.(proc.pid);
+		this.streamOutput(entry);
+	}
+
 	kill(workflowId: string): void {
 		const entry = this.running.get(workflowId);
 		if (entry) {
@@ -251,12 +288,19 @@ export class CLIRunner {
 		// Handle different event types from stream-json format
 		if (event.type === "assistant" && event.message?.content) {
 			this.flushDeltaBuffer(entry);
+			const toolCounts = new Map<string, number>();
 			for (const block of event.message.content) {
 				if (block.type === "text" && block.text) {
 					entry.callbacks.onOutput(block.text);
-				} else if (block.type === "tool_use") {
-					entry.callbacks.onOutput(`[Tool: ${block.name}]`);
+				} else if (block.type === "tool_use" && block.name) {
+					toolCounts.set(block.name, (toolCounts.get(block.name) ?? 0) + 1);
 				}
+			}
+			if (toolCounts.size > 0) {
+				const grouped = Array.from(toolCounts.entries())
+					.map(([name, count]) => (count > 1 ? `[Tool: ${name} x${count}]` : `[Tool: ${name}]`))
+					.join(" ");
+				entry.callbacks.onOutput(grouped);
 			}
 		} else if (event.type === "content_block_delta" && event.delta?.text) {
 			// Batch delta fragments to reduce DOM element count (CR3-010)

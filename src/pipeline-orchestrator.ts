@@ -140,6 +140,32 @@ export class PipelineOrchestrator {
 		);
 	}
 
+	async resumeStep(workflowId: string): Promise<void> {
+		const workflow = this.getWorkflowOrThrow(workflowId);
+		if (workflow.status !== "running") return;
+
+		const step = workflow.steps[workflow.currentStepIndex];
+		if (!step.sessionId) return;
+
+		const cwd = workflow.worktreePath || process.cwd();
+		const pipelineName =
+			this.pipelineName ?? (await this.getBranch(process.cwd())) ?? workflow.worktreeBranch;
+		this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
+
+		this.assistantTextBuffer = "";
+		this.questionDetector.reset();
+
+		const cliCallbacks: CLICallbacks = {
+			onOutput: (text) => this.handleStepOutput(workflow.id, text),
+			onComplete: () => this.handleStepComplete(workflow.id),
+			onError: (error) => this.handleStepError(workflow.id, error),
+			onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
+			onPid: (pid) => this.handlePid(workflow.id, pid),
+		};
+
+		this.cliRunner.resume(workflowId, step.sessionId, cwd, cliCallbacks);
+	}
+
 	async retryStep(workflowId: string): Promise<void> {
 		const workflow = this.getWorkflowOrThrow(workflowId);
 
