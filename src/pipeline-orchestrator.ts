@@ -32,6 +32,13 @@ export interface PipelineDeps {
 	workflowStore?: WorkflowStore;
 }
 
+const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
+
+export function extractPrUrl(output: string): string | null {
+	const matches = output.match(PR_URL_PATTERN);
+	return matches ? matches[matches.length - 1] : null;
+}
+
 export class PipelineOrchestrator {
 	private engine: WorkflowEngine;
 	private cliRunner: CLIRunner;
