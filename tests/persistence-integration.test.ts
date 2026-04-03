@@ -258,7 +258,8 @@ describe("Persistence Integration — US3: Orphan Process Detection", () => {
 		expect(restored).toHaveLength(1);
 		expect(restored[0].steps[0].pid).toBeNull();
 		expect(restored[0].steps[0].status).toBe("error");
-		// Process should have been killed
+		// Wait for the process to actually exit after SIGTERM
+		await child.exited;
 		expect(isProcessAlive(pid)).toBe(false);
 	});
 
