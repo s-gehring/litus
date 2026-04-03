@@ -2,50 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Workflow, WorkflowIndexEntry } from "../src/types";
-import { PIPELINE_STEP_DEFINITIONS, REVIEW_CYCLE_MAX_ITERATIONS } from "../src/types";
+import type { WorkflowIndexEntry } from "../src/types";
 import { WorkflowStore } from "../src/workflow-store";
-
-function assertDefined<T>(value: T | null | undefined): asserts value is T {
-	expect(value).not.toBeNull();
-	expect(value).toBeDefined();
-}
-
-function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
-	const now = new Date().toISOString();
-	return {
-		id: overrides?.id ?? "test-id-1",
-		specification: "Build a login page",
-		status: "idle",
-		targetRepository: null,
-		worktreePath: "/tmp/test-worktree",
-		worktreeBranch: "crab-studio/test",
-		summary: "",
-		pendingQuestion: null,
-		lastOutput: "",
-		steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
-			name: def.name,
-			displayName: def.displayName,
-			status: "pending" as const,
-			prompt: def.prompt,
-			sessionId: null,
-			output: "",
-			error: null,
-			startedAt: null,
-			completedAt: null,
-			pid: null,
-		})),
-		currentStepIndex: 0,
-		reviewCycle: {
-			iteration: 1,
-			maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
-			lastSeverity: null,
-		},
-		createdAt: now,
-		updatedAt: now,
-		...overrides,
-	};
-}
+import { assertDefined, makeWorkflow } from "./helpers";
 
 describe("WorkflowStore", () => {
 	let baseDir: string;
@@ -148,6 +107,20 @@ describe("WorkflowStore", () => {
 		writeFileSync(join(baseDir, "invalid-1.json"), JSON.stringify({ foo: "bar" }));
 
 		const result = await store.load("invalid-1");
+		expect(result).toBeNull();
+	});
+
+	test("load returns null for out-of-bounds currentStepIndex", async () => {
+		const workflow = makeWorkflow({ id: "bad-index" });
+		await store.save(workflow);
+
+		// Manually corrupt currentStepIndex
+		const filePath = join(baseDir, "bad-index.json");
+		const data = JSON.parse(await Bun.file(filePath).text());
+		data.currentStepIndex = 99;
+		writeFileSync(filePath, JSON.stringify(data, null, 2));
+
+		const result = await store.load("bad-index");
 		expect(result).toBeNull();
 	});
 

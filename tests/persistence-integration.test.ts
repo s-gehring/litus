@@ -2,51 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Workflow } from "../src/types";
-
-import { PIPELINE_STEP_DEFINITIONS, REVIEW_CYCLE_MAX_ITERATIONS } from "../src/types";
 import { WorkflowStore } from "../src/workflow-store";
-
-function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
-	const now = new Date().toISOString();
-	return {
-		id: overrides?.id ?? `wf-${Date.now()}`,
-		specification: "Build a feature",
-		status: "idle",
-		targetRepository: null,
-		worktreePath: "/tmp/test-worktree",
-		worktreeBranch: "crab-studio/test",
-		summary: "",
-		pendingQuestion: null,
-		lastOutput: "",
-		steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
-			name: def.name,
-			displayName: def.displayName,
-			status: "pending" as const,
-			prompt: def.prompt,
-			sessionId: null,
-			output: "",
-			error: null,
-			startedAt: null,
-			completedAt: null,
-			pid: null,
-		})),
-		currentStepIndex: 0,
-		reviewCycle: {
-			iteration: 1,
-			maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
-			lastSeverity: null,
-		},
-		createdAt: now,
-		updatedAt: now,
-		...overrides,
-	};
-}
-
-function assertDefined<T>(value: T | null | undefined): asserts value is T {
-	expect(value).not.toBeNull();
-	expect(value).toBeDefined();
-}
+import { assertDefined, makeWorkflow } from "./helpers";
 
 describe("Persistence Integration — US1: Survive Server Restart", () => {
 	let baseDir: string;
@@ -266,6 +223,43 @@ describe("Persistence Integration — US3: Orphan Process Detection", () => {
 		expect(restored[0].steps[0].error).toContain("needs retry");
 		expect(restored[0].steps[0].pid).toBeNull();
 		expect(restored[0].status).toBe("error");
+	});
+
+	test("T033: alive orphan is killed during recovery", async () => {
+		const { PipelineOrchestrator } = await import("../src/pipeline-orchestrator");
+		const { isProcessAlive } = await import("../src/cli-runner");
+
+		// Spawn a real long-running process to act as an orphan
+		const child = Bun.spawn(["node", "-e", "setTimeout(() => {}, 60000)"], {
+			stdout: "ignore",
+			stderr: "ignore",
+		});
+		const pid = child.pid;
+		expect(isProcessAlive(pid)).toBe(true);
+
+		const workflow = makeWorkflow({ id: "orphan-alive", worktreePath: baseDir });
+		workflow.status = "running";
+		workflow.steps[0].status = "running";
+		workflow.steps[0].pid = pid;
+		workflow.steps[0].sessionId = null;
+
+		await store.save(workflow);
+
+		const callbacks = {
+			onStepChange: () => {},
+			onOutput: () => {},
+			onComplete: () => {},
+			onError: () => {},
+			onStateChange: () => {},
+		};
+		const orchestrator = new PipelineOrchestrator(callbacks, { workflowStore: store });
+		const restored = await orchestrator.restoreWorkflows();
+
+		expect(restored).toHaveLength(1);
+		expect(restored[0].steps[0].pid).toBeNull();
+		expect(restored[0].steps[0].status).toBe("error");
+		// Process should have been killed
+		expect(isProcessAlive(pid)).toBe(false);
 	});
 
 	test("T036: dead orphan with sessionId is marked as error by recoverOrphans", async () => {

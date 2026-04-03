@@ -461,6 +461,10 @@ export class PipelineOrchestrator {
 		});
 	}
 
+	private async persistWorkflowAsync(workflow: Workflow): Promise<void> {
+		await this.store.save(workflow);
+	}
+
 	private persistDebounced(workflow: Workflow): void {
 		if (this.persistDebounceTimer) {
 			clearTimeout(this.persistDebounceTimer);
@@ -486,6 +490,12 @@ export class PipelineOrchestrator {
 	async restoreWorkflows(): Promise<Workflow[]> {
 		const workflows = await this.store.loadAll();
 
+		// Set the most recent workflow as active before recovery,
+		// so runStep callbacks can find it via engine.getWorkflow()
+		if (workflows.length > 0) {
+			this.engine.setWorkflow(workflows[0]);
+		}
+
 		for (let i = 0; i < workflows.length; i++) {
 			const workflow = workflows[i];
 			// T041: mark errored if worktree no longer exists
@@ -503,16 +513,12 @@ export class PipelineOrchestrator {
 					runningStep.error = "Worktree no longer exists";
 					runningStep.pid = null;
 				}
-				this.persistWorkflow(workflow);
+				await this.persistWorkflowAsync(workflow);
 				continue;
 			}
 			// Only attempt session resume for the most recent workflow (index 0);
 			// for others, just mark orphans as error
 			await this.recoverOrphans(workflow, i === 0);
-		}
-
-		if (workflows.length > 0) {
-			this.engine.setWorkflow(workflows[0]);
 		}
 
 		return workflows;
@@ -529,10 +535,9 @@ export class PipelineOrchestrator {
 			step.pid = null;
 
 			if (allowResume && step.sessionId) {
-				// Resume via session
+				// Resume via session — setWorkflow happens in restoreWorkflows after all recovery
 				const cwd = workflow.worktreePath || process.cwd();
 				try {
-					this.engine.setWorkflow(workflow);
 					this.runStep(workflow, step.prompt, cwd);
 					return;
 				} catch {
@@ -548,13 +553,13 @@ export class PipelineOrchestrator {
 				workflow.status = "error";
 			}
 
-			this.persistWorkflow(workflow);
+			await this.persistWorkflowAsync(workflow);
 		}
 
 		// Ensure workflow status is consistent with step states
 		if (workflow.status === "running" && !workflow.steps.some((s) => s.status === "running")) {
 			workflow.status = "error";
-			this.persistWorkflow(workflow);
+			await this.persistWorkflowAsync(workflow);
 		}
 	}
 

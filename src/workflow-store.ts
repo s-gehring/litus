@@ -5,6 +5,7 @@ import type { Workflow, WorkflowIndexEntry } from "./types";
 
 export class WorkflowStore {
 	private baseDir: string;
+	private indexLock: Promise<void> = Promise.resolve();
 
 	constructor(baseDir?: string) {
 		this.baseDir = baseDir ?? join(homedir(), ".crab-studio", "workflows");
@@ -47,6 +48,14 @@ export class WorkflowStore {
 				console.warn(`[workflow-store] Invalid workflow structure for ${id}`);
 				return null;
 			}
+			if (
+				typeof data.currentStepIndex !== "number" ||
+				data.currentStepIndex < 0 ||
+				data.currentStepIndex >= data.steps.length
+			) {
+				console.warn(`[workflow-store] Invalid currentStepIndex for ${id}`);
+				return null;
+			}
 			return data as Workflow;
 		} catch {
 			console.warn(`[workflow-store] Failed to load workflow ${id}`);
@@ -69,7 +78,8 @@ export class WorkflowStore {
 
 		// Prune invalid entries from index if any were skipped
 		if (validIds.length < index.length) {
-			const prunedIndex = index.filter((e) => validIds.includes(e.id));
+			const validSet = new Set(validIds);
+			const prunedIndex = index.filter((e) => validSet.has(e.id));
 			await this.atomicWrite(this.indexPath(), JSON.stringify(prunedIndex, null, 2));
 		}
 
@@ -108,31 +118,45 @@ export class WorkflowStore {
 	}
 
 	private async updateIndex(workflow: Workflow): Promise<void> {
-		let index: WorkflowIndexEntry[];
+		await this.withIndexLock(async () => {
+			let index: WorkflowIndexEntry[];
+			try {
+				const content = await Bun.file(this.indexPath()).text();
+				index = JSON.parse(content) as WorkflowIndexEntry[];
+			} catch {
+				index = [];
+			}
+
+			const entry: WorkflowIndexEntry = {
+				id: workflow.id,
+				branch: workflow.worktreeBranch,
+				status: workflow.status,
+				summary: workflow.summary,
+				createdAt: workflow.createdAt,
+				updatedAt: workflow.updatedAt,
+			};
+
+			const existingIdx = index.findIndex((e) => e.id === workflow.id);
+			if (existingIdx >= 0) {
+				index[existingIdx] = entry;
+			} else {
+				index.push(entry);
+			}
+
+			await this.atomicWrite(this.indexPath(), JSON.stringify(index, null, 2));
+		});
+	}
+
+	private async withIndexLock<T>(fn: () => Promise<T>): Promise<T> {
+		const prev = this.indexLock;
+		const { promise, resolve } = Promise.withResolvers<void>();
+		this.indexLock = promise;
 		try {
-			const content = await Bun.file(this.indexPath()).text();
-			index = JSON.parse(content) as WorkflowIndexEntry[];
-		} catch {
-			index = [];
+			await prev;
+			return await fn();
+		} finally {
+			resolve();
 		}
-
-		const entry: WorkflowIndexEntry = {
-			id: workflow.id,
-			branch: workflow.worktreeBranch,
-			status: workflow.status,
-			summary: workflow.summary,
-			createdAt: workflow.createdAt,
-			updatedAt: workflow.updatedAt,
-		};
-
-		const existingIdx = index.findIndex((e) => e.id === workflow.id);
-		if (existingIdx >= 0) {
-			index[existingIdx] = entry;
-		} else {
-			index.push(entry);
-		}
-
-		await this.atomicWrite(this.indexPath(), JSON.stringify(index, null, 2));
 	}
 
 	private async rebuildIndex(): Promise<WorkflowIndexEntry[]> {
