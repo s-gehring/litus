@@ -1,6 +1,7 @@
 import type { ServerWebSocket } from "bun";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { getMimeType, resolveStaticPath } from "./static-files";
+import { validateTargetRepository } from "./target-repo-validator";
 import type { ClientMessage, ServerMessage, WorkflowState } from "./types";
 
 type WsData = Record<string, never>;
@@ -69,6 +70,15 @@ async function handleStart(
 	if (workflow && (workflow.status === "running" || workflow.status === "waiting_for_input")) {
 		sendTo(ws, { type: "error", message: "A workflow is already active" });
 		return;
+	}
+
+	// Validate target repository if provided
+	if (targetRepository) {
+		const validation = await validateTargetRepository(targetRepository);
+		if (!validation.valid) {
+			sendTo(ws, { type: "error", message: validation.error! });
+			return;
+		}
 	}
 
 	try {
