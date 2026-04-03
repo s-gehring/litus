@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import type { Workflow } from "../src/types";
+import type { Workflow, WorkflowState } from "../src/types";
 import { PIPELINE_STEP_DEFINITIONS, REVIEW_CYCLE_MAX_ITERATIONS } from "../src/types";
 
 export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
@@ -37,6 +37,29 @@ export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 		activeWorkStartedAt: null,
 		createdAt: now,
 		updatedAt: now,
+		...overrides,
+	};
+}
+
+export function makeWorkflowState(overrides?: Partial<WorkflowState>): WorkflowState {
+	return {
+		id: overrides?.id ?? `wf-${Date.now()}`,
+		specification: "Build a feature",
+		status: "idle",
+		targetRepository: null,
+		worktreePath: "/tmp/test",
+		worktreeBranch: "crab-studio/test",
+		summary: "",
+		flavor: "",
+		pendingQuestion: null,
+		lastOutput: "",
+		steps: [],
+		currentStepIndex: 0,
+		reviewCycle: { iteration: 1, maxIterations: 16, lastSeverity: null },
+		activeWorkMs: 0,
+		activeWorkStartedAt: null,
+		createdAt: new Date().toISOString(),
+		updatedAt: new Date().toISOString(),
 		...overrides,
 	};
 }

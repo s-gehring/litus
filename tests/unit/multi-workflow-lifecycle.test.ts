@@ -1,53 +1,30 @@
 import { describe, expect, test } from "bun:test";
 import { formatTimer } from "../../src/client/components/workflow-cards";
-import type { WorkflowClientState, WorkflowState } from "../../src/types";
+import type { WorkflowClientState } from "../../src/types";
+import { makeWorkflowState } from "../helpers";
 
-// E2E-style test: simulates the full lifecycle of multiple concurrent workflows
-// through the client state model (no real server needed)
+const LIFECYCLE_STEPS = [
+	{
+		name: "specify" as const,
+		displayName: "Specifying",
+		status: "pending" as const,
+		output: "",
+		error: null,
+		startedAt: null,
+		completedAt: null,
+	},
+	{
+		name: "clarify" as const,
+		displayName: "Clarifying",
+		status: "pending" as const,
+		output: "",
+		error: null,
+		startedAt: null,
+		completedAt: null,
+	},
+];
 
-function makeWorkflowState(overrides?: Partial<WorkflowState>): WorkflowState {
-	return {
-		id: overrides?.id ?? `wf-${Date.now()}`,
-		specification: "Build a feature",
-		status: "idle",
-		targetRepository: null,
-		worktreePath: "/tmp/test",
-		worktreeBranch: "crab-studio/test",
-		summary: "",
-		flavor: "",
-		pendingQuestion: null,
-		lastOutput: "",
-		steps: [
-			{
-				name: "specify",
-				displayName: "Specifying",
-				status: "pending",
-				output: "",
-				error: null,
-				startedAt: null,
-				completedAt: null,
-			},
-			{
-				name: "clarify",
-				displayName: "Clarifying",
-				status: "pending",
-				output: "",
-				error: null,
-				startedAt: null,
-				completedAt: null,
-			},
-		],
-		currentStepIndex: 0,
-		reviewCycle: { iteration: 1, maxIterations: 16, lastSeverity: null },
-		activeWorkMs: 0,
-		activeWorkStartedAt: null,
-		createdAt: new Date().toISOString(),
-		updatedAt: new Date().toISOString(),
-		...overrides,
-	};
-}
-
-describe("E2E: Multi-workflow lifecycle", () => {
+describe("Multi-workflow lifecycle", () => {
 	test("start multiple workflows, verify concurrent state, card interaction, timer", () => {
 		// Simulate client state
 		const workflows = new Map<string, WorkflowClientState>();
@@ -61,6 +38,7 @@ describe("E2E: Multi-workflow lifecycle", () => {
 		const wfA = makeWorkflowState({
 			id: "wf-a",
 			status: "running",
+			steps: LIFECYCLE_STEPS.map((s) => ({ ...s })),
 			activeWorkStartedAt: new Date(Date.now() - 10000).toISOString(),
 			createdAt: "2026-01-01T00:00:00Z",
 		});
@@ -73,6 +51,7 @@ describe("E2E: Multi-workflow lifecycle", () => {
 		const wfB = makeWorkflowState({
 			id: "wf-b",
 			status: "running",
+			steps: LIFECYCLE_STEPS.map((s) => ({ ...s })),
 			activeWorkStartedAt: new Date(Date.now() - 5000).toISOString(),
 			createdAt: "2026-01-01T00:01:00Z",
 		});
@@ -129,6 +108,7 @@ describe("E2E: Multi-workflow lifecycle", () => {
 		const wfC = makeWorkflowState({
 			id: "wf-c",
 			status: "running",
+			steps: LIFECYCLE_STEPS.map((s) => ({ ...s })),
 			activeWorkStartedAt: new Date().toISOString(),
 			createdAt: "2026-01-01T00:02:00Z",
 		});

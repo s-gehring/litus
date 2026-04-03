@@ -54,6 +54,7 @@ function createCallbacks() {
 		},
 		onComplete: (workflowId: string) => {
 			broadcastWorkflowState(workflowId);
+			orchestrators.delete(workflowId);
 		},
 		onError: (workflowId: string, error: string) => {
 			console.error(`[pipeline] Step error (${workflowId}): ${error}`);
@@ -213,6 +214,7 @@ function handleCancel(ws: ServerWebSocket<WsData>, workflowId: string) {
 	}
 
 	orch.cancelPipeline(workflowId);
+	orchestrators.delete(workflowId);
 }
 
 function handleRetry(ws: ServerWebSocket<WsData>, workflowId: string) {

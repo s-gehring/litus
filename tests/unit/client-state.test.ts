@@ -1,28 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { WorkflowClientState, WorkflowState } from "../../src/types";
-
-function makeWorkflowState(overrides?: Partial<WorkflowState>): WorkflowState {
-	return {
-		id: overrides?.id ?? `wf-${Date.now()}`,
-		specification: "Build a feature",
-		status: "idle",
-		targetRepository: null,
-		worktreePath: "/tmp/test",
-		worktreeBranch: "crab-studio/test",
-		summary: "",
-		flavor: "",
-		pendingQuestion: null,
-		lastOutput: "",
-		steps: [],
-		currentStepIndex: 0,
-		reviewCycle: { iteration: 1, maxIterations: 16, lastSeverity: null },
-		activeWorkMs: 0,
-		activeWorkStartedAt: null,
-		createdAt: new Date().toISOString(),
-		updatedAt: new Date().toISOString(),
-		...overrides,
-	};
-}
+import { makeWorkflowState } from "../helpers";
 
 describe("Multi-workflow client state management", () => {
 	test("Map stores multiple workflows by id", () => {
