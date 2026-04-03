@@ -110,6 +110,7 @@ export interface Workflow {
 	id: string;
 	specification: string;
 	status: WorkflowStatus;
+	targetRepository: string | null;
 	worktreePath: string | null;
 	worktreeBranch: string;
 	summary: string;
@@ -145,7 +146,7 @@ export type ServerMessage =
 
 // Client → Server messages
 export type ClientMessage =
-	| { type: "workflow:start"; specification: string }
+	| { type: "workflow:start"; specification: string; targetRepository?: string }
 	| { type: "workflow:answer"; workflowId: string; questionId: string; answer: string }
 	| { type: "workflow:skip"; workflowId: string; questionId: string }
 	| { type: "workflow:cancel"; workflowId: string }
