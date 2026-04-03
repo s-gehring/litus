@@ -1,39 +1,54 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { Summarizer } from "../src/summarizer";
 
-// Mock the Anthropic SDK
-const mockCreate = mock(() =>
-	Promise.resolve({
-		content: [{ type: "text" as const, text: "Setting up project" }],
-	}),
-);
+const originalSpawn = Bun.spawn;
 
-mock.module("@anthropic-ai/sdk", () => ({
-	default: class MockAnthropic {
-		messages = { create: mockCreate };
-	},
-}));
+function mockSpawnResponse(text: string, exitCode = 0) {
+	const stream = new ReadableStream({
+		start(controller) {
+			controller.enqueue(new TextEncoder().encode(text));
+			controller.close();
+		},
+	});
+	return {
+		stdout: stream,
+		stderr: new ReadableStream({
+			start(c) {
+				c.close();
+			},
+		}),
+		exited: Promise.resolve(exitCode),
+		pid: 1,
+		kill: () => {},
+	};
+}
 
 // Flush microtask queue to let fire-and-forget promises resolve
 async function flushAsync() {
-	// Two ticks: one for the API call promise, one for the .then() callback
-	await Promise.resolve();
-	await Promise.resolve();
+	for (let i = 0; i < 10; i++) {
+		await Promise.resolve();
+	}
 }
 
 describe("Summarizer", () => {
 	let summarizer: Summarizer;
+	let spawnMock: ReturnType<typeof mock>;
 
 	beforeEach(() => {
 		summarizer = new Summarizer();
-		mockCreate.mockClear();
+		spawnMock = mock(() => mockSpawnResponse("Setting up project"));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
+	});
+
+	afterEach(() => {
+		Bun.spawn = originalSpawn;
 	});
 
 	test("does not trigger summary below MIN_CHARS threshold", () => {
 		const callback = mock(() => {});
 		summarizer.maybeSummarize("w1", "short text", callback);
 		expect(callback).not.toHaveBeenCalled();
-		expect(mockCreate).not.toHaveBeenCalled();
+		expect(spawnMock).not.toHaveBeenCalled();
 	});
 
 	test("triggers summary when enough text accumulated", async () => {
@@ -43,10 +58,10 @@ describe("Summarizer", () => {
 
 		await flushAsync();
 
-		expect(mockCreate).toHaveBeenCalledTimes(1);
-		const callArgs = (mockCreate.mock.calls as unknown[][])[0][0] as Record<string, unknown>;
-		expect(callArgs.model).toBe("claude-haiku-4-5-20251001");
-		expect(callArgs.max_tokens).toBe(50);
+		expect(spawnMock).toHaveBeenCalledTimes(1);
+		const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
+		expect(args).toContain("--model");
+		expect(args).toContain("claude-haiku-4-5-20251001");
 		expect(callback).toHaveBeenCalledWith("Setting up project");
 	});
 
@@ -60,8 +75,8 @@ describe("Summarizer", () => {
 
 		await flushAsync();
 
-		// Only one API call despite two maybeSummarize calls
-		expect(mockCreate).toHaveBeenCalledTimes(1);
+		// Only one spawn call despite two maybeSummarize calls
+		expect(spawnMock).toHaveBeenCalledTimes(1);
 	});
 
 	test("throttles by INTERVAL_MS after a completed summary", async () => {
@@ -72,12 +87,12 @@ describe("Summarizer", () => {
 		await flushAsync();
 
 		// First summary completed, but within INTERVAL_MS
-		mockCreate.mockClear();
+		spawnMock.mockClear();
 		summarizer.maybeSummarize("w1", longText, callback);
 
 		await flushAsync();
 		// Should not trigger again within interval
-		expect(mockCreate).not.toHaveBeenCalled();
+		expect(spawnMock).not.toHaveBeenCalled();
 	});
 
 	test("accumulates text per workflow ID independently", async () => {
@@ -91,7 +106,7 @@ describe("Summarizer", () => {
 		await flushAsync();
 
 		// Both workflows should trigger independently
-		expect(mockCreate).toHaveBeenCalledTimes(2);
+		expect(spawnMock).toHaveBeenCalledTimes(2);
 	});
 
 	test("cleanup removes workflow state", () => {
@@ -108,8 +123,9 @@ describe("Summarizer", () => {
 		expect(() => summarizer.cleanup("nonexistent")).not.toThrow();
 	});
 
-	test("handles API error gracefully without calling callback", async () => {
-		mockCreate.mockImplementationOnce(() => Promise.reject(new Error("API down")));
+	test("handles CLI error gracefully without calling callback", async () => {
+		spawnMock = mock(() => mockSpawnResponse("", 1));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
 
 		const callback = mock(() => {});
 		const longText = "x".repeat(250);
@@ -117,7 +133,7 @@ describe("Summarizer", () => {
 
 		await flushAsync();
 
-		expect(mockCreate).toHaveBeenCalledTimes(1);
+		expect(spawnMock).toHaveBeenCalledTimes(1);
 		expect(callback).not.toHaveBeenCalled();
 	});
 });
