@@ -81,8 +81,22 @@ export class WorkflowEngine {
 		if (!allowed.includes(newStatus)) {
 			throw new Error(`Invalid transition: ${w.status} → ${newStatus}`);
 		}
+
+		const now = new Date();
+
+		// Accumulate timer when leaving "running"
+		if (w.status === "running" && w.activeWorkStartedAt) {
+			w.activeWorkMs += now.getTime() - new Date(w.activeWorkStartedAt).getTime();
+			w.activeWorkStartedAt = null;
+		}
+
+		// Start timer when entering "running"
+		if (newStatus === "running") {
+			w.activeWorkStartedAt = now.toISOString();
+		}
+
 		w.status = newStatus;
-		w.updatedAt = new Date().toISOString();
+		w.updatedAt = now.toISOString();
 	}
 
 	updateLastOutput(workflowId: string, text: string): void {
