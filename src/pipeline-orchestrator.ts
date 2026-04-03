@@ -1,7 +1,6 @@
-import { existsSync } from "node:fs";
 import { AuditLogger } from "./audit-logger";
 import type { CLICallbacks } from "./cli-runner";
-import { CLIRunner, isProcessAlive, killProcess } from "./cli-runner";
+import { CLIRunner } from "./cli-runner";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
 import { Summarizer } from "./summarizer";
@@ -473,10 +472,6 @@ export class PipelineOrchestrator {
 		});
 	}
 
-	private async persistWorkflowAsync(workflow: Workflow): Promise<void> {
-		await this.store.save(workflow);
-	}
-
 	private persistDebounced(workflow: Workflow): void {
 		if (this.persistDebounceTimer) {
 			clearTimeout(this.persistDebounceTimer);
@@ -497,82 +492,6 @@ export class PipelineOrchestrator {
 
 	getStore(): WorkflowStore {
 		return this.store;
-	}
-
-	async restoreWorkflows(): Promise<Workflow[]> {
-		const workflows = await this.store.loadAll();
-
-		// Set the most recent workflow as active before recovery,
-		// so runStep callbacks can find it via engine.getWorkflow()
-		if (workflows.length > 0) {
-			this.engine.setWorkflow(workflows[0]);
-		}
-
-		for (let i = 0; i < workflows.length; i++) {
-			const workflow = workflows[i];
-			// T041: mark errored if worktree no longer exists
-			if (
-				workflow.worktreePath &&
-				workflow.status !== "completed" &&
-				workflow.status !== "cancelled" &&
-				workflow.status !== "error" &&
-				!existsSync(workflow.worktreePath)
-			) {
-				workflow.status = "error";
-				const runningStep = workflow.steps.find((s) => s.status === "running");
-				if (runningStep) {
-					runningStep.status = "error";
-					runningStep.error = "Worktree no longer exists";
-					runningStep.pid = null;
-				}
-				await this.persistWorkflowAsync(workflow);
-				continue;
-			}
-			// Only attempt session resume for the most recent workflow (index 0);
-			// for others, just mark orphans as error
-			await this.recoverOrphans(workflow, i === 0);
-		}
-
-		return workflows;
-	}
-
-	private async recoverOrphans(workflow: Workflow, allowResume = true): Promise<void> {
-		for (const step of workflow.steps) {
-			if (step.status !== "running" || step.pid === null) continue;
-
-			if (isProcessAlive(step.pid)) {
-				killProcess(step.pid);
-			}
-
-			step.pid = null;
-
-			if (allowResume && step.sessionId) {
-				// Resume via session — setWorkflow happens in restoreWorkflows after all recovery
-				const cwd = workflow.worktreePath || process.cwd();
-				try {
-					this.runStep(workflow, step.prompt, cwd);
-					return;
-				} catch {
-					step.status = "error";
-					step.error = "Session resumption failed — needs retry";
-					workflow.status = "error";
-				}
-			} else {
-				step.status = "error";
-				step.error = step.sessionId
-					? "Session resumption skipped — not most recent workflow"
-					: "Process lost — needs retry";
-				workflow.status = "error";
-			}
-
-			await this.persistWorkflowAsync(workflow);
-		}
-
-		// Ensure workflow status is consistent with step states
-		if (workflow.status === "running" && !workflow.steps.some((s) => s.status === "running")) {
-			workflow.status = "error";
-			await this.persistWorkflowAsync(workflow);
-		}
 	}
 
 	private getWorkflowOrThrow(workflowId: string): Workflow {

@@ -7,9 +7,6 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 	const btnStart = $("#btn-start") as HTMLButtonElement;
 	const btnCancel = $("#btn-cancel") as HTMLButtonElement;
 	const btnRetry = $("#btn-retry") as HTMLButtonElement | null;
-	const specInput = $("#specification-input") as HTMLTextAreaElement;
-	const targetRepoInput = $("#target-repo-input") as HTMLInputElement | null;
-
 	const status = workflow?.status || "idle";
 
 	statusBadge.textContent = status.replace("_", " ");
@@ -17,26 +14,15 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 
 	const isActive = status === "running" || status === "waiting_for_input";
 	const isError = status === "error";
-	const canStart =
-		!workflow ||
-		status === "idle" ||
-		status === "completed" ||
-		status === "cancelled" ||
-		status === "error";
 
-	btnStart.classList.toggle("hidden", !canStart || isError);
+	// Start button always visible — multi-workflow: users can always start new workflows
+	btnStart.classList.remove("hidden");
 	btnCancel.classList.toggle("hidden", !isActive);
 	if (btnRetry) {
 		btnRetry.classList.toggle("hidden", !isError);
 	}
-	specInput.disabled = isActive;
-	if (targetRepoInput) {
-		targetRepoInput.disabled = isActive;
-	}
-
-	if (canStart) {
-		btnStart.disabled = false;
-	}
+	// Never disable inputs — multi-workflow: input area is always accessible (FR-009, US5)
+	btnStart.disabled = false;
 
 	// Show current step name in status area
 	const stepLabel = $("#current-step-label");

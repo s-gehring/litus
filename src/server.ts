@@ -1,8 +1,20 @@
 import type { ServerWebSocket } from "bun";
+import { AuditLogger } from "./audit-logger";
+import { CLIRunner } from "./cli-runner";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
+import { QuestionDetector } from "./question-detector";
+import { ReviewClassifier } from "./review-classifier";
 import { getMimeType, resolveStaticPath } from "./static-files";
+import { Summarizer } from "./summarizer";
 import { validateTargetRepository } from "./target-repo-validator";
-import type { ClientMessage, ServerMessage, WorkflowState } from "./types";
+import type {
+	ClientMessage,
+	PipelineStepName,
+	ServerMessage,
+	Workflow,
+	WorkflowState,
+} from "./types";
+import { WorkflowStore } from "./workflow-store";
 
 type WsData = Record<string, never>;
 
@@ -10,41 +22,99 @@ const BASE_PORT = parseInt(process.env.PORT || "3000", 10);
 const MAX_PORT_RETRIES = 10;
 const WS_TOPIC = "workflow";
 
-const orchestrator = new PipelineOrchestrator({
-	onStepChange: (workflowId, previousStep, currentStep, currentStepIndex, reviewIteration) => {
-		broadcast({
-			type: "workflow:step-change",
-			workflowId,
-			previousStep,
-			currentStep,
-			currentStepIndex,
-			reviewIteration,
-		});
-	},
-	onOutput: (workflowId, text) => {
-		broadcast({ type: "workflow:output", workflowId, text });
-	},
-	onComplete: (_workflowId) => {
-		broadcastState();
-	},
-	onError: (_workflowId, error) => {
-		console.error(`[pipeline] Step error: ${error}`);
-		broadcast({ type: "error", message: error });
-		broadcastState();
-	},
-	onStateChange: (_workflowId) => {
-		broadcastState();
-	},
-});
+// Shared dependencies across all orchestrator instances
+const sharedStore = new WorkflowStore();
+const sharedCliRunner = new CLIRunner();
+const sharedSummarizer = new Summarizer();
+const sharedAuditLogger = new AuditLogger();
 
-function getWorkflowState(): WorkflowState | null {
-	const w = orchestrator.getEngine().getWorkflow();
+// WorkflowManager: holds one PipelineOrchestrator per active workflow
+const orchestrators = new Map<string, PipelineOrchestrator>();
+
+function createCallbacks() {
+	return {
+		onStepChange: (
+			workflowId: string,
+			previousStep: PipelineStepName | null,
+			currentStep: PipelineStepName,
+			currentStepIndex: number,
+			reviewIteration: number,
+		) => {
+			broadcast({
+				type: "workflow:step-change",
+				workflowId,
+				previousStep,
+				currentStep,
+				currentStepIndex,
+				reviewIteration,
+			});
+		},
+		onOutput: (workflowId: string, text: string) => {
+			broadcast({ type: "workflow:output", workflowId, text });
+		},
+		onComplete: (workflowId: string) => {
+			broadcastWorkflowState(workflowId);
+			orchestrators.delete(workflowId);
+		},
+		onError: (workflowId: string, error: string) => {
+			console.error(`[pipeline] Step error (${workflowId}): ${error}`);
+			broadcast({ type: "error", message: error });
+			broadcastWorkflowState(workflowId);
+		},
+		onStateChange: (workflowId: string) => {
+			broadcastWorkflowState(workflowId);
+		},
+	};
+}
+
+function createOrchestrator(): PipelineOrchestrator {
+	return new PipelineOrchestrator(createCallbacks(), {
+		cliRunner: sharedCliRunner,
+		questionDetector: new QuestionDetector(),
+		reviewClassifier: new ReviewClassifier(),
+		summarizer: sharedSummarizer,
+		auditLogger: sharedAuditLogger,
+		workflowStore: sharedStore,
+	});
+}
+
+function getWorkflowState(workflowId: string): WorkflowState | null {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) return null;
+	const w = orch.getEngine().getWorkflow();
 	if (!w) return null;
+	return stripInternalFields(w);
+}
+
+function stripInternalFields(w: Workflow): WorkflowState {
 	const { steps, ...rest } = w;
 	return {
 		...rest,
 		steps: steps.map(({ sessionId: _sid, prompt: _p, pid: _pid, ...step }) => step),
 	};
+}
+
+async function getAllWorkflowStates(): Promise<WorkflowState[]> {
+	const states: WorkflowState[] = [];
+
+	// Get states from active orchestrators
+	for (const [_id, orch] of orchestrators) {
+		const w = orch.getEngine().getWorkflow();
+		if (w) states.push(stripInternalFields(w));
+	}
+
+	// Also load terminal workflows from store that don't have active orchestrators
+	const allWorkflows = await sharedStore.loadAll();
+	const activeIds = new Set(orchestrators.keys());
+	for (const w of allWorkflows) {
+		if (!activeIds.has(w.id)) {
+			states.push(stripInternalFields(w));
+		}
+	}
+
+	// Sort by createdAt ascending (oldest first)
+	states.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+	return states;
 }
 
 function broadcast(msg: ServerMessage) {
@@ -55,8 +125,11 @@ function sendTo(ws: ServerWebSocket<WsData>, msg: ServerMessage) {
 	ws.send(JSON.stringify(msg));
 }
 
-function broadcastState() {
-	broadcast({ type: "workflow:state", workflow: getWorkflowState() });
+function broadcastWorkflowState(workflowId: string) {
+	const state = getWorkflowState(workflowId);
+	if (state) {
+		broadcast({ type: "workflow:state", workflow: state });
+	}
 }
 
 async function handleStart(
@@ -66,12 +139,6 @@ async function handleStart(
 ) {
 	if (!specification.trim()) {
 		sendTo(ws, { type: "error", message: "Specification must be non-empty" });
-		return;
-	}
-
-	const workflow = orchestrator.getEngine().getWorkflow();
-	if (workflow && (workflow.status === "running" || workflow.status === "waiting_for_input")) {
-		sendTo(ws, { type: "error", message: "A workflow is already active" });
 		return;
 	}
 
@@ -85,8 +152,12 @@ async function handleStart(
 	}
 
 	try {
-		await orchestrator.startPipeline(specification.trim(), targetRepository);
-		broadcastState();
+		const orch = createOrchestrator();
+		const workflow = await orch.startPipeline(specification.trim(), targetRepository);
+		orchestrators.set(workflow.id, orch);
+
+		const state = stripInternalFields(workflow);
+		broadcast({ type: "workflow:created", workflow: state });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : "Failed to start workflow";
 		sendTo(ws, { type: "error", message });
@@ -104,58 +175,62 @@ function handleAnswer(
 		return;
 	}
 
-	const workflow = orchestrator.getEngine().getWorkflow();
-	if (!workflow || workflow.id !== workflowId) {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) {
 		sendTo(ws, { type: "error", message: "Workflow not found" });
 		return;
 	}
 
-	if (!workflow.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow?.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
 		sendTo(ws, { type: "error", message: "Question not found or already answered" });
 		return;
 	}
 
-	orchestrator.answerQuestion(workflowId, questionId, answer.trim());
+	orch.answerQuestion(workflowId, questionId, answer.trim());
 }
 
 function handleSkip(ws: ServerWebSocket<WsData>, workflowId: string, questionId: string) {
-	const workflow = orchestrator.getEngine().getWorkflow();
-	if (!workflow || workflow.id !== workflowId) {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) {
 		sendTo(ws, { type: "error", message: "Workflow not found" });
 		return;
 	}
 
-	if (!workflow.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow?.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
 		sendTo(ws, { type: "error", message: "Question not found or already answered" });
 		return;
 	}
 
-	orchestrator.skipQuestion(workflowId, questionId);
+	orch.skipQuestion(workflowId, questionId);
 }
 
 function handleCancel(ws: ServerWebSocket<WsData>, workflowId: string) {
-	const workflow = orchestrator.getEngine().getWorkflow();
-	if (!workflow || workflow.id !== workflowId) {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) {
 		sendTo(ws, { type: "error", message: "Workflow not found" });
 		return;
 	}
 
-	orchestrator.cancelPipeline(workflowId);
+	orch.cancelPipeline(workflowId);
+	orchestrators.delete(workflowId);
 }
 
 function handleRetry(ws: ServerWebSocket<WsData>, workflowId: string) {
-	const workflow = orchestrator.getEngine().getWorkflow();
-	if (!workflow || workflow.id !== workflowId) {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) {
 		sendTo(ws, { type: "error", message: "Workflow not found" });
 		return;
 	}
 
-	if (workflow.status !== "error") {
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow || workflow.status !== "error") {
 		sendTo(ws, { type: "error", message: "No failed step to retry" });
 		return;
 	}
 
-	orchestrator.retryStep(workflowId);
+	orch.retryStep(workflowId);
 }
 
 function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
@@ -173,14 +248,19 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 
 			// Health endpoint
 			if (url.pathname === "/health") {
-				const workflow = orchestrator.getEngine().getWorkflow();
-				const isActive =
-					workflow && (workflow.status === "running" || workflow.status === "waiting_for_input");
+				const activeWorkflows: { id: string; step: string | null }[] = [];
+				for (const [id, orch] of orchestrators) {
+					const w = orch.getEngine().getWorkflow();
+					if (w && (w.status === "running" || w.status === "waiting_for_input")) {
+						activeWorkflows.push({
+							id,
+							step: w.steps[w.currentStepIndex]?.name ?? null,
+						});
+					}
+				}
 				return Response.json({
 					status: "ok",
-					activeWorkflow: isActive ? workflow.id : null,
-					currentStep: isActive ? (workflow.steps[workflow.currentStepIndex]?.name ?? null) : null,
-					reviewIteration: isActive ? workflow.reviewCycle.iteration : null,
+					activeWorkflows,
 				});
 			}
 
@@ -198,14 +278,10 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 			return new Response("Not Found", { status: 404 });
 		},
 		websocket: {
-			open(ws: ServerWebSocket<WsData>) {
+			async open(ws: ServerWebSocket<WsData>) {
 				ws.subscribe(WS_TOPIC);
-				ws.send(
-					JSON.stringify({
-						type: "workflow:state",
-						workflow: getWorkflowState(),
-					} satisfies ServerMessage),
-				);
+				const workflows = await getAllWorkflowStates();
+				sendTo(ws, { type: "workflow:list", workflows });
 			},
 			message(ws: ServerWebSocket<WsData>, message: string | Buffer) {
 				try {
@@ -258,14 +334,42 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 }
 
 // Restore persisted workflows on startup
-orchestrator
-	.restoreWorkflows()
-	.then((workflows) => {
-		if (workflows.length > 0) {
-			console.log(`[startup] Restored ${workflows.length} workflow(s)`);
-			broadcastState();
+(async () => {
+	try {
+		const allWorkflows = await sharedStore.loadAll();
+		let restoredCount = 0;
+
+		for (const workflow of allWorkflows) {
+			// Skip terminal workflows — no orchestrator needed
+			if (workflow.status === "completed" || workflow.status === "cancelled") {
+				continue;
+			}
+
+			const orch = createOrchestrator();
+			orch.getEngine().setWorkflow(workflow);
+
+			// Mark previously-running workflows as "error" — CLI process is lost
+			if (workflow.status === "running") {
+				workflow.activeWorkStartedAt = null;
+				const runningStep = workflow.steps.find((s) => s.status === "running");
+				if (runningStep) {
+					runningStep.status = "error";
+					runningStep.error = "Server restarted — process lost";
+					runningStep.pid = null;
+				}
+				workflow.status = "error";
+				workflow.updatedAt = new Date().toISOString();
+				await sharedStore.save(workflow);
+			}
+
+			orchestrators.set(workflow.id, orch);
+			restoredCount++;
 		}
-	})
-	.catch((err) => {
+
+		if (restoredCount > 0) {
+			console.log(`[startup] Restored ${restoredCount} workflow(s)`);
+		}
+	} catch (err) {
 		console.error(`[startup] Failed to restore workflows: ${err}`);
-	});
+	}
+})();
