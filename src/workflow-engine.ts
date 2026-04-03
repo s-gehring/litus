@@ -53,6 +53,7 @@ export class WorkflowEngine {
 				error: null,
 				startedAt: null,
 				completedAt: null,
+				pid: null,
 			})),
 			currentStepIndex: 0,
 			reviewCycle: {

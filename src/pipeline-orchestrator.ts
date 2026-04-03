@@ -347,6 +347,7 @@ export class PipelineOrchestrator {
 				workflow.steps[idx].sessionId = null;
 				workflow.steps[idx].startedAt = null;
 				workflow.steps[idx].completedAt = null;
+				workflow.steps[idx].pid = null;
 			}
 
 			workflow.currentStepIndex = implReviewIndex;

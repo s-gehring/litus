@@ -96,6 +96,7 @@ describe("PipelineStep shape", () => {
 			error: null,
 			startedAt: null,
 			completedAt: null,
+			pid: null,
 		};
 		expect(step.name).toBe("specify");
 		expect(step.status).toBe("pending");

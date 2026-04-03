@@ -74,6 +74,17 @@ export interface PipelineStep {
 	error: string | null;
 	startedAt: string | null;
 	completedAt: string | null;
+	pid: number | null;
+}
+
+// Lightweight metadata for fast workflow listing without loading full state
+export interface WorkflowIndexEntry {
+	id: string;
+	branch: string;
+	status: WorkflowStatus;
+	summary: string;
+	createdAt: string;
+	updatedAt: string;
 }
 
 // Review severity classification
@@ -124,7 +135,7 @@ export interface Workflow {
 
 // Serializable workflow state for WebSocket messages (strips internal fields from workflow and steps)
 export type WorkflowState = Omit<Workflow, "steps"> & {
-	steps: Omit<PipelineStep, "sessionId" | "prompt">[];
+	steps: Omit<PipelineStep, "sessionId" | "prompt" | "pid">[];
 };
 
 // Server → Client messages

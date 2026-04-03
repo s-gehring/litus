@@ -43,7 +43,7 @@ function getWorkflowState(): WorkflowState | null {
 	const { steps, ...rest } = w;
 	return {
 		...rest,
-		steps: steps.map(({ sessionId: _sid, prompt: _p, ...step }) => step),
+		steps: steps.map(({ sessionId: _sid, prompt: _p, pid: _pid, ...step }) => step),
 	};
 }
 
