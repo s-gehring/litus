@@ -13,7 +13,16 @@
       <div id="connection-status" class="status-dot disconnected" title="Disconnected"></div>
     </header>
 
-    <main class="workflow-window">
+    <!-- Card strip: compact workflow cards -->
+    <div id="card-strip" class="card-strip"></div>
+
+    <!-- Welcome / empty state (shown when no workflow is expanded) -->
+    <div id="welcome-area" class="welcome-area">
+      <p class="welcome-text">Start a specification workflow below</p>
+    </div>
+
+    <!-- Detail area: expanded workflow view (hidden until a card is clicked) -->
+    <div id="detail-area" class="workflow-window hidden">
       <!-- Status area -->
       <div id="status-area" class="status-area">
         <span class="status-label">Status:</span>
@@ -49,21 +58,21 @@
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- Input area -->
-      <div id="input-area" class="input-area">
-        <div class="target-repo-field">
-          <label for="target-repo-input" class="target-repo-label">Target Repository</label>
-          <input id="target-repo-input" type="text" class="target-repo-input" placeholder="~/git" />
-        </div>
-        <textarea id="specification-input" class="spec-input" placeholder="Enter your feature description..." rows="3"></textarea>
-        <div class="input-actions">
-          <button id="btn-start" class="btn btn-primary">Start</button>
-          <button id="btn-cancel" class="btn btn-danger hidden">Cancel</button>
-          <button id="btn-retry" class="btn btn-secondary hidden">Retry</button>
-        </div>
+    <!-- Input area: always visible at bottom -->
+    <div id="input-area" class="input-area-fixed">
+      <div class="target-repo-field">
+        <label for="target-repo-input" class="target-repo-label">Target Repository</label>
+        <input id="target-repo-input" type="text" class="target-repo-input" placeholder="~/git" />
       </div>
-    </main>
+      <textarea id="specification-input" class="spec-input" placeholder="Enter your feature description..." rows="3"></textarea>
+      <div class="input-actions">
+        <button id="btn-start" class="btn btn-primary">Start</button>
+        <button id="btn-cancel" class="btn btn-danger hidden">Cancel</button>
+        <button id="btn-retry" class="btn btn-secondary hidden">Retry</button>
+      </div>
+    </div>
   </div>
 
   <script src="/app.js"></script>

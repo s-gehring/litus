@@ -1,6 +1,7 @@
-import type { ClientMessage, ServerMessage } from "../types";
+import type { ClientMessage, ServerMessage, WorkflowClientState, WorkflowState } from "../types";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
+import { renderCardStrip, updateTimers } from "./components/workflow-cards";
 import {
 	appendOutput,
 	clearOutput,
@@ -11,10 +12,15 @@ import {
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
+const MAX_OUTPUT_LINES = 5000;
+
 let ws: WebSocket | null = null;
-let currentWorkflowId: string | null = null;
-let currentQuestionId: string | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Multi-workflow client state
+const workflows = new Map<string, WorkflowClientState>();
+const workflowOrder: string[] = [];
+let expandedWorkflowId: string | null = null;
 
 function getWsUrl(): string {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -46,9 +52,7 @@ function connect(): void {
 		scheduleReconnect();
 	};
 
-	ws.onerror = () => {
-		// onclose will fire after this
-	};
+	ws.onerror = () => {};
 
 	ws.onmessage = (event) => {
 		try {
@@ -74,59 +78,174 @@ function send(msg: ClientMessage): void {
 	}
 }
 
+function addOrUpdateWorkflow(wfState: WorkflowState): void {
+	const existing = workflows.get(wfState.id);
+	if (existing) {
+		existing.state = wfState;
+	} else {
+		workflows.set(wfState.id, {
+			state: wfState,
+			outputLines: [],
+			isExpanded: false,
+		});
+		if (!workflowOrder.includes(wfState.id)) {
+			workflowOrder.push(wfState.id);
+		}
+	}
+}
+
 function handleMessage(msg: ServerMessage): void {
 	switch (msg.type) {
-		case "workflow:state":
-			if (msg.workflow) {
-				currentWorkflowId = msg.workflow.id;
-				const isTerminal =
-					msg.workflow.status === "cancelled" ||
-					msg.workflow.status === "completed" ||
-					msg.workflow.status === "error";
-				if (msg.workflow.pendingQuestion && !isTerminal) {
-					currentQuestionId = msg.workflow.pendingQuestion.id;
-					showQuestion(msg.workflow.pendingQuestion);
-				} else {
-					currentQuestionId = null;
-					hideQuestion();
-				}
-				if (msg.workflow.summary) {
-					updateSummary(msg.workflow.summary);
-				}
-				updateFlavor(msg.workflow.flavor ?? "");
-			} else {
-				currentWorkflowId = null;
-				currentQuestionId = null;
-				hideQuestion();
-				updateSummary("");
-				updateFlavor("");
+		case "workflow:list": {
+			// Initial sync: populate all workflows
+			workflows.clear();
+			workflowOrder.length = 0;
+			for (const wf of msg.workflows) {
+				addOrUpdateWorkflow(wf);
 			}
-			updateWorkflowStatus(msg.workflow);
-			renderPipelineSteps(msg.workflow);
+			renderCards();
+			// If there's exactly one active workflow, auto-expand it
+			if (msg.workflows.length === 1) {
+				expandWorkflow(msg.workflows[0].id);
+			} else {
+				renderExpandedView();
+			}
 			break;
+		}
 
-		case "workflow:output":
-			appendOutput(msg.text);
+		case "workflow:created": {
+			addOrUpdateWorkflow(msg.workflow);
+			renderCards();
+			expandWorkflow(msg.workflow.id);
 			break;
+		}
 
-		case "workflow:question":
-			currentQuestionId = msg.question.id;
-			showQuestion(msg.question);
+		case "workflow:state": {
+			if (!msg.workflow) break;
+			addOrUpdateWorkflow(msg.workflow);
+			renderCards();
+			if (expandedWorkflowId === msg.workflow.id) {
+				renderExpandedView();
+			}
 			break;
+		}
 
-		case "workflow:summary":
-			updateSummary(msg.summary);
+		case "workflow:output": {
+			const entry = workflows.get(msg.workflowId);
+			if (entry) {
+				entry.outputLines.push(msg.text);
+				if (entry.outputLines.length > MAX_OUTPUT_LINES) {
+					entry.outputLines.splice(0, entry.outputLines.length - MAX_OUTPUT_LINES);
+				}
+				if (expandedWorkflowId === msg.workflowId) {
+					appendOutput(msg.text);
+				}
+			}
 			break;
+		}
 
-		case "workflow:step-change":
-			// Clear output for new step
-			clearOutput();
-			appendOutput(`── Step: ${msg.currentStep} ──`, "system");
+		case "workflow:question": {
+			const entry = workflows.get(msg.workflowId);
+			if (entry) {
+				entry.state.pendingQuestion = msg.question;
+				renderCards();
+				if (expandedWorkflowId === msg.workflowId) {
+					showQuestion(msg.question);
+				}
+			}
 			break;
+		}
+
+		case "workflow:summary": {
+			const entry = workflows.get(msg.workflowId);
+			if (entry) {
+				entry.state.summary = msg.summary;
+				renderCards();
+				if (expandedWorkflowId === msg.workflowId) {
+					updateSummary(msg.summary);
+				}
+			}
+			break;
+		}
+
+		case "workflow:step-change": {
+			const entry = workflows.get(msg.workflowId);
+			if (entry) {
+				entry.state.currentStepIndex = msg.currentStepIndex;
+				entry.state.reviewCycle.iteration = msg.reviewIteration;
+				renderCards();
+				if (expandedWorkflowId === msg.workflowId) {
+					clearOutput();
+					appendOutput(`── Step: ${msg.currentStep} ──`, "system");
+				}
+			}
+			break;
+		}
 
 		case "error":
 			appendOutput(`Error: ${msg.message}`, "error");
 			break;
+	}
+}
+
+function expandWorkflow(workflowId: string): void {
+	if (expandedWorkflowId === workflowId) {
+		// Toggle collapse
+		expandedWorkflowId = null;
+	} else {
+		expandedWorkflowId = workflowId;
+	}
+	renderCards();
+	renderExpandedView();
+}
+
+function renderCards(): void {
+	renderCardStrip(workflowOrder, workflows, expandedWorkflowId, expandWorkflow);
+}
+
+function renderExpandedView(): void {
+	const detailArea = $("#detail-area");
+	const welcomeArea = $("#welcome-area");
+
+	if (!expandedWorkflowId) {
+		// No workflow expanded — show welcome or empty state
+		if (detailArea) detailArea.classList.add("hidden");
+		if (welcomeArea) welcomeArea.classList.remove("hidden");
+		hideQuestion();
+		updateWorkflowStatus(null);
+		renderPipelineSteps(null);
+		updateSummary("");
+		updateFlavor("");
+		return;
+	}
+
+	if (welcomeArea) welcomeArea.classList.add("hidden");
+	if (detailArea) detailArea.classList.remove("hidden");
+
+	const entry = workflows.get(expandedWorkflowId);
+	if (!entry) return;
+
+	const wf = entry.state;
+
+	// Render status, pipeline, summary
+	updateWorkflowStatus(wf);
+	renderPipelineSteps(wf);
+	if (wf.summary) updateSummary(wf.summary);
+	updateFlavor(wf.flavor ?? "");
+
+	// Render output from accumulated lines
+	clearOutput();
+	for (const line of entry.outputLines) {
+		appendOutput(line);
+	}
+
+	// Question
+	const isTerminal =
+		wf.status === "cancelled" || wf.status === "completed" || wf.status === "error";
+	if (wf.pendingQuestion && !isTerminal) {
+		showQuestion(wf.pendingQuestion);
+	} else {
+		hideQuestion();
 	}
 }
 
@@ -145,50 +264,53 @@ document.addEventListener("DOMContentLoaded", () => {
 		if (!spec) return;
 
 		const targetRepo = targetRepoInput.value.trim();
-		clearOutput();
-		updateSummary("");
 		send({
 			type: "workflow:start",
 			specification: spec,
 			...(targetRepo ? { targetRepository: targetRepo } : {}),
 		});
-		btnStart.disabled = true;
-		targetRepoInput.disabled = true;
+		specInput.value = "";
 	});
 
 	btnCancel.addEventListener("click", () => {
-		if (currentWorkflowId) {
-			send({ type: "workflow:cancel", workflowId: currentWorkflowId });
+		if (expandedWorkflowId) {
+			send({ type: "workflow:cancel", workflowId: expandedWorkflowId });
 		}
 	});
 
 	if (btnRetry) {
 		btnRetry.addEventListener("click", () => {
-			if (currentWorkflowId) {
-				send({ type: "workflow:retry", workflowId: currentWorkflowId });
+			if (expandedWorkflowId) {
+				send({ type: "workflow:retry", workflowId: expandedWorkflowId });
 			}
 		});
 	}
 
 	btnSubmitAnswer.addEventListener("click", () => {
 		const answer = getAnswer();
-		if (!answer || !currentWorkflowId || !currentQuestionId) return;
+		if (!answer || !expandedWorkflowId) return;
+
+		const entry = workflows.get(expandedWorkflowId);
+		if (!entry?.state.pendingQuestion) return;
 
 		send({
 			type: "workflow:answer",
-			workflowId: currentWorkflowId,
-			questionId: currentQuestionId,
+			workflowId: expandedWorkflowId,
+			questionId: entry.state.pendingQuestion.id,
 			answer,
 		});
 	});
 
 	btnSkip.addEventListener("click", () => {
-		if (!currentWorkflowId || !currentQuestionId) return;
+		if (!expandedWorkflowId) return;
+
+		const entry = workflows.get(expandedWorkflowId);
+		if (!entry?.state.pendingQuestion) return;
 
 		send({
 			type: "workflow:skip",
-			workflowId: currentWorkflowId,
-			questionId: currentQuestionId,
+			workflowId: expandedWorkflowId,
+			questionId: entry.state.pendingQuestion.id,
 		});
 	});
 
@@ -208,6 +330,9 @@ document.addEventListener("DOMContentLoaded", () => {
 			btnStart.click();
 		}
 	});
+
+	// Timer update interval
+	setInterval(updateTimers, 1000);
 
 	connect();
 });
