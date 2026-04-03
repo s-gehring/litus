@@ -6,7 +6,8 @@ import type { ClientMessage, ServerMessage, WorkflowState } from "./types";
 
 type WsData = Record<string, never>;
 
-const PORT = parseInt(process.env.PORT || "3000", 10);
+const BASE_PORT = parseInt(process.env.PORT || "3000", 10);
+const MAX_PORT_RETRIES = 10;
 const WS_TOPIC = "workflow";
 
 const orchestrator = new PipelineOrchestrator({
@@ -157,88 +158,101 @@ function handleRetry(ws: ServerWebSocket<WsData>, workflowId: string) {
 	orchestrator.retryStep(workflowId);
 }
 
-const server = Bun.serve<WsData>({
-	port: PORT,
-	async fetch(req, server) {
-		const url = new URL(req.url);
+function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
+	return Bun.serve<WsData>({
+		port,
+		async fetch(req, server) {
+			const url = new URL(req.url);
 
-		// WebSocket upgrade
-		if (url.pathname === "/ws") {
-			const upgraded = server.upgrade(req, { data: {} });
-			if (upgraded) return undefined;
-			return new Response("WebSocket upgrade failed", { status: 400 });
-		}
+			// WebSocket upgrade
+			if (url.pathname === "/ws") {
+				const upgraded = server.upgrade(req, { data: {} });
+				if (upgraded) return undefined;
+				return new Response("WebSocket upgrade failed", { status: 400 });
+			}
 
-		// Health endpoint
-		if (url.pathname === "/health") {
-			const workflow = orchestrator.getEngine().getWorkflow();
-			const isActive =
-				workflow && (workflow.status === "running" || workflow.status === "waiting_for_input");
-			return Response.json({
-				status: "ok",
-				activeWorkflow: isActive ? workflow.id : null,
-				currentStep: isActive ? (workflow.steps[workflow.currentStepIndex]?.name ?? null) : null,
-				reviewIteration: isActive ? workflow.reviewCycle.iteration : null,
-			});
-		}
-
-		// Static file serving (CR-010: path traversal prevention)
-		const safePath = resolveStaticPath(url.pathname);
-		if (safePath) {
-			const file = Bun.file(safePath);
-			if (await file.exists()) {
-				return new Response(file, {
-					headers: { "Content-Type": getMimeType(safePath) },
+			// Health endpoint
+			if (url.pathname === "/health") {
+				const workflow = orchestrator.getEngine().getWorkflow();
+				const isActive =
+					workflow && (workflow.status === "running" || workflow.status === "waiting_for_input");
+				return Response.json({
+					status: "ok",
+					activeWorkflow: isActive ? workflow.id : null,
+					currentStep: isActive ? (workflow.steps[workflow.currentStepIndex]?.name ?? null) : null,
+					reviewIteration: isActive ? workflow.reviewCycle.iteration : null,
 				});
 			}
-		}
 
-		return new Response("Not Found", { status: 404 });
-	},
-	websocket: {
-		open(ws: ServerWebSocket<WsData>) {
-			ws.subscribe(WS_TOPIC);
-			ws.send(
-				JSON.stringify({
-					type: "workflow:state",
-					workflow: getWorkflowState(),
-				} satisfies ServerMessage),
-			);
-		},
-		message(ws: ServerWebSocket<WsData>, message: string | Buffer) {
-			try {
-				const msg = JSON.parse(String(message)) as ClientMessage;
-
-				switch (msg.type) {
-					case "workflow:start":
-						handleStart(ws, msg.specification, msg.targetRepository).catch((err) => {
-							const text = err instanceof Error ? err.message : "Internal error";
-							sendTo(ws, { type: "error", message: text });
-						});
-						break;
-					case "workflow:answer":
-						handleAnswer(ws, msg.workflowId, msg.questionId, msg.answer);
-						break;
-					case "workflow:skip":
-						handleSkip(ws, msg.workflowId, msg.questionId);
-						break;
-					case "workflow:cancel":
-						handleCancel(ws, msg.workflowId);
-						break;
-					case "workflow:retry":
-						handleRetry(ws, msg.workflowId);
-						break;
-					default:
-						sendTo(ws, { type: "error", message: "Unknown message type" });
+			// Static file serving (CR-010: path traversal prevention)
+			const safePath = resolveStaticPath(url.pathname);
+			if (safePath) {
+				const file = Bun.file(safePath);
+				if (await file.exists()) {
+					return new Response(file, {
+						headers: { "Content-Type": getMimeType(safePath) },
+					});
 				}
-			} catch {
-				sendTo(ws, { type: "error", message: "Invalid message format" });
 			}
-		},
-		close(ws: ServerWebSocket<WsData>) {
-			ws.unsubscribe(WS_TOPIC);
-		},
-	},
-});
 
-console.log(`crab-studio running at http://localhost:${PORT}`);
+			return new Response("Not Found", { status: 404 });
+		},
+		websocket: {
+			open(ws: ServerWebSocket<WsData>) {
+				ws.subscribe(WS_TOPIC);
+				ws.send(
+					JSON.stringify({
+						type: "workflow:state",
+						workflow: getWorkflowState(),
+					} satisfies ServerMessage),
+				);
+			},
+			message(ws: ServerWebSocket<WsData>, message: string | Buffer) {
+				try {
+					const msg = JSON.parse(String(message)) as ClientMessage;
+
+					switch (msg.type) {
+						case "workflow:start":
+							handleStart(ws, msg.specification, msg.targetRepository).catch((err) => {
+								const text = err instanceof Error ? err.message : "Internal error";
+								sendTo(ws, { type: "error", message: text });
+							});
+							break;
+						case "workflow:answer":
+							handleAnswer(ws, msg.workflowId, msg.questionId, msg.answer);
+							break;
+						case "workflow:skip":
+							handleSkip(ws, msg.workflowId, msg.questionId);
+							break;
+						case "workflow:cancel":
+							handleCancel(ws, msg.workflowId);
+							break;
+						case "workflow:retry":
+							handleRetry(ws, msg.workflowId);
+							break;
+						default:
+							sendTo(ws, { type: "error", message: "Unknown message type" });
+					}
+				} catch {
+					sendTo(ws, { type: "error", message: "Invalid message format" });
+				}
+			},
+			close(ws: ServerWebSocket<WsData>) {
+				ws.unsubscribe(WS_TOPIC);
+			},
+		},
+	});
+}
+
+let server!: ReturnType<typeof Bun.serve<WsData>>;
+for (let i = 0; i < MAX_PORT_RETRIES; i++) {
+	const port = BASE_PORT + i;
+	try {
+		server = startServer(port);
+		console.log(`crab-studio running at http://localhost:${port}`);
+		break;
+	} catch (err) {
+		if (i === MAX_PORT_RETRIES - 1) throw err;
+		console.warn(`Port ${port} in use, trying ${port + 1}...`);
+	}
+}
