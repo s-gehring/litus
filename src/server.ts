@@ -256,3 +256,16 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 		console.warn(`Port ${port} in use, trying ${port + 1}...`);
 	}
 }
+
+// Restore persisted workflows on startup
+orchestrator
+	.restoreWorkflows()
+	.then((workflows) => {
+		if (workflows.length > 0) {
+			console.log(`[startup] Restored ${workflows.length} workflow(s)`);
+			broadcastState();
+		}
+	})
+	.catch((err) => {
+		console.error(`[startup] Failed to restore workflows: ${err}`);
+	});

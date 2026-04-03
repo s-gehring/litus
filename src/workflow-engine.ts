@@ -15,6 +15,10 @@ export class WorkflowEngine {
 		return this.workflow;
 	}
 
+	setWorkflow(workflow: Workflow): void {
+		this.workflow = workflow;
+	}
+
 	async createWorkflow(specification: string, targetRepository?: string | null): Promise<Workflow> {
 		const id = randomUUID();
 		const branchName = `crab-studio/${id.slice(0, 8)}`;

@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PipelineStepName, Workflow } from "../src/types";
+import type { Workflow } from "../src/types";
+
 import { PIPELINE_STEP_DEFINITIONS, REVIEW_CYCLE_MAX_ITERATIONS } from "../src/types";
 import { WorkflowStore } from "../src/workflow-store";
 
@@ -42,6 +43,11 @@ function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 	};
 }
 
+function assertDefined<T>(value: T | null | undefined): asserts value is T {
+	expect(value).not.toBeNull();
+	expect(value).toBeDefined();
+}
+
 describe("Persistence Integration — US1: Survive Server Restart", () => {
 	let baseDir: string;
 	let store: WorkflowStore;
@@ -71,16 +77,15 @@ describe("Persistence Integration — US1: Survive Server Restart", () => {
 
 		await store.save(workflow);
 
-		// Simulate restart: new store instance
 		const freshStore = new WorkflowStore(baseDir);
 		const restored = await freshStore.load("persist-step");
+		assertDefined(restored);
 
-		expect(restored).not.toBeNull();
-		expect(restored!.status).toBe("running");
-		expect(restored!.steps[0].status).toBe("completed");
-		expect(restored!.steps[0].output).toBe("Step 0 completed output");
-		expect(restored!.steps[1].status).toBe("running");
-		expect(restored!.currentStepIndex).toBe(1);
+		expect(restored.status).toBe("running");
+		expect(restored.steps[0].status).toBe("completed");
+		expect(restored.steps[0].output).toBe("Step 0 completed output");
+		expect(restored.steps[1].status).toBe("running");
+		expect(restored.currentStepIndex).toBe(1);
 	});
 
 	test("T019: all workflows restored on startup with most recent as active", async () => {
@@ -102,7 +107,6 @@ describe("Persistence Integration — US1: Survive Server Restart", () => {
 		const all = await freshStore.loadAll();
 
 		expect(all).toHaveLength(2);
-		// Most recent first
 		expect(all[0].id).toBe("recent-wf");
 		expect(all[1].id).toBe("old-wf");
 	});
@@ -121,23 +125,21 @@ describe("Persistence Integration — US1: Survive Server Restart", () => {
 
 		const freshStore = new WorkflowStore(baseDir);
 		const restored = await freshStore.load("question-wf");
+		assertDefined(restored);
 
-		expect(restored).not.toBeNull();
-		expect(restored!.status).toBe("waiting_for_input");
-		expect(restored!.pendingQuestion).not.toBeNull();
-		expect(restored!.pendingQuestion!.id).toBe("q-1");
-		expect(restored!.pendingQuestion!.content).toBe("Should I use CSS modules?");
+		expect(restored.status).toBe("waiting_for_input");
+		assertDefined(restored.pendingQuestion);
+		expect(restored.pendingQuestion.id).toBe("q-1");
+		expect(restored.pendingQuestion.content).toBe("Should I use CSS modules?");
 	});
 
 	test("T021: corrupted workflow file skipped with warning on startup", async () => {
 		const good = makeWorkflow({ id: "good-wf" });
 		await store.save(good);
 
-		// Write a corrupted file directly
 		const corruptPath = join(baseDir, "corrupt-wf.json");
 		await Bun.write(corruptPath, "{{not valid json");
 
-		// Add corrupt entry to index
 		const indexPath = join(baseDir, "index.json");
 		const index = JSON.parse(await Bun.file(indexPath).text());
 		index.push({
@@ -153,7 +155,6 @@ describe("Persistence Integration — US1: Survive Server Restart", () => {
 		const freshStore = new WorkflowStore(baseDir);
 		const all = await freshStore.loadAll();
 
-		// Only good workflow loaded
 		expect(all).toHaveLength(1);
 		expect(all[0].id).toBe("good-wf");
 	});
@@ -184,12 +185,11 @@ describe("Persistence Integration — US2: Survive Page Reload", () => {
 
 		await store.save(workflow);
 
-		// Simulate page reload: load from fresh store
 		const freshStore = new WorkflowStore(baseDir);
 		const restored = await freshStore.load("stream-wf");
+		assertDefined(restored);
 
-		expect(restored).not.toBeNull();
-		expect(restored!.steps[0].output).toBe("line 1\nline 2\nline 3\n");
+		expect(restored.steps[0].output).toBe("line 1\nline 2\nline 3\n");
 	});
 
 	test("T029: completed workflow fully displayed in new browser tab", async () => {
@@ -206,55 +206,49 @@ describe("Persistence Integration — US2: Survive Page Reload", () => {
 
 		const freshStore = new WorkflowStore(baseDir);
 		const restored = await freshStore.load("completed-wf");
+		assertDefined(restored);
 
-		expect(restored).not.toBeNull();
-		expect(restored!.status).toBe("completed");
-		expect(restored!.summary).toBe("Built a great feature");
-		for (let i = 0; i < restored!.steps.length; i++) {
-			expect(restored!.steps[i].status).toBe("completed");
-			expect(restored!.steps[i].output).toBe(`Output for step ${i}`);
+		expect(restored.status).toBe("completed");
+		expect(restored.summary).toBe("Built a great feature");
+		for (let i = 0; i < restored.steps.length; i++) {
+			expect(restored.steps[i].status).toBe("completed");
+			expect(restored.steps[i].output).toBe(`Output for step ${i}`);
 		}
 	});
 });
 
 describe("Persistence Integration — US3: Orphan Process Detection", () => {
 	test("T033: orphan detection checks if PID is alive via process.kill(pid, 0)", () => {
-		// process.kill(pid, 0) throws if process doesn't exist
-		// Using current process PID (which is alive)
 		expect(() => process.kill(process.pid, 0)).not.toThrow();
-
-		// A very high PID that almost certainly doesn't exist
 		expect(() => process.kill(999999999, 0)).toThrow();
 	});
 
 	test("T034: isProcessAlive returns true for alive process and false for dead", async () => {
-		// Import dynamically to test the helper
 		const { isProcessAlive } = await import("../src/cli-runner");
 		expect(isProcessAlive(process.pid)).toBe(true);
 		expect(isProcessAlive(999999999)).toBe(false);
 	});
 
 	test("T035: dead orphan with no sessionId is handled gracefully", async () => {
-		const baseDir = join(tmpdir(), `persist-us3-${Date.now()}`);
-		const store = new WorkflowStore(baseDir);
+		const dir = join(tmpdir(), `persist-us3-${Date.now()}`);
+		const s = new WorkflowStore(dir);
 
 		const workflow = makeWorkflow({ id: "orphan-dead" });
 		workflow.status = "running";
 		workflow.steps[0].status = "running";
-		workflow.steps[0].pid = 999999999; // dead PID
+		workflow.steps[0].pid = 999999999;
 		workflow.steps[0].sessionId = null;
 
-		await store.save(workflow);
+		await s.save(workflow);
 
-		const restored = await store.load("orphan-dead");
-		expect(restored).not.toBeNull();
-		expect(restored!.steps[0].pid).toBe(999999999);
+		const restored = await s.load("orphan-dead");
+		assertDefined(restored);
+		expect(restored.steps[0].pid).toBe(999999999);
 
-		rmSync(baseDir, { recursive: true, force: true });
+		rmSync(dir, { recursive: true, force: true });
 	});
 
 	test("T036: failed session resumption marks step as error", () => {
-		// This tests the concept — the actual implementation will be in pipeline-orchestrator
 		const workflow = makeWorkflow({ id: "orphan-fail" });
 		workflow.status = "running";
 		workflow.steps[0].status = "running";

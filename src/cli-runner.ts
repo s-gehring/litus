@@ -35,6 +35,7 @@ export interface CLICallbacks {
 	onComplete: () => void;
 	onError: (error: string) => void;
 	onSessionId: (sessionId: string) => void;
+	onPid?: (pid: number) => void;
 }
 
 interface RunningProcess {
@@ -86,6 +87,7 @@ export class CLIRunner {
 		};
 
 		this.running.set(workflow.id, entry);
+		callbacks.onPid?.(proc.pid);
 		this.streamOutput(entry);
 	}
 
@@ -136,6 +138,7 @@ export class CLIRunner {
 		};
 
 		this.running.set(workflowId, newEntry);
+		entry.callbacks.onPid?.(proc.pid);
 		this.streamOutput(newEntry);
 	}
 

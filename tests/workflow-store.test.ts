@@ -6,6 +6,11 @@ import type { Workflow, WorkflowIndexEntry } from "../src/types";
 import { PIPELINE_STEP_DEFINITIONS, REVIEW_CYCLE_MAX_ITERATIONS } from "../src/types";
 import { WorkflowStore } from "../src/workflow-store";
 
+function assertDefined<T>(value: T | null | undefined): asserts value is T {
+	expect(value).not.toBeNull();
+	expect(value).toBeDefined();
+}
+
 function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 	const now = new Date().toISOString();
 	return {
@@ -47,7 +52,10 @@ describe("WorkflowStore", () => {
 	let store: WorkflowStore;
 
 	beforeEach(() => {
-		baseDir = join(tmpdir(), `workflow-store-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		baseDir = join(
+			tmpdir(),
+			`workflow-store-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+		);
 		store = new WorkflowStore(baseDir);
 	});
 
@@ -92,14 +100,14 @@ describe("WorkflowStore", () => {
 		await store.save(workflow);
 		const loaded = await store.load("round-trip-1");
 
-		expect(loaded).not.toBeNull();
-		expect(loaded!.id).toBe("round-trip-1");
-		expect(loaded!.specification).toBe("Test round trip");
-		expect(loaded!.status).toBe("running");
-		expect(loaded!.steps[0].status).toBe("completed");
-		expect(loaded!.steps[0].output).toBe("Step 1 output");
-		expect(loaded!.steps[1].sessionId).toBe("session-abc");
-		expect(loaded!.steps[1].pid).toBe(12345);
+		assertDefined(loaded);
+		expect(loaded.id).toBe("round-trip-1");
+		expect(loaded.specification).toBe("Test round trip");
+		expect(loaded.status).toBe("running");
+		expect(loaded.steps[0].status).toBe("completed");
+		expect(loaded.steps[0].output).toBe("Step 1 output");
+		expect(loaded.steps[1].sessionId).toBe("session-abc");
+		expect(loaded.steps[1].pid).toBe(12345);
 	});
 
 	test("T006: loadAll returns workflows sorted by updatedAt descending", async () => {
