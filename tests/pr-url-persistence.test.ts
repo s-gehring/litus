@@ -62,7 +62,7 @@ describe("PR URL persistence", () => {
 		await store.save(workflow);
 		const loaded = await store.load(workflow.id);
 		expect(loaded).not.toBeNull();
-		expect(loaded!.prUrl).toBe("https://github.com/owner/repo/pull/42");
+		expect(loaded?.prUrl).toBe("https://github.com/owner/repo/pull/42");
 	});
 
 	test("round-trip: save workflow with null prUrl, reload, verify null", async () => {
@@ -71,7 +71,7 @@ describe("PR URL persistence", () => {
 		await store.save(workflow);
 		const loaded = await store.load(workflow.id);
 		expect(loaded).not.toBeNull();
-		expect(loaded!.prUrl).toBeNull();
+		expect(loaded?.prUrl).toBeNull();
 	});
 
 	test("backward compat: load legacy workflow without prUrl field", async () => {
@@ -85,6 +85,6 @@ describe("PR URL persistence", () => {
 		const loaded = await store.load(workflow.id);
 		expect(loaded).not.toBeNull();
 		// prUrl should be undefined (missing from JSON), which is treated as null
-		expect(loaded!.prUrl ?? null).toBeNull();
+		expect(loaded?.prUrl ?? null).toBeNull();
 	});
 });
