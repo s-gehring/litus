@@ -4,7 +4,7 @@ import { CLIRunner } from "./cli-runner";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
 import { Summarizer } from "./summarizer";
-import type { PipelineStepName, Workflow } from "./types";
+import type { PipelineStepName, Question, Workflow } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 
 export interface PipelineCallbacks {
@@ -56,11 +56,12 @@ export class PipelineOrchestrator {
 		return this.engine;
 	}
 
-	async startPipeline(specification: string): Promise<Workflow> {
-		const workflow = await this.engine.createWorkflow(specification);
+	async startPipeline(specification: string, targetRepository?: string): Promise<Workflow> {
+		const workflow = await this.engine.createWorkflow(specification, targetRepository);
 		this.engine.transition(workflow.id, "running");
 
-		this.pipelineName = (await this.getBranch(process.cwd())) ?? workflow.worktreeBranch;
+		const branchCwd = targetRepository || process.cwd();
+		this.pipelineName = (await this.getBranch(branchCwd)) ?? workflow.worktreeBranch;
 		this.currentAuditRunId = this.auditLogger.startRun(this.pipelineName, workflow.worktreeBranch);
 
 		this.startStep(workflow);
@@ -247,38 +248,27 @@ export class PipelineOrchestrator {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId) return;
 
-		const question = this.questionDetector.detect(this.assistantTextBuffer);
-		if (question) {
-			if (question.confidence === "uncertain") {
-				this.questionDetector
-					.classifyWithHaiku(question.content)
-					.then((isQuestion) => {
-						if (!isQuestion) {
-							this.advanceAfterStep(workflowId);
-							return;
-						}
-						this.pauseForQuestion(workflowId, question);
-					})
-					.catch(() => {
+		const candidate = this.questionDetector.detect(this.assistantTextBuffer);
+		if (candidate) {
+			this.questionDetector
+				.classifyWithHaiku(candidate.content)
+				.then((isQuestion) => {
+					if (!isQuestion) {
 						this.advanceAfterStep(workflowId);
-					});
-			} else {
-				this.pauseForQuestion(workflowId, question);
-			}
+						return;
+					}
+					this.pauseForQuestion(workflowId, candidate);
+				})
+				.catch((err) => {
+					console.warn(`[pipeline] Haiku classification failed, advancing: ${err}`);
+					this.advanceAfterStep(workflowId);
+				});
 		} else {
 			this.advanceAfterStep(workflowId);
 		}
 	}
 
-	private pauseForQuestion(
-		workflowId: string,
-		question: {
-			id: string;
-			content: string;
-			confidence: "certain" | "uncertain";
-			detectedAt: string;
-		},
-	): void {
+	private pauseForQuestion(workflowId: string, question: Question): void {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
 
@@ -312,9 +302,11 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		if (step.name === "review") {
-			this.handleReviewComplete(workflow).catch((err) =>
-				this.handleStepError(workflowId, err instanceof Error ? err.message : String(err)),
-			);
+			this.handleReviewComplete(workflow).catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				console.error(`[pipeline] Review completion error: ${msg}`);
+				this.handleStepError(workflowId, msg);
+			});
 			return;
 		}
 

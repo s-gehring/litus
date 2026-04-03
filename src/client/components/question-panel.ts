@@ -10,11 +10,10 @@ export function showQuestion(question: Question): void {
 	const skipBtn = $("#btn-skip-question");
 
 	content.textContent = question.content;
-	confidence.textContent = question.confidence;
+	confidence.textContent = "";
 
-	// Show skip button for all questions (certain ones may still be false positives)
 	skipBtn.classList.remove("hidden");
-	skipBtn.textContent = question.confidence === "certain" ? "Dismiss" : "Skip";
+	skipBtn.textContent = "Skip";
 
 	answerInput.value = "";
 	panel.classList.remove("hidden");

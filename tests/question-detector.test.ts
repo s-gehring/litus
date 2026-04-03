@@ -1,93 +1,80 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { QuestionDetector } from "../src/question-detector";
 
-// Mock the Anthropic SDK for classifyWithHaiku tests
-const mockCreate = mock(() =>
-	Promise.resolve({
-		content: [{ type: "text" as const, text: "yes" }],
-	}),
-);
+const originalSpawn = Bun.spawn;
 
-mock.module("@anthropic-ai/sdk", () => ({
-	default: class MockAnthropic {
-		messages = { create: mockCreate };
-	},
-}));
+function mockSpawnResponse(text: string, exitCode = 0) {
+	const stream = new ReadableStream({
+		start(controller) {
+			controller.enqueue(new TextEncoder().encode(text));
+			controller.close();
+		},
+	});
+	return {
+		stdout: stream,
+		stderr: new ReadableStream({
+			start(c) {
+				c.close();
+			},
+		}),
+		exited: Promise.resolve(exitCode),
+		pid: 1,
+		kill: () => {},
+	};
+}
 
 describe("QuestionDetector", () => {
 	let detector: QuestionDetector;
+	let spawnMock: ReturnType<typeof mock>;
 
 	beforeEach(() => {
 		detector = new QuestionDetector();
-		mockCreate.mockClear();
+		spawnMock = mock(() => mockSpawnResponse("yes"));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
 	});
 
-	describe("certain question detection", () => {
-		test("detects 'Should I use X?' pattern", () => {
+	afterEach(() => {
+		Bun.spawn = originalSpawn;
+	});
+
+	describe("pre-filter: passes plausible question candidates", () => {
+		test("passes direct question", () => {
 			const q = detector.detect("Should I use Tailwind CSS for this project?");
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
 			expect(q?.content).toContain("Should I use");
 		});
 
-		test("detects 'Would we like X?' pattern", () => {
-			const q = detector.detect("Would we like to add authentication here?");
+		test("passes multi-choice prompt without question mark", () => {
+			const q = detector.detect(
+				'You can reply with the option letter (e.g., "A"), accept the recommendation by saying "yes" or "recommended", or provide your own short answer.',
+			);
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
 		});
 
-		test("detects 'please choose' pattern", () => {
-			const q = detector.detect("Please choose between option A and option B");
+		test("passes markdown table with options", () => {
+			const q = detector.detect(
+				"| Option | Description |\n|--------|-------------|\n| A | Use existing logic |\n| B | Clamp to zero |",
+			);
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
 		});
 
-		test("detects 'please select' pattern", () => {
-			const q = detector.detect("Please select your preferred approach");
-			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
-		});
-
-		test("detects 'Which do you prefer?' pattern", () => {
-			const q = detector.detect("Which approach would you prefer?");
-			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
-		});
-
-		test("detects 'Could I use X?' pattern", () => {
-			const q = detector.detect("Could I use a different database here?");
-			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("certain");
-		});
-	});
-
-	describe("uncertain question detection", () => {
-		test("detects text ending with question mark", () => {
+		test("passes text ending with question mark", () => {
 			const q = detector.detect("Is this the right approach for handling errors?");
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("uncertain");
 		});
 
-		test("detects 'let me know' pattern", () => {
+		test("passes 'let me know' pattern", () => {
 			const q = detector.detect("Let me know if you want me to proceed differently");
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("uncertain");
 		});
 
-		test("detects 'what do you think' pattern", () => {
-			const q = detector.detect("I've structured it this way, what do you think about it");
+		test("passes normal text for Haiku to decide", () => {
+			const q = detector.detect("The implementation uses a factory pattern for creating handlers");
 			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("uncertain");
-		});
-
-		test("detects 'any preference' pattern", () => {
-			const q = detector.detect("Do you have any preference on naming conventions");
-			expect(q).not.toBeNull();
-			expect(q?.confidence).toBe("uncertain");
 		});
 	});
 
-	describe("non-question exclusions", () => {
+	describe("pre-filter: excludes obvious non-questions", () => {
 		test("excludes agent narration starting with 'Here's'", () => {
 			const q = detector.detect("Here's what I've implemented so far");
 			expect(q).toBeNull();
@@ -147,7 +134,6 @@ describe("QuestionDetector", () => {
 			expect(q).not.toBeNull();
 			expect(q?.id).toBeTruthy();
 			expect(q?.content).toBeTruthy();
-			expect(q?.confidence).toBe("certain");
 			expect(q?.detectedAt).toBeTruthy();
 			// Verify detectedAt is a valid ISO date string
 			const detectedAt = q?.detectedAt ?? "";
@@ -163,45 +149,57 @@ describe("QuestionDetector", () => {
 	});
 
 	describe("classifyWithHaiku", () => {
-		test("returns true when Haiku confirms a question", async () => {
-			mockCreate.mockImplementationOnce(() =>
-				Promise.resolve({ content: [{ type: "text" as const, text: "yes" }] }),
-			);
+		test("returns true when CLI confirms a question", async () => {
+			spawnMock = mock(() => mockSpawnResponse("yes"));
+			Bun.spawn = spawnMock as typeof Bun.spawn;
 
 			const result = await detector.classifyWithHaiku("Should I use Tailwind?");
 			expect(result).toBe(true);
 
-			expect(mockCreate).toHaveBeenCalledTimes(1);
-			const callArgs = (mockCreate.mock.calls as unknown[][])[0][0] as Record<string, unknown>;
-			expect(callArgs.model).toBe("claude-haiku-4-5-20251001");
-			expect(callArgs.max_tokens).toBe(10);
+			expect(spawnMock).toHaveBeenCalledTimes(1);
+			const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
+			expect(args).toContain("--model");
+			expect(args).toContain("claude-haiku-4-5-20251001");
 		});
 
-		test("returns false when Haiku rejects a question", async () => {
-			mockCreate.mockImplementationOnce(() =>
-				Promise.resolve({ content: [{ type: "text" as const, text: "no" }] }),
-			);
+		test("returns false when CLI rejects a question", async () => {
+			spawnMock = mock(() => mockSpawnResponse("no"));
+			Bun.spawn = spawnMock as typeof Bun.spawn;
 
 			const result = await detector.classifyWithHaiku("Looking at the code, this seems fine");
 			expect(result).toBe(false);
 		});
 
-		test("returns false on API error", async () => {
-			mockCreate.mockImplementationOnce(() => Promise.reject(new Error("API error")));
+		test("returns false on non-zero exit code", async () => {
+			spawnMock = mock(() => mockSpawnResponse("", 1));
+			Bun.spawn = spawnMock as typeof Bun.spawn;
 
 			const result = await detector.classifyWithHaiku("Should I use X?");
 			expect(result).toBe(false);
 		});
 
 		test("prevents concurrent classifications", async () => {
-			// Create a deferred promise to control when the first call resolves
-			let resolveFirst!: (value: { content: { type: "text"; text: string }[] }) => void;
-			mockCreate.mockImplementationOnce(
-				() =>
-					new Promise((r) => {
-						resolveFirst = r;
-					}),
-			);
+			let resolveFirst!: (value: number) => void;
+			const firstStream = new ReadableStream({
+				start(controller) {
+					controller.enqueue(new TextEncoder().encode("yes"));
+					controller.close();
+				},
+			});
+			spawnMock = mock(() => ({
+				stdout: firstStream,
+				stderr: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				exited: new Promise<number>((r) => {
+					resolveFirst = r;
+				}),
+				pid: 1,
+				kill: () => {},
+			}));
+			Bun.spawn = spawnMock as typeof Bun.spawn;
 
 			const promise1 = detector.classifyWithHaiku("Question 1?");
 			const promise2 = detector.classifyWithHaiku("Question 2?");
@@ -210,11 +208,11 @@ describe("QuestionDetector", () => {
 			expect(await promise2).toBe(false);
 
 			// Resolve the first call
-			resolveFirst({ content: [{ type: "text", text: "yes" }] });
+			resolveFirst(0);
 			expect(await promise1).toBe(true);
 
-			// Only one API call was made
-			expect(mockCreate).toHaveBeenCalledTimes(1);
+			// Only one spawn call was made
+			expect(spawnMock).toHaveBeenCalledTimes(1);
 		});
 	});
 });

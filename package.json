@@ -1,7 +1,10 @@
 {
 	"name": "crab-studio",
 	"version": "0.1.0",
-	"type": "module",
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.10",
+		"@types/bun": "^1.2.0"
+	},
 	"scripts": {
 		"dev": "bun run build:client && bun run --watch src/server.ts",
 		"start": "bun run src/server.ts",
@@ -11,11 +14,5 @@
 		"format": "bunx biome format .",
 		"format:check": "bunx biome format --check ."
 	},
-	"dependencies": {
-		"@anthropic-ai/sdk": "^0.39.0"
-	},
-	"devDependencies": {
-		"@biomejs/biome": "^2.4.10",
-		"@types/bun": "^1.2.0"
-	}
+	"type": "module"
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { cp, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type { Question, Workflow, WorkflowStatus } from "./types";
 import {
 	PIPELINE_STEP_DEFINITIONS,
@@ -14,14 +15,17 @@ export class WorkflowEngine {
 		return this.workflow;
 	}
 
-	async createWorkflow(specification: string): Promise<Workflow> {
+	async createWorkflow(specification: string, targetRepository?: string | null): Promise<Workflow> {
 		const id = randomUUID();
 		const branchName = `crab-studio/${id.slice(0, 8)}`;
 		let worktreePath: string | null = null;
+		const effectiveRepo = targetRepository || null;
+		const baseCwd = targetRepository || process.cwd();
 
-		// Create git worktree
+		// Create git worktree and copy gitignored files
 		try {
-			worktreePath = await this.createWorktree(branchName);
+			worktreePath = await this.createWorktree(branchName, baseCwd);
+			await this.copyGitignoredFiles(baseCwd, worktreePath);
 		} catch (err) {
 			throw new Error(
 				`Failed to create git worktree: ${err instanceof Error ? err.message : String(err)}`,
@@ -33,6 +37,7 @@ export class WorkflowEngine {
 			id,
 			specification,
 			status: "idle",
+			targetRepository: effectiveRepo,
 			worktreePath,
 			worktreeBranch: branchName,
 			summary: "",
@@ -103,17 +108,17 @@ export class WorkflowEngine {
 		return this.workflow;
 	}
 
-	private async createWorktree(branchName: string): Promise<string> {
+	private async createWorktree(branchName: string, cwd: string): Promise<string> {
 		const worktreePath = `.worktrees/${branchName.replaceAll("/", "-")}`;
 		const proc = Bun.spawn(["git", "worktree", "add", worktreePath, "-b", branchName], {
-			cwd: process.cwd(),
+			cwd,
 			stdout: "pipe",
 			stderr: "pipe",
 		});
 
 		const code = await proc.exited;
 		if (code === 0) {
-			return resolve(process.cwd(), worktreePath);
+			return resolve(cwd, worktreePath);
 		}
 
 		const stderrStream = proc.stderr;
@@ -122,5 +127,26 @@ export class WorkflowEngine {
 				? await new Response(stderrStream as ReadableStream).text()
 				: "";
 		throw new Error(stderr.trim() || `git worktree add failed with code ${code}`);
+	}
+
+	private static readonly GITIGNORED_PATHS = [
+		".serena",
+		".specify",
+		".claude",
+		"specs",
+		"CLAUDE.md",
+	];
+
+	private async copyGitignoredFiles(sourceCwd: string, worktreePath: string): Promise<void> {
+		for (const entry of WorkflowEngine.GITIGNORED_PATHS) {
+			const src = join(sourceCwd, entry);
+			const dest = join(worktreePath, entry);
+			try {
+				const s = await stat(src);
+				await cp(src, dest, { recursive: s.isDirectory() });
+			} catch {
+				// Source doesn't exist — skip silently
+			}
+		}
 	}
 }

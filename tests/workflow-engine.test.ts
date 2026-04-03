@@ -160,7 +160,6 @@ describe("WorkflowEngine", () => {
 		const question: Question = {
 			id: "q1",
 			content: "Should I use CSS modules?",
-			confidence: "certain",
 			detectedAt: new Date().toISOString(),
 		};
 		engine.setQuestion(w.id, question);
@@ -230,6 +229,57 @@ describe("WorkflowEngine", () => {
 			engine.transition(w.id, "error");
 			engine.transition(w.id, "running");
 			expect(engine.getWorkflow()?.status).toBe("running");
+		});
+	});
+
+	describe("targetRepository parameter", () => {
+		test("createWorkflow with targetRepository stores it on workflow", async () => {
+			const w = await engine.createWorkflow("test", "/some/repo/path");
+			expect(w.targetRepository).toBe("/some/repo/path");
+		});
+
+		test("createWorkflow without targetRepository defaults to null", async () => {
+			const w = await engine.createWorkflow("test");
+			expect(w.targetRepository).toBeNull();
+		});
+
+		test("createWorkflow with null targetRepository stores null", async () => {
+			const w = await engine.createWorkflow("test", null);
+			expect(w.targetRepository).toBeNull();
+		});
+
+		test("worktree cwd uses targetRepository when provided", async () => {
+			let capturedCwd: string | undefined;
+			BunGlobal.Bun.spawn = (_cmd: unknown, opts: { cwd?: string }) => {
+				capturedCwd = opts?.cwd;
+				return {
+					exited: Promise.resolve(0),
+					stdout: null,
+					stderr: null,
+					kill: () => {},
+					pid: 1234,
+				};
+			};
+
+			await engine.createWorkflow("test", "/custom/repo");
+			expect(capturedCwd).toBe("/custom/repo");
+		});
+
+		test("worktree cwd falls back to process.cwd() when no targetRepository", async () => {
+			let capturedCwd: string | undefined;
+			BunGlobal.Bun.spawn = (_cmd: unknown, opts: { cwd?: string }) => {
+				capturedCwd = opts?.cwd;
+				return {
+					exited: Promise.resolve(0),
+					stdout: null,
+					stderr: null,
+					kill: () => {},
+					pid: 1234,
+				};
+			};
+
+			await engine.createWorkflow("test");
+			expect(capturedCwd).toBe(process.cwd());
 		});
 	});
 

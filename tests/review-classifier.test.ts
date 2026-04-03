@@ -1,98 +1,103 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { ReviewClassifier } from "../src/review-classifier";
 
-// Mock the Anthropic SDK
-const mockCreate = mock(() =>
-	Promise.resolve({
-		content: [{ type: "text" as const, text: "minor" }],
-	}),
-);
+const originalSpawn = Bun.spawn;
 
-mock.module("@anthropic-ai/sdk", () => ({
-	default: class MockAnthropic {
-		messages = { create: mockCreate };
-	},
-}));
+function mockSpawnResponse(text: string, exitCode = 0) {
+	const stream = new ReadableStream({
+		start(controller) {
+			controller.enqueue(new TextEncoder().encode(text));
+			controller.close();
+		},
+	});
+	return {
+		stdout: stream,
+		stderr: new ReadableStream({
+			start(c) {
+				c.close();
+			},
+		}),
+		exited: Promise.resolve(exitCode),
+		pid: 1,
+		kill: () => {},
+	};
+}
 
 describe("ReviewClassifier", () => {
 	let classifier: ReviewClassifier;
+	let spawnMock: ReturnType<typeof mock>;
 
 	afterEach(() => {
-		mockCreate.mockClear();
+		Bun.spawn = originalSpawn;
 	});
 
 	test("classifies review output as minor", async () => {
-		mockCreate.mockResolvedValueOnce({
-			content: [{ type: "text" as const, text: "minor" }],
-		});
+		spawnMock = mock(() => mockSpawnResponse("minor"));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
 		classifier = new ReviewClassifier();
 		const result = await classifier.classify("Some minor style issues found.");
 		expect(result).toBe("minor");
 	});
 
 	test("classifies review output as critical", async () => {
-		mockCreate.mockResolvedValueOnce({
-			content: [{ type: "text" as const, text: "critical" }],
-		});
+		spawnMock = mock(() => mockSpawnResponse("critical"));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
 		classifier = new ReviewClassifier();
 		const result = await classifier.classify("Security vulnerability: SQL injection in login.");
 		expect(result).toBe("critical");
 	});
 
 	test("classifies review output as major", async () => {
-		mockCreate.mockResolvedValueOnce({
-			content: [{ type: "text" as const, text: "major" }],
-		});
+		spawnMock = mock(() => mockSpawnResponse("major"));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
 		classifier = new ReviewClassifier();
 		const result = await classifier.classify("Missing error handling in critical path.");
 		expect(result).toBe("major");
 	});
 
 	test("classifies review output as trivial", async () => {
-		mockCreate.mockResolvedValueOnce({
-			content: [{ type: "text" as const, text: "trivial" }],
-		});
+		spawnMock = mock(() => mockSpawnResponse("trivial"));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
 		classifier = new ReviewClassifier();
 		const result = await classifier.classify("Whitespace inconsistency.");
 		expect(result).toBe("trivial");
 	});
 
 	test("classifies review output as nit", async () => {
-		mockCreate.mockResolvedValueOnce({
-			content: [{ type: "text" as const, text: "nit" }],
-		});
+		spawnMock = mock(() => mockSpawnResponse("nit"));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
 		classifier = new ReviewClassifier();
 		const result = await classifier.classify("Consider renaming variable for clarity.");
 		expect(result).toBe("nit");
 	});
 
 	test("handles unexpected response by defaulting to minor", async () => {
-		mockCreate.mockResolvedValueOnce({
-			content: [{ type: "text" as const, text: "unknown-severity" }],
-		});
+		spawnMock = mock(() => mockSpawnResponse("unknown-severity"));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
 		classifier = new ReviewClassifier();
 		const result = await classifier.classify("Some review output.");
 		expect(result).toBe("minor");
 	});
 
-	test("sends review output to Haiku model", async () => {
-		mockCreate.mockResolvedValueOnce({
-			content: [{ type: "text" as const, text: "minor" }],
-		});
+	test("defaults to minor on non-zero exit code", async () => {
+		spawnMock = mock(() => mockSpawnResponse("", 1));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
+		classifier = new ReviewClassifier();
+		const result = await classifier.classify("Some review output.");
+		expect(result).toBe("minor");
+	});
+
+	test("passes review output to claude CLI with haiku model", async () => {
+		spawnMock = mock(() => mockSpawnResponse("minor"));
+		Bun.spawn = spawnMock as typeof Bun.spawn;
 		classifier = new ReviewClassifier();
 		await classifier.classify("Test review output");
 
-		expect(mockCreate).toHaveBeenCalledTimes(1);
-		const callArgs = (
-			mockCreate.mock.calls as unknown as Array<
-				Array<{
-					model: string;
-					max_tokens: number;
-					messages: Array<{ role: string; content: string }>;
-				}>
-			>
-		)[0][0];
-		expect(callArgs.model).toBe("claude-haiku-4-5-20251001");
-		expect(callArgs.messages[0].content).toContain("Test review output");
+		expect(spawnMock).toHaveBeenCalledTimes(1);
+		const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
+		expect(args).toContain("claude");
+		expect(args).toContain("--model");
+		expect(args).toContain("claude-haiku-4-5-20251001");
+		expect(args[2]).toContain("Test review output");
 	});
 });

@@ -1,3 +1,6 @@
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { Workflow } from "./types";
 
 // Claude Code CLI stream-json event shape (loosely typed — the CLI format is not formally documented)
@@ -28,6 +31,9 @@ interface RunningProcess {
 	deltaFlushTimer: ReturnType<typeof setTimeout> | null;
 }
 
+const EVENTS_DIR = join(homedir(), ".crab-studio", "audit");
+const EVENTS_FILE = join(EVENTS_DIR, "events.jsonl");
+
 export class CLIRunner {
 	private running: Map<string, RunningProcess> = new Map();
 
@@ -40,6 +46,7 @@ export class CLIRunner {
 			"--output-format",
 			"stream-json",
 			"--verbose",
+			"--dangerously-skip-permissions",
 			"--include-partial-messages",
 		];
 
@@ -88,6 +95,7 @@ export class CLIRunner {
 			"stream-json",
 			"--verbose",
 			"--include-partial-messages",
+			"--dangerously-skip-permissions",
 			"--resume",
 			sessionId,
 		];
@@ -208,7 +216,12 @@ export class CLIRunner {
 
 	private handleStreamEvent(entry: RunningProcess, event: CLIStreamEvent): void {
 		if (entry.stale) return;
-
+		try {
+			mkdirSync(EVENTS_DIR, { recursive: true });
+			appendFileSync(EVENTS_FILE, `${JSON.stringify(event)}\n`);
+		} catch {
+			// Best-effort logging — don't break the pipeline
+		}
 		// Extract session ID from the stream
 		if (event.session_id && !entry.sessionId) {
 			entry.sessionId = event.session_id;
