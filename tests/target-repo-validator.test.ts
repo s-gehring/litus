@@ -72,6 +72,21 @@ describe("validateTargetRepository", () => {
 		expect(result.error).toBeUndefined();
 	});
 
+	test("accepts path with spaces and special characters", async () => {
+		const spacePath = join(testRoot, "path with spaces & (parens)");
+		mkdirSync(spacePath, { recursive: true });
+		const proc = Bun.spawn(["git", "init"], {
+			cwd: spacePath,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		await proc.exited;
+
+		const result = await validateTargetRepository(spacePath);
+		expect(result.valid).toBe(true);
+		expect(result.effectivePath).toBe(spacePath);
+	});
+
 	test("accepts bare git repository", async () => {
 		const bareRepoPath = join(testRoot, "bare-repo.git");
 		mkdirSync(bareRepoPath, { recursive: true });
