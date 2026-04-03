@@ -59,6 +59,22 @@ describe("QuestionDetector", () => {
 			expect(q).not.toBeNull();
 			expect(q?.confidence).toBe("certain");
 		});
+
+		test("detects 'reply with the option letter' pattern", () => {
+			const q = detector.detect(
+				'You can reply with the option letter (e.g., "A"), accept the recommendation by saying "yes" or "recommended", or provide your own short answer.',
+			);
+			expect(q).not.toBeNull();
+			expect(q?.confidence).toBe("certain");
+		});
+
+		test("detects markdown table with option letters", () => {
+			const q = detector.detect(
+				"| Option | Description |\n|--------|-------------|\n| A | Use existing logic |\n| B | Clamp to zero |",
+			);
+			expect(q).not.toBeNull();
+			expect(q?.confidence).toBe("certain");
+		});
 	});
 
 	describe("uncertain question detection", () => {

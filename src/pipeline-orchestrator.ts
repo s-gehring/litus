@@ -313,9 +313,11 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		if (step.name === "review") {
-			this.handleReviewComplete(workflow).catch((err) =>
-				this.handleStepError(workflowId, err instanceof Error ? err.message : String(err)),
-			);
+			this.handleReviewComplete(workflow).catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				console.error(`[pipeline] Review completion error: ${msg}`);
+				this.handleStepError(workflowId, msg);
+			});
 			return;
 		}
 

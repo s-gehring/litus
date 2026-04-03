@@ -8,6 +8,8 @@ const CERTAIN_PATTERNS = [
 	/\bplease (choose|select|pick|decide|confirm)\b/i, // Request for decision
 	/\b(option [a-d]|choice \d|alternative \d)\b.*\?\s*$/im, // Multiple choice ending with ?
 	/^(which|what|where|how)\b.*\b(prefer|want|like|should|would)\b.*\?\s*$/im, // "Which do you prefer?"
+	/\breply with\b.*\b(option|choice|letter|number)\b/i, // "reply with the option letter"
+	/\| [A-D] \|/m, // Markdown table with option letters like "| A |"
 ];
 
 // Patterns that suggest a possible question (less certain) — sent to Haiku for verification

@@ -26,7 +26,9 @@ const orchestrator = new PipelineOrchestrator({
 	onComplete: (_workflowId) => {
 		broadcastState();
 	},
-	onError: (_workflowId, _error) => {
+	onError: (_workflowId, error) => {
+		console.error(`[pipeline] Step error: ${error}`);
+		broadcast({ type: "error", message: error });
 		broadcastState();
 	},
 	onStateChange: (_workflowId) => {
