@@ -5,6 +5,7 @@ import type {
 	WorkflowClientState,
 	WorkflowState,
 } from "../types";
+import { createConfigPanel, updateConfigPanel } from "./components/config-panel";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
@@ -21,7 +22,7 @@ import {
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
-const MAX_OUTPUT_LINES = 5000;
+let maxOutputLines = 5000;
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -52,6 +53,8 @@ function connect(): void {
 			clearTimeout(reconnectTimer);
 			reconnectTimer = null;
 		}
+
+		send({ type: "config:get" });
 	};
 
 	ws.onclose = () => {
@@ -144,8 +147,8 @@ function handleMessage(msg: ServerMessage): void {
 			if (entry) {
 				const outputEntry: OutputEntry = { kind: "text", text: msg.text };
 				entry.outputLines.push(outputEntry);
-				if (entry.outputLines.length > MAX_OUTPUT_LINES) {
-					entry.outputLines.splice(0, entry.outputLines.length - MAX_OUTPUT_LINES);
+				if (entry.outputLines.length > maxOutputLines) {
+					entry.outputLines.splice(0, entry.outputLines.length - maxOutputLines);
 				}
 				if (expandedWorkflowId === msg.workflowId) {
 					appendOutput(msg.text);
@@ -159,8 +162,8 @@ function handleMessage(msg: ServerMessage): void {
 			if (entry) {
 				const outputEntry: OutputEntry = { kind: "tools", tools: msg.tools };
 				entry.outputLines.push(outputEntry);
-				if (entry.outputLines.length > MAX_OUTPUT_LINES) {
-					entry.outputLines.splice(0, entry.outputLines.length - MAX_OUTPUT_LINES);
+				if (entry.outputLines.length > maxOutputLines) {
+					entry.outputLines.splice(0, entry.outputLines.length - maxOutputLines);
 				}
 				if (expandedWorkflowId === msg.workflowId) {
 					appendToolIcons(msg.tools);
@@ -193,6 +196,22 @@ function handleMessage(msg: ServerMessage): void {
 					clearOutput();
 					appendOutput(stepText, "system");
 				}
+			}
+			break;
+		}
+
+		case "config:state": {
+			updateConfigPanel(msg.config, msg.warnings);
+			if (msg.config.timing?.maxClientOutputLines) {
+				maxOutputLines = msg.config.timing.maxClientOutputLines;
+			}
+			break;
+		}
+
+		case "config:error": {
+			// Show first error as output
+			if (msg.errors.length > 0) {
+				appendOutput(`Config error: ${msg.errors[0].path} — ${msg.errors[0].message}`, "error");
 			}
 			break;
 		}
@@ -360,6 +379,24 @@ document.addEventListener("DOMContentLoaded", () => {
 			btnStart.click();
 		}
 	});
+
+	// Config panel
+	const configPanel = createConfigPanel(send);
+	const configContainer = document.getElementById("config-panel");
+	if (configContainer) configContainer.appendChild(configPanel);
+
+	const btnConfig = document.getElementById("btn-config");
+	if (btnConfig) {
+		btnConfig.addEventListener("click", () => {
+			const panel = document.getElementById("config-panel");
+			if (panel) {
+				panel.classList.toggle("hidden");
+				if (!panel.classList.contains("hidden")) {
+					send({ type: "config:get" });
+				}
+			}
+		});
+	}
 
 	// Timer update interval
 	setInterval(updateTimers, 1000);
