@@ -916,4 +916,134 @@ body::-webkit-scrollbar-track {
   }
 }
 
+/* ── Epic Form ────────────────────────────────────────── */
+
+.epic-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.epic-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.epic-form-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--accent-blue);
+}
+
+.epic-form-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.epic-form-close:hover {
+  color: var(--text);
+}
+
+.epic-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+  margin-bottom: 10px;
+}
+
+.epic-textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.epic-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.epic-error {
+  color: var(--accent);
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+.epic-analyzing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: 0.85rem;
+  color: var(--accent-blue);
+}
+
+.epic-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Epic Label on Cards ─────────────────────────────── */
+
+.card-epic-label {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(74, 158, 255, 0.15);
+  color: var(--accent-blue);
+  align-self: flex-start;
+}
+
+/* ── Dependency Text on Cards ────────────────────────── */
+
+.card-dependency-text {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ── Waiting for Dependencies Badge ──────────────────── */
+
+.card-status-waiting-deps {
+  background: rgba(240, 192, 64, 0.15);
+  color: var(--accent-yellow);
+}
+
+/* ── Force Start Button ──────────────────────────────── */
+
+.btn-force-start {
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  background: rgba(240, 192, 64, 0.2);
+  border: 1px solid rgba(240, 192, 64, 0.4);
+  border-radius: 4px;
+  color: var(--accent-yellow);
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.btn-force-start:hover {
+  background: rgba(240, 192, 64, 0.35);
+}
+
 .hidden { display: none !important; }

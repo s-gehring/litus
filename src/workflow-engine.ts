@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { cp, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { configStore } from "./config-store";
-import type { Question, Workflow, WorkflowStatus } from "./types";
+import type { EpicAnalysisResult, Question, Workflow, WorkflowStatus } from "./types";
 import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS as transitions } from "./types";
 
 export class WorkflowEngine {
@@ -210,4 +210,62 @@ export class WorkflowEngine {
 			}
 		}
 	}
+}
+
+/** Create multiple workflows from an epic decomposition result. */
+export async function createEpicWorkflows(
+	result: EpicAnalysisResult,
+	targetRepository: string | undefined,
+	autoStart: boolean,
+): Promise<{ workflows: Workflow[]; epicId: string }> {
+	const epicId = randomUUID();
+	const tempIdToWorkflowId = new Map<string, string>();
+	const workflows: Workflow[] = [];
+
+	// Single-spec fallback — create one normal workflow
+	if (result.specs.length === 1) {
+		const spec = result.specs[0];
+		const engine = new WorkflowEngine();
+		const workflow = await engine.createWorkflow(spec.description, targetRepository);
+		workflow.epicId = epicId;
+		workflow.epicTitle = result.title;
+		workflow.epicDependencies = [];
+		workflow.epicDependencyStatus = "satisfied";
+		workflow.summary = spec.title;
+		workflows.push(workflow);
+		return { workflows, epicId };
+	}
+
+	// First pass: create all workflows to get real IDs
+	for (const spec of result.specs) {
+		const engine = new WorkflowEngine();
+		const workflow = await engine.createWorkflow(spec.description, targetRepository);
+		workflow.epicId = epicId;
+		workflow.epicTitle = result.title;
+		workflow.summary = spec.title;
+		tempIdToWorkflowId.set(spec.id, workflow.id);
+		workflows.push(workflow);
+	}
+
+	// Second pass: map temp dependency IDs to real workflow IDs and set status
+	for (let i = 0; i < result.specs.length; i++) {
+		const spec = result.specs[i];
+		const workflow = workflows[i];
+		workflow.epicDependencies = spec.dependencies
+			.map((tempId) => tempIdToWorkflowId.get(tempId))
+			.filter((id): id is string => id !== undefined);
+
+		if (workflow.epicDependencies.length > 0) {
+			workflow.epicDependencyStatus = "waiting";
+			if (!autoStart) {
+				// Leave as idle regardless
+			} else {
+				workflow.status = "waiting_for_dependencies";
+			}
+		} else {
+			workflow.epicDependencyStatus = "satisfied";
+		}
+	}
+
+	return { workflows, epicId };
 }

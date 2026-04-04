@@ -86,6 +86,32 @@ export class PipelineOrchestrator {
 		return this.engine;
 	}
 
+	/** Start the pipeline for an already-created workflow (used by epic flow). */
+	startPipelineFromWorkflow(workflow: Workflow): void {
+		this.engine.setWorkflow(workflow);
+		this.engine.transition(workflow.id, "running");
+
+		const branchCwd = workflow.targetRepository || process.cwd();
+		this.getBranch(branchCwd).then((branch) => {
+			this.pipelineName = branch ?? workflow.worktreeBranch;
+			this.currentAuditRunId = this.auditLogger.startRun(this.pipelineName, workflow.worktreeBranch);
+		});
+
+		this.persistWorkflow(workflow);
+		this.startStep(workflow);
+
+		this.summarizer
+			.generateSpecSummary(workflow.specification)
+			.then(({ summary, flavor }) => {
+				if (summary && !workflow.summary) workflow.summary = summary;
+				if (flavor) workflow.flavor = flavor;
+				workflow.updatedAt = new Date().toISOString();
+				this.persistWorkflow(workflow);
+				this.callbacks.onStateChange(workflow.id);
+			})
+			.catch(() => {});
+	}
+
 	async startPipeline(specification: string, targetRepository?: string): Promise<Workflow> {
 		const workflow = await this.engine.createWorkflow(specification, targetRepository);
 		this.engine.transition(workflow.id, "running");

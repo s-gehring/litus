@@ -2,6 +2,7 @@ import type { ServerWebSocket } from "bun";
 import { AuditLogger } from "./audit-logger";
 import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
+import { type EpicAnalysisProcess, analyzeEpic } from "./epic-analyzer";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -16,6 +17,7 @@ import type {
 	Workflow,
 	WorkflowState,
 } from "./types";
+import { createEpicWorkflows } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
 
 type WsData = Record<string, never>;
@@ -246,6 +248,92 @@ function handleConfigReset(_ws: ServerWebSocket<WsData>, key?: string) {
 	broadcast({ type: "config:state", config: configStore.get() });
 }
 
+// ── Epic analysis state ──────────────────────────────────
+let epicAnalysisRef: { current: EpicAnalysisProcess | null } = { current: null };
+
+async function handleEpicStart(
+	ws: ServerWebSocket<WsData>,
+	description: string,
+	targetRepository: string | undefined,
+	autoStart: boolean,
+) {
+	if (!description || description.trim().length < 10) {
+		sendTo(ws, { type: "error", message: "Epic description must be at least 10 characters" });
+		return;
+	}
+
+	if (targetRepository) {
+		const validation = await validateTargetRepository(targetRepository);
+		if (!validation.valid) {
+			sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
+			return;
+		}
+	}
+
+	broadcast({ type: "epic:analyzing", epicDescription: description.trim() });
+
+	try {
+		const repoDir = targetRepository || process.cwd();
+		const result = await analyzeEpic(description.trim(), repoDir, epicAnalysisRef);
+
+		const { workflows, epicId } = await createEpicWorkflows(result, targetRepository, autoStart);
+
+		// Persist and register orchestrators for each workflow
+		for (const workflow of workflows) {
+			await sharedStore.save(workflow);
+
+			const orch = createOrchestrator();
+			orch.getEngine().setWorkflow(workflow);
+			orchestrators.set(workflow.id, orch);
+
+			broadcast({ type: "workflow:created", workflow: stripInternalFields(workflow) });
+
+			// Auto-start independent specs when autoStart is true
+			if (autoStart && workflow.epicDependencyStatus === "satisfied") {
+				orch.startPipelineFromWorkflow(workflow);
+			}
+		}
+
+		broadcast({
+			type: "epic:result",
+			epicId,
+			title: result.title,
+			specCount: result.specs.length,
+		});
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "Epic analysis failed";
+		broadcast({ type: "epic:error", message });
+	}
+}
+
+function handleEpicCancel() {
+	if (epicAnalysisRef.current) {
+		epicAnalysisRef.current.kill();
+		epicAnalysisRef.current = null;
+	}
+}
+
+function handleForceStart(ws: ServerWebSocket<WsData>, workflowId: string) {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) {
+		sendTo(ws, { type: "error", message: "Workflow not found" });
+		return;
+	}
+
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow || workflow.status !== "waiting_for_dependencies") {
+		sendTo(ws, { type: "error", message: "Workflow is not waiting for dependencies" });
+		return;
+	}
+
+	workflow.epicDependencyStatus = "overridden";
+	workflow.status = "idle";
+	workflow.updatedAt = new Date().toISOString();
+
+	orch.startPipelineFromWorkflow(workflow);
+	broadcastWorkflowState(workflowId);
+}
+
 function handleRetry(ws: ServerWebSocket<WsData>, workflowId: string) {
 	const orch = orchestrators.get(workflowId);
 	if (!orch) {
@@ -334,6 +422,20 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 							break;
 						case "workflow:retry":
 							handleRetry(ws, msg.workflowId);
+							break;
+						case "epic:start":
+							handleEpicStart(ws, msg.description, msg.targetRepository, msg.autoStart).catch(
+								(err) => {
+									const text = err instanceof Error ? err.message : "Internal error";
+									sendTo(ws, { type: "error", message: text });
+								},
+							);
+							break;
+						case "epic:cancel":
+							handleEpicCancel();
+							break;
+						case "workflow:force-start":
+							handleForceStart(ws, msg.workflowId);
 							break;
 						case "config:get":
 							handleConfigGet(ws);

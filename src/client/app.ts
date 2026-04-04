@@ -6,6 +6,7 @@ import type {
 	WorkflowState,
 } from "../types";
 import { createConfigPanel, updateConfigPanel } from "./components/config-panel";
+import { createEpicForm, setEpicFormState, showEpicForm } from "./components/epic-form";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
@@ -200,6 +201,33 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "epic:analyzing": {
+			setEpicFormState("analyzing");
+			break;
+		}
+
+		case "epic:result": {
+			setEpicFormState("idle");
+			break;
+		}
+
+		case "epic:error": {
+			setEpicFormState("error", msg.message);
+			break;
+		}
+
+		case "epic:dependency-update": {
+			const entry = workflows.get(msg.workflowId);
+			if (entry) {
+				entry.state.epicDependencyStatus = msg.epicDependencyStatus;
+				renderCards();
+				if (expandedWorkflowId === msg.workflowId) {
+					renderExpandedView();
+				}
+			}
+			break;
+		}
+
 		case "config:state": {
 			updateConfigPanel(msg.config, msg.warnings);
 			if (msg.config.timing?.maxClientOutputLines) {
@@ -379,6 +407,16 @@ document.addEventListener("DOMContentLoaded", () => {
 			btnStart.click();
 		}
 	});
+
+	// Epic form
+	const epicForm = createEpicForm(send, () => targetRepoInput.value.trim());
+	const inputArea = document.getElementById("input-area");
+	if (inputArea) inputArea.parentElement?.insertBefore(epicForm, inputArea);
+
+	const btnEpic = document.getElementById("btn-epic");
+	if (btnEpic) {
+		btnEpic.addEventListener("click", () => showEpicForm());
+	}
 
 	// Config panel
 	const configPanel = createConfigPanel(send);
