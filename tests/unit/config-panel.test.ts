@@ -103,12 +103,9 @@ describe("T030: PROMPT_VARIABLES covers all PromptConfig keys", () => {
 
 describe("T030: template variable substitution with replaceAll", () => {
 	test("replaceAll handles duplicate variable references in a prompt", () => {
-		// biome-ignore lint/suspicious/noTemplateCurlyInString: testing template variable substitution
 		const customPrompt = "First: ${text}, Second: ${text}";
-		// biome-ignore lint/suspicious/noTemplateCurlyInString: testing template variable substitution
 		const result = customPrompt.replaceAll("${text}", "hello world");
 		expect(result).toBe("First: hello world, Second: hello world");
-		// biome-ignore lint/suspicious/noTemplateCurlyInString: testing template variable substitution
 		expect(result).not.toContain("${text}");
 	});
 });
