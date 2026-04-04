@@ -1,4 +1,5 @@
 import { AuditLogger } from "./audit-logger";
+import { type MonitorResult, startMonitoring } from "./ci-monitor";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
 import { QuestionDetector } from "./question-detector";
@@ -52,6 +53,7 @@ export class PipelineOrchestrator {
 	private currentAuditRunId: string | null = null;
 	private pipelineName: string | null = null;
 	private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	private monitorAbortController: AbortController | null = null;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -207,6 +209,10 @@ export class PipelineOrchestrator {
 		}
 
 		this.cliRunner.kill(workflowId);
+		if (this.monitorAbortController) {
+			this.monitorAbortController.abort();
+			this.monitorAbortController = null;
+		}
 		this.summarizer.cleanup(workflowId);
 		this.questionDetector.reset();
 		this.assistantTextBuffer = "";
@@ -257,8 +263,67 @@ export class PipelineOrchestrator {
 		);
 		this.callbacks.onStateChange(workflow.id);
 
+		if (step.name === "monitor-ci") {
+			this.runMonitorCi(workflow);
+			return;
+		}
+
 		const cwd = workflow.worktreePath || process.cwd();
 		this.runStep(workflow, step.prompt, cwd);
+	}
+
+	private runMonitorCi(workflow: Workflow): void {
+		if (!workflow.prUrl) {
+			this.handleStepError(workflow.id, "No PR URL found — cannot monitor CI checks");
+			return;
+		}
+
+		workflow.ciCycle.monitorStartedAt = workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
+		this.persistWorkflow(workflow);
+
+		this.monitorAbortController = new AbortController();
+
+		startMonitoring(
+			workflow.prUrl,
+			workflow.ciCycle,
+			(msg) => this.handleStepOutput(workflow.id, msg),
+			this.monitorAbortController.signal,
+		)
+			.then((result) => this.handleMonitorResult(workflow.id, result))
+			.catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				this.handleStepError(workflow.id, `CI monitoring failed: ${msg}`);
+			});
+	}
+
+	private handleMonitorResult(workflowId: string, result: MonitorResult): void {
+		const workflow = this.engine.getWorkflow();
+		if (!workflow || workflow.id !== workflowId) return;
+
+		this.monitorAbortController = null;
+
+		if (result.passed) {
+			this.advanceAfterStep(workflowId);
+			return;
+		}
+
+		// Checks failed or timed out — route to fix-ci
+		workflow.ciCycle.lastCheckResults = result.results;
+		this.advanceToFixCi(workflow);
+	}
+
+	private advanceToFixCi(workflow: Workflow): void {
+		const step = workflow.steps[workflow.currentStepIndex];
+		step.status = "completed";
+		step.completedAt = new Date().toISOString();
+		step.pid = null;
+		workflow.updatedAt = new Date().toISOString();
+		this.flushPersistDebounce(workflow);
+		this.persistWorkflow(workflow);
+
+		const fixCiIndex = workflow.steps.findIndex((s) => s.name === "fix-ci");
+		workflow.currentStepIndex = fixCiIndex;
+		this.startStep(workflow);
 	}
 
 	private runStep(workflow: Workflow, prompt: string, cwd: string): void {
@@ -371,6 +436,20 @@ export class PipelineOrchestrator {
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 
+		// After commit-push-pr completes, route to monitor-ci
+		if (step.name === "commit-push-pr") {
+			const monitorIndex = workflow.steps.findIndex((s) => s.name === "monitor-ci");
+			workflow.currentStepIndex = monitorIndex;
+			this.startStep(workflow);
+			return;
+		}
+
+		// After monitor-ci passes (all checks succeeded), complete the workflow
+		if (step.name === "monitor-ci") {
+			this.completeWorkflow(workflow);
+			return;
+		}
+
 		// After review completes, ALWAYS route to implement-review
 		if (step.name === "review") {
 			this.routeToImplementReview(workflow);
@@ -443,28 +522,32 @@ export class PipelineOrchestrator {
 		}
 	}
 
+	private completeWorkflow(workflow: Workflow): void {
+		if (this.currentAuditRunId) {
+			this.auditLogger.endRun(this.currentAuditRunId, {
+				totalSteps: workflow.steps.length,
+				reviewIterations: workflow.reviewCycle.iteration,
+			});
+			this.currentAuditRunId = null;
+		}
+		try {
+			this.engine.transition(workflow.id, "completed");
+		} catch (e) {
+			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
+			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
+		}
+		this.cliRunner.kill(workflow.id);
+		this.summarizer.cleanup(workflow.id);
+		this.persistWorkflow(workflow);
+		this.callbacks.onComplete(workflow.id);
+		this.callbacks.onStateChange(workflow.id);
+	}
+
 	private advanceToNextStep(workflow: Workflow): void {
 		const nextIndex = workflow.currentStepIndex + 1;
 
 		if (nextIndex >= workflow.steps.length) {
-			if (this.currentAuditRunId) {
-				this.auditLogger.endRun(this.currentAuditRunId, {
-					totalSteps: workflow.steps.length,
-					reviewIterations: workflow.reviewCycle.iteration,
-				});
-				this.currentAuditRunId = null;
-			}
-			try {
-				this.engine.transition(workflow.id, "completed");
-			} catch (e) {
-				if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-				else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-			}
-			this.cliRunner.kill(workflow.id);
-			this.summarizer.cleanup(workflow.id);
-			this.persistWorkflow(workflow);
-			this.callbacks.onComplete(workflow.id);
-			this.callbacks.onStateChange(workflow.id);
+			this.completeWorkflow(workflow);
 			return;
 		}
 

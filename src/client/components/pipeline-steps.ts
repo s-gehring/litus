@@ -43,6 +43,14 @@ export function renderPipelineSteps(workflow: WorkflowState | null): void {
 			el.appendChild(badge);
 		}
 
+		// CI fix attempt badge
+		if (step.name === "fix-ci" && workflow.ciCycle.attempt > 0) {
+			const badge = document.createElement("span");
+			badge.className = "review-badge";
+			badge.textContent = `${workflow.ciCycle.attempt}/${workflow.ciCycle.maxAttempts}`;
+			el.appendChild(badge);
+		}
+
 		container.appendChild(el);
 	}
 }
