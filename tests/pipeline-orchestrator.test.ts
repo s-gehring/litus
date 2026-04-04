@@ -49,6 +49,14 @@ function createFakeEngine() {
 					maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
 					lastSeverity: null,
 				},
+				ciCycle: {
+					attempt: 0,
+					maxAttempts: 3,
+					monitorStartedAt: null,
+					globalTimeoutMs: 30 * 60 * 1000,
+					lastCheckResults: [],
+					failureLogs: [],
+				},
 				prUrl: null,
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,
@@ -222,7 +230,7 @@ describe("PipelineOrchestrator", () => {
 			expect(cli._startCalls.length).toBe(1);
 		});
 
-		test("pipeline has 8 steps in correct order", async () => {
+		test("pipeline has 10 steps in correct order", async () => {
 			await orchestrator.startPipeline("test");
 			const wf = getWf(engine);
 
@@ -235,6 +243,8 @@ describe("PipelineOrchestrator", () => {
 				"review",
 				"implement-review",
 				"commit-push-pr",
+				"monitor-ci",
+				"fix-ci",
 			];
 			expect(wf.steps.map((s) => s.name)).toEqual(expectedOrder);
 		});
@@ -272,7 +282,16 @@ describe("PipelineOrchestrator", () => {
 
 			expect(wf.currentStepIndex).toBe(7);
 
-			// commit-push-pr (7) completes
+			// commit-push-pr (7) completes → advances to monitor-ci (8)
+			cli.getLastCallbacks().onComplete();
+
+			expect(wf.currentStepIndex).toBe(8);
+			expect(wf.steps[8].name).toBe("monitor-ci");
+
+			// monitor-ci (8) completes → advances to fix-ci (9)
+			cli.getLastCallbacks().onComplete();
+
+			// fix-ci (9) completes → pipeline done
 			cli.getLastCallbacks().onComplete();
 
 			expect(callbacks.onComplete).toHaveBeenCalled();
@@ -711,7 +730,16 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.currentStepIndex).toBe(7); // commit-push-pr
 			expect(wf.steps[7].name).toBe("commit-push-pr");
 
-			// commit-push-pr completes → pipeline done
+			// commit-push-pr completes → advances to monitor-ci
+			cli.getLastCallbacks().onComplete();
+
+			expect(wf.currentStepIndex).toBe(8);
+			expect(wf.steps[8].name).toBe("monitor-ci");
+
+			// monitor-ci completes → advances to fix-ci
+			cli.getLastCallbacks().onComplete();
+
+			// fix-ci completes → pipeline done
 			cli.getLastCallbacks().onComplete();
 
 			expect(callbacks.onComplete).toHaveBeenCalled();
@@ -745,7 +773,11 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete(); // implement-review → classify
 			await new Promise((r) => setTimeout(r, 20));
 
-			// commit-push-pr completes
+			// commit-push-pr completes → monitor-ci
+			cli.getLastCallbacks().onComplete();
+			// monitor-ci completes → fix-ci
+			cli.getLastCallbacks().onComplete();
+			// fix-ci completes → pipeline done
 			cli.getLastCallbacks().onComplete();
 
 			expect(auditLogger.endRun).toHaveBeenCalledTimes(1);

@@ -53,7 +53,9 @@ export type PipelineStepName =
 	| "implement"
 	| "review"
 	| "implement-review"
-	| "commit-push-pr";
+	| "commit-push-pr"
+	| "monitor-ci"
+	| "fix-ci";
 
 // Pipeline step status
 export type PipelineStepStatus =
@@ -87,6 +89,31 @@ export interface WorkflowIndexEntry {
 	updatedAt: string;
 }
 
+// CI check result from gh pr checks
+export interface CiCheckResult {
+	name: string;
+	state: string;
+	conclusion: string | null;
+	link: string;
+}
+
+// Aggregated failure info for a single failed check run
+export interface CiFailureLog {
+	checkName: string;
+	runId: string;
+	logs: string;
+}
+
+// CI monitor/fix loop tracker
+export interface CiCycle {
+	attempt: number;
+	maxAttempts: number;
+	monitorStartedAt: string | null;
+	globalTimeoutMs: number;
+	lastCheckResults: CiCheckResult[];
+	failureLogs: CiFailureLog[];
+}
+
 // Review severity classification
 export type ReviewSeverity = "critical" | "major" | "minor" | "trivial" | "nit";
 
@@ -111,6 +138,8 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	{ name: "review", displayName: "Reviewing", prompt: "/speckit.review" },
 	{ name: "implement-review", displayName: "Fixing Review", prompt: "/speckit.implementreview" },
 	{ name: "commit-push-pr", displayName: "Creating PR", prompt: "/commit-commands:commit-push-pr" },
+	{ name: "monitor-ci", displayName: "Monitoring CI", prompt: "" },
+	{ name: "fix-ci", displayName: "Fixing CI", prompt: "" },
 ];
 
 export const REVIEW_CYCLE_MAX_ITERATIONS = 16;
@@ -131,6 +160,7 @@ export interface Workflow {
 	steps: PipelineStep[];
 	currentStepIndex: number;
 	reviewCycle: ReviewCycle;
+	ciCycle: CiCycle;
 	prUrl: string | null;
 	activeWorkMs: number;
 	activeWorkStartedAt: string | null;

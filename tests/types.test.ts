@@ -56,7 +56,7 @@ describe("VALID_TRANSITIONS", () => {
 });
 
 describe("PIPELINE_STEP_DEFINITIONS", () => {
-	test("has exactly 8 steps in correct order", () => {
+	test("has exactly 10 steps in correct order", () => {
 		const expectedNames: PipelineStepName[] = [
 			"specify",
 			"clarify",
@@ -66,14 +66,15 @@ describe("PIPELINE_STEP_DEFINITIONS", () => {
 			"review",
 			"implement-review",
 			"commit-push-pr",
+			"monitor-ci",
+			"fix-ci",
 		];
 		expect(PIPELINE_STEP_DEFINITIONS.map((s) => s.name)).toEqual(expectedNames);
 	});
 
-	test("every step has a non-empty displayName and prompt", () => {
+	test("every step has a non-empty displayName", () => {
 		for (const step of PIPELINE_STEP_DEFINITIONS) {
 			expect(step.displayName.length).toBeGreaterThan(0);
-			expect(step.prompt.length).toBeGreaterThan(0);
 		}
 	});
 });
