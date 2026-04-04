@@ -19,6 +19,7 @@ export interface PipelineCallbacks {
 		reviewIteration: number,
 	) => void;
 	onOutput: (workflowId: string, text: string) => void;
+	onTools: (workflowId: string, tools: Record<string, number>) => void;
 	onComplete: (workflowId: string) => void;
 	onError: (workflowId: string, error: string) => void;
 	onStateChange: (workflowId: string) => void;
@@ -187,6 +188,7 @@ export class PipelineOrchestrator {
 
 		const cliCallbacks: CLICallbacks = {
 			onOutput: (text) => this.handleStepOutput(workflow.id, text),
+			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
 			onComplete: () => this.handleStepComplete(workflow.id),
 			onError: (error) => this.handleStepError(workflow.id, error),
 			onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
@@ -346,7 +348,7 @@ export class PipelineOrchestrator {
 		}
 
 		if (allFailuresCancelled(result.results)) {
-			const cancelled = result.results.filter((r) => r.conclusion === "CANCELLED");
+			const cancelled = result.results.filter((r) => r.bucket === "cancel");
 			const names = cancelled.map((r) => r.name).join(", ");
 			this.pauseForQuestion(workflowId, {
 				id: `ci-cancelled-${Date.now()}`,
@@ -366,7 +368,7 @@ export class PipelineOrchestrator {
 		}
 
 		const failedChecks = workflow.ciCycle.lastCheckResults.filter(
-			(r) => r.conclusion !== "SUCCESS",
+			(r) => r.bucket !== "pass",
 		);
 
 		gatherAllFailureLogs(workflow.prUrl, failedChecks)
@@ -408,6 +410,7 @@ export class PipelineOrchestrator {
 
 		const cliCallbacks: CLICallbacks = {
 			onOutput: (text) => this.handleStepOutput(workflow.id, text),
+			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
 			onComplete: () => this.handleStepComplete(workflow.id),
 			onError: (error) => this.handleStepError(workflow.id, error),
 			onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),

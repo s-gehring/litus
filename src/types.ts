@@ -93,7 +93,7 @@ export interface WorkflowIndexEntry {
 export interface CiCheckResult {
 	name: string;
 	state: string;
-	conclusion: string | null;
+	bucket: string;
 	link: string;
 }
 
@@ -179,6 +179,7 @@ export type ServerMessage =
 	| { type: "workflow:list"; workflows: WorkflowState[] }
 	| { type: "workflow:created"; workflow: WorkflowState }
 	| { type: "workflow:output"; workflowId: string; text: string }
+	| { type: "workflow:tools"; workflowId: string; tools: Record<string, number> }
 	| { type: "workflow:question"; workflowId: string; question: Question }
 	| {
 			type: "workflow:step-change";
@@ -190,10 +191,15 @@ export type ServerMessage =
 	  }
 	| { type: "error"; message: string };
 
+// Output entry union for client-side output log (text lines + tool icon data)
+export type OutputEntry =
+	| { kind: "text"; text: string; type?: "normal" | "error" | "system" }
+	| { kind: "tools"; tools: Record<string, number> };
+
 // Client-side per-workflow state (not persisted, not sent over WebSocket)
 export interface WorkflowClientState {
 	state: WorkflowState;
-	outputLines: string[];
+	outputLines: OutputEntry[];
 	isExpanded: boolean;
 }
 
