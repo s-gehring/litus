@@ -66,8 +66,8 @@ describe("Multi-workflow lifecycle", () => {
 		// 4. Output arrives for both
 		const entryA = workflows.get("wf-a");
 		const entryB = workflows.get("wf-b");
-		entryA?.outputLines.push("Output for A");
-		entryB?.outputLines.push("Output for B");
+		entryA?.outputLines.push({ kind: "text", text: "Output for A" });
+		entryB?.outputLines.push({ kind: "text", text: "Output for B" });
 
 		expect(entryA?.outputLines).toHaveLength(1);
 		expect(entryB?.outputLines).toHaveLength(1);

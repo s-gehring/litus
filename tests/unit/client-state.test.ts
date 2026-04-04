@@ -89,9 +89,9 @@ describe("Multi-workflow client state management", () => {
 		expect(entry1).toBeDefined();
 		expect(entry2).toBeDefined();
 
-		entry1?.outputLines.push("line 1 for wf-1");
-		entry2?.outputLines.push("line 1 for wf-2");
-		entry1?.outputLines.push("line 2 for wf-1");
+		entry1?.outputLines.push({ kind: "text", text: "line 1 for wf-1" });
+		entry2?.outputLines.push({ kind: "text", text: "line 1 for wf-2" });
+		entry1?.outputLines.push({ kind: "text", text: "line 2 for wf-1" });
 
 		expect(entry1?.outputLines).toHaveLength(2);
 		expect(entry2?.outputLines).toHaveLength(1);

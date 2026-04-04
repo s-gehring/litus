@@ -52,6 +52,7 @@ function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 function makeCallbacks(overrides?: Partial<CLICallbacks>): CLICallbacks {
 	return {
 		onOutput: () => {},
+		onTools: () => {},
 		onComplete: () => {},
 		onError: () => {},
 		onSessionId: () => {},
@@ -105,6 +106,7 @@ describe("CLIRunner", () => {
 
 		test("emits text content from assistant messages", async () => {
 			const outputs: string[] = [];
+			const toolCalls: Record<string, number>[] = [];
 			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
 
 			const streamContent = [
@@ -141,17 +143,19 @@ describe("CLIRunner", () => {
 				makeWorkflow("w2", { worktreePath: null }),
 				makeCallbacks({
 					onOutput: (text) => outputs.push(text),
+					onTools: (tools) => toolCalls.push(tools),
 					onComplete: () => resolveComplete(),
 				}),
 			);
 
 			await completePromise;
 			expect(outputs).toContain("I'll create the file now");
-			expect(outputs).toContain("[Tool: write_file]");
+			expect(toolCalls).toHaveLength(1);
+			expect(toolCalls[0]).toEqual({ write_file: 1 });
 		});
 
 		test("groups tool_use blocks by name with counts", async () => {
-			const outputs: string[] = [];
+			const toolCalls: Record<string, number>[] = [];
 			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
 
 			const streamContent = [
@@ -191,15 +195,14 @@ describe("CLIRunner", () => {
 			runner.start(
 				makeWorkflow("w-tools", { worktreePath: null }),
 				makeCallbacks({
-					onOutput: (text) => outputs.push(text),
+					onTools: (tools) => toolCalls.push(tools),
 					onComplete: () => resolveComplete(),
 				}),
 			);
 
 			await completePromise;
-			// Should have a single grouped output instead of 6 individual lines
-			const toolOutput = outputs.find((o) => o.includes("[Tool:"));
-			expect(toolOutput).toBe("[Tool: Bash x3] [Tool: Read x2] [Tool: Write]");
+			expect(toolCalls).toHaveLength(1);
+			expect(toolCalls[0]).toEqual({ Bash: 3, Read: 2, Write: 1 });
 		});
 
 		test("calls onComplete on successful exit", async () => {
