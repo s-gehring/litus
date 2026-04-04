@@ -150,6 +150,16 @@ export class PipelineOrchestrator {
 		);
 	}
 
+	resumeMonitorCi(workflowId: string): void {
+		const workflow = this.getWorkflowOrThrow(workflowId);
+		if (workflow.status !== "running") return;
+
+		const step = workflow.steps[workflow.currentStepIndex];
+		if (step.name !== "monitor-ci") return;
+
+		this.runMonitorCi(workflow);
+	}
+
 	async resumeStep(workflowId: string): Promise<void> {
 		const workflow = this.getWorkflowOrThrow(workflowId);
 		if (workflow.status !== "running") return;
@@ -284,7 +294,8 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		workflow.ciCycle.monitorStartedAt = workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
+		workflow.ciCycle.monitorStartedAt =
+			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
 		this.persistWorkflow(workflow);
 
 		this.monitorAbortController = new AbortController();
@@ -340,7 +351,8 @@ export class PipelineOrchestrator {
 		gatherAllFailureLogs(workflow.prUrl, failedChecks)
 			.then((logs) => {
 				workflow.ciCycle.failureLogs = logs;
-				const prompt = buildFixPrompt(workflow.prUrl!, logs);
+				const prUrl = workflow.prUrl as string;
+				const prompt = buildFixPrompt(prUrl, logs);
 				this.persistWorkflow(workflow);
 
 				const cwd = workflow.worktreePath || process.cwd();

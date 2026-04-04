@@ -1,5 +1,17 @@
 import type { CiCheckResult, CiCycle } from "./types";
 
+export async function checkGhAuth(): Promise<void> {
+	const proc = Bun.spawn(["gh", "auth", "status"], {
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const code = await proc.exited;
+	if (code !== 0) {
+		const stderr = await new Response(proc.stderr as ReadableStream).text();
+		throw new Error(`gh CLI not authenticated: ${stderr.trim() || "run 'gh auth login' first"}`);
+	}
+}
+
 export function parseCiChecks(jsonOutput: string): CiCheckResult[] {
 	const parsed = JSON.parse(jsonOutput);
 	if (!Array.isArray(parsed)) return [];
@@ -42,12 +54,24 @@ export interface MonitorResult {
 	results: CiCheckResult[];
 }
 
+const PR_URL_REGEX = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/;
+
+export function isValidPrUrl(url: string): boolean {
+	return PR_URL_REGEX.test(url);
+}
+
 export async function startMonitoring(
 	prUrl: string,
 	ciCycle: CiCycle,
 	onOutput: (msg: string) => void,
 	signal?: AbortSignal,
 ): Promise<MonitorResult> {
+	if (!isValidPrUrl(prUrl)) {
+		throw new Error(`Invalid PR URL: ${prUrl}`);
+	}
+
+	await checkGhAuth();
+
 	const startedAt = ciCycle.monitorStartedAt
 		? new Date(ciCycle.monitorStartedAt).getTime()
 		: Date.now();
@@ -57,7 +81,9 @@ export async function startMonitoring(
 	while (!signal?.aborted) {
 		if (Date.now() - startedAt > ciCycle.globalTimeoutMs) {
 			const lastResults = ciCycle.lastCheckResults;
-			onOutput(`[poll ${pollCount}/${maxPolls}] Global timeout reached (${ciCycle.globalTimeoutMs / 60_000}min)`);
+			onOutput(
+				`[poll ${pollCount}/${maxPolls}] Global timeout reached (${ciCycle.globalTimeoutMs / 60_000}min)`,
+			);
 			return { passed: false, timedOut: true, results: lastResults };
 		}
 

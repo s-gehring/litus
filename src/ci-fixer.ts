@@ -72,10 +72,7 @@ export async function gatherAllFailureLogs(
 
 export function buildFixPrompt(prUrl: string, failureLogs: CiFailureLog[]): string {
 	const logSections = failureLogs
-		.map(
-			(log) =>
-				`### ${log.checkName} (run ${log.runId})\n\`\`\`\n${log.logs}\n\`\`\``,
-		)
+		.map((log) => `### ${log.checkName} (run ${log.runId})\n\`\`\`\n${log.logs}\n\`\`\``)
 		.join("\n\n");
 
 	return `The following CI checks failed on PR ${prUrl}:
