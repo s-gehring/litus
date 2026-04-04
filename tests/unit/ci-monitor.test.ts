@@ -10,13 +10,13 @@ import {
 describe("parseCiChecks", () => {
 	test("parses valid JSON array of check results", () => {
 		const json = JSON.stringify([
-			{ name: "build", state: "COMPLETED", conclusion: "SUCCESS", link: "https://example.com" },
-			{ name: "test", state: "PENDING", conclusion: null, link: "" },
+			{ name: "build", state: "COMPLETED", bucket: "pass", link: "https://example.com" },
+			{ name: "test", state: "PENDING", bucket: "pending", link: "" },
 		]);
 		const results = parseCiChecks(json);
 		expect(results).toEqual([
-			{ name: "build", state: "COMPLETED", conclusion: "SUCCESS", link: "https://example.com" },
-			{ name: "test", state: "PENDING", conclusion: null, link: "" },
+			{ name: "build", state: "COMPLETED", bucket: "pass", link: "https://example.com" },
+			{ name: "test", state: "PENDING", bucket: "pending", link: "" },
 		]);
 	});
 
@@ -35,13 +35,13 @@ describe("parseCiChecks", () => {
 	test("handles missing fields with defaults", () => {
 		const json = JSON.stringify([{}]);
 		const results = parseCiChecks(json);
-		expect(results).toEqual([{ name: "", state: "", conclusion: null, link: "" }]);
+		expect(results).toEqual([{ name: "", state: "", bucket: "pending", link: "" }]);
 	});
 
-	test("coerces non-null conclusion to string", () => {
-		const json = JSON.stringify([{ name: "a", state: "COMPLETED", conclusion: 42, link: "" }]);
+	test("coerces bucket to string", () => {
+		const json = JSON.stringify([{ name: "a", state: "COMPLETED", bucket: 42, link: "" }]);
 		const results = parseCiChecks(json);
-		expect(results[0].conclusion).toBe("42");
+		expect(results[0].bucket).toBe("42");
 	});
 });
 
@@ -49,8 +49,8 @@ describe("allChecksComplete", () => {
 	test("returns true when all checks are COMPLETED", () => {
 		expect(
 			allChecksComplete([
-				{ name: "a", state: "COMPLETED", conclusion: "SUCCESS", link: "" },
-				{ name: "b", state: "COMPLETED", conclusion: "FAILURE", link: "" },
+				{ name: "a", state: "COMPLETED", bucket: "pass", link: "" },
+				{ name: "b", state: "COMPLETED", bucket: "fail", link: "" },
 			]),
 		).toBe(true);
 	});
@@ -58,8 +58,8 @@ describe("allChecksComplete", () => {
 	test("returns false when any check is not COMPLETED", () => {
 		expect(
 			allChecksComplete([
-				{ name: "a", state: "COMPLETED", conclusion: "SUCCESS", link: "" },
-				{ name: "b", state: "PENDING", conclusion: null, link: "" },
+				{ name: "a", state: "COMPLETED", bucket: "pass", link: "" },
+				{ name: "b", state: "PENDING", bucket: "pending", link: "" },
 			]),
 		).toBe(false);
 	});
@@ -70,26 +70,26 @@ describe("allChecksComplete", () => {
 
 	test("returns false for IN_PROGRESS state", () => {
 		expect(
-			allChecksComplete([{ name: "a", state: "IN_PROGRESS", conclusion: null, link: "" }]),
+			allChecksComplete([{ name: "a", state: "IN_PROGRESS", bucket: "pending", link: "" }]),
 		).toBe(false);
 	});
 });
 
 describe("allChecksPassed", () => {
-	test("returns true when all conclusions are SUCCESS", () => {
+	test("returns true when all buckets are pass", () => {
 		expect(
 			allChecksPassed([
-				{ name: "a", state: "COMPLETED", conclusion: "SUCCESS", link: "" },
-				{ name: "b", state: "COMPLETED", conclusion: "SUCCESS", link: "" },
+				{ name: "a", state: "COMPLETED", bucket: "pass", link: "" },
+				{ name: "b", state: "COMPLETED", bucket: "pass", link: "" },
 			]),
 		).toBe(true);
 	});
 
-	test("returns false when any conclusion is not SUCCESS", () => {
+	test("returns false when any bucket is not pass", () => {
 		expect(
 			allChecksPassed([
-				{ name: "a", state: "COMPLETED", conclusion: "SUCCESS", link: "" },
-				{ name: "b", state: "COMPLETED", conclusion: "FAILURE", link: "" },
+				{ name: "a", state: "COMPLETED", bucket: "pass", link: "" },
+				{ name: "b", state: "COMPLETED", bucket: "fail", link: "" },
 			]),
 		).toBe(false);
 	});
@@ -98,50 +98,50 @@ describe("allChecksPassed", () => {
 		expect(allChecksPassed([])).toBe(true);
 	});
 
-	test("returns false when conclusion is null", () => {
-		expect(allChecksPassed([{ name: "a", state: "PENDING", conclusion: null, link: "" }])).toBe(
+	test("returns false when bucket is pending", () => {
+		expect(allChecksPassed([{ name: "a", state: "PENDING", bucket: "pending", link: "" }])).toBe(
 			false,
 		);
 	});
 
-	test("returns false for CANCELLED conclusion", () => {
-		expect(
-			allChecksPassed([{ name: "a", state: "COMPLETED", conclusion: "CANCELLED", link: "" }]),
-		).toBe(false);
+	test("returns false for cancel bucket", () => {
+		expect(allChecksPassed([{ name: "a", state: "COMPLETED", bucket: "cancel", link: "" }])).toBe(
+			false,
+		);
 	});
 });
 
 describe("allFailuresCancelled", () => {
-	test("returns true when all non-SUCCESS checks are CANCELLED", () => {
+	test("returns true when all non-pass checks are cancel", () => {
 		expect(
 			allFailuresCancelled([
-				{ name: "a", state: "COMPLETED", conclusion: "SUCCESS", link: "" },
-				{ name: "b", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+				{ name: "a", state: "COMPLETED", bucket: "pass", link: "" },
+				{ name: "b", state: "COMPLETED", bucket: "cancel", link: "" },
 			]),
 		).toBe(true);
 	});
 
-	test("returns true when all checks are CANCELLED", () => {
+	test("returns true when all checks are cancel", () => {
 		expect(
 			allFailuresCancelled([
-				{ name: "a", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
-				{ name: "b", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+				{ name: "a", state: "COMPLETED", bucket: "cancel", link: "" },
+				{ name: "b", state: "COMPLETED", bucket: "cancel", link: "" },
 			]),
 		).toBe(true);
 	});
 
-	test("returns false when some failures are not CANCELLED", () => {
+	test("returns false when some failures are not cancel", () => {
 		expect(
 			allFailuresCancelled([
-				{ name: "a", state: "COMPLETED", conclusion: "FAILURE", link: "" },
-				{ name: "b", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+				{ name: "a", state: "COMPLETED", bucket: "fail", link: "" },
+				{ name: "b", state: "COMPLETED", bucket: "cancel", link: "" },
 			]),
 		).toBe(false);
 	});
 
 	test("returns false when all checks passed", () => {
 		expect(
-			allFailuresCancelled([{ name: "a", state: "COMPLETED", conclusion: "SUCCESS", link: "" }]),
+			allFailuresCancelled([{ name: "a", state: "COMPLETED", bucket: "pass", link: "" }]),
 		).toBe(false);
 	});
 

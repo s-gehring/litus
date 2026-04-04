@@ -1,10 +1,18 @@
-import type { ClientMessage, ServerMessage, WorkflowClientState, WorkflowState } from "../types";
+import type {
+	ClientMessage,
+	OutputEntry,
+	ServerMessage,
+	WorkflowClientState,
+	WorkflowState,
+} from "../types";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
 import {
 	appendOutput,
+	appendToolIcons,
 	clearOutput,
+	renderOutputEntries,
 	updateFlavor,
 	updateStepSummary,
 	updateSummary,
@@ -134,12 +142,28 @@ function handleMessage(msg: ServerMessage): void {
 		case "workflow:output": {
 			const entry = workflows.get(msg.workflowId);
 			if (entry) {
-				entry.outputLines.push(msg.text);
+				const outputEntry: OutputEntry = { kind: "text", text: msg.text };
+				entry.outputLines.push(outputEntry);
 				if (entry.outputLines.length > MAX_OUTPUT_LINES) {
 					entry.outputLines.splice(0, entry.outputLines.length - MAX_OUTPUT_LINES);
 				}
 				if (expandedWorkflowId === msg.workflowId) {
 					appendOutput(msg.text);
+				}
+			}
+			break;
+		}
+
+		case "workflow:tools": {
+			const entry = workflows.get(msg.workflowId);
+			if (entry) {
+				const outputEntry: OutputEntry = { kind: "tools", tools: msg.tools };
+				entry.outputLines.push(outputEntry);
+				if (entry.outputLines.length > MAX_OUTPUT_LINES) {
+					entry.outputLines.splice(0, entry.outputLines.length - MAX_OUTPUT_LINES);
+				}
+				if (expandedWorkflowId === msg.workflowId) {
+					appendToolIcons(msg.tools);
 				}
 			}
 			break;
@@ -162,18 +186,21 @@ function handleMessage(msg: ServerMessage): void {
 			if (entry) {
 				entry.state.currentStepIndex = msg.currentStepIndex;
 				entry.state.reviewCycle.iteration = msg.reviewIteration;
+				const stepText = `── Step: ${msg.currentStep} ──`;
+				entry.outputLines.push({ kind: "text", text: stepText, type: "system" });
 				renderCards();
 				if (expandedWorkflowId === msg.workflowId) {
 					clearOutput();
-					appendOutput(`── Step: ${msg.currentStep} ──`, "system");
+					appendOutput(stepText, "system");
 				}
 			}
 			break;
 		}
 
-		case "error":
+		case "error": {
 			appendOutput(`Error: ${msg.message}`, "error");
 			break;
+		}
 	}
 }
 
@@ -223,12 +250,10 @@ function renderExpandedView(): void {
 	updateStepSummary(wf.stepSummary ?? "");
 	updateFlavor(wf.flavor ?? "");
 
-	// Render output from accumulated lines
+	// Render output from accumulated entries
 	clearOutput();
 	if (entry.outputLines.length > 0) {
-		for (const line of entry.outputLines) {
-			appendOutput(line);
-		}
+		renderOutputEntries(entry.outputLines);
 	} else if (wf.status === "error") {
 		// Restored error workflows have no live output — show step error/output
 		const errorStep = wf.steps.find((s) => s.status === "error");

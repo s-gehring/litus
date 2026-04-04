@@ -16,6 +16,7 @@ function createTracker() {
 		onOutput: (workflowId: string, text: string) => {
 			outputs.push({ workflowId, text });
 		},
+		onTools: () => {},
 		onComplete: (workflowId: string) => {
 			stateChanges.push(`complete:${workflowId}`);
 		},

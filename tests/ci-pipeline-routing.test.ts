@@ -152,6 +152,7 @@ function makeCallbacks(): PipelineCallbacks {
 	return {
 		onStepChange: mock(() => {}),
 		onOutput: mock(() => {}),
+		onTools: mock(() => {}),
 		onComplete: mock(() => {}),
 		onError: mock(() => {}),
 		onStateChange: mock(() => {}),
@@ -270,7 +271,7 @@ describe("CI Pipeline Routing", () => {
 		await new Promise((r) => setTimeout(r, 10));
 
 		// Resolve monitoring with failure
-		const failedResults = [{ name: "build", state: "COMPLETED", conclusion: "FAILURE", link: "" }];
+		const failedResults = [{ name: "build", state: "COMPLETED", bucket: "fail", link: "" }];
 		monitorResultResolve({ passed: false, timedOut: false, results: failedResults });
 		await new Promise((r) => setTimeout(r, 10));
 
@@ -298,7 +299,7 @@ describe("CI Pipeline Routing", () => {
 		monitorResultResolve({
 			passed: false,
 			timedOut: false,
-			results: [{ name: "build", state: "COMPLETED", conclusion: "FAILURE", link: "" }],
+			results: [{ name: "build", state: "COMPLETED", bucket: "fail", link: "" }],
 		});
 		await new Promise((r) => setTimeout(r, 10));
 
@@ -333,7 +334,7 @@ describe("CI Pipeline Routing", () => {
 		monitorResultResolve({
 			passed: false,
 			timedOut: false,
-			results: [{ name: "build", state: "COMPLETED", conclusion: "FAILURE", link: "" }],
+			results: [{ name: "build", state: "COMPLETED", bucket: "fail", link: "" }],
 		});
 		await new Promise((r) => setTimeout(r, 10));
 
@@ -360,7 +361,7 @@ describe("CI Pipeline Routing", () => {
 		monitorResultResolve({
 			passed: false,
 			timedOut: true,
-			results: [{ name: "build", state: "IN_PROGRESS", conclusion: null, link: "" }],
+			results: [{ name: "build", state: "IN_PROGRESS", bucket: "pending", link: "" }],
 		});
 		await new Promise((r) => setTimeout(r, 10));
 
@@ -387,8 +388,8 @@ describe("CI Pipeline Routing", () => {
 			passed: false,
 			timedOut: false,
 			results: [
-				{ name: "build", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
-				{ name: "test", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+				{ name: "build", state: "COMPLETED", bucket: "cancel", link: "" },
+				{ name: "test", state: "COMPLETED", bucket: "cancel", link: "" },
 			],
 		});
 		await new Promise((r) => setTimeout(r, 10));
@@ -416,7 +417,7 @@ describe("CI Pipeline Routing", () => {
 		monitorResultResolve({
 			passed: false,
 			timedOut: false,
-			results: [{ name: "build", state: "COMPLETED", conclusion: "CANCELLED", link: "" }],
+			results: [{ name: "build", state: "COMPLETED", bucket: "cancel", link: "" }],
 		});
 		await new Promise((r) => setTimeout(r, 10));
 
@@ -450,7 +451,7 @@ describe("CI Pipeline Routing", () => {
 		monitorResultResolve({
 			passed: false,
 			timedOut: false,
-			results: [{ name: "build", state: "COMPLETED", conclusion: "CANCELLED", link: "" }],
+			results: [{ name: "build", state: "COMPLETED", bucket: "cancel", link: "" }],
 		});
 		await new Promise((r) => setTimeout(r, 10));
 
@@ -481,8 +482,8 @@ describe("CI Pipeline Routing", () => {
 			passed: false,
 			timedOut: false,
 			results: [
-				{ name: "build", state: "COMPLETED", conclusion: "FAILURE", link: "" },
-				{ name: "test", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+				{ name: "build", state: "COMPLETED", bucket: "fail", link: "" },
+				{ name: "test", state: "COMPLETED", bucket: "cancel", link: "" },
 			],
 		});
 		await new Promise((r) => setTimeout(r, 10));

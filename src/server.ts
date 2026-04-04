@@ -52,6 +52,9 @@ function createCallbacks() {
 		onOutput: (workflowId: string, text: string) => {
 			broadcast({ type: "workflow:output", workflowId, text });
 		},
+		onTools: (workflowId: string, tools: Record<string, number>) => {
+			broadcast({ type: "workflow:tools", workflowId, tools });
+		},
 		onComplete: (workflowId: string) => {
 			broadcastWorkflowState(workflowId);
 			orchestrators.delete(workflowId);

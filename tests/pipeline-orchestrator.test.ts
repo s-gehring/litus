@@ -172,6 +172,7 @@ function makeCallbacks(): PipelineCallbacks {
 	return {
 		onStepChange: mock(() => {}),
 		onOutput: mock(() => {}),
+		onTools: mock(() => {}),
 		onComplete: mock(() => {}),
 		onError: mock(() => {}),
 		onStateChange: mock(() => {}),
@@ -259,6 +260,16 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.steps[0].status).toBe("completed");
 			expect(wf.steps[1].status).toBe("running");
 			expect(wf.currentStepIndex).toBe(1);
+		});
+
+		test("onTools callback forwards tool data to pipeline callbacks", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			const toolData = { Bash: 3, Read: 1 };
+			cli.getLastCallbacks().onTools(toolData);
+
+			expect(callbacks.onTools).toHaveBeenCalledWith(wf.id, toolData);
 		});
 
 		test("completing all steps triggers pipeline completion", async () => {

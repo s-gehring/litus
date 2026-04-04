@@ -18,7 +18,7 @@ export function parseCiChecks(jsonOutput: string): CiCheckResult[] {
 	return parsed.map((item: Record<string, unknown>) => ({
 		name: String(item.name ?? ""),
 		state: String(item.state ?? ""),
-		conclusion: item.conclusion != null ? String(item.conclusion) : null,
+		bucket: String(item.bucket ?? "pending"),
 		link: String(item.link ?? ""),
 	}));
 }
@@ -29,17 +29,17 @@ export function allChecksComplete(results: CiCheckResult[]): boolean {
 
 /** Returns `true` when all non-SUCCESS checks were cancelled (likely billing/usage-limit). */
 export function allFailuresCancelled(results: CiCheckResult[]): boolean {
-	const failed = results.filter((r) => r.conclusion !== "SUCCESS");
-	return failed.length > 0 && failed.every((r) => r.conclusion === "CANCELLED");
+	const failed = results.filter((r) => r.bucket !== "pass");
+	return failed.length > 0 && failed.every((r) => r.bucket === "cancel");
 }
 
 /** Must only be called after `allChecksComplete(results)` returns `true`. */
 export function allChecksPassed(results: CiCheckResult[]): boolean {
-	return results.length === 0 || results.every((r) => r.conclusion === "SUCCESS");
+	return results.length === 0 || results.every((r) => r.bucket === "pass");
 }
 
 export async function pollCiChecks(prUrl: string): Promise<CiCheckResult[]> {
-	const proc = Bun.spawn(["gh", "pr", "checks", prUrl, "--json", "name,state,conclusion,link"], {
+	const proc = Bun.spawn(["gh", "pr", "checks", prUrl, "--json", "name,state,bucket,link"], {
 		stdout: "pipe",
 		stderr: "pipe",
 	});
@@ -99,9 +99,7 @@ export async function startMonitoring(
 			const results = await pollCiChecks(prUrl);
 			ciCycle.lastCheckResults = results;
 
-			const statusLine = results
-				.map((r) => `${r.name}: ${r.state}${r.conclusion ? ` (${r.conclusion})` : ""}`)
-				.join(" | ");
+			const statusLine = results.map((r) => `${r.name}: ${r.state} (${r.bucket})`).join(" | ");
 			onOutput(`[poll ${pollCount}/${maxPolls}] ${statusLine || "No checks found"}`);
 
 			if (results.length === 0) {
@@ -114,7 +112,7 @@ export async function startMonitoring(
 					onOutput(`[poll ${pollCount}/${maxPolls}] All ${results.length} checks passed`);
 					return { passed: true, timedOut: false, results };
 				}
-				const failed = results.filter((r) => r.conclusion !== "SUCCESS");
+				const failed = results.filter((r) => r.bucket !== "pass");
 				onOutput(
 					`[poll ${pollCount}/${maxPolls}] ${failed.length} check(s) failed: ${failed.map((r) => r.name).join(", ")}`,
 				);

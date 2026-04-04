@@ -32,6 +32,7 @@ interface CLIStreamEvent {
 
 export interface CLICallbacks {
 	onOutput: (text: string) => void;
+	onTools: (tools: Record<string, number>) => void;
 	onComplete: () => void;
 	onError: (error: string) => void;
 	onSessionId: (sessionId: string) => void;
@@ -297,10 +298,7 @@ export class CLIRunner {
 				}
 			}
 			if (toolCounts.size > 0) {
-				const grouped = Array.from(toolCounts.entries())
-					.map(([name, count]) => (count > 1 ? `[Tool: ${name} x${count}]` : `[Tool: ${name}]`))
-					.join(" ");
-				entry.callbacks.onOutput(grouped);
+				entry.callbacks.onTools(Object.fromEntries(toolCounts));
 			}
 		} else if (event.type === "content_block_delta" && event.delta?.text) {
 			// Batch delta fragments to reduce DOM element count (CR3-010)

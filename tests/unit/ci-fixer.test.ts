@@ -8,7 +8,7 @@ describe("extractRunIds", () => {
 			{
 				name: "build",
 				state: "COMPLETED",
-				conclusion: "FAILURE",
+				bucket: "fail",
 				link: "https://github.com/owner/repo/actions/runs/12345/job/67890",
 			},
 		];
@@ -20,13 +20,13 @@ describe("extractRunIds", () => {
 			{
 				name: "build",
 				state: "COMPLETED",
-				conclusion: "FAILURE",
+				bucket: "fail",
 				link: "https://github.com/owner/repo/actions/runs/12345/job/1",
 			},
 			{
 				name: "lint",
 				state: "COMPLETED",
-				conclusion: "FAILURE",
+				bucket: "fail",
 				link: "https://github.com/owner/repo/actions/runs/12345/job/2",
 			},
 		];
@@ -40,13 +40,13 @@ describe("extractRunIds", () => {
 			{
 				name: "build",
 				state: "COMPLETED",
-				conclusion: "FAILURE",
+				bucket: "fail",
 				link: "https://github.com/owner/repo/actions/runs/111/job/1",
 			},
 			{
 				name: "test",
 				state: "COMPLETED",
-				conclusion: "FAILURE",
+				bucket: "fail",
 				link: "https://github.com/owner/repo/actions/runs/222/job/2",
 			},
 		];
@@ -58,8 +58,8 @@ describe("extractRunIds", () => {
 
 	test("skips checks with no matching link", () => {
 		const checks: CiCheckResult[] = [
-			{ name: "build", state: "COMPLETED", conclusion: "FAILURE", link: "" },
-			{ name: "test", state: "COMPLETED", conclusion: "FAILURE", link: "no-match" },
+			{ name: "build", state: "COMPLETED", bucket: "fail", link: "" },
+			{ name: "test", state: "COMPLETED", bucket: "fail", link: "no-match" },
 		];
 		expect(extractRunIds(checks)).toEqual([]);
 	});

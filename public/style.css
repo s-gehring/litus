@@ -296,6 +296,27 @@ header h1 {
   font-style: italic;
 }
 
+/* ── Tool Icons ────────────────────────────────────────── */
+
+.tool-icons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.tool-icon {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.85rem;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgba(74, 158, 255, 0.1);
+  cursor: default;
+  white-space: nowrap;
+}
+
 /* Question panel */
 .question-panel {
   padding: 16px;
