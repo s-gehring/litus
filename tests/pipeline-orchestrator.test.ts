@@ -49,6 +49,14 @@ function createFakeEngine() {
 					maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
 					lastSeverity: null,
 				},
+				ciCycle: {
+					attempt: 0,
+					maxAttempts: 3,
+					monitorStartedAt: null,
+					globalTimeoutMs: 30 * 60 * 1000,
+					lastCheckResults: [],
+					failureLogs: [],
+				},
 				prUrl: null,
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,
@@ -104,6 +112,7 @@ function createFakeCliRunner() {
 		},
 		kill: mock((_id: string) => {}),
 		sendAnswer: mock((_id: string, _answer: string) => {}),
+		resume: mock((_workflow: Workflow, _callbacks: CLICallbacks) => {}),
 		killAll: mock(() => {}),
 		_startCalls: startCalls,
 		getLastCallbacks: (): CLICallbacks => startCalls[startCalls.length - 1].callbacks,
@@ -222,7 +231,7 @@ describe("PipelineOrchestrator", () => {
 			expect(cli._startCalls.length).toBe(1);
 		});
 
-		test("pipeline has 8 steps in correct order", async () => {
+		test("pipeline has 10 steps in correct order", async () => {
 			await orchestrator.startPipeline("test");
 			const wf = getWf(engine);
 
@@ -235,6 +244,8 @@ describe("PipelineOrchestrator", () => {
 				"review",
 				"implement-review",
 				"commit-push-pr",
+				"monitor-ci",
+				"fix-ci",
 			];
 			expect(wf.steps.map((s) => s.name)).toEqual(expectedOrder);
 		});
@@ -272,10 +283,14 @@ describe("PipelineOrchestrator", () => {
 
 			expect(wf.currentStepIndex).toBe(7);
 
-			// commit-push-pr (7) completes
+			// commit-push-pr (7) completes → routes to monitor-ci (8)
+			// monitor-ci is direct code execution, not CLI — without a prUrl it errors
 			cli.getLastCallbacks().onComplete();
 
-			expect(callbacks.onComplete).toHaveBeenCalled();
+			expect(wf.currentStepIndex).toBe(8);
+			expect(wf.steps[8].name).toBe("monitor-ci");
+			expect(wf.status).toBe("error");
+			expect(wf.steps[8].error).toBe("No PR URL found — cannot monitor CI checks");
 		});
 	});
 
@@ -711,10 +726,13 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.currentStepIndex).toBe(7); // commit-push-pr
 			expect(wf.steps[7].name).toBe("commit-push-pr");
 
-			// commit-push-pr completes → pipeline done
+			// commit-push-pr completes → routes to monitor-ci
+			// monitor-ci errors (no PR URL) since this test doesn't set prUrl
 			cli.getLastCallbacks().onComplete();
 
-			expect(callbacks.onComplete).toHaveBeenCalled();
+			expect(wf.currentStepIndex).toBe(8);
+			expect(wf.steps[8].name).toBe("monitor-ci");
+			expect(wf.status).toBe("error");
 		});
 	});
 
@@ -745,7 +763,7 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete(); // implement-review → classify
 			await new Promise((r) => setTimeout(r, 20));
 
-			// commit-push-pr completes
+			// commit-push-pr completes → monitor-ci errors (no PR URL)
 			cli.getLastCallbacks().onComplete();
 
 			expect(auditLogger.endRun).toHaveBeenCalledTimes(1);

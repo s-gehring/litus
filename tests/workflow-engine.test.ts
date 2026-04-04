@@ -186,9 +186,9 @@ describe("WorkflowEngine", () => {
 	});
 
 	describe("pipeline fields", () => {
-		test("createWorkflow initializes steps array with 8 entries", async () => {
+		test("createWorkflow initializes steps array with 10 entries", async () => {
 			const w = await engine.createWorkflow("Build a login page");
-			expect(w.steps).toHaveLength(8);
+			expect(w.steps).toHaveLength(10);
 			expect(w.steps[0].name).toBe("specify");
 			expect(w.steps[7].name).toBe("commit-push-pr");
 		});

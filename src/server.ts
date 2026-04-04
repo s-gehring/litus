@@ -351,7 +351,13 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 			// Resume previously-running workflows via --resume if session ID exists
 			if (workflow.status === "running") {
 				const runningStep = workflow.steps.find((s) => s.status === "running");
-				if (runningStep?.sessionId) {
+
+				// monitor-ci is direct code execution — restart polling from scratch
+				if (runningStep?.name === "monitor-ci") {
+					console.log(`[startup] Restarting monitor-ci for workflow ${workflow.id}`);
+					workflow.ciCycle.monitorStartedAt = null;
+					orch.resumeMonitorCi(workflow.id);
+				} else if (runningStep?.sessionId) {
 					console.log(
 						`[startup] Resuming workflow ${workflow.id} step "${runningStep.name}" (session: ${runningStep.sessionId})`,
 					);
