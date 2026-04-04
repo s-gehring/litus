@@ -237,8 +237,6 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	{ name: "sync-repo", displayName: "Syncing Repository", prompt: "" },
 ];
 
-export const REVIEW_CYCLE_MAX_ITERATIONS = 16;
-
 // Workflow entity (extended with pipeline fields)
 export interface Workflow {
 	id: string;

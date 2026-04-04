@@ -6,7 +6,8 @@ const VALID_SEVERITIES: ReviewSeverity[] = ["critical", "major", "minor", "trivi
 export class ReviewClassifier {
 	async classify(reviewOutput: string): Promise<ReviewSeverity> {
 		const promptTemplate = configStore.get().prompts.reviewClassification;
-		const prompt = promptTemplate.replace("${reviewOutput}", reviewOutput);
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: template variable placeholder
+		const prompt = promptTemplate.replaceAll("${reviewOutput}", reviewOutput);
 
 		const proc = Bun.spawn(
 			[

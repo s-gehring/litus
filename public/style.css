@@ -745,41 +745,7 @@ body::-webkit-scrollbar-track {
   border-radius: 3px;
 }
 
-.config-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-
-.config-panel-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.config-close-btn {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 1.4rem;
-  cursor: pointer;
-  padding: 4px 8px;
-  line-height: 1;
-}
-
-.config-close-btn:hover {
-  color: var(--accent);
-}
-
-.config-section {
-  margin-bottom: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.config-section-header {
+.cfg-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -792,68 +758,64 @@ body::-webkit-scrollbar-track {
   color: var(--text);
 }
 
-.config-section-header:hover {
+.cfg-section-header:hover {
   background: rgba(74, 158, 255, 0.1);
 }
 
-.config-section-toggle {
+.cfg-section-title {
+  flex: 1;
+}
+
+.cfg-section-chevron {
   font-size: 0.7rem;
   color: var(--text-dim);
-  transition: transform 0.15s;
 }
 
-.config-section-toggle.collapsed {
-  transform: rotate(-90deg);
-}
-
-.config-section-body {
+.cfg-section {
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.config-section-body.collapsed {
+.cfg-section-collapsed {
   display: none;
 }
 
-.config-field {
+.cfg-field-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.config-field-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.cfg-field-row--textarea {
+  gap: 6px;
 }
 
-.config-field-label {
+.cfg-label {
   font-size: 0.8rem;
   font-weight: 500;
   color: var(--text);
 }
 
-.config-field-meta {
+.cfg-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cfg-input-wrap--textarea {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.cfg-unit {
   font-size: 0.7rem;
   color: var(--text-dim);
 }
 
-.config-field-tooltip {
-  font-size: 0.72rem;
-  color: var(--text-dim);
-  font-style: italic;
-}
-
-.config-field-unit {
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  margin-left: 4px;
-}
-
-.config-input {
+.cfg-text-input,
+.cfg-number-input {
   width: 100%;
   padding: 6px 10px;
   border: 1px solid var(--border);
@@ -864,16 +826,13 @@ body::-webkit-scrollbar-track {
   font-size: 0.8rem;
 }
 
-.config-input:focus {
+.cfg-text-input:focus,
+.cfg-number-input:focus {
   outline: none;
   border-color: var(--accent-blue);
 }
 
-.config-input.invalid {
-  border-color: var(--accent);
-}
-
-.config-textarea {
+.cfg-textarea {
   width: 100%;
   min-height: 80px;
   padding: 8px 10px;
@@ -887,12 +846,18 @@ body::-webkit-scrollbar-track {
   resize: vertical;
 }
 
-.config-textarea:focus {
+.cfg-textarea:focus {
   outline: none;
   border-color: var(--accent-blue);
 }
 
-.config-reset-btn {
+.cfg-var-info {
+  font-size: 0.7rem;
+  color: var(--accent-blue);
+  font-family: "Cascadia Code", "Fira Code", monospace;
+}
+
+.cfg-reset-btn {
   background: none;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -903,12 +868,12 @@ body::-webkit-scrollbar-track {
   white-space: nowrap;
 }
 
-.config-reset-btn:hover {
+.cfg-reset-btn:hover {
   color: var(--accent);
   border-color: var(--accent);
 }
 
-.config-reset-all-btn {
+.cfg-reset-all-btn {
   width: 100%;
   padding: 8px;
   margin-top: 8px;
@@ -921,27 +886,11 @@ body::-webkit-scrollbar-track {
   cursor: pointer;
 }
 
-.config-reset-all-btn:hover {
+.cfg-reset-all-btn:hover {
   background: rgba(233, 69, 96, 0.2);
 }
 
-.config-variables {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.config-variable-tag {
-  font-size: 0.7rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(74, 158, 255, 0.1);
-  color: var(--accent-blue);
-  font-family: "Cascadia Code", "Fira Code", monospace;
-}
-
-.config-warning-toast {
+.cfg-warning-toast {
   position: fixed;
   bottom: 20px;
   right: 20px;
@@ -959,12 +908,6 @@ body::-webkit-scrollbar-track {
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-.config-error-msg {
-  font-size: 0.72rem;
-  color: var(--accent);
-  margin-top: 2px;
 }
 
 @media (max-width: 768px) {

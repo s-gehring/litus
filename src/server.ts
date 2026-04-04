@@ -241,7 +241,7 @@ function handleConfigSave(ws: ServerWebSocket<WsData>, partial: Partial<AppConfi
 	broadcast(msg);
 }
 
-function handleConfigReset(ws: ServerWebSocket<WsData>, key?: string) {
+function handleConfigReset(_ws: ServerWebSocket<WsData>, key?: string) {
 	configStore.reset(key);
 	broadcast({ type: "config:state", config: configStore.get() });
 }

@@ -81,5 +81,6 @@ export function buildFixPrompt(prUrl: string, failureLogs: CiFailureLog[]): stri
 		.join("\n\n");
 
 	const promptTemplate = configStore.get().prompts.ciFixInstruction;
-	return promptTemplate.replace("${prUrl}", prUrl).replace("${logSections}", logSections);
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: template variable placeholders
+	return promptTemplate.replaceAll("${prUrl}", prUrl).replaceAll("${logSections}", logSections);
 }

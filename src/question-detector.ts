@@ -63,7 +63,8 @@ export class QuestionDetector {
 
 		try {
 			const promptTemplate = configStore.get().prompts.questionDetection;
-			const prompt = promptTemplate.replace("${text}", text);
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: template variable placeholder
+			const prompt = promptTemplate.replaceAll("${text}", text);
 
 			const proc = Bun.spawn(
 				[

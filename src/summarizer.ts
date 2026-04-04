@@ -44,7 +44,8 @@ export class Summarizer {
 	private async generateSummary(text: string): Promise<string | null> {
 		try {
 			const promptTemplate = configStore.get().prompts.activitySummarization;
-			const prompt = promptTemplate.replace("${text}", text);
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: template variable placeholder
+			const prompt = promptTemplate.replaceAll("${text}", text);
 
 			const proc = Bun.spawn(
 				[
@@ -72,7 +73,8 @@ export class Summarizer {
 	async generateSpecSummary(specification: string): Promise<{ summary: string; flavor: string }> {
 		try {
 			const promptTemplate = configStore.get().prompts.specSummarization;
-			const prompt = promptTemplate.replace("${specification}", specification);
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: template variable placeholder, not a template literal
+			const prompt = promptTemplate.replaceAll("${specification}", specification);
 
 			const proc = Bun.spawn(
 				[

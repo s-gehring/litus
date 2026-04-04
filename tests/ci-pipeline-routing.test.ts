@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { MonitorResult } from "../src/ci-monitor";
 import type { CLICallbacks } from "../src/cli-runner";
+import { DEFAULT_CONFIG } from "../src/config-store";
 import { type PipelineCallbacks, PipelineOrchestrator } from "../src/pipeline-orchestrator";
 import type { Question, ReviewSeverity, Workflow, WorkflowStatus } from "../src/types";
-import { PIPELINE_STEP_DEFINITIONS, REVIEW_CYCLE_MAX_ITERATIONS } from "../src/types";
+import { PIPELINE_STEP_DEFINITIONS } from "../src/types";
 
 // ── Module mocks ──────────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ function createFakeEngine() {
 				currentStepIndex: 0,
 				reviewCycle: {
 					iteration: 1,
-					maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
+					maxIterations: DEFAULT_CONFIG.limits.reviewCycleMaxIterations,
 					lastSeverity: null,
 				},
 				ciCycle: {

@@ -10,11 +10,7 @@ import type {
 	SyncResult,
 	WorkflowStatus,
 } from "../src/types";
-import {
-	PIPELINE_STEP_DEFINITIONS,
-	REVIEW_CYCLE_MAX_ITERATIONS,
-	VALID_TRANSITIONS,
-} from "../src/types";
+import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS } from "../src/types";
 
 describe("VALID_TRANSITIONS", () => {
 	test("idle can only transition to running", () => {
@@ -81,12 +77,6 @@ describe("PIPELINE_STEP_DEFINITIONS", () => {
 		for (const step of PIPELINE_STEP_DEFINITIONS) {
 			expect(step.displayName.length).toBeGreaterThan(0);
 		}
-	});
-});
-
-describe("REVIEW_CYCLE_MAX_ITERATIONS", () => {
-	test("is 16", () => {
-		expect(REVIEW_CYCLE_MAX_ITERATIONS).toBe(16);
 	});
 });
 

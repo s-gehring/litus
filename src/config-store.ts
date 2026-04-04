@@ -12,12 +12,9 @@ import type {
 	AppConfig,
 	ConfigValidationError,
 	ConfigWarning,
-	LimitConfig,
-	ModelConfig,
 	NumericSettingMeta,
 	PromptConfig,
 	PromptVariableInfo,
-	TimingConfig,
 } from "./types";
 
 export const DEFAULT_CONFIG: AppConfig = {

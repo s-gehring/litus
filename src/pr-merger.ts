@@ -133,7 +133,8 @@ export async function resolveConflicts(
 
 	// Build conflict resolution prompt and run Claude CLI
 	const promptTemplate = configStore.get().prompts.mergeConflictResolution;
-	const prompt = promptTemplate.replace("${specSummary}", specSummary);
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: template variable placeholder
+	const prompt = promptTemplate.replaceAll("${specSummary}", specSummary);
 
 	onOutput("Dispatching Claude CLI to resolve conflicts...");
 	const claudeProc = spawn(
