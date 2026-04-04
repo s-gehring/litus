@@ -1,6 +1,21 @@
-import type { WorkflowState } from "../../types";
+import type { OutputEntry, WorkflowState } from "../../types";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
+
+export const TOOL_ICONS: Record<string, { icon: string; label: string }> = {
+	Agent: { icon: "🤖", label: "Agent" },
+	Bash: { icon: "⚡", label: "Bash" },
+	Edit: { icon: "✏️", label: "Edit" },
+	Glob: { icon: "📂", label: "Glob" },
+	Grep: { icon: "🔍", label: "Grep" },
+	Read: { icon: "📄", label: "Read" },
+	Write: { icon: "💾", label: "Write" },
+	TodoWrite: { icon: "✅", label: "TodoWrite" },
+	ToolSearch: { icon: "🔧", label: "ToolSearch" },
+	write_file: { icon: "📝", label: "write_file" },
+};
+
+export const FALLBACK_ICON = { icon: "⚙️", label: "Tool" };
 
 export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 	const statusBadge = $("#workflow-status");
@@ -103,6 +118,55 @@ export function appendOutput(text: string, type: "normal" | "error" | "system" =
 	line.className = `output-line ${type}`;
 	line.textContent = text;
 	log.appendChild(line);
+	log.scrollTop = log.scrollHeight;
+}
+
+function renderToolIcons(tools: Record<string, number>): HTMLDivElement {
+	const row = document.createElement("div");
+	row.className = "tool-icons";
+	for (const [name, count] of Object.entries(tools)) {
+		const mapping = TOOL_ICONS[name] ?? FALLBACK_ICON;
+		const badge = document.createElement("span");
+		badge.className = "tool-icon";
+		badge.textContent = count > 1 ? `${mapping.icon}${count}` : mapping.icon;
+		badge.title = count > 1 ? `${mapping.label} x${count}` : mapping.label;
+		row.appendChild(badge);
+	}
+	return row;
+}
+
+export function appendToolIcons(tools: Record<string, number>): void {
+	const log = $("#output-log");
+	// Attach to the last .output-line, or create a minimal one if none exists
+	let lastLine = log.querySelector(".output-line:last-of-type") as HTMLElement | null;
+	if (!lastLine) {
+		lastLine = document.createElement("div");
+		lastLine.className = "output-line normal";
+		log.appendChild(lastLine);
+	}
+	lastLine.appendChild(renderToolIcons(tools));
+	log.scrollTop = log.scrollHeight;
+}
+
+export function renderOutputEntries(entries: OutputEntry[]): void {
+	const log = $("#output-log");
+	for (const entry of entries) {
+		if (entry.kind === "text") {
+			const line = document.createElement("div");
+			line.className = `output-line ${entry.type ?? "normal"}`;
+			line.textContent = entry.text;
+			log.appendChild(line);
+		} else {
+			// tools entry: attach to the last output-line
+			let lastLine = log.querySelector(".output-line:last-of-type") as HTMLElement | null;
+			if (!lastLine) {
+				lastLine = document.createElement("div");
+				lastLine.className = "output-line normal";
+				log.appendChild(lastLine);
+			}
+			lastLine.appendChild(renderToolIcons(entry.tools));
+		}
+	}
 	log.scrollTop = log.scrollHeight;
 }
 
