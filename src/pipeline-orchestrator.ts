@@ -3,7 +3,12 @@ import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
+import {
+	mergePr as defaultMergePr,
+	resolveConflicts as defaultResolveConflicts,
+} from "./pr-merger";
 import { QuestionDetector } from "./question-detector";
+import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
 import { Summarizer } from "./summarizer";
 import type { PipelineStepName, Question, Workflow } from "./types";
@@ -33,6 +38,9 @@ export interface PipelineDeps {
 	summarizer?: Summarizer;
 	auditLogger?: AuditLogger;
 	workflowStore?: WorkflowStore;
+	mergePr?: typeof defaultMergePr;
+	resolveConflicts?: typeof defaultResolveConflicts;
+	syncRepo?: typeof defaultSyncRepo;
 }
 
 const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
@@ -56,6 +64,9 @@ export class PipelineOrchestrator {
 	private pipelineName: string | null = null;
 	private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	private monitorAbortController: AbortController | null = null;
+	private mergePrFn: typeof defaultMergePr;
+	private resolveConflictsFn: typeof defaultResolveConflicts;
+	private syncRepoFn: typeof defaultSyncRepo;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -65,6 +76,9 @@ export class PipelineOrchestrator {
 		this.summarizer = deps?.summarizer ?? new Summarizer();
 		this.auditLogger = deps?.auditLogger ?? new AuditLogger();
 		this.store = deps?.workflowStore ?? new WorkflowStore();
+		this.mergePrFn = deps?.mergePr ?? defaultMergePr;
+		this.resolveConflictsFn = deps?.resolveConflicts ?? defaultResolveConflicts;
+		this.syncRepoFn = deps?.syncRepo ?? defaultSyncRepo;
 		this.callbacks = callbacks;
 	}
 
@@ -296,6 +310,16 @@ export class PipelineOrchestrator {
 			return;
 		}
 
+		if (step.name === "merge-pr") {
+			this.runMergePr(workflow);
+			return;
+		}
+
+		if (step.name === "sync-repo") {
+			this.runSyncRepo(workflow);
+			return;
+		}
+
 		const cwd = workflow.worktreePath || process.cwd();
 		this.runStep(workflow, step.prompt, cwd);
 	}
@@ -518,15 +542,31 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		// After monitor-ci passes (all checks succeeded), complete the workflow
+		// After monitor-ci passes, route to merge-pr
 		if (step.name === "monitor-ci") {
-			this.completeWorkflow(workflow);
+			const mergePrIndex = workflow.steps.findIndex((s) => s.name === "merge-pr");
+			workflow.currentStepIndex = mergePrIndex;
+			this.startStep(workflow);
 			return;
 		}
 
 		// After fix-ci completes, increment attempt and loop back to monitor-ci
 		if (step.name === "fix-ci") {
 			this.routeBackToMonitor(workflow);
+			return;
+		}
+
+		// After merge-pr succeeds, route to sync-repo
+		if (step.name === "merge-pr") {
+			const syncRepoIndex = workflow.steps.findIndex((s) => s.name === "sync-repo");
+			workflow.currentStepIndex = syncRepoIndex;
+			this.startStep(workflow);
+			return;
+		}
+
+		// After sync-repo completes, finish the workflow
+		if (step.name === "sync-repo") {
+			this.completeWorkflow(workflow);
 			return;
 		}
 
@@ -620,6 +660,92 @@ export class PipelineOrchestrator {
 		workflow.currentStepIndex = monitorIndex;
 		this.persistWorkflow(workflow);
 		this.startStep(workflow);
+	}
+
+	private runMergePr(workflow: Workflow): void {
+		if (!workflow.prUrl) {
+			this.handleStepError(workflow.id, "No PR URL found — cannot merge PR");
+			return;
+		}
+
+		// Initialize merge cycle on first entry
+		if (workflow.mergeCycle.attempt === 0) {
+			workflow.mergeCycle.attempt = 1;
+			this.persistWorkflow(workflow);
+		}
+
+		const cwd = workflow.worktreePath || process.cwd();
+
+		this.mergePrFn(workflow.prUrl, cwd, (msg) => this.handleStepOutput(workflow.id, msg))
+			.then((result) => this.handleMergeResult(workflow.id, result))
+			.catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				this.handleStepError(workflow.id, `PR merge failed: ${msg}`);
+			});
+	}
+
+	private handleMergeResult(workflowId: string, result: import("./types").MergeResult): void {
+		const workflow = this.engine.getWorkflow();
+		if (!workflow || workflow.id !== workflowId) return;
+
+		if (result.merged || result.alreadyMerged) {
+			// Success — advance to sync-repo
+			this.advanceAfterStep(workflowId);
+			return;
+		}
+
+		if (result.conflict) {
+			// Check if merge cycle exhausted
+			if (workflow.mergeCycle.attempt >= workflow.mergeCycle.maxAttempts) {
+				this.handleStepError(
+					workflowId,
+					`Merge conflicts persist after ${workflow.mergeCycle.attempt} resolution attempts`,
+				);
+				return;
+			}
+
+			// Resolve conflicts and loop back to monitor-ci
+			const cwd = workflow.worktreePath || process.cwd();
+			this.resolveConflictsFn(cwd, workflow.summary || workflow.specification, (msg) =>
+				this.handleStepOutput(workflow.id, msg),
+			)
+				.then(() => {
+					workflow.mergeCycle.attempt++;
+					this.routeBackToMonitor(workflow);
+				})
+				.catch((err) => {
+					const msg = err instanceof Error ? err.message : String(err);
+					this.handleStepError(workflowId, `Conflict resolution failed: ${msg}`);
+				});
+			return;
+		}
+
+		// Non-conflict error
+		this.handleStepError(workflowId, result.error || "PR merge failed");
+	}
+
+	private runSyncRepo(workflow: Workflow): void {
+		const targetRepo = workflow.targetRepository || process.cwd();
+
+		this.syncRepoFn(targetRepo, workflow.worktreePath, this.engine, workflow.id, (msg) =>
+			this.handleStepOutput(workflow.id, msg),
+		)
+			.then((result) => {
+				if (result.worktreeRemoved) {
+					workflow.worktreePath = null;
+				}
+				if (result.warning) {
+					this.handleStepOutput(workflow.id, `Warning: ${result.warning}`);
+				}
+				// sync-repo always completes the workflow
+				this.advanceAfterStep(workflow.id);
+			})
+			.catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				// Even on error, sync-repo completes (PR is already merged)
+				this.handleStepOutput(workflow.id, `Warning: sync failed: ${msg}`);
+				this.advanceAfterStep(workflow.id);
+			});
 	}
 
 	private completeWorkflow(workflow: Workflow): void {
