@@ -1,27 +1,12 @@
+import { readStream, type SpawnLike } from "./spawn-utils";
 import type { SyncResult } from "./types";
 import type { WorkflowEngine } from "./workflow-engine";
-
-interface SpawnLike {
-	spawn: (
-		args: string[],
-		opts?: Record<string, unknown>,
-	) => {
-		exited: Promise<number>;
-		stdout: ReadableStream | null;
-		stderr: ReadableStream | null;
-	};
-}
-
-async function readStream(stream: ReadableStream | number | null | undefined): Promise<string> {
-	if (!stream || typeof stream === "number") return "";
-	return new Response(stream as ReadableStream).text();
-}
 
 export async function syncRepo(
 	targetRepo: string,
 	worktreePath: string | null,
 	engine: WorkflowEngine,
-	workflowId: string,
+	_workflowId: string,
 	onOutput: (msg: string) => void,
 	runner?: SpawnLike,
 ): Promise<SyncResult> {

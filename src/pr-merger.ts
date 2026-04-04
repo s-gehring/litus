@@ -1,3 +1,4 @@
+import { readStream, type SpawnLike } from "./spawn-utils";
 import type { MergeResult } from "./types";
 
 const PR_NUMBER_REGEX = /\/pull\/(\d+)$/;
@@ -11,22 +12,6 @@ export function extractPrNumber(prUrl: string): string | null {
 export function extractRepoFromUrl(prUrl: string): string | null {
 	const match = prUrl.match(REPO_REGEX);
 	return match ? match[1] : null;
-}
-
-interface SpawnLike {
-	spawn: (
-		args: string[],
-		opts?: Record<string, unknown>,
-	) => {
-		exited: Promise<number>;
-		stdout: ReadableStream | null;
-		stderr: ReadableStream | null;
-	};
-}
-
-async function readStream(stream: ReadableStream | number | null | undefined): Promise<string> {
-	if (!stream || typeof stream === "number") return "";
-	return new Response(stream as ReadableStream).text();
 }
 
 function isConflictError(stderr: string): boolean {
@@ -113,7 +98,7 @@ export async function mergePr(
 		merged: false,
 		alreadyMerged: false,
 		conflict: false,
-		error: stderr.trim() || `gh pr merge failed with code ${mergeCode}`,
+		error: stderr.trim() || `exit code ${mergeCode}`,
 	};
 }
 
