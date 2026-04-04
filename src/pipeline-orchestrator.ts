@@ -1,4 +1,5 @@
 import { AuditLogger } from "./audit-logger";
+import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { type MonitorResult, startMonitoring } from "./ci-monitor";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
@@ -268,6 +269,11 @@ export class PipelineOrchestrator {
 			return;
 		}
 
+		if (step.name === "fix-ci") {
+			this.runFixCi(workflow);
+			return;
+		}
+
 		const cwd = workflow.worktreePath || process.cwd();
 		this.runStep(workflow, step.prompt, cwd);
 	}
@@ -310,6 +316,31 @@ export class PipelineOrchestrator {
 		// Checks failed or timed out — route to fix-ci
 		workflow.ciCycle.lastCheckResults = result.results;
 		this.advanceToFixCi(workflow);
+	}
+
+	private runFixCi(workflow: Workflow): void {
+		if (!workflow.prUrl) {
+			this.handleStepError(workflow.id, "No PR URL found — cannot fix CI");
+			return;
+		}
+
+		const failedChecks = workflow.ciCycle.lastCheckResults.filter(
+			(r) => r.conclusion !== "SUCCESS",
+		);
+
+		gatherAllFailureLogs(workflow.prUrl, failedChecks)
+			.then((logs) => {
+				workflow.ciCycle.failureLogs = logs;
+				const prompt = buildFixPrompt(workflow.prUrl!, logs);
+				this.persistWorkflow(workflow);
+
+				const cwd = workflow.worktreePath || process.cwd();
+				this.runStep(workflow, prompt, cwd);
+			})
+			.catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				this.handleStepError(workflow.id, `Failed to gather CI failure logs: ${msg}`);
+			});
 	}
 
 	private advanceToFixCi(workflow: Workflow): void {
@@ -450,6 +481,12 @@ export class PipelineOrchestrator {
 			return;
 		}
 
+		// After fix-ci completes, increment attempt and loop back to monitor-ci
+		if (step.name === "fix-ci") {
+			this.routeBackToMonitor(workflow);
+			return;
+		}
+
 		// After review completes, ALWAYS route to implement-review
 		if (step.name === "review") {
 			this.routeToImplementReview(workflow);
@@ -520,6 +557,26 @@ export class PipelineOrchestrator {
 			workflow.currentStepIndex = workflow.steps.findIndex((s) => s.name === "commit-push-pr");
 			this.startStep(workflow);
 		}
+	}
+
+	private routeBackToMonitor(workflow: Workflow): void {
+		workflow.ciCycle.attempt++;
+		workflow.ciCycle.monitorStartedAt = null;
+		workflow.ciCycle.failureLogs = [];
+
+		const monitorIndex = workflow.steps.findIndex((s) => s.name === "monitor-ci");
+		const monitorStep = workflow.steps[monitorIndex];
+		monitorStep.status = "pending";
+		monitorStep.output = "";
+		monitorStep.error = null;
+		monitorStep.sessionId = null;
+		monitorStep.startedAt = null;
+		monitorStep.completedAt = null;
+		monitorStep.pid = null;
+
+		workflow.currentStepIndex = monitorIndex;
+		this.persistWorkflow(workflow);
+		this.startStep(workflow);
 	}
 
 	private completeWorkflow(workflow: Workflow): void {
