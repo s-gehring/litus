@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { configStore } from "./config-store";
 import type { Question } from "./types";
 
 // Patterns that indicate the text is NOT a question to the user (agent narration)
@@ -13,7 +14,6 @@ const EXCLUSION_PATTERNS = [
 export class QuestionDetector {
 	private lastQuestionTime = 0;
 	private pendingClassification = false;
-	private readonly COOLDOWN_MS = 15_000;
 
 	/**
 	 * Pre-filter: checks if text is a plausible question candidate.
@@ -24,7 +24,7 @@ export class QuestionDetector {
 	detect(text: string): Question | null {
 		const now = Date.now();
 
-		if (now - this.lastQuestionTime < this.COOLDOWN_MS) {
+		if (now - this.lastQuestionTime < configStore.get().timing.questionDetectionCooldownMs) {
 			return null;
 		}
 

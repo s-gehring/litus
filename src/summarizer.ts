@@ -1,9 +1,10 @@
+import { configStore } from "./config-store";
+
 export class Summarizer {
 	private outputBuffer: Map<string, string[]> = new Map();
 	private lastSummaryTime: Map<string, number> = new Map();
 	private pendingSummary: Map<string, boolean> = new Map();
 
-	private readonly INTERVAL_MS = 15_000;
 	private readonly MIN_CHARS = 200;
 
 	maybeSummarize(workflowId: string, text: string, callback: (summary: string) => void): void {
@@ -19,7 +20,7 @@ export class Summarizer {
 
 		if (
 			totalChars >= this.MIN_CHARS &&
-			now - lastTime >= this.INTERVAL_MS &&
+			now - lastTime >= configStore.get().timing.activitySummaryIntervalMs &&
 			!this.pendingSummary.get(workflowId)
 		) {
 			this.pendingSummary.set(workflowId, true);

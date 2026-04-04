@@ -1,3 +1,4 @@
+import { configStore } from "./config-store";
 import type { CiCheckResult, CiCycle } from "./types";
 
 export async function checkGhAuth(): Promise<void> {
@@ -83,7 +84,8 @@ export async function startMonitoring(
 		? new Date(ciCycle.monitorStartedAt).getTime()
 		: Date.now();
 	let pollCount = 0;
-	const maxPolls = Math.ceil(ciCycle.globalTimeoutMs / 15_000);
+	const pollInterval = configStore.get().timing.ciPollIntervalMs;
+	const maxPolls = Math.ceil(ciCycle.globalTimeoutMs / pollInterval);
 
 	while (!signal?.aborted) {
 		if (Date.now() - startedAt > ciCycle.globalTimeoutMs) {
@@ -121,14 +123,16 @@ export async function startMonitoring(
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			if (msg.includes("rate limit")) {
-				onOutput(`[poll ${pollCount}/${maxPolls}] Rate limited — waiting 60s`);
-				await Bun.sleep(60_000);
+				const backoff = configStore.get().timing.rateLimitBackoffMs;
+				onOutput(`[poll ${pollCount}/${maxPolls}] Rate limited — waiting ${backoff / 1000}s`);
+				await Bun.sleep(backoff);
 				continue;
 			}
-			onOutput(`[poll ${pollCount}/${maxPolls}] Poll error: ${msg} — retrying in 15s`);
+			const interval = configStore.get().timing.ciPollIntervalMs;
+			onOutput(`[poll ${pollCount}/${maxPolls}] Poll error: ${msg} — retrying in ${interval / 1000}s`);
 		}
 
-		await Bun.sleep(15_000);
+		await Bun.sleep(configStore.get().timing.ciPollIntervalMs);
 	}
 
 	return { passed: false, timedOut: false, results: ciCycle.lastCheckResults };
