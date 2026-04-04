@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildDecompositionPrompt, parseAnalysisResult } from "../src/epic-analyzer";
+import { analyzeEpic, buildDecompositionPrompt, parseAnalysisResult } from "../src/epic-analyzer";
 
 describe("buildDecompositionPrompt", () => {
 	test("includes epic description in prompt", () => {
@@ -86,5 +86,14 @@ Done.`;
 \`\`\``;
 		const result = parseAnalysisResult(text);
 		expect(result.infeasibleNotes).toBe("Cannot implement the cloud sync portion");
+	});
+});
+
+describe("analyzeEpic", () => {
+	test("throws on timeout", async () => {
+		// Use a near-zero timeout to trigger the timeout path immediately
+		await expect(
+			analyzeEpic("Some epic description that is long enough", process.cwd(), undefined, 1),
+		).rejects.toThrow("Epic analysis timed out");
 	});
 });

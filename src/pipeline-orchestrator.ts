@@ -805,7 +805,9 @@ export class PipelineOrchestrator {
 
 		// Check epic dependencies — notify server to resolve dependent workflows
 		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
-			this.checkEpicDependencies(workflow);
+			this.checkEpicDependencies(workflow).catch((err) => {
+				console.error(`[pipeline] Failed to check epic dependencies: ${err}`);
+			});
 		}
 	}
 
@@ -882,7 +884,9 @@ export class PipelineOrchestrator {
 
 		// Update epic dependency status for siblings if this workflow errored
 		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
-			this.checkEpicDependencies(workflow);
+			this.checkEpicDependencies(workflow).catch((err) => {
+				console.error(`[pipeline] Failed to check epic dependencies: ${err}`);
+			});
 		}
 	}
 

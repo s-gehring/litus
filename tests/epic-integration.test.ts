@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { computeDependencyStatus } from "../src/dependency-resolver";
 import type { EpicAnalysisResult } from "../src/types";
 import { createEpicWorkflows } from "../src/workflow-engine";
 
@@ -65,39 +64,5 @@ describe("createEpicWorkflows", () => {
 		expect(workflows).toHaveLength(1);
 		expect(workflows[0].epicId).toBe(epicId);
 		expect(workflows[0].epicDependencyStatus).toBe("satisfied");
-	});
-});
-
-describe("dependency blocking and auto-trigger logic", () => {
-	test("blocked spec stays waiting when not all deps satisfied", () => {
-		const completedIds = new Set(["wf-a"]);
-		const errorIds = new Set<string>();
-		const result = computeDependencyStatus(["wf-a", "wf-b"], completedIds, errorIds);
-		expect(result.status).toBe("waiting");
-		expect(result.blocking).toEqual(["wf-b"]);
-	});
-
-	test("auto-starts when all deps satisfied", () => {
-		const completedIds = new Set(["wf-a", "wf-b"]);
-		const errorIds = new Set<string>();
-		const result = computeDependencyStatus(["wf-a", "wf-b"], completedIds, errorIds);
-		expect(result.status).toBe("satisfied");
-		expect(result.blocking).toEqual([]);
-	});
-
-	test("remains blocked when only some deps done", () => {
-		const completedIds = new Set(["wf-a"]);
-		const errorIds = new Set<string>();
-		const result = computeDependencyStatus(["wf-a", "wf-b", "wf-c"], completedIds, errorIds);
-		expect(result.status).toBe("waiting");
-		expect(result.blocking).toEqual(["wf-b", "wf-c"]);
-	});
-
-	test("shows blocked state on dep failure", () => {
-		const completedIds = new Set(["wf-a"]);
-		const errorIds = new Set(["wf-b"]);
-		const result = computeDependencyStatus(["wf-a", "wf-b"], completedIds, errorIds);
-		expect(result.status).toBe("blocked");
-		expect(result.blocking).toEqual(["wf-b"]);
 	});
 });

@@ -2,6 +2,7 @@ import type { ServerWebSocket } from "bun";
 import { AuditLogger } from "./audit-logger";
 import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
+import { computeDependencyStatus } from "./dependency-resolver";
 import { analyzeEpic, type EpicAnalysisProcess } from "./epic-analyzer";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
@@ -92,7 +93,6 @@ function createCallbacks() {
 				if (!depWorkflow || depWorkflow.status !== "waiting_for_dependencies") return;
 
 				depWorkflow.epicDependencyStatus = "satisfied";
-				depWorkflow.status = "idle";
 				depWorkflow.updatedAt = new Date().toISOString();
 
 				depOrch.startPipelineFromWorkflow(depWorkflow);
@@ -356,7 +356,6 @@ function handleForceStart(ws: ServerWebSocket<WsData>, workflowId: string) {
 	}
 
 	workflow.epicDependencyStatus = "overridden";
-	workflow.status = "idle";
 	workflow.updatedAt = new Date().toISOString();
 
 	orch.startPipelineFromWorkflow(workflow);
@@ -553,6 +552,38 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 
 		if (restoredCount > 0) {
 			console.log(`[startup] Restored ${restoredCount} workflow(s)`);
+		}
+
+		// Re-evaluate waiting_for_dependencies workflows whose deps may have completed while server was down
+		for (const workflow of allWorkflows) {
+			if (workflow.status !== "waiting_for_dependencies") continue;
+			if (!workflow.epicId || workflow.epicDependencies.length === 0) continue;
+
+			const completedIds = new Set<string>();
+			const errorIds = new Set<string>();
+			for (const w of allWorkflows) {
+				if (w.epicId !== workflow.epicId) continue;
+				if (w.status === "completed") completedIds.add(w.id);
+				if (w.status === "error" || w.status === "cancelled") errorIds.add(w.id);
+			}
+
+			const depStatus = computeDependencyStatus(workflow.epicDependencies, completedIds, errorIds);
+
+			if (depStatus.status === "satisfied") {
+				workflow.epicDependencyStatus = "satisfied";
+				workflow.updatedAt = new Date().toISOString();
+				await sharedStore.save(workflow);
+
+				const orch = orchestrators.get(workflow.id);
+				if (orch) {
+					console.log(`[startup] Auto-starting unblocked workflow ${workflow.id}`);
+					orch.startPipelineFromWorkflow(workflow);
+				}
+			} else if (depStatus.status === "blocked") {
+				workflow.epicDependencyStatus = "blocked";
+				workflow.updatedAt = new Date().toISOString();
+				await sharedStore.save(workflow);
+			}
 		}
 	} catch (err) {
 		console.error(`[startup] Failed to restore workflows: ${err}`);

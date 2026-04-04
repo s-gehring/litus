@@ -269,26 +269,3 @@ export async function createEpicWorkflows(
 
 	return { workflows, epicId };
 }
-
-/** Remove a deleted workflow from epicDependencies of all sibling workflows. */
-export async function removeEpicDependency(
-	deletedWorkflowId: string,
-	epicId: string,
-	store: import("./workflow-store").WorkflowStore,
-): Promise<string[]> {
-	const allWorkflows = await store.loadAll();
-	const updatedIds: string[] = [];
-
-	for (const wf of allWorkflows) {
-		if (wf.epicId !== epicId) continue;
-		const idx = wf.epicDependencies.indexOf(deletedWorkflowId);
-		if (idx === -1) continue;
-
-		wf.epicDependencies.splice(idx, 1);
-		wf.updatedAt = new Date().toISOString();
-		await store.save(wf);
-		updatedIds.push(wf.id);
-	}
-
-	return updatedIds;
-}

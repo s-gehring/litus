@@ -2,7 +2,6 @@ import type { ClientMessage } from "../../types";
 
 export type EpicFormState = "idle" | "analyzing" | "error";
 
-let formState: EpicFormState = "idle";
 let errorMessage = "";
 
 export function createEpicForm(
@@ -31,36 +30,13 @@ export function createEpicForm(
 		</div>
 	`;
 
-	const textarea = container.querySelector(".epic-textarea") as HTMLTextAreaElement;
-	const btnCreateStart = container.querySelector(".epic-btn-create-start") as HTMLButtonElement;
-	const btnCreate = container.querySelector(".epic-btn-create") as HTMLButtonElement;
-	const btnCancel = container.querySelector(".epic-btn-cancel") as HTMLButtonElement;
 	const btnClose = container.querySelector(".epic-form-close") as HTMLButtonElement;
-	const analyzingEl = container.querySelector(".epic-analyzing") as HTMLElement;
-	const errorEl = container.querySelector(".epic-error") as HTMLElement;
-
-	function updateUI() {
-		const isAnalyzing = formState === "analyzing";
-		textarea.disabled = isAnalyzing;
-		btnCreateStart.classList.toggle("hidden", isAnalyzing);
-		btnCreate.classList.toggle("hidden", isAnalyzing);
-		btnCancel.classList.toggle("hidden", !isAnalyzing);
-		analyzingEl.classList.toggle("hidden", !isAnalyzing);
-
-		if (formState === "error") {
-			errorEl.classList.remove("hidden");
-			errorEl.textContent = errorMessage;
-		} else {
-			errorEl.classList.add("hidden");
-		}
-	}
 
 	function submitEpic(autoStart: boolean) {
+		const textarea = container.querySelector(".epic-textarea") as HTMLTextAreaElement;
 		const desc = textarea.value.trim();
 		if (desc.length < 10) {
-			formState = "error";
-			errorMessage = "Description must be at least 10 characters";
-			updateUI();
+			setEpicFormState("error", "Description must be at least 10 characters");
 			return;
 		}
 		const targetRepo = getTargetRepo();
@@ -72,9 +48,13 @@ export function createEpicForm(
 		});
 	}
 
-	btnCreateStart.addEventListener("click", () => submitEpic(true));
-	btnCreate.addEventListener("click", () => submitEpic(false));
-	btnCancel.addEventListener("click", () => send({ type: "epic:cancel" }));
+	container
+		.querySelector(".epic-btn-create-start")
+		?.addEventListener("click", () => submitEpic(true));
+	container.querySelector(".epic-btn-create")?.addEventListener("click", () => submitEpic(false));
+	container
+		.querySelector(".epic-btn-cancel")
+		?.addEventListener("click", () => send({ type: "epic:cancel" }));
 	btnClose.addEventListener("click", () => container.classList.add("hidden"));
 
 	return container;
@@ -91,7 +71,6 @@ export function hideEpicForm(): void {
 }
 
 export function setEpicFormState(state: EpicFormState, error?: string): void {
-	formState = state;
 	errorMessage = error || "";
 
 	const form = document.getElementById("epic-form");
