@@ -233,7 +233,11 @@ function handleConfigSave(ws: ServerWebSocket<WsData>, partial: Partial<AppConfi
 		return;
 	}
 	const config = configStore.get();
-	const msg: ServerMessage = { type: "config:state", config, ...(warnings.length > 0 ? { warnings } : {}) };
+	const msg: ServerMessage = {
+		type: "config:state",
+		config,
+		...(warnings.length > 0 ? { warnings } : {}),
+	};
 	broadcast(msg);
 }
 

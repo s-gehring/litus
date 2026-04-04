@@ -9,7 +9,15 @@ export class ReviewClassifier {
 		const prompt = promptTemplate.replace("${reviewOutput}", reviewOutput);
 
 		const proc = Bun.spawn(
-			["claude", "-p", prompt, "--model", configStore.get().models.reviewClassification, "--output-format", "text"],
+			[
+				"claude",
+				"-p",
+				prompt,
+				"--model",
+				configStore.get().models.reviewClassification,
+				"--output-format",
+				"text",
+			],
 			{ stdout: "pipe", stderr: "pipe" },
 		);
 

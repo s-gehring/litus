@@ -81,7 +81,5 @@ export function buildFixPrompt(prUrl: string, failureLogs: CiFailureLog[]): stri
 		.join("\n\n");
 
 	const promptTemplate = configStore.get().prompts.ciFixInstruction;
-	return promptTemplate
-		.replace("${prUrl}", prUrl)
-		.replace("${logSections}", logSections);
+	return promptTemplate.replace("${prUrl}", prUrl).replace("${logSections}", logSections);
 }

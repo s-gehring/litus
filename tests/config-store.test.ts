@@ -43,7 +43,9 @@ describe("T003: load saved values", () => {
 	});
 
 	test("get() returns saved values when config file exists", () => {
-		const saved = { limits: { ciFixMaxAttempts: 7, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 } };
+		const saved = {
+			limits: { ciFixMaxAttempts: 7, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 },
+		};
 		writeFileSync(configPath(dir), JSON.stringify(saved));
 
 		const store = new ConfigStore(configPath(dir));
@@ -71,7 +73,9 @@ describe("T003: shallow merge per section", () => {
 		const config = store.get();
 
 		expect(config.limits.ciFixMaxAttempts).toBe(5);
-		expect(config.limits.reviewCycleMaxIterations).toBe(DEFAULT_CONFIG.limits.reviewCycleMaxIterations);
+		expect(config.limits.reviewCycleMaxIterations).toBe(
+			DEFAULT_CONFIG.limits.reviewCycleMaxIterations,
+		);
 		expect(config.limits.mergeMaxAttempts).toBe(DEFAULT_CONFIG.limits.mergeMaxAttempts);
 	});
 });
@@ -88,7 +92,9 @@ describe("T003: missing keys fallback for partial sections", () => {
 	});
 
 	test("saved config with only limits — models, prompts, timing all come from defaults", () => {
-		const saved = { limits: { ciFixMaxAttempts: 2, reviewCycleMaxIterations: 8, mergeMaxAttempts: 2 } };
+		const saved = {
+			limits: { ciFixMaxAttempts: 2, reviewCycleMaxIterations: 8, mergeMaxAttempts: 2 },
+		};
 		writeFileSync(configPath(dir), JSON.stringify(saved));
 
 		const store = new ConfigStore(configPath(dir));
@@ -132,7 +138,9 @@ describe("T003: atomic write", () => {
 
 	test("save() writes a valid JSON file to disk", () => {
 		const store = new ConfigStore(configPath(dir));
-		const { errors } = store.save({ limits: { ciFixMaxAttempts: 4, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 } });
+		const { errors } = store.save({
+			limits: { ciFixMaxAttempts: 4, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 },
+		});
 
 		expect(errors).toHaveLength(0);
 
@@ -155,7 +163,9 @@ describe("T003: reset single key", () => {
 
 	test("reset('limits.ciFixMaxAttempts') reverts that key to default", () => {
 		const store = new ConfigStore(configPath(dir));
-		store.save({ limits: { ciFixMaxAttempts: 9, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 } });
+		store.save({
+			limits: { ciFixMaxAttempts: 9, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 },
+		});
 
 		expect(store.get().limits.ciFixMaxAttempts).toBe(9);
 
@@ -180,7 +190,9 @@ describe("T003: reset whole section", () => {
 
 	test("reset('limits') reverts all limits keys to defaults", () => {
 		const store = new ConfigStore(configPath(dir));
-		store.save({ limits: { ciFixMaxAttempts: 9, reviewCycleMaxIterations: 10, mergeMaxAttempts: 5 } });
+		store.save({
+			limits: { ciFixMaxAttempts: 9, reviewCycleMaxIterations: 10, mergeMaxAttempts: 5 },
+		});
 
 		store.reset("limits");
 
@@ -317,7 +329,9 @@ describe("T005: partial save validation — no write on error", () => {
 		const store = new ConfigStore(configPath(dir));
 
 		// Save valid data first so we have a baseline on disk
-		store.save({ limits: { ciFixMaxAttempts: 3, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 } });
+		store.save({
+			limits: { ciFixMaxAttempts: 3, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 },
+		});
 
 		// Now attempt a partial save with an invalid field mixed in
 		const { errors } = store.save({

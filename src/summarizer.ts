@@ -47,7 +47,15 @@ export class Summarizer {
 			const prompt = promptTemplate.replace("${text}", text);
 
 			const proc = Bun.spawn(
-				["claude", "-p", prompt, "--model", configStore.get().models.activitySummarization, "--output-format", "text"],
+				[
+					"claude",
+					"-p",
+					prompt,
+					"--model",
+					configStore.get().models.activitySummarization,
+					"--output-format",
+					"text",
+				],
 				{ stdout: "pipe", stderr: "pipe" },
 			);
 
@@ -67,7 +75,15 @@ export class Summarizer {
 			const prompt = promptTemplate.replace("${specification}", specification);
 
 			const proc = Bun.spawn(
-				["claude", "-p", prompt, "--model", configStore.get().models.specSummarization, "--output-format", "text"],
+				[
+					"claude",
+					"-p",
+					prompt,
+					"--model",
+					configStore.get().models.specSummarization,
+					"--output-format",
+					"text",
+				],
 				{ stdout: "pipe", stderr: "pipe" },
 			);
 

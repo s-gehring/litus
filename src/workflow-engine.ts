@@ -3,10 +3,7 @@ import { cp, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { configStore } from "./config-store";
 import type { Question, Workflow, WorkflowStatus } from "./types";
-import {
-	PIPELINE_STEP_DEFINITIONS,
-	VALID_TRANSITIONS as transitions,
-} from "./types";
+import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS as transitions } from "./types";
 
 export class WorkflowEngine {
 	private workflow: Workflow | null = null;

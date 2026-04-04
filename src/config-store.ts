@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	renameSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type {
@@ -80,12 +87,8 @@ export const PROMPT_VARIABLES: Record<keyof PromptConfig, PromptVariableInfo[]> 
 	reviewClassification: [
 		{ name: "reviewOutput", description: "The code review output to classify" },
 	],
-	activitySummarization: [
-		{ name: "text", description: "Recent agent output to summarize" },
-	],
-	specSummarization: [
-		{ name: "specification", description: "The feature specification text" },
-	],
+	activitySummarization: [{ name: "text", description: "Recent agent output to summarize" }],
+	specSummarization: [{ name: "specification", description: "The feature specification text" }],
 	mergeConflictResolution: [
 		{ name: "specSummary", description: "Summary of the feature being implemented" },
 	],
@@ -197,7 +200,10 @@ export class ConfigStore {
 		};
 	}
 
-	save(partial: Partial<AppConfig>): { errors: ConfigValidationError[]; warnings: ConfigWarning[] } {
+	save(partial: Partial<AppConfig>): {
+		errors: ConfigValidationError[];
+		warnings: ConfigWarning[];
+	} {
 		const errors = this.validate(partial);
 		if (errors.length > 0) {
 			return { errors, warnings: [] };
@@ -285,7 +291,9 @@ export class ConfigStore {
 			console.error(`[config] Failed to write config: ${err}`);
 			try {
 				unlinkSync(tmpPath);
-			} catch { /* ignore */ }
+			} catch {
+				/* ignore */
+			}
 		}
 	}
 
@@ -317,11 +325,19 @@ export class ConfigStore {
 		}
 
 		if (partial.limits) {
-			this.validateNumericSection(partial.limits as unknown as Record<string, unknown>, "limits", errors);
+			this.validateNumericSection(
+				partial.limits as unknown as Record<string, unknown>,
+				"limits",
+				errors,
+			);
 		}
 
 		if (partial.timing) {
-			this.validateNumericSection(partial.timing as unknown as Record<string, unknown>, "timing", errors);
+			this.validateNumericSection(
+				partial.timing as unknown as Record<string, unknown>,
+				"timing",
+				errors,
+			);
 		}
 
 		return errors;
@@ -364,9 +380,7 @@ export class ConfigStore {
 			const variables = PROMPT_VARIABLES[key as keyof typeof PROMPT_VARIABLES];
 			if (!variables) continue;
 
-			const missing = variables
-				.filter((v) => !value.includes(`\${${v.name}}`))
-				.map((v) => v.name);
+			const missing = variables.filter((v) => !value.includes(`\${${v.name}}`)).map((v) => v.name);
 
 			if (missing.length > 0) {
 				warnings.push({

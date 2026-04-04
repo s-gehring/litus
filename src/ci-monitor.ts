@@ -129,7 +129,9 @@ export async function startMonitoring(
 				continue;
 			}
 			const interval = configStore.get().timing.ciPollIntervalMs;
-			onOutput(`[poll ${pollCount}/${maxPolls}] Poll error: ${msg} — retrying in ${interval / 1000}s`);
+			onOutput(
+				`[poll ${pollCount}/${maxPolls}] Poll error: ${msg} — retrying in ${interval / 1000}s`,
+			);
 		}
 
 		await Bun.sleep(configStore.get().timing.ciPollIntervalMs);
