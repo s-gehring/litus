@@ -1,3 +1,4 @@
+import { configStore } from "./config-store";
 import type { CiCheckResult, CiFailureLog } from "./types";
 
 const RUN_ID_REGEX = /\/runs\/(\d+)\//;
@@ -17,8 +18,6 @@ export function extractRunIds(
 	}
 	return results;
 }
-
-const MAX_LOG_LENGTH = 50_000;
 
 export async function fetchFailureLogs(
 	runId: string,
@@ -42,10 +41,11 @@ export async function fetchFailureLogs(
 		};
 	}
 
+	const maxLogLength = configStore.get().timing.maxCiLogLength;
 	return {
 		checkName,
 		runId,
-		logs: stdout.length > MAX_LOG_LENGTH ? stdout.slice(-MAX_LOG_LENGTH) : stdout,
+		logs: stdout.length > maxLogLength ? stdout.slice(-maxLogLength) : stdout,
 	};
 }
 
@@ -80,9 +80,6 @@ export function buildFixPrompt(prUrl: string, failureLogs: CiFailureLog[]): stri
 		.map((log) => `### ${log.checkName} (run ${log.runId})\n\`\`\`\n${log.logs}\n\`\`\``)
 		.join("\n\n");
 
-	return `The following CI checks failed on PR ${prUrl}:
-
-${logSections}
-
-Fix these CI failures. After fixing, commit and push the changes.`;
+	const promptTemplate = configStore.get().prompts.ciFixInstruction;
+	return promptTemplate.replaceAll("${prUrl}", prUrl).replaceAll("${logSections}", logSections);
 }

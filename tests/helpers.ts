@@ -1,6 +1,7 @@
 import { expect } from "bun:test";
+import { DEFAULT_CONFIG } from "../src/config-store";
 import type { Workflow, WorkflowState } from "../src/types";
-import { PIPELINE_STEP_DEFINITIONS, REVIEW_CYCLE_MAX_ITERATIONS } from "../src/types";
+import { PIPELINE_STEP_DEFINITIONS } from "../src/types";
 
 export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 	const now = new Date().toISOString();
@@ -31,7 +32,7 @@ export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 		currentStepIndex: 0,
 		reviewCycle: {
 			iteration: 1,
-			maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
+			maxIterations: DEFAULT_CONFIG.limits.reviewCycleMaxIterations,
 			lastSeverity: null,
 		},
 		ciCycle: {

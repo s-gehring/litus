@@ -1,9 +1,10 @@
+import { configStore } from "./config-store";
+
 export class Summarizer {
 	private outputBuffer: Map<string, string[]> = new Map();
 	private lastSummaryTime: Map<string, number> = new Map();
 	private pendingSummary: Map<string, boolean> = new Map();
 
-	private readonly INTERVAL_MS = 15_000;
 	private readonly MIN_CHARS = 200;
 
 	maybeSummarize(workflowId: string, text: string, callback: (summary: string) => void): void {
@@ -19,7 +20,7 @@ export class Summarizer {
 
 		if (
 			totalChars >= this.MIN_CHARS &&
-			now - lastTime >= this.INTERVAL_MS &&
+			now - lastTime >= configStore.get().timing.activitySummaryIntervalMs &&
 			!this.pendingSummary.get(workflowId)
 		) {
 			this.pendingSummary.set(workflowId, true);
@@ -42,10 +43,19 @@ export class Summarizer {
 
 	private async generateSummary(text: string): Promise<string | null> {
 		try {
-			const prompt = `Summarize what this coding agent is currently doing in 3-6 words. Output only the summary, nothing else.\n\n${text}`;
+			const promptTemplate = configStore.get().prompts.activitySummarization;
+			const prompt = promptTemplate.replaceAll("${text}", text);
 
 			const proc = Bun.spawn(
-				["claude", "-p", prompt, "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
+				[
+					"claude",
+					"-p",
+					prompt,
+					"--model",
+					configStore.get().models.activitySummarization,
+					"--output-format",
+					"text",
+				],
 				{ stdout: "pipe", stderr: "pipe" },
 			);
 
@@ -61,17 +71,19 @@ export class Summarizer {
 
 	async generateSpecSummary(specification: string): Promise<{ summary: string; flavor: string }> {
 		try {
-			const prompt = `You are given a feature specification. Return a JSON object with two fields:
-- "summary": a 2-5 word description of the feature
-- "flavor": a 4-10 word snarky, insulting comment about the feature
-
-Output ONLY valid JSON, nothing else.
-
-Specification:
-${specification}`;
+			const promptTemplate = configStore.get().prompts.specSummarization;
+			const prompt = promptTemplate.replaceAll("${specification}", specification);
 
 			const proc = Bun.spawn(
-				["claude", "-p", prompt, "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
+				[
+					"claude",
+					"-p",
+					prompt,
+					"--model",
+					configStore.get().models.specSummarization,
+					"--output-format",
+					"text",
+				],
 				{ stdout: "pipe", stderr: "pipe" },
 			);
 

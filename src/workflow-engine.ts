@@ -1,12 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { cp, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { configStore } from "./config-store";
 import type { Question, Workflow, WorkflowStatus } from "./types";
-import {
-	PIPELINE_STEP_DEFINITIONS,
-	REVIEW_CYCLE_MAX_ITERATIONS,
-	VALID_TRANSITIONS as transitions,
-} from "./types";
+import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS as transitions } from "./types";
 
 export class WorkflowEngine {
 	private workflow: Workflow | null = null;
@@ -65,20 +62,20 @@ export class WorkflowEngine {
 			prUrl: null,
 			reviewCycle: {
 				iteration: 1,
-				maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
+				maxIterations: configStore.get().limits.reviewCycleMaxIterations,
 				lastSeverity: null,
 			},
 			ciCycle: {
 				attempt: 0,
-				maxAttempts: 3,
+				maxAttempts: configStore.get().limits.ciFixMaxAttempts,
 				monitorStartedAt: null,
-				globalTimeoutMs: 30 * 60 * 1000,
+				globalTimeoutMs: configStore.get().timing.ciGlobalTimeoutMs,
 				lastCheckResults: [],
 				failureLogs: [],
 			},
 			mergeCycle: {
 				attempt: 0,
-				maxAttempts: 3,
+				maxAttempts: configStore.get().limits.mergeMaxAttempts,
 			},
 			activeWorkMs: 0,
 			activeWorkStartedAt: null,

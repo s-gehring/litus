@@ -1,3 +1,4 @@
+import { configStore } from "./config-store";
 import { readStream, type SpawnLike } from "./spawn-utils";
 import type { MergeResult } from "./types";
 
@@ -131,16 +132,8 @@ export async function resolveConflicts(
 	await mergeProc.exited;
 
 	// Build conflict resolution prompt and run Claude CLI
-	const prompt = `The feature branch has merge conflicts with master. Resolve all merge conflicts in this repository.
-
-Feature summary: ${specSummary}
-
-Steps:
-1. Find all files with conflict markers (<<<<<<< / ======= / >>>>>>>)
-2. Resolve each conflict by keeping the correct combination of both sides
-3. Run: git add .
-4. Run: git commit -m "chore: resolve merge conflicts with master"
-5. Run: git push`;
+	const promptTemplate = configStore.get().prompts.mergeConflictResolution;
+	const prompt = promptTemplate.replaceAll("${specSummary}", specSummary);
 
 	onOutput("Dispatching Claude CLI to resolve conflicts...");
 	const claudeProc = spawn(

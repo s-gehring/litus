@@ -1,6 +1,7 @@
 import type { ServerWebSocket } from "bun";
 import { AuditLogger } from "./audit-logger";
 import { CLIRunner } from "./cli-runner";
+import { configStore } from "./config-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -8,6 +9,7 @@ import { getMimeType, resolveStaticPath } from "./static-files";
 import { Summarizer } from "./summarizer";
 import { validateTargetRepository } from "./target-repo-validator";
 import type {
+	AppConfig,
 	ClientMessage,
 	PipelineStepName,
 	ServerMessage,
@@ -220,6 +222,30 @@ function handleCancel(ws: ServerWebSocket<WsData>, workflowId: string) {
 	orchestrators.delete(workflowId);
 }
 
+function handleConfigGet(ws: ServerWebSocket<WsData>) {
+	sendTo(ws, { type: "config:state", config: configStore.get() });
+}
+
+function handleConfigSave(ws: ServerWebSocket<WsData>, partial: Partial<AppConfig>) {
+	const { errors, warnings } = configStore.save(partial);
+	if (errors.length > 0) {
+		sendTo(ws, { type: "config:error", errors });
+		return;
+	}
+	const config = configStore.get();
+	const msg: ServerMessage = {
+		type: "config:state",
+		config,
+		...(warnings.length > 0 ? { warnings } : {}),
+	};
+	broadcast(msg);
+}
+
+function handleConfigReset(_ws: ServerWebSocket<WsData>, key?: string) {
+	configStore.reset(key);
+	broadcast({ type: "config:state", config: configStore.get() });
+}
+
 function handleRetry(ws: ServerWebSocket<WsData>, workflowId: string) {
 	const orch = orchestrators.get(workflowId);
 	if (!orch) {
@@ -308,6 +334,15 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 							break;
 						case "workflow:retry":
 							handleRetry(ws, msg.workflowId);
+							break;
+						case "config:get":
+							handleConfigGet(ws);
+							break;
+						case "config:save":
+							handleConfigSave(ws, msg.config);
+							break;
+						case "config:reset":
+							handleConfigReset(ws, msg.key);
 							break;
 						default:
 							sendTo(ws, { type: "error", message: "Unknown message type" });
