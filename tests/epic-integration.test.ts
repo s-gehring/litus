@@ -1,6 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import type { Workflow } from "../src/types";
-import type { EpicAnalysisResult } from "../src/types";
+import type { EpicAnalysisResult, Workflow } from "../src/types";
 import { createEpicWorkflows } from "../src/workflow-engine";
 
 // Track all workflows created during tests for cleanup
