@@ -1,4 +1,4 @@
-import type { WorkflowClientState, WorkflowState } from "../../types";
+import type { ClientMessage, WorkflowClientState, WorkflowState } from "../../types";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -6,6 +6,7 @@ const STATUS_LABELS: Record<string, string> = {
 	idle: "Idle",
 	running: "Running",
 	waiting_for_input: "Waiting",
+	waiting_for_dependencies: "Blocked",
 	completed: "Done",
 	cancelled: "Cancelled",
 	error: "Error",
@@ -15,20 +16,28 @@ const STATUS_CLASSES: Record<string, string> = {
 	idle: "card-status-idle",
 	running: "card-status-running",
 	waiting_for_input: "card-status-waiting",
+	waiting_for_dependencies: "card-status-waiting-deps",
 	completed: "card-status-completed",
 	cancelled: "card-status-cancelled",
 	error: "card-status-error",
 };
+
+// Store references for force-start
+let sendFn: ((msg: ClientMessage) => void) | null = null;
+let allWorkflowsRef: Map<string, WorkflowClientState> | null = null;
 
 export function renderCardStrip(
 	workflowOrder: string[],
 	workflows: Map<string, WorkflowClientState>,
 	expandedWorkflowId: string | null,
 	onCardClick: (workflowId: string) => void,
+	send?: (msg: ClientMessage) => void,
 ): void {
 	const container = $("#card-strip");
 	if (!container) return;
 
+	if (send) sendFn = send;
+	allWorkflowsRef = workflows;
 	container.replaceChildren();
 
 	for (const id of workflowOrder) {
@@ -69,11 +78,45 @@ function createCompactCard(
 	badge.textContent = STATUS_LABELS[wf.status] || wf.status;
 	card.appendChild(badge);
 
+	// Epic label (US2)
+	if (wf.epicId && wf.epicTitle) {
+		const epicLabel = document.createElement("span");
+		epicLabel.className = "card-epic-label";
+		epicLabel.textContent = `Epic: ${wf.epicTitle}`;
+		card.appendChild(epicLabel);
+	}
+
 	// Summary (full text, no truncation)
 	const summary = document.createElement("span");
 	summary.className = "card-summary";
 	summary.textContent = wf.summary || wf.specification;
 	card.appendChild(summary);
+
+	// Dependency text (US3)
+	if (wf.epicDependencies && wf.epicDependencies.length > 0 && allWorkflowsRef) {
+		const depNames = wf.epicDependencies
+			.map((depId) => {
+				const depEntry = allWorkflowsRef?.get(depId);
+				return depEntry?.state.summary || depId.slice(0, 8);
+			})
+			.join(", ");
+		const depText = document.createElement("span");
+		depText.className = "card-dependency-text";
+		depText.textContent = `Depends on: ${depNames}`;
+		card.appendChild(depText);
+	}
+
+	// Force Start button (US4)
+	if (wf.status === "waiting_for_dependencies" && sendFn) {
+		const forceBtn = document.createElement("button");
+		forceBtn.className = "btn-force-start";
+		forceBtn.textContent = "Force Start";
+		forceBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			sendFn?.({ type: "workflow:force-start", workflowId: wf.id });
+		});
+		card.appendChild(forceBtn);
+	}
 
 	// Current step
 	if (wf.steps.length > 0) {

@@ -263,7 +263,7 @@ function expandWorkflow(workflowId: string): void {
 }
 
 function renderCards(): void {
-	renderCardStrip(workflowOrder, workflows, expandedWorkflowId, expandWorkflow);
+	renderCardStrip(workflowOrder, workflows, expandedWorkflowId, expandWorkflow, send);
 }
 
 function renderExpandedView(): void {

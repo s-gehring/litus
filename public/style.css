@@ -218,6 +218,7 @@ header h1 {
 .status-badge.idle { background: var(--border); color: var(--text-dim); }
 .status-badge.running { background: rgba(74,158,255,0.2); color: var(--accent-blue); }
 .status-badge.waiting_for_input { background: rgba(240,192,64,0.2); color: var(--accent-yellow); }
+.status-badge.waiting_for_dependencies { background: rgba(240,192,64,0.15); color: var(--accent-yellow); }
 .status-badge.completed { background: rgba(78,204,163,0.2); color: var(--accent-green); }
 .status-badge.cancelled { background: rgba(136,136,170,0.2); color: var(--text-dim); }
 .status-badge.error { background: rgba(233,69,96,0.2); color: var(--accent); }
