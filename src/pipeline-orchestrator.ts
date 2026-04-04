@@ -313,8 +313,17 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		// Checks failed or timed out — route to fix-ci
 		workflow.ciCycle.lastCheckResults = result.results;
+
+		// If max attempts already reached, give up
+		if (workflow.ciCycle.attempt >= workflow.ciCycle.maxAttempts) {
+			const msg = result.timedOut
+				? `CI monitoring timed out after ${workflow.ciCycle.attempt} fix attempts`
+				: `CI checks still failing after ${workflow.ciCycle.attempt} fix attempts`;
+			this.handleStepError(workflowId, msg);
+			return;
+		}
+
 		this.advanceToFixCi(workflow);
 	}
 
@@ -563,6 +572,14 @@ export class PipelineOrchestrator {
 		workflow.ciCycle.attempt++;
 		workflow.ciCycle.monitorStartedAt = null;
 		workflow.ciCycle.failureLogs = [];
+
+		if (workflow.ciCycle.attempt >= workflow.ciCycle.maxAttempts) {
+			this.handleStepError(
+				workflow.id,
+				`CI checks still failing after ${workflow.ciCycle.attempt} fix attempts`,
+			);
+			return;
+		}
 
 		const monitorIndex = workflow.steps.findIndex((s) => s.name === "monitor-ci");
 		const monitorStep = workflow.steps[monitorIndex];
