@@ -1,3 +1,72 @@
+// ── Config types ──────────────────────────────────────────
+
+export interface ModelConfig {
+	questionDetection: string;
+	reviewClassification: string;
+	activitySummarization: string;
+	specSummarization: string;
+}
+
+export interface PromptConfig {
+	questionDetection: string;
+	reviewClassification: string;
+	activitySummarization: string;
+	specSummarization: string;
+	mergeConflictResolution: string;
+	ciFixInstruction: string;
+}
+
+export interface LimitConfig {
+	reviewCycleMaxIterations: number;
+	ciFixMaxAttempts: number;
+	mergeMaxAttempts: number;
+}
+
+export interface TimingConfig {
+	ciGlobalTimeoutMs: number;
+	ciPollIntervalMs: number;
+	questionDetectionCooldownMs: number;
+	activitySummaryIntervalMs: number;
+	rateLimitBackoffMs: number;
+	maxCiLogLength: number;
+	maxClientOutputLines: number;
+}
+
+export interface AppConfig {
+	models: ModelConfig;
+	prompts: PromptConfig;
+	limits: LimitConfig;
+	timing: TimingConfig;
+}
+
+export interface PromptVariableInfo {
+	name: string;
+	description: string;
+}
+
+export interface NumericSettingMeta {
+	key: string;
+	label: string;
+	description: string;
+	min: number;
+	defaultValue: number;
+	unit?: string;
+}
+
+export interface ConfigValidationError {
+	path: string;
+	message: string;
+	value: unknown;
+}
+
+export interface ConfigWarning {
+	path: string;
+	missingVariables: string[];
+	message: string;
+}
+
+// ── Audit event types ─────────────────────────────────────
+
 // Audit event types
 export type AuditEventType = "pipeline_start" | "pipeline_end" | "query" | "answer" | "commit";
 
@@ -216,6 +285,8 @@ export type ServerMessage =
 			currentStepIndex: number;
 			reviewIteration: number;
 	  }
+	| { type: "config:state"; config: AppConfig; warnings?: ConfigWarning[] }
+	| { type: "config:error"; errors: ConfigValidationError[] }
 	| { type: "error"; message: string };
 
 // Output entry union for client-side output log (text lines + tool icon data)
@@ -236,4 +307,7 @@ export type ClientMessage =
 	| { type: "workflow:answer"; workflowId: string; questionId: string; answer: string }
 	| { type: "workflow:skip"; workflowId: string; questionId: string }
 	| { type: "workflow:cancel"; workflowId: string }
-	| { type: "workflow:retry"; workflowId: string };
+	| { type: "workflow:retry"; workflowId: string }
+	| { type: "config:get" }
+	| { type: "config:save"; config: Partial<AppConfig> }
+	| { type: "config:reset"; key?: string };
