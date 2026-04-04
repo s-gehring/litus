@@ -368,6 +368,130 @@ describe("CI Pipeline Routing", () => {
 		expect(wf.currentStepIndex).toBe(fixIndex);
 	});
 
+	test("all checks cancelled → pauses for human intervention", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		// All checks cancelled (usage limit scenario)
+		monitorResultResolve({
+			passed: false,
+			timedOut: false,
+			results: [
+				{ name: "build", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+				{ name: "test", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+			],
+		});
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.status).toBe("waiting_for_input");
+		expect(wf.pendingQuestion).not.toBeNull();
+		expect(wf.pendingQuestion?.content).toContain("cancelled");
+		expect(wf.pendingQuestion?.content).toContain("usage limits");
+	});
+
+	test("cancelled checks + user answers retry → resumes monitoring", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		monitorResultResolve({
+			passed: false,
+			timedOut: false,
+			results: [{ name: "build", state: "COMPLETED", conclusion: "CANCELLED", link: "" }],
+		});
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.status).toBe("waiting_for_input");
+		const questionId = wf.pendingQuestion?.id;
+
+		// User answers "retry"
+		mockStartMonitoring.mockClear();
+		orchestrator.answerQuestion(wf.id, questionId as string, "retry");
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.status).toBe("running");
+		expect(wf.pendingQuestion).toBeNull();
+		expect(mockStartMonitoring).toHaveBeenCalledTimes(1);
+	});
+
+	test("cancelled checks + user answers abort → workflow errors", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		monitorResultResolve({
+			passed: false,
+			timedOut: false,
+			results: [{ name: "build", state: "COMPLETED", conclusion: "CANCELLED", link: "" }],
+		});
+		await new Promise((r) => setTimeout(r, 10));
+
+		const questionId = wf.pendingQuestion?.id;
+		orchestrator.answerQuestion(wf.id, questionId as string, "abort");
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.status).toBe("error");
+	});
+
+	test("mixed FAILURE and CANCELLED → routes to fix-ci (not paused)", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const fixIndex = wf.steps.findIndex((s) => s.name === "fix-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		// Mix of FAILURE and CANCELLED — real code issue with cascading cancellations
+		monitorResultResolve({
+			passed: false,
+			timedOut: false,
+			results: [
+				{ name: "build", state: "COMPLETED", conclusion: "FAILURE", link: "" },
+				{ name: "test", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+			],
+		});
+		await new Promise((r) => setTimeout(r, 10));
+
+		// Should route to fix-ci, not pause
+		expect(wf.currentStepIndex).toBe(fixIndex);
+		expect(wf.status).toBe("running");
+	});
+
 	test("timeout at max attempts → workflow errors with timeout message", async () => {
 		const wf = getWf(engine);
 		wf.prUrl = "https://github.com/owner/repo/pull/42";

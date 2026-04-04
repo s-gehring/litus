@@ -1,6 +1,6 @@
 import { AuditLogger } from "./audit-logger";
 import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
-import { type MonitorResult, startMonitoring } from "./ci-monitor";
+import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
 import { QuestionDetector } from "./question-detector";
@@ -138,6 +138,16 @@ export class PipelineOrchestrator {
 
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
+
+		if (step.name === "monitor-ci") {
+			if (answer.toLowerCase().includes("abort")) {
+				this.handleStepError(workflowId, "Workflow aborted by user after cancelled CI checks");
+			} else {
+				this.runMonitorCi(workflow);
+			}
+			return;
+		}
+
 		this.questionDetector.reset();
 		this.cliRunner.sendAnswer(workflowId, answer);
 	}
@@ -332,6 +342,17 @@ export class PipelineOrchestrator {
 				? `CI monitoring timed out after ${workflow.ciCycle.attempt} fix attempts`
 				: `CI checks still failing after ${workflow.ciCycle.attempt} fix attempts`;
 			this.handleStepError(workflowId, msg);
+			return;
+		}
+
+		if (allFailuresCancelled(result.results)) {
+			const cancelled = result.results.filter((r) => r.conclusion === "CANCELLED");
+			const names = cancelled.map((r) => r.name).join(", ");
+			this.pauseForQuestion(workflowId, {
+				id: `ci-cancelled-${Date.now()}`,
+				content: `All failed CI checks were cancelled (${names}). This may indicate GitHub Actions usage limits. Answer "retry" to re-run monitoring or "abort" to stop the workflow.`,
+				detectedAt: new Date().toISOString(),
+			});
 			return;
 		}
 

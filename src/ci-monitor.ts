@@ -27,6 +27,12 @@ export function allChecksComplete(results: CiCheckResult[]): boolean {
 	return results.every((r) => r.state === "COMPLETED");
 }
 
+/** Returns `true` when all non-SUCCESS checks were cancelled (likely billing/usage-limit). */
+export function allFailuresCancelled(results: CiCheckResult[]): boolean {
+	const failed = results.filter((r) => r.conclusion !== "SUCCESS");
+	return failed.length > 0 && failed.every((r) => r.conclusion === "CANCELLED");
+}
+
 /** Must only be called after `allChecksComplete(results)` returns `true`. */
 export function allChecksPassed(results: CiCheckResult[]): boolean {
 	return results.length === 0 || results.every((r) => r.conclusion === "SUCCESS");

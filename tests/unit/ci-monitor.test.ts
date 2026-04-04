@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	allChecksComplete,
 	allChecksPassed,
+	allFailuresCancelled,
 	isValidPrUrl,
 	parseCiChecks,
 } from "../../src/ci-monitor";
@@ -107,6 +108,45 @@ describe("allChecksPassed", () => {
 		expect(
 			allChecksPassed([{ name: "a", state: "COMPLETED", conclusion: "CANCELLED", link: "" }]),
 		).toBe(false);
+	});
+});
+
+describe("allFailuresCancelled", () => {
+	test("returns true when all non-SUCCESS checks are CANCELLED", () => {
+		expect(
+			allFailuresCancelled([
+				{ name: "a", state: "COMPLETED", conclusion: "SUCCESS", link: "" },
+				{ name: "b", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+			]),
+		).toBe(true);
+	});
+
+	test("returns true when all checks are CANCELLED", () => {
+		expect(
+			allFailuresCancelled([
+				{ name: "a", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+				{ name: "b", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+			]),
+		).toBe(true);
+	});
+
+	test("returns false when some failures are not CANCELLED", () => {
+		expect(
+			allFailuresCancelled([
+				{ name: "a", state: "COMPLETED", conclusion: "FAILURE", link: "" },
+				{ name: "b", state: "COMPLETED", conclusion: "CANCELLED", link: "" },
+			]),
+		).toBe(false);
+	});
+
+	test("returns false when all checks passed", () => {
+		expect(
+			allFailuresCancelled([{ name: "a", state: "COMPLETED", conclusion: "SUCCESS", link: "" }]),
+		).toBe(false);
+	});
+
+	test("returns false for empty array", () => {
+		expect(allFailuresCancelled([])).toBe(false);
 	});
 });
 
