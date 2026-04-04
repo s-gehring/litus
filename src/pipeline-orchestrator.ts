@@ -367,9 +367,7 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		const failedChecks = workflow.ciCycle.lastCheckResults.filter(
-			(r) => r.bucket !== "pass",
-		);
+		const failedChecks = workflow.ciCycle.lastCheckResults.filter((r) => r.bucket !== "pass");
 
 		gatherAllFailureLogs(workflow.prUrl, failedChecks)
 			.then((logs) => {

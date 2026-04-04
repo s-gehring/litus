@@ -105,9 +105,9 @@ describe("allChecksPassed", () => {
 	});
 
 	test("returns false for cancel bucket", () => {
-		expect(
-			allChecksPassed([{ name: "a", state: "COMPLETED", bucket: "cancel", link: "" }]),
-		).toBe(false);
+		expect(allChecksPassed([{ name: "a", state: "COMPLETED", bucket: "cancel", link: "" }])).toBe(
+			false,
+		);
 	});
 });
 

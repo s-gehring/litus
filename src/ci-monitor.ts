@@ -99,9 +99,7 @@ export async function startMonitoring(
 			const results = await pollCiChecks(prUrl);
 			ciCycle.lastCheckResults = results;
 
-			const statusLine = results
-				.map((r) => `${r.name}: ${r.state} (${r.bucket})`)
-				.join(" | ");
+			const statusLine = results.map((r) => `${r.name}: ${r.state} (${r.bucket})`).join(" | ");
 			onOutput(`[poll ${pollCount}/${maxPolls}] ${statusLine || "No checks found"}`);
 
 			if (results.length === 0) {
