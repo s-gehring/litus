@@ -80,9 +80,8 @@ export function buildFixPrompt(prUrl: string, failureLogs: CiFailureLog[]): stri
 		.map((log) => `### ${log.checkName} (run ${log.runId})\n\`\`\`\n${log.logs}\n\`\`\``)
 		.join("\n\n");
 
-	return `The following CI checks failed on PR ${prUrl}:
-
-${logSections}
-
-Fix these CI failures. After fixing, commit and push the changes.`;
+	const promptTemplate = configStore.get().prompts.ciFixInstruction;
+	return promptTemplate
+		.replace("${prUrl}", prUrl)
+		.replace("${logSections}", logSections);
 }

@@ -43,7 +43,8 @@ export class Summarizer {
 
 	private async generateSummary(text: string): Promise<string | null> {
 		try {
-			const prompt = `Summarize what this coding agent is currently doing in 3-6 words. Output only the summary, nothing else.\n\n${text}`;
+			const promptTemplate = configStore.get().prompts.activitySummarization;
+			const prompt = promptTemplate.replace("${text}", text);
 
 			const proc = Bun.spawn(
 				["claude", "-p", prompt, "--model", configStore.get().models.activitySummarization, "--output-format", "text"],
@@ -62,14 +63,8 @@ export class Summarizer {
 
 	async generateSpecSummary(specification: string): Promise<{ summary: string; flavor: string }> {
 		try {
-			const prompt = `You are given a feature specification. Return a JSON object with two fields:
-- "summary": a 2-5 word description of the feature
-- "flavor": a 4-10 word snarky, insulting comment about the feature
-
-Output ONLY valid JSON, nothing else.
-
-Specification:
-${specification}`;
+			const promptTemplate = configStore.get().prompts.specSummarization;
+			const prompt = promptTemplate.replace("${specification}", specification);
 
 			const proc = Bun.spawn(
 				["claude", "-p", prompt, "--model", configStore.get().models.specSummarization, "--output-format", "text"],

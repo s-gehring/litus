@@ -62,7 +62,8 @@ export class QuestionDetector {
 		this.pendingClassification = true;
 
 		try {
-			const prompt = `Is this text a question directed at the user that requires their input to proceed? Answer only "yes" or "no".\n\nText: "${text}"`;
+			const promptTemplate = configStore.get().prompts.questionDetection;
+			const prompt = promptTemplate.replace("${text}", text);
 
 			const proc = Bun.spawn(
 				["claude", "-p", prompt, "--model", configStore.get().models.questionDetection, "--output-format", "text"],
