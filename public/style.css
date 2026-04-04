@@ -26,9 +26,9 @@ body {
 }
 
 #app {
-  max-width: 900px;
+  width: clamp(320px, 90vw, 1800px);
   margin: 0 auto;
-  padding: 20px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -150,6 +150,7 @@ header h1 {
   color: var(--text);
   white-space: normal;
   word-break: break-word;
+  max-width: 80ch;
 }
 
 .card-step {
@@ -178,6 +179,7 @@ header h1 {
   color: var(--text-dim);
   font-size: 0.9rem;
   font-style: italic;
+  max-width: 80ch;
 }
 
 /* ── Workflow window (detail view) ──────────────────────── */
@@ -278,6 +280,7 @@ header h1 {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
+  max-width: 120ch;
 }
 
 .output-line {
@@ -325,6 +328,7 @@ header h1 {
   font-size: 0.9rem;
   margin-bottom: 12px;
   line-height: 1.4;
+  max-width: 80ch;
 }
 
 .question-actions {
@@ -610,6 +614,70 @@ body::-webkit-scrollbar-track {
 
 .pr-link:hover {
   background: rgba(78,204,163,0.3);
+}
+
+/* ── Responsive Breakpoints ───────────────────────────────── */
+
+/* Tablet / small laptop */
+@media (max-width: 1200px) {
+  #app {
+    width: 90%;
+    padding: 16px 20px;
+  }
+}
+
+/* Mobile / small tablet */
+@media (max-width: 768px) {
+  #app {
+    width: 100%;
+    padding: 12px;
+  }
+
+  header {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .card-strip {
+    gap: 6px;
+    padding: 6px 0;
+  }
+
+  .workflow-card {
+    min-width: 150px;
+    max-width: 180px;
+    padding: 8px 10px;
+  }
+
+  .status-area {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 12px;
+  }
+
+  .pipeline-steps {
+    padding: 8px 12px;
+    gap: 2px;
+  }
+
+  .output-area {
+    height: 300px;
+  }
+
+  .output-log {
+    padding: 10px 12px;
+    font-size: 0.78rem;
+  }
+
+  .input-area-fixed {
+    padding: 12px;
+    margin-top: 8px;
+  }
+
+  .question-panel {
+    padding: 12px;
+  }
 }
 
 .hidden { display: none !important; }
