@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { computeDependencyStatus } from "../src/dependency-resolver";
-import { createEpicWorkflows } from "../src/workflow-engine";
 import type { EpicAnalysisResult } from "../src/types";
+import { createEpicWorkflows } from "../src/workflow-engine";
 
 describe("createEpicWorkflows", () => {
 	const mockResult: EpicAnalysisResult = {

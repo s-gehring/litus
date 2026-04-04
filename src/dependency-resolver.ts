@@ -37,7 +37,7 @@ export function detectCycles(graph: DependencyGraph): string[] | null {
 
 	let processed = 0;
 	while (queue.length > 0) {
-		const node = queue.shift()!;
+		const node = queue.shift() as string;
 		processed++;
 		for (const neighbor of graph.edges.get(node) ?? []) {
 			const newDeg = (inDegree.get(neighbor) ?? 1) - 1;

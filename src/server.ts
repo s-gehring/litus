@@ -2,7 +2,7 @@ import type { ServerWebSocket } from "bun";
 import { AuditLogger } from "./audit-logger";
 import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
-import { type EpicAnalysisProcess, analyzeEpic } from "./epic-analyzer";
+import { analyzeEpic, type EpicAnalysisProcess } from "./epic-analyzer";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -278,7 +278,7 @@ function handleConfigReset(_ws: ServerWebSocket<WsData>, key?: string) {
 }
 
 // ── Epic analysis state ──────────────────────────────────
-let epicAnalysisRef: { current: EpicAnalysisProcess | null } = { current: null };
+const epicAnalysisRef: { current: EpicAnalysisProcess | null } = { current: null };
 
 async function handleEpicStart(
 	ws: ServerWebSocket<WsData>,

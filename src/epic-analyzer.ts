@@ -122,10 +122,13 @@ export interface EpicAnalysisProcess {
 	kill: () => void;
 }
 
+const DEFAULT_EPIC_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 export async function analyzeEpic(
 	epicDescription: string,
 	targetRepoDir: string,
 	onKillRef?: { current: EpicAnalysisProcess | null },
+	timeoutMs: number = DEFAULT_EPIC_TIMEOUT_MS,
 ): Promise<EpicAnalysisResult> {
 	const prompt = buildDecompositionPrompt(epicDescription);
 	const args = [
@@ -153,6 +156,13 @@ export async function analyzeEpic(
 	if (!stdout || typeof stdout === "number") {
 		throw new Error("Failed to capture CLI stdout");
 	}
+
+	// Set up timeout
+	let timedOut = false;
+	const timeoutId = setTimeout(() => {
+		timedOut = true;
+		proc.kill();
+	}, timeoutMs);
 
 	const reader = (stdout as ReadableStream<Uint8Array>).getReader();
 	const decoder = new TextDecoder();
@@ -189,8 +199,13 @@ export async function analyzeEpic(
 		// Stream error
 	}
 
+	clearTimeout(timeoutId);
 	const exitCode = await proc.exited;
 	if (onKillRef) onKillRef.current = null;
+
+	if (timedOut) {
+		throw new Error("Epic analysis timed out");
+	}
 
 	if (exitCode !== 0) {
 		const stderrStream = proc.stderr;

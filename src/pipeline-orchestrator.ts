@@ -100,7 +100,10 @@ export class PipelineOrchestrator {
 		const branchCwd = workflow.targetRepository || process.cwd();
 		this.getBranch(branchCwd).then((branch) => {
 			this.pipelineName = branch ?? workflow.worktreeBranch;
-			this.currentAuditRunId = this.auditLogger.startRun(this.pipelineName, workflow.worktreeBranch);
+			this.currentAuditRunId = this.auditLogger.startRun(
+				this.pipelineName,
+				workflow.worktreeBranch,
+			);
 		});
 
 		this.persistWorkflow(workflow);
@@ -828,21 +831,13 @@ export class PipelineOrchestrator {
 			if (!sibling.epicDependencies.includes(triggerWorkflow.id)) continue;
 			if (sibling.status !== "waiting_for_dependencies") continue;
 
-			const depStatus = computeDependencyStatus(
-				sibling.epicDependencies,
-				completedIds,
-				errorIds,
-			);
+			const depStatus = computeDependencyStatus(sibling.epicDependencies, completedIds, errorIds);
 
 			sibling.epicDependencyStatus = depStatus.status;
 			sibling.updatedAt = new Date().toISOString();
 			await this.store.save(sibling);
 
-			this.callbacks.onEpicDependencyUpdate?.(
-				sibling.id,
-				depStatus.status,
-				depStatus.blocking,
-			);
+			this.callbacks.onEpicDependencyUpdate?.(sibling.id, depStatus.status, depStatus.blocking);
 		}
 	}
 
