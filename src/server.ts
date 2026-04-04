@@ -71,6 +71,35 @@ function createCallbacks() {
 		onStateChange: (workflowId: string) => {
 			broadcastWorkflowState(workflowId);
 		},
+		onEpicDependencyUpdate: (
+			dependentWorkflowId: string,
+			status: import("./types").EpicDependencyStatus,
+			blockingWorkflows: string[],
+		) => {
+			broadcast({
+				type: "epic:dependency-update",
+				workflowId: dependentWorkflowId,
+				epicDependencyStatus: status,
+				blockingWorkflows,
+			});
+
+			if (status === "satisfied") {
+				// Auto-start the dependent workflow
+				const depOrch = orchestrators.get(dependentWorkflowId);
+				if (!depOrch) return;
+
+				const depWorkflow = depOrch.getEngine().getWorkflow();
+				if (!depWorkflow || depWorkflow.status !== "waiting_for_dependencies") return;
+
+				depWorkflow.epicDependencyStatus = "satisfied";
+				depWorkflow.status = "idle";
+				depWorkflow.updatedAt = new Date().toISOString();
+
+				depOrch.startPipelineFromWorkflow(depWorkflow);
+			}
+
+			broadcastWorkflowState(dependentWorkflowId);
+		},
 	};
 }
 
