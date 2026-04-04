@@ -57,6 +57,10 @@ export class WorkflowStore {
 				console.warn(`[workflow-store] Invalid currentStepIndex for ${id}`);
 				return null;
 			}
+			// Migration: backfill mergeCycle for pre-merge-pr workflows
+			if (!data.mergeCycle) {
+				data.mergeCycle = { attempt: 0, maxAttempts: 3 };
+			}
 			return data as Workflow;
 		} catch {
 			console.warn(`[workflow-store] Failed to load workflow ${id}`);

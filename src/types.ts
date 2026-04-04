@@ -55,7 +55,9 @@ export type PipelineStepName =
 	| "implement-review"
 	| "commit-push-pr"
 	| "monitor-ci"
-	| "fix-ci";
+	| "fix-ci"
+	| "merge-pr"
+	| "sync-repo";
 
 // Pipeline step status
 export type PipelineStepStatus =
@@ -114,6 +116,28 @@ export interface CiCycle {
 	failureLogs: CiFailureLog[];
 }
 
+// Merge-conflict-resolution loop tracker
+export interface MergeCycle {
+	attempt: number;
+	maxAttempts: number;
+}
+
+// Result from PR merger module (not persisted)
+export interface MergeResult {
+	merged: boolean;
+	alreadyMerged: boolean;
+	conflict: boolean;
+	error: string | null;
+}
+
+// Result from repo syncer module (not persisted)
+export interface SyncResult {
+	pulled: boolean;
+	skipped: boolean;
+	worktreeRemoved: boolean;
+	warning: string | null;
+}
+
 // Review severity classification
 export type ReviewSeverity = "critical" | "major" | "minor" | "trivial" | "nit";
 
@@ -140,6 +164,8 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	{ name: "commit-push-pr", displayName: "Creating PR", prompt: "/commit-commands:commit-push-pr" },
 	{ name: "monitor-ci", displayName: "Monitoring CI", prompt: "" },
 	{ name: "fix-ci", displayName: "Fixing CI", prompt: "" },
+	{ name: "merge-pr", displayName: "Merging PR", prompt: "" },
+	{ name: "sync-repo", displayName: "Syncing Repository", prompt: "" },
 ];
 
 export const REVIEW_CYCLE_MAX_ITERATIONS = 16;
@@ -161,6 +187,7 @@ export interface Workflow {
 	currentStepIndex: number;
 	reviewCycle: ReviewCycle;
 	ciCycle: CiCycle;
+	mergeCycle: MergeCycle;
 	prUrl: string | null;
 	activeWorkMs: number;
 	activeWorkStartedAt: string | null;

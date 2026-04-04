@@ -87,6 +87,10 @@ function createFakeEngine() {
 					lastCheckResults: [],
 					failureLogs: [],
 				},
+				mergeCycle: {
+					attempt: 0,
+					maxAttempts: 3,
+				},
 				prUrl: null,
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,
@@ -229,7 +233,7 @@ describe("CI Pipeline Routing", () => {
 		await new Promise((r) => setTimeout(r, 10));
 	});
 
-	test("monitor-ci success → workflow completes", async () => {
+	test("monitor-ci success → routes to merge-pr", async () => {
 		const wf = getWf(engine);
 		wf.prUrl = "https://github.com/owner/repo/pull/42";
 
@@ -252,7 +256,11 @@ describe("CI Pipeline Routing", () => {
 		monitorResultResolve({ passed: true, timedOut: false, results: [] });
 		await new Promise((r) => setTimeout(r, 10));
 
-		expect(wf.status).toBe("completed");
+		// After monitor-ci passes, routes to merge-pr
+		const mergePrIndex = wf.steps.findIndex((s) => s.name === "merge-pr");
+		expect(wf.currentStepIndex).toBe(mergePrIndex);
+		// merge-pr step was entered (status is running or error depending on gh availability)
+		expect(["running", "error"]).toContain(wf.steps[mergePrIndex].status);
 	});
 
 	test("monitor-ci failure → routes to fix-ci", async () => {

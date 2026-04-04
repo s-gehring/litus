@@ -57,6 +57,10 @@ function createFakeEngine() {
 					lastCheckResults: [],
 					failureLogs: [],
 				},
+				mergeCycle: {
+					attempt: 0,
+					maxAttempts: 3,
+				},
 				prUrl: null,
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,
@@ -232,7 +236,7 @@ describe("PipelineOrchestrator", () => {
 			expect(cli._startCalls.length).toBe(1);
 		});
 
-		test("pipeline has 10 steps in correct order", async () => {
+		test("pipeline has 12 steps in correct order", async () => {
 			await orchestrator.startPipeline("test");
 			const wf = getWf(engine);
 
@@ -247,6 +251,8 @@ describe("PipelineOrchestrator", () => {
 				"commit-push-pr",
 				"monitor-ci",
 				"fix-ci",
+				"merge-pr",
+				"sync-repo",
 			];
 			expect(wf.steps.map((s) => s.name)).toEqual(expectedOrder);
 		});

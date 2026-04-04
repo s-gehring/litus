@@ -76,6 +76,10 @@ export class WorkflowEngine {
 				lastCheckResults: [],
 				failureLogs: [],
 			},
+			mergeCycle: {
+				attempt: 0,
+				maxAttempts: 3,
+			},
 			activeWorkMs: 0,
 			activeWorkStartedAt: null,
 			createdAt: now,
@@ -144,6 +148,24 @@ export class WorkflowEngine {
 			throw new Error(`Workflow ${workflowId} not found`);
 		}
 		return this.workflow;
+	}
+
+	async removeWorktree(worktreePath: string, targetRepo: string): Promise<void> {
+		const proc = Bun.spawn(["git", "worktree", "remove", worktreePath, "--force"], {
+			cwd: targetRepo,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+
+		const code = await proc.exited;
+		if (code !== 0) {
+			const stderrStream = proc.stderr;
+			const stderr =
+				stderrStream && typeof stderrStream !== "number"
+					? await new Response(stderrStream as ReadableStream).text()
+					: "";
+			throw new Error(stderr.trim() || `git worktree remove failed with code ${code}`);
+		}
 	}
 
 	private async createWorktree(branchName: string, cwd: string): Promise<string> {
