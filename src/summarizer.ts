@@ -46,7 +46,7 @@ export class Summarizer {
 			const prompt = `Summarize what this coding agent is currently doing in 3-6 words. Output only the summary, nothing else.\n\n${text}`;
 
 			const proc = Bun.spawn(
-				["claude", "-p", prompt, "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
+				["claude", "-p", prompt, "--model", configStore.get().models.activitySummarization, "--output-format", "text"],
 				{ stdout: "pipe", stderr: "pipe" },
 			);
 
@@ -72,7 +72,7 @@ Specification:
 ${specification}`;
 
 			const proc = Bun.spawn(
-				["claude", "-p", prompt, "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
+				["claude", "-p", prompt, "--model", configStore.get().models.specSummarization, "--output-format", "text"],
 				{ stdout: "pipe", stderr: "pipe" },
 			);
 

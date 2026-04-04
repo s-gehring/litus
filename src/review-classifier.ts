@@ -1,3 +1,4 @@
+import { configStore } from "./config-store";
 import type { ReviewSeverity } from "./types";
 
 const VALID_SEVERITIES: ReviewSeverity[] = ["critical", "major", "minor", "trivial", "nit"];
@@ -16,7 +17,7 @@ Review output:
 ${reviewOutput}`;
 
 		const proc = Bun.spawn(
-			["claude", "-p", prompt, "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
+			["claude", "-p", prompt, "--model", configStore.get().models.reviewClassification, "--output-format", "text"],
 			{ stdout: "pipe", stderr: "pipe" },
 		);
 

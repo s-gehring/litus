@@ -65,7 +65,7 @@ export class QuestionDetector {
 			const prompt = `Is this text a question directed at the user that requires their input to proceed? Answer only "yes" or "no".\n\nText: "${text}"`;
 
 			const proc = Bun.spawn(
-				["claude", "-p", prompt, "--model", "claude-haiku-4-5-20251001", "--output-format", "text"],
+				["claude", "-p", prompt, "--model", configStore.get().models.questionDetection, "--output-format", "text"],
 				{ stdout: "pipe", stderr: "pipe" },
 			);
 
