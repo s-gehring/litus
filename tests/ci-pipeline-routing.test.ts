@@ -87,6 +87,10 @@ function createFakeEngine() {
 					lastCheckResults: [],
 					failureLogs: [],
 				},
+				mergeCycle: {
+					attempt: 0,
+					maxAttempts: 3,
+				},
 				prUrl: null,
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,

@@ -186,11 +186,13 @@ describe("WorkflowEngine", () => {
 	});
 
 	describe("pipeline fields", () => {
-		test("createWorkflow initializes steps array with 10 entries", async () => {
+		test("createWorkflow initializes steps array with 12 entries", async () => {
 			const w = await engine.createWorkflow("Build a login page");
-			expect(w.steps).toHaveLength(10);
+			expect(w.steps).toHaveLength(12);
 			expect(w.steps[0].name).toBe("specify");
 			expect(w.steps[7].name).toBe("commit-push-pr");
+			expect(w.steps[10].name).toBe("merge-pr");
+			expect(w.steps[11].name).toBe("sync-repo");
 		});
 
 		test("all steps start as pending", async () => {

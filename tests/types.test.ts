@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type {
+	MergeCycle,
+	MergeResult,
 	PipelineStep,
 	PipelineStepName,
 	PipelineStepStatus,
 	ReviewCycle,
 	ReviewSeverity,
+	SyncResult,
 	WorkflowStatus,
 } from "../src/types";
 import {
@@ -56,7 +59,7 @@ describe("VALID_TRANSITIONS", () => {
 });
 
 describe("PIPELINE_STEP_DEFINITIONS", () => {
-	test("has exactly 10 steps in correct order", () => {
+	test("has exactly 12 steps in correct order", () => {
 		const expectedNames: PipelineStepName[] = [
 			"specify",
 			"clarify",
@@ -68,6 +71,8 @@ describe("PIPELINE_STEP_DEFINITIONS", () => {
 			"commit-push-pr",
 			"monitor-ci",
 			"fix-ci",
+			"merge-pr",
+			"sync-repo",
 		];
 		expect(PIPELINE_STEP_DEFINITIONS.map((s) => s.name)).toEqual(expectedNames);
 	});
@@ -136,5 +141,73 @@ describe("ReviewCycle shape", () => {
 		const allSeverities: ReviewSeverity[] = ["critical", "major", "minor", "trivial", "nit"];
 		expect(allSeverities).toHaveLength(5);
 		expect(new Set(allSeverities).size).toBe(5);
+	});
+});
+
+describe("MergeCycle shape", () => {
+	test("a valid MergeCycle can be constructed", () => {
+		const cycle: MergeCycle = {
+			attempt: 0,
+			maxAttempts: 3,
+		};
+		expect(cycle.attempt).toBe(0);
+		expect(cycle.maxAttempts).toBe(3);
+	});
+});
+
+describe("MergeResult shape", () => {
+	test("a successful merge result", () => {
+		const result: MergeResult = {
+			merged: true,
+			alreadyMerged: false,
+			conflict: false,
+			error: null,
+		};
+		expect(result.merged).toBe(true);
+		expect(result.error).toBeNull();
+	});
+
+	test("a conflict merge result", () => {
+		const result: MergeResult = {
+			merged: false,
+			alreadyMerged: false,
+			conflict: true,
+			error: null,
+		};
+		expect(result.conflict).toBe(true);
+	});
+
+	test("an error merge result", () => {
+		const result: MergeResult = {
+			merged: false,
+			alreadyMerged: false,
+			conflict: false,
+			error: "Permission denied",
+		};
+		expect(result.error).toBe("Permission denied");
+	});
+});
+
+describe("SyncResult shape", () => {
+	test("a successful sync result", () => {
+		const result: SyncResult = {
+			pulled: true,
+			skipped: false,
+			worktreeRemoved: true,
+			warning: null,
+		};
+		expect(result.pulled).toBe(true);
+		expect(result.worktreeRemoved).toBe(true);
+	});
+
+	test("a skipped sync result with warning", () => {
+		const result: SyncResult = {
+			pulled: false,
+			skipped: true,
+			worktreeRemoved: true,
+			warning: "Uncommitted changes detected",
+		};
+		expect(result.skipped).toBe(true);
+		expect(result.warning).toBe("Uncommitted changes detected");
 	});
 });
