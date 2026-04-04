@@ -76,6 +76,22 @@ Done.`;
 		expect(() => parseAnalysisResult(text)).toThrow("Circular dependencies");
 	});
 
+	test("throws on invalid dependency reference", () => {
+		const text = `\`\`\`json
+{
+  "title": "Bad Ref",
+  "specs": [
+    { "id": "a", "title": "A", "description": "A desc", "dependencies": [] },
+    { "id": "b", "title": "B", "description": "B desc", "dependencies": ["z"] }
+  ],
+  "infeasibleNotes": null
+}
+\`\`\``;
+		expect(() => parseAnalysisResult(text)).toThrow(
+			'Unknown dependency reference: "z" in spec "b"',
+		);
+	});
+
 	test("handles infeasibleNotes", () => {
 		const text = `\`\`\`json
 {

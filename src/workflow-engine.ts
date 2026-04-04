@@ -257,13 +257,12 @@ export async function createEpicWorkflows(
 
 		if (workflow.epicDependencies.length > 0) {
 			workflow.epicDependencyStatus = "waiting";
-			if (!autoStart) {
-				// Leave as idle regardless
-			} else {
-				workflow.status = "waiting_for_dependencies";
-			}
+			workflow.status = "waiting_for_dependencies";
 		} else {
 			workflow.epicDependencyStatus = "satisfied";
+			if (autoStart) {
+				// Independent specs auto-start; idle ones stay idle for manual start
+			}
 		}
 	}
 

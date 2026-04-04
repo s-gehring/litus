@@ -106,6 +106,18 @@ function createCompactCard(
 		card.appendChild(depText);
 	}
 
+	// Start button for idle epic workflows (non-autoStart)
+	if (wf.status === "idle" && wf.epicId && sendFn) {
+		const startBtn = document.createElement("button");
+		startBtn.className = "btn-force-start";
+		startBtn.textContent = "Start";
+		startBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			sendFn?.({ type: "workflow:start-existing", workflowId: wf.id });
+		});
+		card.appendChild(startBtn);
+	}
+
 	// Force Start button (US4)
 	if (wf.status === "waiting_for_dependencies" && sendFn) {
 		const forceBtn = document.createElement("button");

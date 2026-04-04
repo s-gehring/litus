@@ -84,18 +84,18 @@ function createCallbacks() {
 				blockingWorkflows,
 			});
 
-			if (status === "satisfied") {
-				// Auto-start the dependent workflow
-				const depOrch = orchestrators.get(dependentWorkflowId);
-				if (!depOrch) return;
-
+			// Update in-memory workflow state for all dependency statuses
+			const depOrch = orchestrators.get(dependentWorkflowId);
+			if (depOrch) {
 				const depWorkflow = depOrch.getEngine().getWorkflow();
-				if (!depWorkflow || depWorkflow.status !== "waiting_for_dependencies") return;
+				if (depWorkflow) {
+					depWorkflow.epicDependencyStatus = status;
+					depWorkflow.updatedAt = new Date().toISOString();
 
-				depWorkflow.epicDependencyStatus = "satisfied";
-				depWorkflow.updatedAt = new Date().toISOString();
-
-				depOrch.startPipelineFromWorkflow(depWorkflow);
+					if (status === "satisfied" && depWorkflow.status === "waiting_for_dependencies") {
+						depOrch.startPipelineFromWorkflow(depWorkflow);
+					}
+				}
 			}
 
 			broadcastWorkflowState(dependentWorkflowId);
@@ -342,6 +342,23 @@ function handleEpicCancel() {
 	}
 }
 
+function handleStartExisting(ws: ServerWebSocket<WsData>, workflowId: string) {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) {
+		sendTo(ws, { type: "error", message: "Workflow not found" });
+		return;
+	}
+
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow || workflow.status !== "idle") {
+		sendTo(ws, { type: "error", message: "Workflow is not idle" });
+		return;
+	}
+
+	orch.startPipelineFromWorkflow(workflow);
+	broadcastWorkflowState(workflowId);
+}
+
 function handleForceStart(ws: ServerWebSocket<WsData>, workflowId: string) {
 	const orch = orchestrators.get(workflowId);
 	if (!orch) {
@@ -461,6 +478,9 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 							break;
 						case "epic:cancel":
 							handleEpicCancel();
+							break;
+						case "workflow:start-existing":
+							handleStartExisting(ws, msg.workflowId);
 							break;
 						case "workflow:force-start":
 							handleForceStart(ws, msg.workflowId);

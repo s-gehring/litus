@@ -306,6 +306,13 @@ export class PipelineOrchestrator {
 		step.pid = null;
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
+
+		// Update epic dependency status for siblings if this workflow was cancelled
+		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
+			this.checkEpicDependencies(workflow).catch((err) => {
+				console.error(`[pipeline] Failed to check epic dependencies: ${err}`);
+			});
+		}
 	}
 
 	private startStep(workflow: Workflow): void {

@@ -347,6 +347,7 @@ export type ClientMessage =
 	| { type: "workflow:retry"; workflowId: string }
 	| { type: "epic:start"; description: string; targetRepository?: string; autoStart: boolean }
 	| { type: "epic:cancel" }
+	| { type: "workflow:start-existing"; workflowId: string }
 	| { type: "workflow:force-start"; workflowId: string }
 	| { type: "config:get" }
 	| { type: "config:save"; config: Partial<AppConfig> }

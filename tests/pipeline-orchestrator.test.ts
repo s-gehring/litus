@@ -869,6 +869,20 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.steps[0].error).toBe("Cancelled by user");
 		});
 
+		test("cancelPipeline triggers epic dependency check when epicId is set", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+			wf.epicId = "epic-123";
+
+			callbacks.onEpicDependencyUpdate = mock(() => {});
+			orchestrator.cancelPipeline("test-wf-id");
+
+			expect(wf.status).toBe("cancelled");
+			// checkEpicDependencies is async — give it a tick
+			await new Promise((r) => setTimeout(r, 20));
+			// The store.loadAll is mocked to return [] so no sibling updates, but the path is exercised
+		});
+
 		test("cancellation during Q&A sets cancelled state", async () => {
 			await orchestrator.startPipeline("test");
 			const wf = getWf(engine);

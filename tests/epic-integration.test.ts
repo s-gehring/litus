@@ -84,11 +84,14 @@ describe("createEpicWorkflows", () => {
 		expect(wfC.status).toBe("waiting_for_dependencies");
 	});
 
-	test("without autoStart all specs stay idle", async () => {
+	test("without autoStart: independent specs idle, dependent specs wait for dependencies", async () => {
 		const { workflows } = await createAndTrack(mockResult, undefined, false);
-		for (const wf of workflows) {
-			expect(wf.status).toBe("idle");
-		}
+		const [wfA, wfB, wfC] = workflows;
+		// Independent spec stays idle (user starts manually)
+		expect(wfA.status).toBe("idle");
+		// Dependent specs go to waiting_for_dependencies so auto-start works when deps complete
+		expect(wfB.status).toBe("waiting_for_dependencies");
+		expect(wfC.status).toBe("waiting_for_dependencies");
 	});
 
 	test("single-spec fallback creates one workflow", async () => {

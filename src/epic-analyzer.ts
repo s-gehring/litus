@@ -108,6 +108,16 @@ export function parseAnalysisResult(text: string): EpicAnalysisResult {
 
 	const result = parsed as EpicAnalysisResult;
 
+	// Validate dependency references point to known spec IDs
+	const specIds = new Set(result.specs.map((s) => s.id));
+	for (const spec of result.specs) {
+		for (const dep of spec.dependencies) {
+			if (!specIds.has(dep)) {
+				throw new Error(`Unknown dependency reference: "${dep}" in spec "${spec.id}"`);
+			}
+		}
+	}
+
 	// Validate no circular dependencies
 	const graph = buildGraph(result.specs);
 	const cycles = detectCycles(graph);
