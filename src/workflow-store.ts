@@ -61,6 +61,11 @@ export class WorkflowStore {
 			if (!data.mergeCycle) {
 				data.mergeCycle = { attempt: 0, maxAttempts: 3 };
 			}
+			// Migration: backfill epic fields for pre-epic workflows
+			if (data.epicId === undefined) data.epicId = null;
+			if (data.epicTitle === undefined) data.epicTitle = null;
+			if (!Array.isArray(data.epicDependencies)) data.epicDependencies = [];
+			if (data.epicDependencyStatus === undefined) data.epicDependencyStatus = null;
 			return data as Workflow;
 		} catch {
 			console.warn(`[workflow-store] Failed to load workflow ${id}`);
@@ -137,6 +142,7 @@ export class WorkflowStore {
 				branch: workflow.worktreeBranch,
 				status: workflow.status,
 				summary: workflow.summary,
+				epicId: workflow.epicId,
 				createdAt: workflow.createdAt,
 				updatedAt: workflow.updatedAt,
 			};
@@ -181,6 +187,7 @@ export class WorkflowStore {
 					branch: workflow.worktreeBranch,
 					status: workflow.status,
 					summary: workflow.summary,
+					epicId: workflow.epicId,
 					createdAt: workflow.createdAt,
 					updatedAt: workflow.updatedAt,
 				});

@@ -87,20 +87,45 @@ export interface AuditConfig {
 	auditDir?: string;
 }
 
+// ── Epic types ───────────────────────────────────────────
+
+export type EpicDependencyStatus = "satisfied" | "waiting" | "blocked" | "overridden";
+
+export interface EpicSpecEntry {
+	id: string;
+	title: string;
+	description: string;
+	dependencies: string[];
+}
+
+export interface EpicAnalysisResult {
+	title: string;
+	specs: EpicSpecEntry[];
+	infeasibleNotes: string | null;
+}
+
+export interface DependencyGraph {
+	nodes: string[];
+	edges: Map<string, string[]>;
+	inDegree: Map<string, number>;
+}
+
 // Workflow status enum
 export type WorkflowStatus =
 	| "idle"
 	| "running"
 	| "waiting_for_input"
+	| "waiting_for_dependencies"
 	| "completed"
 	| "cancelled"
 	| "error";
 
 // Valid state transitions
 export const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-	idle: ["running"],
+	idle: ["running", "waiting_for_dependencies"],
 	running: ["waiting_for_input", "completed", "error", "cancelled"],
 	waiting_for_input: ["running", "cancelled"],
+	waiting_for_dependencies: ["running", "cancelled"],
 	completed: [],
 	cancelled: [],
 	error: ["running"],
@@ -156,6 +181,7 @@ export interface WorkflowIndexEntry {
 	branch: string;
 	status: WorkflowStatus;
 	summary: string;
+	epicId: string | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -256,6 +282,10 @@ export interface Workflow {
 	ciCycle: CiCycle;
 	mergeCycle: MergeCycle;
 	prUrl: string | null;
+	epicId: string | null;
+	epicTitle: string | null;
+	epicDependencies: string[];
+	epicDependencyStatus: EpicDependencyStatus | null;
 	activeWorkMs: number;
 	activeWorkStartedAt: string | null;
 	createdAt: string;
@@ -283,6 +313,15 @@ export type ServerMessage =
 			currentStepIndex: number;
 			reviewIteration: number;
 	  }
+	| { type: "epic:analyzing"; epicDescription: string }
+	| { type: "epic:result"; epicId: string; title: string; specCount: number }
+	| { type: "epic:error"; message: string }
+	| {
+			type: "epic:dependency-update";
+			workflowId: string;
+			epicDependencyStatus: EpicDependencyStatus;
+			blockingWorkflows: string[];
+	  }
 	| { type: "config:state"; config: AppConfig; warnings?: ConfigWarning[] }
 	| { type: "config:error"; errors: ConfigValidationError[] }
 	| { type: "error"; message: string };
@@ -306,6 +345,9 @@ export type ClientMessage =
 	| { type: "workflow:skip"; workflowId: string; questionId: string }
 	| { type: "workflow:cancel"; workflowId: string }
 	| { type: "workflow:retry"; workflowId: string }
+	| { type: "epic:start"; description: string; targetRepository?: string; autoStart: boolean }
+	| { type: "epic:cancel" }
+	| { type: "workflow:force-start"; workflowId: string }
 	| { type: "config:get" }
 	| { type: "config:save"; config: Partial<AppConfig> }
 	| { type: "config:reset"; key?: string };
