@@ -27,6 +27,7 @@ export function allChecksComplete(results: CiCheckResult[]): boolean {
 	return results.every((r) => r.state === "COMPLETED");
 }
 
+/** Must only be called after `allChecksComplete(results)` returns `true`. */
 export function allChecksPassed(results: CiCheckResult[]): boolean {
 	return results.length === 0 || results.every((r) => r.conclusion === "SUCCESS");
 }

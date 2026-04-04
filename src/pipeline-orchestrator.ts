@@ -585,14 +585,6 @@ export class PipelineOrchestrator {
 		workflow.ciCycle.monitorStartedAt = null;
 		workflow.ciCycle.failureLogs = [];
 
-		if (workflow.ciCycle.attempt >= workflow.ciCycle.maxAttempts) {
-			this.handleStepError(
-				workflow.id,
-				`CI checks still failing after ${workflow.ciCycle.attempt} fix attempts`,
-			);
-			return;
-		}
-
 		const monitorIndex = workflow.steps.findIndex((s) => s.name === "monitor-ci");
 		const monitorStep = workflow.steps[monitorIndex];
 		monitorStep.status = "pending";

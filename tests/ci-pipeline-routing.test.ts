@@ -1,0 +1,397 @@
+import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { MonitorResult } from "../src/ci-monitor";
+import type { CLICallbacks } from "../src/cli-runner";
+import { type PipelineCallbacks, PipelineOrchestrator } from "../src/pipeline-orchestrator";
+import type { Question, ReviewSeverity, Workflow, WorkflowStatus } from "../src/types";
+import { PIPELINE_STEP_DEFINITIONS, REVIEW_CYCLE_MAX_ITERATIONS } from "../src/types";
+
+// ── Module mocks ──────────────────────────────────────────────────────
+
+let monitorResultResolve: (result: MonitorResult) => void;
+let _monitorResultReject: (err: Error) => void;
+
+const mockStartMonitoring = mock(
+	(
+		_prUrl: string,
+		_ciCycle: unknown,
+		_onOutput: (msg: string) => void,
+		_signal?: AbortSignal,
+	): Promise<MonitorResult> => {
+		return new Promise((resolve, reject) => {
+			monitorResultResolve = resolve;
+			_monitorResultReject = reject;
+		});
+	},
+);
+
+const mockGatherAllFailureLogs = mock(async () => []);
+
+mock.module("../src/ci-monitor", () => ({
+	startMonitoring: mockStartMonitoring,
+	isValidPrUrl: (url: string) => /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/.test(url),
+	checkGhAuth: async () => {},
+}));
+
+mock.module("../src/ci-fixer", () => {
+	const real = require("../src/ci-fixer");
+	return {
+		...real,
+		gatherAllFailureLogs: mockGatherAllFailureLogs,
+	};
+});
+
+// ── Fake dependencies (same pattern as pipeline-orchestrator.test.ts) ─
+
+function createFakeEngine() {
+	let workflow: Workflow | null = null;
+
+	return {
+		getWorkflow: () => workflow,
+		createWorkflow: async (spec: string) => {
+			const now = new Date().toISOString();
+			workflow = {
+				id: "test-wf-id",
+				specification: spec,
+				status: "idle" as WorkflowStatus,
+				targetRepository: null,
+				worktreePath: "/tmp/test-worktree",
+				worktreeBranch: "crab-studio/test",
+				summary: "",
+				stepSummary: "",
+				flavor: "",
+				pendingQuestion: null,
+				lastOutput: "",
+				steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
+					name: def.name,
+					displayName: def.displayName,
+					status: "pending" as const,
+					prompt: def.name === "specify" ? `${def.prompt} ${spec}` : def.prompt,
+					sessionId: null,
+					output: "",
+					error: null,
+					startedAt: null,
+					completedAt: null,
+					pid: null,
+				})),
+				currentStepIndex: 0,
+				reviewCycle: {
+					iteration: 1,
+					maxIterations: REVIEW_CYCLE_MAX_ITERATIONS,
+					lastSeverity: null,
+				},
+				ciCycle: {
+					attempt: 0,
+					maxAttempts: 3,
+					monitorStartedAt: null,
+					globalTimeoutMs: 30 * 60 * 1000,
+					lastCheckResults: [],
+					failureLogs: [],
+				},
+				prUrl: null,
+				activeWorkMs: 0,
+				activeWorkStartedAt: null,
+				createdAt: now,
+				updatedAt: now,
+			};
+			return workflow;
+		},
+		transition: (_id: string, status: WorkflowStatus) => {
+			if (workflow) workflow.status = status;
+		},
+		updateLastOutput: (_id: string, text: string) => {
+			if (workflow) {
+				workflow.lastOutput = text;
+				workflow.updatedAt = new Date().toISOString();
+			}
+		},
+		setQuestion: (_id: string, question: Question) => {
+			if (workflow) {
+				workflow.pendingQuestion = question;
+				workflow.updatedAt = new Date().toISOString();
+			}
+		},
+		clearQuestion: (_id: string) => {
+			if (workflow) {
+				workflow.pendingQuestion = null;
+				workflow.updatedAt = new Date().toISOString();
+			}
+		},
+		updateSummary: (_id: string, summary: string) => {
+			if (workflow) {
+				workflow.summary = summary;
+				workflow.updatedAt = new Date().toISOString();
+			}
+		},
+		updateStepSummary: (_id: string, stepSummary: string) => {
+			if (workflow) {
+				workflow.stepSummary = stepSummary;
+				workflow.updatedAt = new Date().toISOString();
+			}
+		},
+		_getWorkflow: () => workflow,
+	};
+}
+
+function createFakeCliRunner() {
+	const startCalls: Array<{ workflow: Workflow; callbacks: CLICallbacks }> = [];
+
+	return {
+		start: (workflow: Workflow, callbacks: CLICallbacks) => {
+			startCalls.push({ workflow, callbacks });
+		},
+		kill: mock((_id: string) => {}),
+		sendAnswer: mock((_id: string, _answer: string) => {}),
+		resume: mock((_workflow: Workflow, _callbacks: CLICallbacks) => {}),
+		killAll: mock(() => {}),
+		_startCalls: startCalls,
+		getLastCallbacks: (): CLICallbacks => startCalls[startCalls.length - 1].callbacks,
+	};
+}
+
+function makeCallbacks(): PipelineCallbacks {
+	return {
+		onStepChange: mock(() => {}),
+		onOutput: mock(() => {}),
+		onComplete: mock(() => {}),
+		onError: mock(() => {}),
+		onStateChange: mock(() => {}),
+	};
+}
+
+function getWf(eng: ReturnType<typeof createFakeEngine>): Workflow {
+	const wf = eng._getWorkflow();
+	if (!wf) throw new Error("Expected workflow to exist");
+	return wf;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────
+
+function createFakeReviewClassifier() {
+	const classifyResults: ReviewSeverity[] = [];
+	return {
+		classify: async (_output: string): Promise<ReviewSeverity> =>
+			classifyResults.shift() ?? "minor",
+		_pushClassifyResult: (r: ReviewSeverity) => classifyResults.push(r),
+	};
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────
+
+describe("CI Pipeline Routing", () => {
+	let orchestrator: PipelineOrchestrator;
+	let callbacks: PipelineCallbacks;
+	let engine: ReturnType<typeof createFakeEngine>;
+	let cli: ReturnType<typeof createFakeCliRunner>;
+	let classifier: ReturnType<typeof createFakeReviewClassifier>;
+
+	beforeEach(async () => {
+		mockStartMonitoring.mockClear();
+		mockGatherAllFailureLogs.mockClear();
+
+		callbacks = makeCallbacks();
+		engine = createFakeEngine();
+		cli = createFakeCliRunner();
+		classifier = createFakeReviewClassifier();
+
+		orchestrator = new PipelineOrchestrator(callbacks, {
+			engine: engine as never,
+			cliRunner: cli as never,
+			questionDetector: {
+				detect: () => null,
+				classifyWithHaiku: async () => false,
+				reset: () => {},
+			} as never,
+			reviewClassifier: classifier as never,
+			summarizer: {
+				maybeSummarize: () => {},
+				generateSpecSummary: async () => ({ summary: "", flavor: "" }),
+				cleanup: () => {},
+			} as never,
+			auditLogger: {
+				startRun: () => "fake-audit-id",
+				endRun: () => {},
+				logQuery: () => {},
+				logAnswer: () => {},
+				logCommit: () => {},
+			} as never,
+			workflowStore: {
+				save: async () => {},
+				load: async () => null,
+				loadAll: async () => [],
+				loadIndex: async () => [],
+				remove: async () => {},
+			} as never,
+		});
+
+		await orchestrator.startPipeline("test spec");
+		// start() triggers the first step (specify) — we need to provide CLI callbacks
+		await new Promise((r) => setTimeout(r, 10));
+	});
+
+	test("monitor-ci success → workflow completes", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+		// Fast-forward to monitor-ci
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		// Complete commit-push-pr → routes to monitor-ci
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.steps[monitorIndex].status).toBe("running");
+		expect(mockStartMonitoring).toHaveBeenCalledTimes(1);
+
+		// Resolve monitoring with success
+		monitorResultResolve({ passed: true, timedOut: false, results: [] });
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.status).toBe("completed");
+	});
+
+	test("monitor-ci failure → routes to fix-ci", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const fixIndex = wf.steps.findIndex((s) => s.name === "fix-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		// Resolve monitoring with failure
+		const failedResults = [{ name: "build", state: "COMPLETED", conclusion: "FAILURE", link: "" }];
+		monitorResultResolve({ passed: false, timedOut: false, results: failedResults });
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.currentStepIndex).toBe(fixIndex);
+		expect(wf.steps[fixIndex].status).toBe("running");
+		expect(wf.ciCycle.lastCheckResults).toEqual(failedResults);
+	});
+
+	test("fix-ci completion → routes back to monitor-ci with incremented attempt", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const fixIndex = wf.steps.findIndex((s) => s.name === "fix-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		// Monitor fails
+		monitorResultResolve({
+			passed: false,
+			timedOut: false,
+			results: [{ name: "build", state: "COMPLETED", conclusion: "FAILURE", link: "" }],
+		});
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.currentStepIndex).toBe(fixIndex);
+
+		// fix-ci completes → should route back to monitor-ci
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.ciCycle.attempt).toBe(1);
+		expect(wf.currentStepIndex).toBe(monitorIndex);
+		expect(wf.steps[monitorIndex].status).toBe("running");
+	});
+
+	test("max attempts reached → workflow errors", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+		wf.ciCycle.attempt = 3;
+		wf.ciCycle.maxAttempts = 3;
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		// Monitor fails — but max attempts already reached
+		monitorResultResolve({
+			passed: false,
+			timedOut: false,
+			results: [{ name: "build", state: "COMPLETED", conclusion: "FAILURE", link: "" }],
+		});
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.status).toBe("error");
+		expect(wf.steps[monitorIndex].error).toContain("3 fix attempts");
+	});
+
+	test("timeout → treated as failure and routes appropriately", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const fixIndex = wf.steps.findIndex((s) => s.name === "fix-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		// Monitor times out
+		monitorResultResolve({
+			passed: false,
+			timedOut: true,
+			results: [{ name: "build", state: "IN_PROGRESS", conclusion: null, link: "" }],
+		});
+		await new Promise((r) => setTimeout(r, 10));
+
+		// Should route to fix-ci (attempt 0 < maxAttempts 3)
+		expect(wf.currentStepIndex).toBe(fixIndex);
+	});
+
+	test("timeout at max attempts → workflow errors with timeout message", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+		wf.ciCycle.attempt = 3;
+		wf.ciCycle.maxAttempts = 3;
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		monitorResultResolve({
+			passed: false,
+			timedOut: true,
+			results: [],
+		});
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.status).toBe("error");
+		expect(wf.steps[monitorIndex].error).toContain("timed out");
+	});
+});

@@ -20,7 +20,11 @@ export function extractRunIds(
 
 const MAX_LOG_LENGTH = 50_000;
 
-export async function fetchFailureLogs(runId: string, repo: string): Promise<CiFailureLog> {
+export async function fetchFailureLogs(
+	runId: string,
+	repo: string,
+	checkName: string,
+): Promise<CiFailureLog> {
 	const proc = Bun.spawn(["gh", "run", "view", runId, "--log-failed", "--repo", repo], {
 		stdout: "pipe",
 		stderr: "pipe",
@@ -32,14 +36,14 @@ export async function fetchFailureLogs(runId: string, repo: string): Promise<CiF
 
 	if (code !== 0) {
 		return {
-			checkName: "",
+			checkName,
 			runId,
 			logs: `Failed to fetch logs: ${stderr.trim() || `exit code ${code}`}`,
 		};
 	}
 
 	return {
-		checkName: "",
+		checkName,
 		runId,
 		logs: stdout.length > MAX_LOG_LENGTH ? stdout.slice(-MAX_LOG_LENGTH) : stdout,
 	};
@@ -56,14 +60,15 @@ export async function gatherAllFailureLogs(
 	failedChecks: CiCheckResult[],
 ): Promise<CiFailureLog[]> {
 	const repo = extractRepoFromPrUrl(prUrl);
-	if (!repo) return [];
+	if (!repo) {
+		throw new Error(`Could not extract repository from PR URL: ${prUrl}`);
+	}
 
 	const runEntries = extractRunIds(failedChecks);
 	const logs: CiFailureLog[] = [];
 
 	for (const entry of runEntries) {
-		const log = await fetchFailureLogs(entry.runId, repo);
-		log.checkName = entry.checkName;
+		const log = await fetchFailureLogs(entry.runId, repo, entry.checkName);
 		logs.push(log);
 	}
 
