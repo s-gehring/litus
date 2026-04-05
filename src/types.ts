@@ -92,6 +92,7 @@ export interface AuditConfig {
 export type EpicAggregatedStatus =
 	| "idle"
 	| "running"
+	| "paused"
 	| "waiting"
 	| "error"
 	| "in_progress"
@@ -137,6 +138,7 @@ export type WorkflowStatus =
 	| "running"
 	| "waiting_for_input"
 	| "waiting_for_dependencies"
+	| "paused"
 	| "completed"
 	| "cancelled"
 	| "error";
@@ -144,9 +146,10 @@ export type WorkflowStatus =
 // Valid state transitions
 export const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
 	idle: ["running", "waiting_for_dependencies"],
-	running: ["waiting_for_input", "completed", "error", "cancelled"],
+	running: ["waiting_for_input", "completed", "error", "paused"],
 	waiting_for_input: ["running", "cancelled"],
 	waiting_for_dependencies: ["running", "cancelled"],
+	paused: ["running", "cancelled", "error"],
 	completed: [],
 	cancelled: [],
 	error: ["running"],
@@ -179,6 +182,7 @@ export type PipelineStepStatus =
 	| "pending"
 	| "running"
 	| "waiting_for_input"
+	| "paused"
 	| "completed"
 	| "error";
 
@@ -292,6 +296,7 @@ export interface Workflow {
 	targetRepository: string | null;
 	worktreePath: string | null;
 	worktreeBranch: string;
+	featureBranch: string | null;
 	summary: string;
 	stepSummary: string;
 	flavor: string;
@@ -389,7 +394,9 @@ export type ClientMessage =
 	| { type: "workflow:start"; specification: string; targetRepository?: string }
 	| { type: "workflow:answer"; workflowId: string; questionId: string; answer: string }
 	| { type: "workflow:skip"; workflowId: string; questionId: string }
-	| { type: "workflow:cancel"; workflowId: string }
+	| { type: "workflow:pause"; workflowId: string }
+	| { type: "workflow:resume"; workflowId: string }
+	| { type: "workflow:abort"; workflowId: string }
 	| { type: "workflow:retry"; workflowId: string }
 	| { type: "epic:start"; description: string; targetRepository?: string; autoStart: boolean }
 	| { type: "epic:cancel" }

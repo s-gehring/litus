@@ -56,7 +56,7 @@ const EVENTS_FILE = join(EVENTS_DIR, "events.jsonl");
 export class CLIRunner {
 	private running: Map<string, RunningProcess> = new Map();
 
-	start(workflow: Workflow, callbacks: CLICallbacks): void {
+	start(workflow: Workflow, callbacks: CLICallbacks, extraEnv?: Record<string, string>): void {
 		const cwd = workflow.worktreePath || process.cwd();
 		const args = [
 			"claude",
@@ -69,12 +69,22 @@ export class CLIRunner {
 			"--include-partial-messages",
 		];
 
-		const proc = Bun.spawn(args, {
-			cwd,
-			stdout: "pipe",
-			stderr: "pipe",
-			env: process.env,
-		});
+		const env = extraEnv ? { ...process.env, ...extraEnv } : process.env;
+
+		let proc: ReturnType<typeof Bun.spawn>;
+		try {
+			proc = Bun.spawn(args, {
+				cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+				env,
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(`[cli-runner] Failed to spawn process: ${msg}`);
+			queueMicrotask(() => callbacks.onError(msg));
+			return;
+		}
 
 		const entry: RunningProcess = {
 			process: proc,
@@ -120,12 +130,20 @@ export class CLIRunner {
 			sessionId,
 		];
 
-		const proc = Bun.spawn(args, {
-			cwd: entry.cwd,
-			stdout: "pipe",
-			stderr: "pipe",
-			env: process.env,
-		});
+		let proc: ReturnType<typeof Bun.spawn>;
+		try {
+			proc = Bun.spawn(args, {
+				cwd: entry.cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+				env: process.env,
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(`[cli-runner] Failed to spawn answer process: ${msg}`);
+			queueMicrotask(() => entry.callbacks.onError(msg));
+			return;
+		}
 
 		const newEntry: RunningProcess = {
 			process: proc,
@@ -143,11 +161,17 @@ export class CLIRunner {
 		this.streamOutput(newEntry);
 	}
 
-	resume(workflowId: string, sessionId: string, cwd: string, callbacks: CLICallbacks): void {
+	resume(
+		workflowId: string,
+		sessionId: string,
+		cwd: string,
+		callbacks: CLICallbacks,
+		extraEnv?: Record<string, string>,
+	): void {
 		const args = [
 			"claude",
 			"-p",
-			"Continue where you left off.",
+			"You were paused and are now being resumed. Before continuing, verify that any files you created or modified in this session actually exist on disk — if a file is missing or incomplete, recreate it. Then continue where you left off.",
 			"--output-format",
 			"stream-json",
 			"--verbose",
@@ -157,12 +181,22 @@ export class CLIRunner {
 			sessionId,
 		];
 
-		const proc = Bun.spawn(args, {
-			cwd,
-			stdout: "pipe",
-			stderr: "pipe",
-			env: process.env,
-		});
+		const env = extraEnv ? { ...process.env, ...extraEnv } : process.env;
+
+		let proc: ReturnType<typeof Bun.spawn>;
+		try {
+			proc = Bun.spawn(args, {
+				cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+				env,
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(`[cli-runner] Failed to spawn resume process: ${msg}`);
+			queueMicrotask(() => callbacks.onError(msg));
+			return;
+		}
 
 		const entry: RunningProcess = {
 			process: proc,

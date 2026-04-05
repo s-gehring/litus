@@ -6,6 +6,7 @@ const STATUS_CLASS: Record<PipelineStepStatus, string> = {
 	pending: "step-pending",
 	running: "step-running",
 	waiting_for_input: "step-waiting",
+	paused: "step-paused",
 	completed: "step-completed",
 	error: "step-error",
 };

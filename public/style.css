@@ -164,6 +164,7 @@ header h1 {
 .card-status-running { background: rgba(74,158,255,0.2); color: var(--accent-blue); }
 .card-status-waiting { background: rgba(240,192,64,0.2); color: var(--accent-yellow); }
 .card-status-completed { background: rgba(78,204,163,0.2); color: var(--accent-green); }
+.card-status-paused { background: rgba(180,130,255,0.2); color: var(--accent-purple, #b482ff); }
 .card-status-cancelled { background: rgba(136,136,170,0.2); color: var(--text-dim); }
 .card-status-error { background: rgba(233,69,96,0.2); color: var(--accent); }
 
@@ -244,6 +245,7 @@ header h1 {
 .status-badge.waiting_for_input { background: rgba(240,192,64,0.2); color: var(--accent-yellow); }
 .status-badge.waiting_for_dependencies { background: rgba(240,192,64,0.15); color: var(--accent-yellow); }
 .status-badge.completed { background: rgba(78,204,163,0.2); color: var(--accent-green); }
+.status-badge.paused { background: rgba(180,130,255,0.2); color: var(--accent-purple, #b482ff); }
 .status-badge.cancelled { background: rgba(136,136,170,0.2); color: var(--text-dim); }
 .status-badge.error { background: rgba(233,69,96,0.2); color: var(--accent); }
 
@@ -515,6 +517,11 @@ header h1 {
 .step-completed {
   background: rgba(78,204,163,0.15);
   color: var(--accent-green);
+}
+
+.step-paused {
+  background: rgba(180,130,255,0.15);
+  color: var(--accent-purple, #b482ff);
 }
 
 .step-error {

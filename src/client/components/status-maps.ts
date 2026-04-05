@@ -3,6 +3,7 @@ export const STATUS_LABELS: Record<string, string> = {
 	running: "Running",
 	waiting_for_input: "Waiting",
 	waiting_for_dependencies: "Waiting",
+	paused: "Paused",
 	completed: "Done",
 	cancelled: "Cancelled",
 	error: "Error",
@@ -13,6 +14,7 @@ export const STATUS_CLASSES: Record<string, string> = {
 	running: "card-status-running",
 	waiting_for_input: "card-status-waiting",
 	waiting_for_dependencies: "card-status-waiting-deps",
+	paused: "card-status-paused",
 	completed: "card-status-completed",
 	cancelled: "card-status-cancelled",
 	error: "card-status-error",
@@ -23,6 +25,7 @@ export const EPIC_CARD_PREFIX = "epic:";
 export const EPIC_AGG_STATUS_CLASSES: Record<string, string> = {
 	idle: "card-status-idle",
 	running: "card-status-running",
+	paused: "card-status-paused",
 	waiting: "card-status-waiting",
 	error: "card-status-error",
 	in_progress: "card-status-running",

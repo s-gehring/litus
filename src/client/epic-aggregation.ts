@@ -15,6 +15,7 @@ export function computeEpicAggregatedState(children: WorkflowState[]): EpicAggre
 
 	const hasRunning = children.some((c) => c.status === "running");
 	const hasError = children.some((c) => c.status === "error" || c.status === "cancelled");
+	const hasPaused = children.some((c) => c.status === "paused");
 	const hasWaiting = children.some((c) => c.status === "waiting_for_input");
 	const hasWaitingDeps = children.some((c) => c.status === "waiting_for_dependencies");
 
@@ -24,6 +25,7 @@ export function computeEpicAggregatedState(children: WorkflowState[]): EpicAggre
 
 	if (hasRunning) status = "running";
 	else if (hasError) status = "error";
+	else if (hasPaused) status = "paused";
 	else if (hasWaiting) status = "waiting";
 	else if (hasWaitingDeps) status = "in_progress";
 	else if (completed === children.length) status = "completed";

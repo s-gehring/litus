@@ -13,6 +13,7 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
 		targetRepository: null,
 		worktreePath: null,
 		worktreeBranch: "crab-studio/test",
+		featureBranch: null,
 		summary: "test",
 		stepSummary: "",
 		flavor: "",

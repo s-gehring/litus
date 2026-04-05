@@ -662,16 +662,42 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	updateFlavor(wf.flavor ?? "");
 	updateSpecDetails(wf.specification);
 
-	// Action buttons: Cancel, Retry, and epic-specific actions
+	// Action buttons: Pause, Resume, Abort, Retry, and epic-specific actions
 	const actions: { label: string; className: string; onClick: () => void }[] = [];
-	const isActive = wf.status === "running" || wf.status === "waiting_for_input";
 	const isError = wf.status === "error";
 
-	if (isActive) {
+	if (wf.status === "running") {
 		actions.push({
-			label: "Cancel",
+			label: "Pause",
+			className: "btn-secondary",
+			onClick: () => send({ type: "workflow:pause", workflowId: wf.id }),
+		});
+	}
+	if (wf.status === "paused") {
+		actions.push({
+			label: "Resume",
+			className: "btn-primary",
+			onClick: () => send({ type: "workflow:resume", workflowId: wf.id }),
+		});
+		actions.push({
+			label: "Abort",
 			className: "btn-danger",
-			onClick: () => send({ type: "workflow:cancel", workflowId: wf.id }),
+			onClick: () => {
+				if (confirm("Are you sure you want to abort this workflow?")) {
+					send({ type: "workflow:abort", workflowId: wf.id });
+				}
+			},
+		});
+	}
+	if (wf.status === "waiting_for_input" || wf.status === "waiting_for_dependencies") {
+		actions.push({
+			label: "Abort",
+			className: "btn-danger",
+			onClick: () => {
+				if (confirm("Are you sure you want to abort this workflow?")) {
+					send({ type: "workflow:abort", workflowId: wf.id });
+				}
+			},
 		});
 	}
 	if (isError) {

@@ -41,6 +41,7 @@ export class WorkflowEngine {
 			targetRepository: effectiveRepo,
 			worktreePath,
 			worktreeBranch: branchName,
+			featureBranch: null,
 			summary: "",
 			stepSummary: "",
 			flavor: "",

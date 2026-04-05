@@ -17,13 +17,17 @@ describe("VALID_TRANSITIONS", () => {
 		expect(VALID_TRANSITIONS.idle).toEqual(["running", "waiting_for_dependencies"]);
 	});
 
-	test("running can transition to waiting_for_input, completed, error, cancelled", () => {
+	test("running can transition to waiting_for_input, completed, error, paused", () => {
 		expect(VALID_TRANSITIONS.running).toEqual([
 			"waiting_for_input",
 			"completed",
 			"error",
-			"cancelled",
+			"paused",
 		]);
+	});
+
+	test("paused can transition to running, cancelled, or error", () => {
+		expect(VALID_TRANSITIONS.paused).toEqual(["running", "cancelled", "error"]);
 	});
 
 	test("waiting_for_input can transition to running or cancelled", () => {

@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { AuditLogger } from "./audit-logger";
 import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
@@ -118,7 +120,9 @@ export class PipelineOrchestrator {
 				this.persistWorkflow(workflow);
 				this.callbacks.onStateChange(workflow.id);
 			})
-			.catch(() => {});
+			.catch((err) => {
+				console.warn(`[pipeline] Summary generation failed: ${err}`);
+			});
 	}
 
 	async startPipeline(specification: string, targetRepository?: string): Promise<Workflow> {
@@ -141,7 +145,9 @@ export class PipelineOrchestrator {
 				this.persistWorkflow(workflow);
 				this.callbacks.onStateChange(workflow.id);
 			})
-			.catch(() => {});
+			.catch((err) => {
+				console.warn(`[pipeline] Summary generation failed: ${err}`);
+			});
 
 		return workflow;
 	}
@@ -244,7 +250,13 @@ export class PipelineOrchestrator {
 			onPid: (pid) => this.handlePid(workflow.id, pid),
 		};
 
-		this.cliRunner.resume(workflowId, step.sessionId, cwd, cliCallbacks);
+		this.cliRunner.resume(
+			workflowId,
+			step.sessionId,
+			cwd,
+			cliCallbacks,
+			this.buildStepEnv(workflow),
+		);
 	}
 
 	async retryStep(workflowId: string): Promise<void> {
@@ -272,6 +284,70 @@ export class PipelineOrchestrator {
 		this.runStep(workflow, step.prompt, cwd);
 	}
 
+	pause(workflowId: string): void {
+		const workflow = this.engine.getWorkflow();
+		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
+
+		this.cliRunner.kill(workflowId);
+		if (this.monitorAbortController) {
+			this.monitorAbortController.abort();
+			this.monitorAbortController = null;
+		}
+
+		const step = workflow.steps[workflow.currentStepIndex];
+		step.status = "paused";
+		step.pid = null;
+		workflow.updatedAt = new Date().toISOString();
+
+		this.engine.transition(workflowId, "paused");
+		if (this.persistDebounceTimer) {
+			clearTimeout(this.persistDebounceTimer);
+			this.persistDebounceTimer = null;
+		}
+		this.persistWorkflow(workflow);
+		this.callbacks.onStateChange(workflowId);
+	}
+
+	resume(workflowId: string): void {
+		const workflow = this.engine.getWorkflow();
+		if (!workflow || workflow.id !== workflowId || workflow.status !== "paused") return;
+
+		const step = workflow.steps[workflow.currentStepIndex];
+		step.status = "running";
+		workflow.updatedAt = new Date().toISOString();
+
+		this.engine.transition(workflowId, "running");
+		this.persistWorkflow(workflow);
+		this.callbacks.onStateChange(workflowId);
+
+		this.assistantTextBuffer = "";
+		this.questionDetector.reset();
+
+		const cwd = workflow.worktreePath || process.cwd();
+
+		if (step.name === "monitor-ci") {
+			this.runMonitorCi(workflow);
+		} else if (step.sessionId) {
+			const cliCallbacks: CLICallbacks = {
+				onOutput: (text) => this.handleStepOutput(workflow.id, text),
+				onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
+				onComplete: () => this.handleStepComplete(workflow.id),
+				onError: (error) => this.handleStepError(workflow.id, error),
+				onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
+				onPid: (pid) => this.handlePid(workflow.id, pid),
+			};
+			this.cliRunner.resume(
+				workflowId,
+				step.sessionId,
+				cwd,
+				cliCallbacks,
+				this.buildStepEnv(workflow),
+			);
+		} else {
+			this.runStep(workflow, step.prompt, cwd);
+		}
+	}
+
 	cancelPipeline(workflowId: string): void {
 		const workflow = this.getWorkflowOrThrow(workflowId);
 
@@ -291,7 +367,11 @@ export class PipelineOrchestrator {
 		this.engine.clearQuestion(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
-		if (step.status === "running" || step.status === "waiting_for_input") {
+		if (
+			step.status === "running" ||
+			step.status === "waiting_for_input" ||
+			step.status === "paused"
+		) {
 			step.status = "error";
 			step.error = "Cancelled by user";
 		}
@@ -481,7 +561,7 @@ export class PipelineOrchestrator {
 			onPid: (pid) => this.handlePid(workflow.id, pid),
 		};
 
-		this.cliRunner.start(stepWorkflow, cliCallbacks);
+		this.cliRunner.start(stepWorkflow, cliCallbacks, this.buildStepEnv(workflow));
 	}
 
 	private handleStepOutput(workflowId: string, text: string): void {
@@ -571,6 +651,14 @@ export class PipelineOrchestrator {
 		if (step.name === "commit-push-pr") {
 			const url = extractPrUrl(step.output);
 			if (url) workflow.prUrl = url;
+		}
+
+		// After specify completes, detect the feature branch so subsequent
+		// steps can locate the spec even if the worktree is still on the
+		// initial crab-studio/* branch (e.g. after a pause/resume that
+		// interrupted the git checkout).
+		if (step.name === "specify" && workflow.worktreePath) {
+			this.detectFeatureBranch(workflow);
 		}
 
 		this.flushPersistDebounce(workflow);
@@ -848,6 +936,53 @@ export class PipelineOrchestrator {
 
 			this.callbacks.onEpicDependencyUpdate?.(sibling.id, depStatus.status, depStatus.blocking);
 		}
+	}
+
+	/**
+	 * Scan the worktree's specs/ directory for the newest feature directory
+	 * and store its name as the feature branch.  This is used to set
+	 * SPECIFY_FEATURE for subsequent steps so that the speckit scripts
+	 * locate the spec even when the git branch is still crab-studio/*.
+	 */
+	private detectFeatureBranch(workflow: Workflow): void {
+		const specsDir = join(workflow.worktreePath as string, "specs");
+		try {
+			const entries = readdirSync(specsDir, { withFileTypes: true });
+			let best: string | null = null;
+			let bestNum = -1;
+			let bestTs = "";
+			for (const entry of entries) {
+				if (!entry.isDirectory()) continue;
+				const seqMatch = entry.name.match(/^(\d{3,})-/);
+				const tsMatch = entry.name.match(/^(\d{8}-\d{6})-/);
+				if (tsMatch) {
+					if (tsMatch[1] > bestTs) {
+						bestTs = tsMatch[1];
+						best = entry.name;
+					}
+				} else if (seqMatch) {
+					const num = Number.parseInt(seqMatch[1], 10);
+					if (num > bestNum) {
+						bestNum = num;
+						if (!bestTs) best = entry.name; // timestamp dirs win
+					}
+				}
+			}
+			if (best) {
+				workflow.featureBranch = best;
+				console.log(`[pipeline] Detected feature branch: ${best}`);
+			}
+		} catch {
+			// specs/ directory might not exist yet — not fatal
+		}
+	}
+
+	/** Build extra env vars to inject into CLI processes. */
+	private buildStepEnv(workflow: Workflow): Record<string, string> | undefined {
+		if (workflow.featureBranch) {
+			return { SPECIFY_FEATURE: workflow.featureBranch };
+		}
+		return undefined;
 	}
 
 	private advanceToNextStep(workflow: Workflow): void {
