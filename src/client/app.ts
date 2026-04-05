@@ -16,6 +16,7 @@ import {
 	appendToolIcons,
 	clearOutput,
 	renderOutputEntries,
+	updateEpicStatus,
 	updateFlavor,
 	updateStepSummary,
 	updateSummary,
@@ -223,6 +224,18 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "epic:summary": {
+			const epic = epics.get(msg.epicId);
+			if (epic) {
+				epic.title = msg.summary;
+				renderCards();
+				if (expandedId === msg.epicId) {
+					updateSummary(msg.summary);
+				}
+			}
+			break;
+		}
+
 		case "epic:output": {
 			const epic = epics.get(msg.epicId);
 			if (epic) {
@@ -351,10 +364,10 @@ function renderExpandedView(): void {
 		if (welcomeArea) welcomeArea.classList.add("hidden");
 		if (detailArea) detailArea.classList.remove("hidden");
 
-		updateWorkflowStatus(null);
+		updateEpicStatus(epic.status);
 		renderPipelineSteps(null);
 		updateSummary(epic.title || epic.description);
-		updateStepSummary(epic.status === "analyzing" ? "Analyzing epic..." : "");
+		updateStepSummary("");
 		updateFlavor("");
 		hideQuestion();
 

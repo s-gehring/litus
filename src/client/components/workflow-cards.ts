@@ -207,11 +207,11 @@ function createEpicCard(
 	label.textContent = epic.title ? `Epic: ${epic.title}` : "Epic";
 	card.appendChild(label);
 
-	// Description
+	// Summary or description
 	const summary = document.createElement("span");
 	summary.className = "card-summary";
-	summary.textContent =
-		epic.description.length > 120 ? `${epic.description.slice(0, 120)}...` : epic.description;
+	const summaryText = epic.title || epic.description;
+	summary.textContent = summaryText.length > 120 ? `${summaryText.slice(0, 120)}...` : summaryText;
 	card.appendChild(summary);
 
 	// Timer

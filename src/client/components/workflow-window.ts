@@ -1,4 +1,4 @@
-import type { OutputEntry, WorkflowState } from "../../types";
+import type { EpicStatus, OutputEntry, WorkflowState } from "../../types";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -65,6 +65,31 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 
 	// Render collapsed completed steps
 	renderStepHistory(workflow);
+}
+
+const EPIC_STATUS_MAP: Record<EpicStatus, { label: string; css: string }> = {
+	analyzing: { label: "Analyzing Epic", css: "running" },
+	completed: { label: "completed", css: "completed" },
+	error: { label: "error", css: "error" },
+};
+
+export function updateEpicStatus(status: EpicStatus): void {
+	const statusBadge = $("#workflow-status");
+	const btnCancel = $("#btn-cancel") as HTMLButtonElement;
+	const btnRetry = $("#btn-retry") as HTMLButtonElement | null;
+	const stepLabel = $("#current-step-label");
+	const prLink = $("#pr-link") as HTMLAnchorElement | null;
+	const historyContainer = $("#step-history");
+
+	const mapped = EPIC_STATUS_MAP[status];
+	statusBadge.textContent = mapped.label;
+	statusBadge.className = `status-badge ${mapped.css}`;
+
+	btnCancel.classList.toggle("hidden", status !== "analyzing");
+	if (btnRetry) btnRetry.classList.toggle("hidden", status !== "error");
+	if (stepLabel) stepLabel.classList.add("hidden");
+	if (prLink) prLink.classList.add("hidden");
+	if (historyContainer) historyContainer.replaceChildren();
 }
 
 function renderStepHistory(workflow: WorkflowState | null): void {
