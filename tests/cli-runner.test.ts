@@ -24,6 +24,7 @@ function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 		targetRepository: null,
 		worktreePath: "/tmp/test-worktree",
 		worktreeBranch: "test-branch",
+		featureBranch: null,
 		summary: "",
 		stepSummary: "",
 		flavor: "",

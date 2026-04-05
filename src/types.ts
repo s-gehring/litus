@@ -296,6 +296,7 @@ export interface Workflow {
 	targetRepository: string | null;
 	worktreePath: string | null;
 	worktreeBranch: string;
+	featureBranch: string | null;
 	summary: string;
 	stepSummary: string;
 	flavor: string;

@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CLICallbacks } from "../src/cli-runner";
 import { DEFAULT_CONFIG } from "../src/config-store";
 import { type PipelineCallbacks, PipelineOrchestrator } from "../src/pipeline-orchestrator";
@@ -27,6 +30,7 @@ function createFakeEngine() {
 				targetRepository: null,
 				worktreePath: "/tmp/test-worktree",
 				worktreeBranch: "crab-studio/test",
+				featureBranch: null,
 				summary: "",
 				stepSummary: "",
 				flavor: "",
@@ -114,15 +118,27 @@ function createFakeEngine() {
 }
 
 function createFakeCliRunner() {
-	const startCalls: Array<{ workflow: Workflow; callbacks: CLICallbacks }> = [];
+	const startCalls: Array<{
+		workflow: Workflow;
+		callbacks: CLICallbacks;
+		extraEnv?: Record<string, string>;
+	}> = [];
 
 	return {
-		start: (workflow: Workflow, callbacks: CLICallbacks) => {
-			startCalls.push({ workflow, callbacks });
+		start: (workflow: Workflow, callbacks: CLICallbacks, extraEnv?: Record<string, string>) => {
+			startCalls.push({ workflow, callbacks, extraEnv });
 		},
 		kill: mock((_id: string) => {}),
 		sendAnswer: mock((_id: string, _answer: string) => {}),
-		resume: mock((_workflow: Workflow, _callbacks: CLICallbacks) => {}),
+		resume: mock(
+			(
+				_id: string,
+				_sessionId: string,
+				_cwd: string,
+				_callbacks: CLICallbacks,
+				_extraEnv?: Record<string, string>,
+			) => {},
+		),
 		killAll: mock(() => {}),
 		_startCalls: startCalls,
 		getLastCallbacks: (): CLICallbacks => startCalls[startCalls.length - 1].callbacks,
@@ -1125,6 +1141,90 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.steps[0].error).toBe("Cancelled by user");
 			expect(wf.status).toBe("cancelled");
 			expect(store.save).toHaveBeenCalled();
+		});
+
+		test("resume() passes SPECIFY_FEATURE env when featureBranch is set", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			wf.steps[0].sessionId = "test-session-123";
+			wf.featureBranch = "021-my-feature";
+			orchestrator.pause("test-wf-id");
+
+			orchestrator.resume("test-wf-id");
+
+			const resumeCalls = (cli.resume as ReturnType<typeof mock>).mock.calls;
+			const lastCall = resumeCalls[resumeCalls.length - 1];
+			// extraEnv is the 5th argument (index 4)
+			expect(lastCall[4]).toEqual({ SPECIFY_FEATURE: "021-my-feature" });
+		});
+	});
+
+	describe("feature branch detection after specify", () => {
+		test("detects sequential feature branch from specs/ dir after specify completes", async () => {
+			const tmpDir = join(tmpdir(), `crab-test-${Date.now()}`);
+			mkdirSync(join(tmpDir, "specs", "021-my-feature"), { recursive: true });
+
+			try {
+				await orchestrator.startPipeline("test");
+				const wf = getWf(engine);
+				wf.worktreePath = tmpDir;
+
+				// Simulate specify step completing
+				cli.getLastCallbacks().onComplete();
+				await new Promise((r) => setTimeout(r, 20));
+
+				expect(wf.featureBranch).toBe("021-my-feature");
+			} finally {
+				rmSync(tmpDir, { recursive: true, force: true });
+			}
+		});
+
+		test("detects timestamp feature branch from specs/ dir", async () => {
+			const tmpDir = join(tmpdir(), `crab-test-${Date.now()}`);
+			mkdirSync(join(tmpDir, "specs", "20260401-120000-my-feature"), {
+				recursive: true,
+			});
+			mkdirSync(join(tmpDir, "specs", "019-old-feature"), {
+				recursive: true,
+			});
+
+			try {
+				await orchestrator.startPipeline("test");
+				const wf = getWf(engine);
+				wf.worktreePath = tmpDir;
+
+				cli.getLastCallbacks().onComplete();
+				await new Promise((r) => setTimeout(r, 20));
+
+				// Timestamp branch should win over sequential
+				expect(wf.featureBranch).toBe("20260401-120000-my-feature");
+			} finally {
+				rmSync(tmpDir, { recursive: true, force: true });
+			}
+		});
+
+		test("passes SPECIFY_FEATURE to next step after specify", async () => {
+			const tmpDir = join(tmpdir(), `crab-test-${Date.now()}`);
+			mkdirSync(join(tmpDir, "specs", "021-my-feature"), { recursive: true });
+
+			try {
+				await orchestrator.startPipeline("test");
+				const wf = getWf(engine);
+				wf.worktreePath = tmpDir;
+
+				// Specify completes → next step (clarify) starts
+				cli.getLastCallbacks().onComplete();
+				await new Promise((r) => setTimeout(r, 20));
+
+				// The clarify step should have been started with SPECIFY_FEATURE env
+				const lastStart = cli._startCalls[cli._startCalls.length - 1];
+				expect(lastStart.extraEnv).toEqual({
+					SPECIFY_FEATURE: "021-my-feature",
+				});
+			} finally {
+				rmSync(tmpDir, { recursive: true, force: true });
+			}
 		});
 	});
 });

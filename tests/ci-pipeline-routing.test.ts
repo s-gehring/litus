@@ -57,6 +57,7 @@ function createFakeEngine() {
 				targetRepository: null,
 				worktreePath: "/tmp/test-worktree",
 				worktreeBranch: "crab-studio/test",
+				featureBranch: null,
 				summary: "",
 				stepSummary: "",
 				flavor: "",

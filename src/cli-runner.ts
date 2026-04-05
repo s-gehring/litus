@@ -56,7 +56,7 @@ const EVENTS_FILE = join(EVENTS_DIR, "events.jsonl");
 export class CLIRunner {
 	private running: Map<string, RunningProcess> = new Map();
 
-	start(workflow: Workflow, callbacks: CLICallbacks): void {
+	start(workflow: Workflow, callbacks: CLICallbacks, extraEnv?: Record<string, string>): void {
 		const cwd = workflow.worktreePath || process.cwd();
 		const args = [
 			"claude",
@@ -69,13 +69,15 @@ export class CLIRunner {
 			"--include-partial-messages",
 		];
 
+		const env = extraEnv ? { ...process.env, ...extraEnv } : process.env;
+
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
 			proc = Bun.spawn(args, {
 				cwd,
 				stdout: "pipe",
 				stderr: "pipe",
-				env: process.env,
+				env,
 			});
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -159,7 +161,13 @@ export class CLIRunner {
 		this.streamOutput(newEntry);
 	}
 
-	resume(workflowId: string, sessionId: string, cwd: string, callbacks: CLICallbacks): void {
+	resume(
+		workflowId: string,
+		sessionId: string,
+		cwd: string,
+		callbacks: CLICallbacks,
+		extraEnv?: Record<string, string>,
+	): void {
 		const args = [
 			"claude",
 			"-p",
@@ -173,13 +181,15 @@ export class CLIRunner {
 			sessionId,
 		];
 
+		const env = extraEnv ? { ...process.env, ...extraEnv } : process.env;
+
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
 			proc = Bun.spawn(args, {
 				cwd,
 				stdout: "pipe",
 				stderr: "pipe",
-				env: process.env,
+				env,
 			});
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
