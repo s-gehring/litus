@@ -66,6 +66,7 @@ export class WorkflowStore {
 			if (data.epicTitle === undefined) data.epicTitle = null;
 			if (!Array.isArray(data.epicDependencies)) data.epicDependencies = [];
 			if (data.epicDependencyStatus === undefined) data.epicDependencyStatus = null;
+			if (data.epicAnalysisMs === undefined) data.epicAnalysisMs = 0;
 			return data as Workflow;
 		} catch {
 			console.warn(`[workflow-store] Failed to load workflow ${id}`);

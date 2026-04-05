@@ -302,6 +302,7 @@ async function handleEpicStart(
 
 	const epicId = randomUUID();
 	const trimmedDesc = description.trim();
+	const analysisStartedAt = Date.now();
 	console.log(`[epic] Starting analysis (${epicId.slice(0, 8)}): "${trimmedDesc.slice(0, 80)}"`);
 
 	broadcast({ type: "epic:created", epicId, description: trimmedDesc });
@@ -323,9 +324,15 @@ async function handleEpicStart(
 			onTools: (tools) => broadcast({ type: "epic:tools", epicId, tools }),
 		});
 
+		const analysisMs = Date.now() - analysisStartedAt;
 		console.log(`[epic] Analysis complete (${epicId.slice(0, 8)}): ${result.specs.length} specs`);
 
 		const { workflows } = await createEpicWorkflows(result, targetRepository, epicId);
+
+		// Store the analysis duration on the first child workflow
+		if (workflows.length > 0) {
+			workflows[0].epicAnalysisMs = analysisMs;
+		}
 
 		const workflowIds: string[] = [];
 
@@ -434,6 +441,30 @@ function handleRetry(ws: ServerWebSocket<WsData>, workflowId: string) {
 	orch.retryStep(workflowId);
 }
 
+async function listSubdirectories(parentDir: string): Promise<string[]> {
+	const { readdirSync, statSync } = await import("node:fs");
+	const { join } = await import("node:path");
+	try {
+		const entries = readdirSync(parentDir);
+		const folders: string[] = [];
+		for (const entry of entries) {
+			if (entry.startsWith(".")) continue;
+			try {
+				const full = join(parentDir, entry);
+				if (statSync(full).isDirectory()) {
+					folders.push(full);
+				}
+			} catch {
+				// Skip entries we can't stat (permission errors, etc.)
+			}
+		}
+		folders.sort((a, b) => a.localeCompare(b));
+		return folders;
+	} catch {
+		return [];
+	}
+}
+
 function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 	return Bun.serve<WsData>({
 		port,
@@ -463,6 +494,16 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 					status: "ok",
 					activeWorkflows,
 				});
+			}
+
+			// Suggest folders — list subdirectories of a parent directory
+			if (url.pathname === "/api/suggest-folders" && req.method === "GET") {
+				const parent = url.searchParams.get("parent");
+				if (!parent) {
+					return Response.json({ error: "parent parameter required" }, { status: 400 });
+				}
+				const folders = await listSubdirectories(parent);
+				return Response.json({ folders });
 			}
 
 			// Static file serving (CR-010: path traversal prevention)

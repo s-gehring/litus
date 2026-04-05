@@ -447,72 +447,6 @@ header h1 {
   gap: 8px;
 }
 
-/* ── Fixed-bottom input area ────────────────────────────── */
-
-.input-area-fixed {
-  padding: 16px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  margin-top: 12px;
-}
-
-/* Target repository input */
-.target-repo-field {
-  margin-bottom: 10px;
-}
-
-.target-repo-label {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  margin-bottom: 4px;
-}
-
-.target-repo-input {
-  width: 100%;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 0.8rem;
-}
-
-.target-repo-input:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-}
-
-.target-repo-input:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.spec-input {
-  width: 100%;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 0.9rem;
-  resize: vertical;
-  margin-bottom: 10px;
-}
-
-.spec-input:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-}
-
-.input-actions {
-  display: flex;
-  gap: 8px;
-}
-
 /* Buttons */
 .btn {
   padding: 8px 20px;
@@ -758,11 +692,6 @@ body::-webkit-scrollbar-track {
     font-size: 0.78rem;
   }
 
-  .input-area-fixed {
-    padding: 12px;
-    margin-top: 8px;
-  }
-
   .question-panel {
     padding: 12px;
   }
@@ -983,103 +912,6 @@ body::-webkit-scrollbar-track {
   }
 }
 
-/* ── Epic Form ────────────────────────────────────────── */
-
-.epic-form {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-  margin-bottom: 12px;
-}
-
-.epic-form-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.epic-form-title {
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: var(--accent-blue);
-}
-
-.epic-form-close {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 1.2rem;
-  cursor: pointer;
-  padding: 2px 6px;
-}
-
-.epic-form-close:hover {
-  color: var(--text);
-}
-
-.epic-target-repo {
-  margin-bottom: 10px;
-}
-
-.epic-target-repo-label {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  margin-bottom: 4px;
-}
-
-.epic-target-repo-input {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 0.85rem;
-}
-
-.epic-target-repo-input:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-}
-
-.epic-target-repo-input:disabled {
-  opacity: 0.5;
-}
-
-.epic-textarea {
-  width: 100%;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 0.85rem;
-  resize: vertical;
-  margin-bottom: 10px;
-}
-
-.epic-textarea:focus {
-  outline: none;
-  border-color: var(--accent-blue);
-}
-
-.epic-form-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.epic-error {
-  color: var(--accent);
-  font-size: 0.8rem;
-  margin-bottom: 8px;
-}
-
-
 /* ── Epic Label on Cards ─────────────────────────────── */
 
 .card-epic-label {
@@ -1230,6 +1062,190 @@ body::-webkit-scrollbar-track {
 
 .epic-breadcrumb:hover {
   color: var(--accent-green);
+}
+
+/* ── Modal Overlay & Panel ──────────────────────────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.modal-overlay.modal-visible {
+  opacity: 1;
+}
+
+.modal-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(520px, 90vw);
+  max-height: 80vh;
+  overflow-y: auto;
+  transform: scale(0.95);
+  transition: transform 0.2s ease;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.modal-overlay.modal-visible .modal-panel {
+  transform: scale(1);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.modal-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--accent-blue);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: var(--text);
+}
+
+.modal-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Modal form fields */
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modal-field label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.modal-field input,
+.modal-field textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.modal-field input:focus,
+.modal-field textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.modal-field textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.modal-error {
+  color: var(--accent);
+  font-size: 0.8rem;
+}
+
+/* ── Folder Picker ─────────────────────────────────────── */
+
+.folder-picker {
+  position: relative;
+}
+
+.folder-picker input {
+  width: 100%;
+}
+
+.folder-picker-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.folder-picker-dropdown li {
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-picker-dropdown li:hover,
+.folder-picker-dropdown li.active {
+  background: var(--accent-blue);
+  color: var(--bg);
+}
+
+/* ── Header Action Buttons ─────────────────────────────── */
+
+.header-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.btn-header {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.btn-header:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
 }
 
 .hidden { display: none !important; }

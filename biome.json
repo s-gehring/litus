@@ -31,7 +31,8 @@
 	"formatter": {
 		"enabled": true,
 		"indentStyle": "tab",
-		"lineWidth": 100
+		"lineWidth": 100,
+		"lineEnding": "auto"
 	},
 	"javascript": {
 		"formatter": {
@@ -40,6 +41,15 @@
 		}
 	},
 	"files": {
-		"includes": ["**/*.ts", "**/*.js", "**/*.json"]
+		"includes": [
+			"src/**/*.ts",
+			"src/**/*.js",
+			"src/**/*.json",
+			"tests/**/*.ts",
+			"tests/**/*.js",
+			"tests/**/*.json",
+			"biome.json"
+		],
+		"ignoreUnknown": true
 	}
 }

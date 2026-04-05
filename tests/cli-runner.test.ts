@@ -49,6 +49,7 @@ function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 		epicTitle: null,
 		epicDependencies: [],
 		epicDependencyStatus: null,
+		epicAnalysisMs: 0,
 		activeWorkMs: 0,
 		activeWorkStartedAt: null,
 		createdAt: new Date().toISOString(),

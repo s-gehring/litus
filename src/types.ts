@@ -307,6 +307,7 @@ export interface Workflow {
 	epicTitle: string | null;
 	epicDependencies: string[];
 	epicDependencyStatus: EpicDependencyStatus | null;
+	epicAnalysisMs: number;
 	activeWorkMs: number;
 	activeWorkStartedAt: string | null;
 	createdAt: string;

@@ -19,28 +19,14 @@ export const FALLBACK_ICON = { icon: "⚙️", label: "Tool" };
 
 export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 	const statusBadge = $("#workflow-status");
-	const btnStart = $("#btn-start") as HTMLButtonElement;
-	const btnCancel = $("#btn-cancel") as HTMLButtonElement;
-	const btnRetry = $("#btn-retry") as HTMLButtonElement | null;
 	const status = workflow?.status || "idle";
 
 	statusBadge.textContent = status.replaceAll("_", " ");
 	statusBadge.className = `status-badge ${status}`;
 
-	const isActive = status === "running" || status === "waiting_for_input";
-	const isError = status === "error";
-
-	// Start button always visible — multi-workflow: users can always start new workflows
-	btnStart.classList.remove("hidden");
-	btnCancel.classList.toggle("hidden", !isActive);
-	if (btnRetry) {
-		btnRetry.classList.toggle("hidden", !isError);
-	}
-	// Never disable inputs — multi-workflow: input area is always accessible (FR-009, US5)
-	btnStart.disabled = false;
-
 	// Show current step name in status area
 	const stepLabel = $("#current-step-label");
+	const isActive = status === "running" || status === "waiting_for_input";
 	if (stepLabel && workflow && workflow.steps.length > 0) {
 		const currentStep = workflow.steps[workflow.currentStepIndex];
 		if (currentStep && isActive) {
@@ -75,8 +61,6 @@ const EPIC_STATUS_MAP: Record<EpicStatus, { label: string; css: string }> = {
 
 export function updateEpicStatus(status: EpicStatus): void {
 	const statusBadge = $("#workflow-status");
-	const btnCancel = $("#btn-cancel") as HTMLButtonElement;
-	const btnRetry = $("#btn-retry") as HTMLButtonElement | null;
 	const stepLabel = $("#current-step-label");
 	const prLink = $("#pr-link") as HTMLAnchorElement | null;
 	const historyContainer = $("#step-history");
@@ -85,8 +69,6 @@ export function updateEpicStatus(status: EpicStatus): void {
 	statusBadge.textContent = mapped.label;
 	statusBadge.className = `status-badge ${mapped.css}`;
 
-	btnCancel.classList.toggle("hidden", status !== "analyzing");
-	if (btnRetry) btnRetry.classList.toggle("hidden", status !== "error");
 	if (stepLabel) stepLabel.classList.add("hidden");
 	if (prLink) prLink.classList.add("hidden");
 	if (historyContainer) historyContainer.replaceChildren();
