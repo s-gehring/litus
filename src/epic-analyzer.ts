@@ -132,6 +132,11 @@ export interface EpicAnalysisProcess {
 	kill: () => void;
 }
 
+export interface EpicAnalysisCallbacks {
+	onOutput?: (text: string) => void;
+	onTools?: (tools: Record<string, number>) => void;
+}
+
 const DEFAULT_EPIC_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
 export async function analyzeEpic(
@@ -139,6 +144,7 @@ export async function analyzeEpic(
 	targetRepoDir: string,
 	onKillRef?: { current: EpicAnalysisProcess | null },
 	timeoutMs: number = DEFAULT_EPIC_TIMEOUT_MS,
+	callbacks?: EpicAnalysisCallbacks,
 ): Promise<EpicAnalysisResult> {
 	const prompt = buildDecompositionPrompt(epicDescription);
 	const args = [
@@ -178,6 +184,19 @@ export async function analyzeEpic(
 	const decoder = new TextDecoder();
 	let buffer = "";
 	let accumulatedText = "";
+	let deltaBuffer = "";
+	let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function flushDeltaBuffer() {
+		if (deltaBuffer) {
+			callbacks?.onOutput?.(deltaBuffer);
+			deltaBuffer = "";
+		}
+		if (deltaFlushTimer) {
+			clearTimeout(deltaFlushTimer);
+			deltaFlushTimer = null;
+		}
+	}
 
 	try {
 		while (true) {
@@ -192,16 +211,28 @@ export async function analyzeEpic(
 				try {
 					const event = JSON.parse(line);
 					if (event.type === "assistant" && event.message?.content) {
+						flushDeltaBuffer();
+						const toolCounts = new Map<string, number>();
 						for (const block of event.message.content) {
 							if (block.type === "text" && block.text) {
 								accumulatedText += block.text;
+								callbacks?.onOutput?.(block.text);
+							} else if (block.type === "tool_use" && block.name) {
+								toolCounts.set(block.name, (toolCounts.get(block.name) ?? 0) + 1);
 							}
+						}
+						if (toolCounts.size > 0) {
+							callbacks?.onTools?.(Object.fromEntries(toolCounts));
 						}
 					} else if (event.type === "content_block_delta" && event.delta?.text) {
 						accumulatedText += event.delta.text;
+						deltaBuffer += event.delta.text;
+						if (deltaFlushTimer) clearTimeout(deltaFlushTimer);
+						deltaFlushTimer = setTimeout(flushDeltaBuffer, 50);
 					}
 				} catch {
-					// Non-JSON line
+					// Non-JSON line — emit as raw output
+					callbacks?.onOutput?.(line);
 				}
 			}
 		}
@@ -209,6 +240,7 @@ export async function analyzeEpic(
 		// Stream error
 	}
 
+	flushDeltaBuffer();
 	clearTimeout(timeoutId);
 	const exitCode = await proc.exited;
 	if (onKillRef) onKillRef.current = null;

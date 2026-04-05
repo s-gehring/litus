@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ServerWebSocket } from "bun";
 import { AuditLogger } from "./audit-logger";
 import { CLIRunner } from "./cli-runner";
@@ -299,13 +300,24 @@ async function handleEpicStart(
 		}
 	}
 
-	broadcast({ type: "epic:analyzing", epicDescription: description.trim() });
+	const epicId = randomUUID();
+	const trimmedDesc = description.trim();
+	console.log(`[epic] Starting analysis (${epicId.slice(0, 8)}): "${trimmedDesc.slice(0, 80)}"`);
+
+	broadcast({ type: "epic:created", epicId, description: trimmedDesc });
 
 	try {
 		const repoDir = targetRepository || process.cwd();
-		const result = await analyzeEpic(description.trim(), repoDir, epicAnalysisRef);
+		const result = await analyzeEpic(trimmedDesc, repoDir, epicAnalysisRef, undefined, {
+			onOutput: (text) => broadcast({ type: "epic:output", epicId, text }),
+			onTools: (tools) => broadcast({ type: "epic:tools", epicId, tools }),
+		});
 
-		const { workflows, epicId } = await createEpicWorkflows(result, targetRepository);
+		console.log(`[epic] Analysis complete (${epicId.slice(0, 8)}): ${result.specs.length} specs`);
+
+		const { workflows } = await createEpicWorkflows(result, targetRepository, epicId);
+
+		const workflowIds: string[] = [];
 
 		// Persist and register orchestrators for each workflow
 		for (const workflow of workflows) {
@@ -316,6 +328,7 @@ async function handleEpicStart(
 			orchestrators.set(workflow.id, orch);
 
 			broadcast({ type: "workflow:created", workflow: stripInternalFields(workflow) });
+			workflowIds.push(workflow.id);
 
 			// Auto-start independent specs when autoStart is true
 			if (autoStart && workflow.epicDependencyStatus === "satisfied") {
@@ -328,10 +341,15 @@ async function handleEpicStart(
 			epicId,
 			title: result.title,
 			specCount: result.specs.length,
+			workflowIds,
 		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : "Epic analysis failed";
-		broadcast({ type: "epic:error", message });
+		console.error(`[epic] Analysis failed (${epicId.slice(0, 8)}): ${message}`);
+		if (err instanceof Error && err.stack) {
+			console.error(`[epic] Stack trace: ${err.stack}`);
+		}
+		broadcast({ type: "epic:error", epicId, message });
 	}
 }
 

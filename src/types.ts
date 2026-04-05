@@ -313,9 +313,17 @@ export type ServerMessage =
 			currentStepIndex: number;
 			reviewIteration: number;
 	  }
-	| { type: "epic:analyzing"; epicDescription: string }
-	| { type: "epic:result"; epicId: string; title: string; specCount: number }
-	| { type: "epic:error"; message: string }
+	| { type: "epic:created"; epicId: string; description: string }
+	| { type: "epic:output"; epicId: string; text: string }
+	| { type: "epic:tools"; epicId: string; tools: Record<string, number> }
+	| {
+			type: "epic:result";
+			epicId: string;
+			title: string;
+			specCount: number;
+			workflowIds: string[];
+	  }
+	| { type: "epic:error"; epicId: string; message: string }
 	| {
 			type: "epic:dependency-update";
 			workflowId: string;
@@ -336,6 +344,20 @@ export interface WorkflowClientState {
 	state: WorkflowState;
 	outputLines: OutputEntry[];
 	isExpanded: boolean;
+}
+
+// Client-side epic analysis state
+export type EpicStatus = "analyzing" | "completed" | "error";
+
+export interface EpicClientState {
+	epicId: string;
+	description: string;
+	status: EpicStatus;
+	title: string | null;
+	outputLines: OutputEntry[];
+	workflowIds: string[];
+	startedAt: string;
+	errorMessage: string | null;
 }
 
 // Client → Server messages

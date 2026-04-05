@@ -216,8 +216,9 @@ export class WorkflowEngine {
 export async function createEpicWorkflows(
 	result: EpicAnalysisResult,
 	targetRepository: string | undefined,
+	epicId?: string,
 ): Promise<{ workflows: Workflow[]; epicId: string }> {
-	const epicId = randomUUID();
+	if (!epicId) epicId = randomUUID();
 	const tempIdToWorkflowId = new Map<string, string>();
 	const workflows: Workflow[] = [];
 
