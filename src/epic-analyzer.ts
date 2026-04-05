@@ -137,7 +137,7 @@ export interface EpicAnalysisCallbacks {
 	onTools?: (tools: Record<string, number>) => void;
 }
 
-const DEFAULT_EPIC_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_EPIC_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 export async function analyzeEpic(
 	epicDescription: string,
@@ -155,6 +155,7 @@ export async function analyzeEpic(
 		"stream-json",
 		"--verbose",
 		"--dangerously-skip-permissions",
+		"--include-partial-messages",
 	];
 
 	const proc = Bun.spawn(args, {
