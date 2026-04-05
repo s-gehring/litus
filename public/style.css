@@ -519,6 +519,11 @@ header h1 {
   color: var(--accent-green);
 }
 
+.step-paused {
+  background: rgba(180,130,255,0.15);
+  color: var(--accent-purple, #b482ff);
+}
+
 .step-error {
   background: rgba(233,69,96,0.2);
   color: var(--accent);

@@ -70,7 +70,7 @@ describe("Timer accumulation", () => {
 		expect(wf.activeWorkMs).toBeGreaterThanOrEqual(2000);
 	});
 
-	test("running → cancelled accumulates time", () => {
+	test("running → paused accumulates time", () => {
 		const { WorkflowEngine } = require("../../src/workflow-engine");
 		const engine = new WorkflowEngine();
 		const startTime = new Date(Date.now() - 1000).toISOString();
@@ -81,7 +81,7 @@ describe("Timer accumulation", () => {
 		});
 		engine.setWorkflow(wf);
 
-		engine.transition(wf.id, "cancelled");
+		engine.transition(wf.id, "paused");
 
 		expect(wf.activeWorkStartedAt).toBeNull();
 		expect(wf.activeWorkMs).toBeGreaterThanOrEqual(900);

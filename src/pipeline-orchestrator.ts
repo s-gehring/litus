@@ -346,7 +346,11 @@ export class PipelineOrchestrator {
 		this.engine.clearQuestion(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
-		if (step.status === "running" || step.status === "waiting_for_input") {
+		if (
+			step.status === "running" ||
+			step.status === "waiting_for_input" ||
+			step.status === "paused"
+		) {
 			step.status = "error";
 			step.error = "Cancelled by user";
 		}
