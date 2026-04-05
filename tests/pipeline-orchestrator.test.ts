@@ -1061,5 +1061,23 @@ describe("PipelineOrchestrator", () => {
 			// resume mock should not have been called for resume flow
 			expect(wf.status).toBe("running");
 		});
+
+		test("abort from paused: cancelPipeline sets step to error and workflow to cancelled", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			wf.steps[0].sessionId = "test-session-123";
+			orchestrator.pause("test-wf-id");
+
+			expect(wf.status).toBe("paused");
+			expect(wf.steps[0].status).toBe("paused");
+
+			orchestrator.cancelPipeline("test-wf-id");
+
+			expect(wf.steps[0].status).toBe("error");
+			expect(wf.steps[0].error).toBe("Cancelled by user");
+			expect(wf.status).toBe("cancelled");
+			expect(store.save).toHaveBeenCalled();
+		});
 	});
 });

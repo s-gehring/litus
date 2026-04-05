@@ -309,18 +309,18 @@ export class PipelineOrchestrator {
 		this.questionDetector.reset();
 
 		const cwd = workflow.worktreePath || process.cwd();
-		const cliCallbacks: CLICallbacks = {
-			onOutput: (text) => this.handleStepOutput(workflow.id, text),
-			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
-			onComplete: () => this.handleStepComplete(workflow.id),
-			onError: (error) => this.handleStepError(workflow.id, error),
-			onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
-			onPid: (pid) => this.handlePid(workflow.id, pid),
-		};
 
 		if (step.name === "monitor-ci") {
 			this.runMonitorCi(workflow);
 		} else if (step.sessionId) {
+			const cliCallbacks: CLICallbacks = {
+				onOutput: (text) => this.handleStepOutput(workflow.id, text),
+				onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
+				onComplete: () => this.handleStepComplete(workflow.id),
+				onError: (error) => this.handleStepError(workflow.id, error),
+				onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
+				onPid: (pid) => this.handlePid(workflow.id, pid),
+			};
 			this.cliRunner.resume(workflowId, step.sessionId, cwd, cliCallbacks);
 		} else {
 			this.runStep(workflow, step.prompt, cwd);

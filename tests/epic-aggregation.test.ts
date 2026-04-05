@@ -91,6 +91,42 @@ describe("computeEpicAggregatedState", () => {
 		expect(result.progress).toEqual({ completed: 1, total: 2 });
 	});
 
+	test("paused takes priority over waiting and idle", () => {
+		const children = [
+			makeWorkflowState({ ...EPIC_DEFAULTS, id: "a", status: "paused" }),
+			makeWorkflowState({ ...EPIC_DEFAULTS, id: "b", status: "idle" }),
+		];
+		const result = mustGet(computeEpicAggregatedState(children));
+		expect(result.status).toBe("paused");
+	});
+
+	test("running takes priority over paused", () => {
+		const children = [
+			makeWorkflowState({ ...EPIC_DEFAULTS, id: "a", status: "running" }),
+			makeWorkflowState({ ...EPIC_DEFAULTS, id: "b", status: "paused" }),
+		];
+		const result = mustGet(computeEpicAggregatedState(children));
+		expect(result.status).toBe("running");
+	});
+
+	test("error takes priority over paused", () => {
+		const children = [
+			makeWorkflowState({ ...EPIC_DEFAULTS, id: "a", status: "error" }),
+			makeWorkflowState({ ...EPIC_DEFAULTS, id: "b", status: "paused" }),
+		];
+		const result = mustGet(computeEpicAggregatedState(children));
+		expect(result.status).toBe("error");
+	});
+
+	test("all children paused -> paused", () => {
+		const children = [
+			makeWorkflowState({ ...EPIC_DEFAULTS, id: "a", status: "paused" }),
+			makeWorkflowState({ ...EPIC_DEFAULTS, id: "b", status: "paused" }),
+		];
+		const result = mustGet(computeEpicAggregatedState(children));
+		expect(result.status).toBe("paused");
+	});
+
 	test("cancelled counts as error", () => {
 		const children = [
 			makeWorkflowState({ ...EPIC_DEFAULTS, id: "a", status: "cancelled" }),
