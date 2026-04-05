@@ -111,6 +111,15 @@ header h1 {
   box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
 }
 
+/* Epic card accent */
+.epic-card {
+  border-left: 3px solid var(--accent-blue);
+}
+
+.epic-card.card-error-glow {
+  border-left-color: var(--accent);
+}
+
 /* Pulse animation for waiting_for_input */
 @keyframes card-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(240, 192, 64, 0); }
@@ -953,6 +962,37 @@ body::-webkit-scrollbar-track {
   color: var(--text);
 }
 
+.epic-target-repo {
+  margin-bottom: 10px;
+}
+
+.epic-target-repo-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.epic-target-repo-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.epic-target-repo-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.epic-target-repo-input:disabled {
+  opacity: 0.5;
+}
+
 .epic-textarea {
   width: 100%;
   padding: 10px 14px;
@@ -982,27 +1022,6 @@ body::-webkit-scrollbar-track {
   margin-bottom: 8px;
 }
 
-.epic-analyzing {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 0;
-  font-size: 0.85rem;
-  color: var(--accent-blue);
-}
-
-.epic-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent-blue);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
 
 /* ── Epic Label on Cards ─────────────────────────────── */
 
