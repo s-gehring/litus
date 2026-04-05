@@ -345,7 +345,7 @@ function expandItem(workflowId: string): void {
 }
 
 function renderCards(): void {
-	renderCardStrip(cardOrder, workflows, epics, expandedId, expandItem, send);
+	renderCardStrip(cardOrder, workflows, epics, expandedId, expandItem);
 }
 
 function renderExpandedView(): void {

@@ -113,23 +113,24 @@ header h1 {
 
 /* Epic card accent */
 .epic-card {
-  border: 1px solid var(--accent-blue);
-  border-left: 3px solid var(--accent-blue);
-  background: linear-gradient(135deg, var(--surface) 0%, rgba(74, 158, 255, 0.06) 100%);
+  border: 2px solid var(--accent-blue);
+  background: linear-gradient(135deg, var(--surface) 0%, rgba(74, 158, 255, 0.08) 100%);
+  box-shadow: 0 0 6px rgba(74, 158, 255, 0.15);
 }
 
 .epic-card:hover {
   border-color: var(--accent-blue);
+  box-shadow: 0 0 10px rgba(74, 158, 255, 0.25);
 }
 
 .epic-card.card-expanded {
   border-color: var(--accent-blue);
-  border-left-width: 3px;
+  box-shadow: 0 0 12px rgba(74, 158, 255, 0.35);
 }
 
 .epic-card.card-error-glow {
   border-color: var(--accent);
-  border-left-color: var(--accent);
+  box-shadow: 0 0 8px rgba(233, 69, 96, 0.3);
 }
 
 /* Pulse animation for waiting_for_input */

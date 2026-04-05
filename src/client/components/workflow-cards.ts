@@ -1,9 +1,4 @@
-import type {
-	ClientMessage,
-	EpicClientState,
-	WorkflowClientState,
-	WorkflowState,
-} from "../../types";
+import type { EpicClientState, WorkflowClientState, WorkflowState } from "../../types";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -27,8 +22,7 @@ const STATUS_CLASSES: Record<string, string> = {
 	error: "card-status-error",
 };
 
-// Store references for force-start
-let sendFn: ((msg: ClientMessage) => void) | null = null;
+// Store reference for dependency name resolution
 let allWorkflowsRef: Map<string, WorkflowClientState> | null = null;
 
 export function renderCardStrip(
@@ -37,12 +31,10 @@ export function renderCardStrip(
 	epics: Map<string, EpicClientState>,
 	expandedId: string | null,
 	onCardClick: (id: string) => void,
-	send?: (msg: ClientMessage) => void,
 ): void {
 	const container = $("#card-strip");
 	if (!container) return;
 
-	if (send) sendFn = send;
 	allWorkflowsRef = workflows;
 	container.replaceChildren();
 
@@ -114,30 +106,6 @@ function createCompactCard(
 		depText.className = "card-dependency-text";
 		depText.textContent = `Depends on: ${depNames}`;
 		card.appendChild(depText);
-	}
-
-	// Start button for idle epic workflows (non-autoStart)
-	if (wf.status === "idle" && wf.epicId && sendFn) {
-		const startBtn = document.createElement("button");
-		startBtn.className = "btn-card-action";
-		startBtn.textContent = "Start";
-		startBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			sendFn?.({ type: "workflow:start-existing", workflowId: wf.id });
-		});
-		card.appendChild(startBtn);
-	}
-
-	// Force Start button (US4)
-	if (wf.status === "waiting_for_dependencies" && sendFn) {
-		const forceBtn = document.createElement("button");
-		forceBtn.className = "btn-force-start";
-		forceBtn.textContent = "Force Start";
-		forceBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			sendFn?.({ type: "workflow:force-start", workflowId: wf.id });
-		});
-		card.appendChild(forceBtn);
 	}
 
 	// Current step

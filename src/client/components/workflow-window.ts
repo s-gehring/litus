@@ -24,7 +24,7 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 	const btnRetry = $("#btn-retry") as HTMLButtonElement | null;
 	const status = workflow?.status || "idle";
 
-	statusBadge.textContent = status.replace("_", " ");
+	statusBadge.textContent = status.replaceAll("_", " ");
 	statusBadge.className = `status-badge ${status}`;
 
 	const isActive = status === "running" || status === "waiting_for_input";
