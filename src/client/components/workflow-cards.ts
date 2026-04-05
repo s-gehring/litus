@@ -4,7 +4,12 @@ import type {
 	WorkflowClientState,
 	WorkflowState,
 } from "../../types";
-import { EPIC_CARD_PREFIX, STATUS_CLASSES, STATUS_LABELS } from "./status-maps";
+import {
+	EPIC_AGG_STATUS_CLASSES,
+	EPIC_CARD_PREFIX,
+	STATUS_CLASSES,
+	STATUS_LABELS,
+} from "./status-maps";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -151,15 +156,6 @@ const EPIC_AGG_STATUS_LABELS: Record<string, string> = {
 	error: "Error",
 	in_progress: "In Progress",
 	completed: "Done",
-};
-
-const EPIC_AGG_STATUS_CLASSES: Record<string, string> = {
-	idle: "card-status-idle",
-	running: "card-status-running",
-	waiting: "card-status-waiting",
-	error: "card-status-error",
-	in_progress: "card-status-running",
-	completed: "card-status-completed",
 };
 
 function createAggregatedEpicCard(

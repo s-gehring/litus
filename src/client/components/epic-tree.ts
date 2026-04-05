@@ -86,7 +86,7 @@ export function computeTreeLayout(workflows: WorkflowState[]): TreeNode[] {
 				indexInRank: i,
 				x: PADDING_X + rank * COLUMN_WIDTH,
 				y: PADDING_Y + i * ROW_HEIGHT,
-				dependencies: wf.epicDependencies ?? [],
+				dependencies: (wf.epicDependencies ?? []).filter((d) => depsMap.has(d)),
 			});
 		}
 	}

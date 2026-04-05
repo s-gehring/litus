@@ -12,7 +12,7 @@ import { createEpicForm, hideEpicForm, showEpicForm } from "./components/epic-fo
 import { renderEpicTree } from "./components/epic-tree";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
-import { EPIC_CARD_PREFIX } from "./components/status-maps";
+import { EPIC_AGG_STATUS_CLASSES, EPIC_CARD_PREFIX } from "./components/status-maps";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
 import {
 	appendOutput,
@@ -482,8 +482,10 @@ function renderExpandedView(): void {
 	const welcomeArea = $("#welcome-area");
 	const treeContainer = document.getElementById("epic-tree-panel");
 
-	// Clear tree panel if it exists
+	// Clear tree panel and breadcrumb if they exist
 	if (treeContainer) treeContainer.remove();
+	const existingBreadcrumb = document.getElementById("epic-breadcrumb");
+	if (existingBreadcrumb) existingBreadcrumb.remove();
 
 	if (!expandedId) {
 		// Nothing expanded — show welcome
@@ -554,7 +556,7 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 	// Update status area for epic
 	const statusBadge = $("#workflow-status");
 	statusBadge.textContent = agg.status;
-	statusBadge.className = `status-badge ${agg.status === "running" ? "running" : agg.status === "error" ? "error" : agg.status === "completed" ? "completed" : "idle"}`;
+	statusBadge.className = `status-badge ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
 
 	renderPipelineSteps(null);
 	updateSummary(`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`);
@@ -623,14 +625,17 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	// Render output from accumulated entries
 	clearOutput();
 
-	// Add breadcrumb if viewing within an epic context
+	// Add breadcrumb before the output area (outside scrollable container) if viewing within an epic context
 	if (epicContext) {
-		const outputLog = $("#output-log");
-		const breadcrumb = document.createElement("div");
-		breadcrumb.className = "epic-breadcrumb";
-		breadcrumb.textContent = `\u2190 Epic: ${epicContext.title}`;
-		breadcrumb.addEventListener("click", returnToEpicTree);
-		outputLog.appendChild(breadcrumb);
+		const outputArea = document.getElementById("output-area");
+		if (outputArea) {
+			const breadcrumb = document.createElement("div");
+			breadcrumb.className = "epic-breadcrumb";
+			breadcrumb.id = "epic-breadcrumb";
+			breadcrumb.textContent = `\u2190 Epic: ${epicContext.title}`;
+			breadcrumb.addEventListener("click", returnToEpicTree);
+			outputArea.parentElement?.insertBefore(breadcrumb, outputArea);
+		}
 	}
 
 	if (entry.outputLines.length > 0) {

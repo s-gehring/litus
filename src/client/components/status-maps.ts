@@ -19,3 +19,12 @@ export const STATUS_CLASSES: Record<string, string> = {
 };
 
 export const EPIC_CARD_PREFIX = "epic:";
+
+export const EPIC_AGG_STATUS_CLASSES: Record<string, string> = {
+	idle: "card-status-idle",
+	running: "card-status-running",
+	waiting: "card-status-waiting",
+	error: "card-status-error",
+	in_progress: "card-status-running",
+	completed: "card-status-completed",
+};

@@ -4,8 +4,11 @@ export function computeEpicAggregatedState(children: WorkflowState[]): EpicAggre
 	if (children.length === 0) return null;
 
 	const epicId = children[0].epicId;
-	const title = children[0].epicTitle;
-	if (!epicId || !title) return null;
+	if (!epicId) return null;
+
+	// Scan all children for a non-null epicTitle (first child may lack it during race conditions)
+	const title = children.find((c) => c.epicTitle)?.epicTitle ?? null;
+	if (!title) return null;
 
 	let status: EpicAggregatedStatus = "idle";
 	let completed = 0;

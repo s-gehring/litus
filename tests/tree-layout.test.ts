@@ -5,42 +5,21 @@ import {
 	type TreeNode,
 } from "../src/client/components/epic-tree";
 import type { WorkflowState } from "../src/types";
+import { makeWorkflowState } from "./helpers";
+
+const EPIC_DEFAULTS = {
+	epicId: "epic-1",
+	epicTitle: "Test Epic",
+	createdAt: "2026-01-01T00:00:00Z",
+	updatedAt: "2026-01-01T00:00:00Z",
+} as const;
 
 function makeWf(overrides: Partial<WorkflowState> & { id: string }): WorkflowState {
-	return {
-		id: overrides.id,
-		specification: overrides.specification ?? "test spec",
-		status: overrides.status ?? "idle",
-		targetRepository: null,
-		worktreePath: null,
-		worktreeBranch: "test-branch",
-		summary: overrides.summary ?? overrides.id,
-		stepSummary: "",
-		flavor: "",
-		pendingQuestion: null,
-		lastOutput: "",
-		steps: [],
-		currentStepIndex: 0,
-		reviewCycle: { iteration: 0, maxIterations: 3, lastSeverity: null },
-		ciCycle: {
-			attempt: 0,
-			maxAttempts: 3,
-			monitorStartedAt: null,
-			globalTimeoutMs: 600000,
-			lastCheckResults: [],
-			failureLogs: [],
-		},
-		mergeCycle: { attempt: 0, maxAttempts: 3 },
-		prUrl: null,
-		epicId: "epic-1",
-		epicTitle: "Test Epic",
-		epicDependencies: overrides.epicDependencies ?? [],
-		epicDependencyStatus: overrides.epicDependencyStatus ?? null,
-		activeWorkMs: 0,
-		activeWorkStartedAt: null,
-		createdAt: "2026-01-01T00:00:00Z",
-		updatedAt: "2026-01-01T00:00:00Z",
-	};
+	return makeWorkflowState({
+		...EPIC_DEFAULTS,
+		summary: overrides.id,
+		...overrides,
+	});
 }
 
 describe("computeTreeLayout", () => {
