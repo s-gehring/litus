@@ -288,7 +288,10 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		this.engine.transition(workflowId, "paused");
-		this.flushPersistDebounce(workflow);
+		if (this.persistDebounceTimer) {
+			clearTimeout(this.persistDebounceTimer);
+			this.persistDebounceTimer = null;
+		}
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 	}

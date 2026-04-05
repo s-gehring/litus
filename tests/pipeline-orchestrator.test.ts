@@ -1062,6 +1062,53 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.status).toBe("running");
 		});
 
+		test("resume() without sessionId falls back to runStep (cliRunner.start)", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			// Clear sessionId so resume takes the fallback branch
+			wf.steps[0].sessionId = null;
+			wf.steps[0].status = "running";
+
+			const resumeCallsBefore = (cli.resume as ReturnType<typeof mock>).mock.calls.length;
+			orchestrator.pause("test-wf-id");
+			const startCallsBefore = cli._startCalls.length;
+
+			orchestrator.resume("test-wf-id");
+
+			expect(wf.steps[0].status).toBe("running");
+			expect(wf.status).toBe("running");
+			// Should have triggered a new start call (runStep), not cliRunner.resume
+			expect(cli._startCalls.length).toBe(startCallsBefore + 1);
+			expect((cli.resume as ReturnType<typeof mock>).mock.calls.length).toBe(resumeCallsBefore);
+		});
+
+		test("resume() on monitor-ci step calls runMonitorCi (not cliRunner.resume)", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			// Advance to monitor-ci step (index 8) and set prUrl so runMonitorCi doesn't error
+			const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+			wf.currentStepIndex = monitorIndex;
+			wf.steps[monitorIndex].status = "running";
+			wf.prUrl = "https://github.com/test/repo/pull/1";
+
+			orchestrator.pause("test-wf-id");
+			expect(wf.steps[monitorIndex].status as string).toBe("paused");
+
+			// Resume — should NOT call cliRunner.resume since monitor-ci has no session
+			const resumeCallsBefore = (cli.resume as ReturnType<typeof mock>).mock.calls.length;
+			const startCallsBefore = cli._startCalls.length;
+			orchestrator.resume("test-wf-id");
+
+			expect(wf.steps[monitorIndex].status).toBe("running");
+			expect(wf.status).toBe("running");
+			// cliRunner.resume should NOT have been called for monitor-ci
+			expect((cli.resume as ReturnType<typeof mock>).mock.calls.length).toBe(resumeCallsBefore);
+			// cliRunner.start should NOT have been called either (monitor-ci uses startMonitoring)
+			expect(cli._startCalls.length).toBe(startCallsBefore);
+		});
+
 		test("abort from paused: cancelPipeline sets step to error and workflow to cancelled", async () => {
 			await orchestrator.startPipeline("test");
 			const wf = getWf(engine);
