@@ -1,4 +1,5 @@
 import type { EpicAggregatedState, WorkflowState } from "../../types";
+import { STATUS_CLASSES, STATUS_LABELS } from "./status-maps";
 
 export interface TreeNode {
 	workflowId: string;
@@ -159,26 +160,6 @@ export function renderSvgConnectors(nodes: TreeNode[], edges: TreeEdge[]): SVGSV
 	return svg;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-	idle: "card-status-idle",
-	running: "card-status-running",
-	waiting_for_input: "card-status-waiting",
-	waiting_for_dependencies: "card-status-waiting-deps",
-	completed: "card-status-completed",
-	cancelled: "card-status-cancelled",
-	error: "card-status-error",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-	idle: "Idle",
-	running: "Running",
-	waiting_for_input: "Waiting",
-	waiting_for_dependencies: "Waiting",
-	completed: "Done",
-	cancelled: "Cancelled",
-	error: "Error",
-};
-
 export function renderTreeNode(
 	node: TreeNode,
 	workflow: WorkflowState,
@@ -193,7 +174,7 @@ export function renderTreeNode(
 	el.dataset.workflowId = node.workflowId;
 
 	const badge = document.createElement("span");
-	badge.className = `card-status ${STATUS_COLORS[workflow.status] || "card-status-idle"}`;
+	badge.className = `card-status ${STATUS_CLASSES[workflow.status] || "card-status-idle"}`;
 	badge.textContent = STATUS_LABELS[workflow.status] || workflow.status;
 	el.appendChild(badge);
 

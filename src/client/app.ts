@@ -1,7 +1,6 @@
 import type {
 	ClientMessage,
 	EpicAggregatedState,
-	EpicAggregatedStatus,
 	EpicClientState,
 	OutputEntry,
 	ServerMessage,
@@ -13,6 +12,7 @@ import { createEpicForm, hideEpicForm, showEpicForm } from "./components/epic-fo
 import { renderEpicTree } from "./components/epic-tree";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
+import { EPIC_CARD_PREFIX } from "./components/status-maps";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
 import {
 	appendOutput,
@@ -27,6 +27,7 @@ import {
 	updateSummary,
 	updateWorkflowStatus,
 } from "./components/workflow-window";
+import { computeEpicAggregatedState } from "./epic-aggregation";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -45,48 +46,6 @@ let expandedId: string | null = null;
 let expandedEpicId: string | null = null;
 let selectedChildId: string | null = null;
 const epicAggregates = new Map<string, EpicAggregatedState>();
-
-export function computeEpicAggregatedState(children: WorkflowState[]): EpicAggregatedState | null {
-	if (children.length === 0) return null;
-
-	const epicId = children[0].epicId;
-	const title = children[0].epicTitle;
-	if (!epicId || !title) return null;
-
-	let status: EpicAggregatedStatus = "idle";
-	let completed = 0;
-
-	const hasRunning = children.some((c) => c.status === "running");
-	const hasError = children.some((c) => c.status === "error" || c.status === "cancelled");
-	const hasWaiting = children.some((c) => c.status === "waiting_for_input");
-	const hasWaitingDeps = children.some((c) => c.status === "waiting_for_dependencies");
-
-	for (const c of children) {
-		if (c.status === "completed") completed++;
-	}
-
-	if (hasRunning) status = "running";
-	else if (hasError) status = "error";
-	else if (hasWaiting) status = "waiting";
-	else if (hasWaitingDeps) status = "in_progress";
-	else if (completed === children.length) status = "completed";
-	else status = "idle";
-
-	// Start date = min(createdAt)
-	let startDate = children[0].createdAt;
-	for (const c of children) {
-		if (c.createdAt < startDate) startDate = c.createdAt;
-	}
-
-	return {
-		epicId,
-		title,
-		status,
-		progress: { completed, total: children.length },
-		startDate,
-		childWorkflowIds: children.map((c) => c.id),
-	};
-}
 
 function rebuildEpicAggregates(): void {
 	epicAggregates.clear();
@@ -121,7 +80,7 @@ function rebuildCardOrder(): void {
 				seenEpics.add(wf.epicId);
 				const agg = epicAggregates.get(wf.epicId);
 				items.push({
-					key: `epic:${wf.epicId}`,
+					key: `${EPIC_CARD_PREFIX}${wf.epicId}`,
 					sortDate: agg?.startDate ?? wf.createdAt,
 				});
 			}
@@ -235,7 +194,7 @@ function handleMessage(msg: ServerMessage): void {
 				expandItem(standaloneWorkflows[0].id);
 			} else if (epicAggregates.size === 1 && standaloneWorkflows.length === 0) {
 				const epicId = [...epicAggregates.keys()][0];
-				expandItem(`epic:${epicId}`);
+				expandItem(`${EPIC_CARD_PREFIX}${epicId}`);
 			} else {
 				renderExpandedView();
 			}
@@ -410,7 +369,7 @@ function handleMessage(msg: ServerMessage): void {
 				renderCards();
 				// Auto-expand the epic tree
 				if (expandedId === msg.epicId) {
-					expandItem(`epic:${msg.epicId}`);
+					expandItem(`${EPIC_CARD_PREFIX}${msg.epicId}`);
 				}
 			}
 			break;
@@ -472,8 +431,8 @@ function handleMessage(msg: ServerMessage): void {
 
 function expandItem(id: string): void {
 	// Check if it's an epic card (epic:{epicId})
-	if (id.startsWith("epic:")) {
-		const epicId = id.slice(5);
+	if (id.startsWith(EPIC_CARD_PREFIX)) {
+		const epicId = id.slice(EPIC_CARD_PREFIX.length);
 		if (expandedEpicId === epicId && !selectedChildId) {
 			// Toggle collapse
 			expandedEpicId = null;
@@ -542,7 +501,7 @@ function renderExpandedView(): void {
 
 	// Check if expanded item is an epic analysis card
 	const epic = epics.get(expandedId);
-	if (epic && !expandedId.startsWith("epic:")) {
+	if (epic && !expandedId.startsWith(EPIC_CARD_PREFIX)) {
 		if (welcomeArea) welcomeArea.classList.add("hidden");
 		if (detailArea) detailArea.classList.remove("hidden");
 

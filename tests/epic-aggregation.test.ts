@@ -1,54 +1,10 @@
 import { describe, expect, test } from "bun:test";
-
-// We test computeEpicAggregatedState by importing from app.ts
-// Since app.ts has DOM dependencies, we'll test the logic inline
-import type { EpicAggregatedState, EpicAggregatedStatus, WorkflowState } from "../src/types";
+import { computeEpicAggregatedState } from "../src/client/epic-aggregation";
+import type { EpicAggregatedState, WorkflowState } from "../src/types";
 
 function mustGet(result: EpicAggregatedState | null): EpicAggregatedState {
 	if (!result) throw new Error("Expected non-null result");
 	return result;
-}
-
-// Re-implement the pure function for testing (same logic as in app.ts)
-function computeEpicAggregatedState(children: WorkflowState[]) {
-	if (children.length === 0) return null;
-
-	const epicId = children[0].epicId;
-	const title = children[0].epicTitle;
-	if (!epicId || !title) return null;
-
-	let status: EpicAggregatedStatus = "idle";
-	let completed = 0;
-
-	const hasRunning = children.some((c) => c.status === "running");
-	const hasError = children.some((c) => c.status === "error" || c.status === "cancelled");
-	const hasWaiting = children.some((c) => c.status === "waiting_for_input");
-	const hasWaitingDeps = children.some((c) => c.status === "waiting_for_dependencies");
-
-	for (const c of children) {
-		if (c.status === "completed") completed++;
-	}
-
-	if (hasRunning) status = "running";
-	else if (hasError) status = "error";
-	else if (hasWaiting) status = "waiting";
-	else if (hasWaitingDeps) status = "in_progress";
-	else if (completed === children.length) status = "completed";
-	else status = "idle";
-
-	let startDate = children[0].createdAt;
-	for (const c of children) {
-		if (c.createdAt < startDate) startDate = c.createdAt;
-	}
-
-	return {
-		epicId,
-		title,
-		status,
-		progress: { completed, total: children.length },
-		startDate,
-		childWorkflowIds: children.map((c) => c.id),
-	};
 }
 
 function makeChild(overrides: Partial<WorkflowState> & { id: string }): WorkflowState {

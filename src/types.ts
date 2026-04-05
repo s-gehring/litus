@@ -103,6 +103,8 @@ export interface EpicAggregatedState {
 	status: EpicAggregatedStatus;
 	progress: { completed: number; total: number };
 	startDate: string;
+	activeWorkMs: number;
+	activeWorkStartedAt: string | null;
 	childWorkflowIds: string[];
 }
 

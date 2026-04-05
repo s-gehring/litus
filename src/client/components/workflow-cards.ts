@@ -4,28 +4,9 @@ import type {
 	WorkflowClientState,
 	WorkflowState,
 } from "../../types";
+import { EPIC_CARD_PREFIX, STATUS_CLASSES, STATUS_LABELS } from "./status-maps";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
-
-const STATUS_LABELS: Record<string, string> = {
-	idle: "Idle",
-	running: "Running",
-	waiting_for_input: "Waiting",
-	waiting_for_dependencies: "Waiting",
-	completed: "Done",
-	cancelled: "Cancelled",
-	error: "Error",
-};
-
-const STATUS_CLASSES: Record<string, string> = {
-	idle: "card-status-idle",
-	running: "card-status-running",
-	waiting_for_input: "card-status-waiting",
-	waiting_for_dependencies: "card-status-waiting-deps",
-	completed: "card-status-completed",
-	cancelled: "card-status-cancelled",
-	error: "card-status-error",
-};
 
 // Store reference for dependency name resolution
 let allWorkflowsRef: Map<string, WorkflowClientState> | null = null;
@@ -46,8 +27,8 @@ export function renderCardStrip(
 
 	for (const id of cardOrder) {
 		// Aggregated epic card (epic:{epicId})
-		if (id.startsWith("epic:")) {
-			const epicId = id.slice(5);
+		if (id.startsWith(EPIC_CARD_PREFIX)) {
+			const epicId = id.slice(EPIC_CARD_PREFIX.length);
 			const agg = epicAggregates.get(epicId);
 			if (agg) {
 				container.appendChild(createAggregatedEpicCard(agg, expandedId, onCardClick));
@@ -190,13 +171,18 @@ function createAggregatedEpicCard(
 	card.className = "workflow-card epic-card";
 	card.dataset.epicId = agg.epicId;
 
-	const cardId = `epic:${agg.epicId}`;
+	const cardId = `${EPIC_CARD_PREFIX}${agg.epicId}`;
 	if (expandedId === cardId) {
 		card.classList.add("card-expanded");
 	}
 
 	if (agg.status === "error" && expandedId !== cardId) {
 		card.classList.add("card-error-glow");
+	}
+
+	// Pulse when waiting and not expanded
+	if (agg.status === "waiting" && expandedId !== cardId) {
+		card.classList.add("card-pulse");
 	}
 
 	// Epic icon + status badge
@@ -217,21 +203,12 @@ function createAggregatedEpicCard(
 	progress.textContent = `${agg.progress.completed}/${agg.progress.total} completed`;
 	card.appendChild(progress);
 
-	// Timer from start date
+	// Timer — sum of active work time across children
 	const timer = document.createElement("span");
 	timer.className = "card-timer";
-	const isActive =
-		agg.status === "running" || agg.status === "in_progress" || agg.status === "waiting";
-	timer.dataset.activeWorkMs = "0";
-	timer.dataset.activeWorkStartedAt = isActive ? agg.startDate : "";
-	if (!isActive && agg.status === "completed") {
-		// Show elapsed since start
-		timer.dataset.activeWorkMs = String(Date.now() - new Date(agg.startDate).getTime());
-	}
-	timer.textContent = formatTimer(
-		isActive ? 0 : agg.status === "completed" ? Date.now() - new Date(agg.startDate).getTime() : 0,
-		isActive ? agg.startDate : null,
-	);
+	timer.dataset.activeWorkMs = String(agg.activeWorkMs);
+	timer.dataset.activeWorkStartedAt = agg.activeWorkStartedAt || "";
+	timer.textContent = formatTimer(agg.activeWorkMs, agg.activeWorkStartedAt);
 	card.appendChild(timer);
 
 	card.addEventListener("click", () => onClick(cardId));
