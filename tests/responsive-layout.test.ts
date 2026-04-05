@@ -19,11 +19,11 @@ describe("responsive layout CSS rules", () => {
 		}
 	});
 
-	test(".output-log has wider max-width for structured output", () => {
+	test(".output-log spans full width without max-width constraint", () => {
 		const idx = css.indexOf(".output-log");
 		expect(idx).not.toBe(-1);
 		const ruleBlock = css.slice(idx, css.indexOf("}", idx));
-		expect(ruleBlock).toContain("max-width: 120ch");
+		expect(ruleBlock).not.toContain("max-width");
 	});
 
 	test("includes tablet breakpoint at 1200px", () => {

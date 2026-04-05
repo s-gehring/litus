@@ -11,7 +11,11 @@ const STATUS_CLASS: Record<PipelineStepStatus, string> = {
 	error: "step-error",
 };
 
-export function renderPipelineSteps(workflow: WorkflowState | null): void {
+export function renderPipelineSteps(
+	workflow: WorkflowState | null,
+	selectedIndex?: number | null,
+	onStepClick?: (index: number) => void,
+): void {
 	const container = $("#pipeline-steps");
 	if (!container) return;
 
@@ -29,6 +33,14 @@ export function renderPipelineSteps(workflow: WorkflowState | null): void {
 		el.className = `pipeline-step ${STATUS_CLASS[step.status]}`;
 		if (i === workflow.currentStepIndex) {
 			el.classList.add("step-current");
+		}
+		if (selectedIndex === i) {
+			el.classList.add("step-selected");
+		}
+
+		if (onStepClick && step.status !== "pending") {
+			el.style.cursor = "pointer";
+			el.addEventListener("click", () => onStepClick(i));
 		}
 
 		const label = document.createElement("span");

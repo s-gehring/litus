@@ -124,6 +124,7 @@ export interface EpicAnalysisResult {
 	title: string;
 	specs: EpicSpecEntry[];
 	infeasibleNotes: string | null;
+	summary: string | null;
 }
 
 export interface DependencyGraph {
@@ -340,6 +341,7 @@ export type ServerMessage =
 			currentStepIndex: number;
 			reviewIteration: number;
 	  }
+	| { type: "epic:list"; epics: PersistedEpic[] }
 	| { type: "epic:created"; epicId: string; description: string }
 	| { type: "epic:output"; epicId: string; text: string }
 	| { type: "epic:tools"; epicId: string; tools: Record<string, number> }
@@ -350,7 +352,9 @@ export type ServerMessage =
 			title: string;
 			specCount: number;
 			workflowIds: string[];
+			summary: string | null;
 	  }
+	| { type: "epic:infeasible"; epicId: string; title: string; infeasibleNotes: string }
 	| { type: "epic:error"; epicId: string; message: string }
 	| {
 			type: "epic:dependency-update";
@@ -375,18 +379,23 @@ export interface WorkflowClientState {
 }
 
 // Client-side epic analysis state
-export type EpicStatus = "analyzing" | "completed" | "error";
+export type EpicStatus = "analyzing" | "completed" | "error" | "infeasible";
 
-export interface EpicClientState {
+export interface PersistedEpic {
 	epicId: string;
 	description: string;
 	status: EpicStatus;
 	title: string | null;
-	outputLines: OutputEntry[];
 	workflowIds: string[];
 	startedAt: string;
 	completedAt: string | null;
 	errorMessage: string | null;
+	infeasibleNotes: string | null;
+	analysisSummary: string | null;
+}
+
+export interface EpicClientState extends PersistedEpic {
+	outputLines: OutputEntry[];
 }
 
 // Client → Server messages

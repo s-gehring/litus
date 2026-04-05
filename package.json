@@ -14,5 +14,8 @@
 		"format": "bunx biome format .",
 		"format:check": "bunx biome format --check ."
 	},
-	"type": "module"
+	"type": "module",
+	"dependencies": {
+		"marked": "^17.0.6"
+	}
 }
