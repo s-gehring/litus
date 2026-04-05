@@ -87,6 +87,25 @@ export interface AuditConfig {
 	auditDir?: string;
 }
 
+// ── Epic aggregated types ────────────────────────────────
+
+export type EpicAggregatedStatus =
+	| "idle"
+	| "running"
+	| "waiting"
+	| "error"
+	| "in_progress"
+	| "completed";
+
+export interface EpicAggregatedState {
+	epicId: string;
+	title: string;
+	status: EpicAggregatedStatus;
+	progress: { completed: number; total: number };
+	startDate: string;
+	childWorkflowIds: string[];
+}
+
 // ── Epic types ───────────────────────────────────────────
 
 export type EpicDependencyStatus = "satisfied" | "waiting" | "blocked" | "overridden";

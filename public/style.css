@@ -1112,4 +1112,81 @@ body::-webkit-scrollbar-track {
   background: rgba(240, 192, 64, 0.35);
 }
 
+/* ── Epic Tree Layout ────────────────────────────────── */
+
+.epic-tree-container {
+  position: relative;
+  overflow: auto;
+  min-height: 200px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.epic-tree-container::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.epic-tree-container::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.tree-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.tree-node {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  overflow: hidden;
+}
+
+.tree-node:hover {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 6px rgba(74, 158, 255, 0.2);
+}
+
+.tree-node-title {
+  font-size: 0.72rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-empty {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  padding: 20px;
+  font-style: italic;
+}
+
+/* ── Epic Breadcrumb ─────────────────────────────────── */
+
+.epic-breadcrumb {
+  display: inline-block;
+  font-size: 0.8rem;
+  color: var(--accent-blue);
+  cursor: pointer;
+  padding: 6px 0;
+  margin-bottom: 8px;
+  transition: color 0.15s;
+}
+
+.epic-breadcrumb:hover {
+  color: var(--accent-green);
+}
+
 .hidden { display: none !important; }

@@ -1,4 +1,9 @@
-import type { EpicClientState, WorkflowClientState, WorkflowState } from "../../types";
+import type {
+	EpicAggregatedState,
+	EpicClientState,
+	WorkflowClientState,
+	WorkflowState,
+} from "../../types";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -29,6 +34,7 @@ export function renderCardStrip(
 	cardOrder: string[],
 	workflows: Map<string, WorkflowClientState>,
 	epics: Map<string, EpicClientState>,
+	epicAggregates: Map<string, EpicAggregatedState>,
 	expandedId: string | null,
 	onCardClick: (id: string) => void,
 ): void {
@@ -39,11 +45,24 @@ export function renderCardStrip(
 	container.replaceChildren();
 
 	for (const id of cardOrder) {
+		// Aggregated epic card (epic:{epicId})
+		if (id.startsWith("epic:")) {
+			const epicId = id.slice(5);
+			const agg = epicAggregates.get(epicId);
+			if (agg) {
+				container.appendChild(createAggregatedEpicCard(agg, expandedId, onCardClick));
+				continue;
+			}
+		}
+
+		// Epic analysis card (transient)
 		const epic = epics.get(id);
 		if (epic) {
-			container.appendChild(createEpicCard(epic, expandedId, onCardClick));
+			container.appendChild(createEpicAnalysisCard(epic, expandedId, onCardClick));
 			continue;
 		}
+
+		// Regular workflow card
 		const entry = workflows.get(id);
 		if (entry) {
 			container.appendChild(createCompactCard(entry.state, expandedId, onCardClick));
@@ -144,7 +163,83 @@ const EPIC_STATUS_CLASSES: Record<string, string> = {
 	error: "card-status-error",
 };
 
-function createEpicCard(
+const EPIC_AGG_STATUS_LABELS: Record<string, string> = {
+	idle: "Idle",
+	running: "Running",
+	waiting: "Waiting",
+	error: "Error",
+	in_progress: "In Progress",
+	completed: "Done",
+};
+
+const EPIC_AGG_STATUS_CLASSES: Record<string, string> = {
+	idle: "card-status-idle",
+	running: "card-status-running",
+	waiting: "card-status-waiting",
+	error: "card-status-error",
+	in_progress: "card-status-running",
+	completed: "card-status-completed",
+};
+
+function createAggregatedEpicCard(
+	agg: EpicAggregatedState,
+	expandedId: string | null,
+	onClick: (id: string) => void,
+): HTMLElement {
+	const card = document.createElement("div");
+	card.className = "workflow-card epic-card";
+	card.dataset.epicId = agg.epicId;
+
+	const cardId = `epic:${agg.epicId}`;
+	if (expandedId === cardId) {
+		card.classList.add("card-expanded");
+	}
+
+	if (agg.status === "error" && expandedId !== cardId) {
+		card.classList.add("card-error-glow");
+	}
+
+	// Epic icon + status badge
+	const badge = document.createElement("span");
+	badge.className = `card-status ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
+	badge.textContent = EPIC_AGG_STATUS_LABELS[agg.status] || agg.status;
+	card.appendChild(badge);
+
+	// Epic label
+	const label = document.createElement("span");
+	label.className = "card-epic-label";
+	label.textContent = `Epic: ${agg.title}`;
+	card.appendChild(label);
+
+	// Progress text
+	const progress = document.createElement("span");
+	progress.className = "card-summary";
+	progress.textContent = `${agg.progress.completed}/${agg.progress.total} completed`;
+	card.appendChild(progress);
+
+	// Timer from start date
+	const timer = document.createElement("span");
+	timer.className = "card-timer";
+	const isActive =
+		agg.status === "running" || agg.status === "in_progress" || agg.status === "waiting";
+	timer.dataset.activeWorkMs = "0";
+	timer.dataset.activeWorkStartedAt = isActive ? agg.startDate : "";
+	if (!isActive && agg.status === "completed") {
+		// Show elapsed since start
+		timer.dataset.activeWorkMs = String(Date.now() - new Date(agg.startDate).getTime());
+	}
+	timer.textContent = formatTimer(
+		isActive ? 0 : agg.status === "completed" ? Date.now() - new Date(agg.startDate).getTime() : 0,
+		isActive ? agg.startDate : null,
+	);
+	card.appendChild(timer);
+
+	card.addEventListener("click", () => onClick(cardId));
+
+	return card;
+}
+
+function createEpicAnalysisCard(
 	epic: EpicClientState,
 	expandedId: string | null,
 	onClick: (id: string) => void,
