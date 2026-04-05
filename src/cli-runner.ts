@@ -171,7 +171,7 @@ export class CLIRunner {
 		const args = [
 			"claude",
 			"-p",
-			"Continue where you left off.",
+			"You were paused and are now being resumed. Before continuing, verify that any files you created or modified in this session actually exist on disk — if a file is missing or incomplete, recreate it. Then continue where you left off.",
 			"--output-format",
 			"stream-json",
 			"--verbose",
