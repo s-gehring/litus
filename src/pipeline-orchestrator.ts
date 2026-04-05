@@ -118,7 +118,9 @@ export class PipelineOrchestrator {
 				this.persistWorkflow(workflow);
 				this.callbacks.onStateChange(workflow.id);
 			})
-			.catch(() => {});
+			.catch((err) => {
+				console.warn(`[pipeline] Summary generation failed: ${err}`);
+			});
 	}
 
 	async startPipeline(specification: string, targetRepository?: string): Promise<Workflow> {
@@ -141,7 +143,9 @@ export class PipelineOrchestrator {
 				this.persistWorkflow(workflow);
 				this.callbacks.onStateChange(workflow.id);
 			})
-			.catch(() => {});
+			.catch((err) => {
+				console.warn(`[pipeline] Summary generation failed: ${err}`);
+			});
 
 		return workflow;
 	}

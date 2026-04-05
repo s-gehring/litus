@@ -69,12 +69,20 @@ export class CLIRunner {
 			"--include-partial-messages",
 		];
 
-		const proc = Bun.spawn(args, {
-			cwd,
-			stdout: "pipe",
-			stderr: "pipe",
-			env: process.env,
-		});
+		let proc: ReturnType<typeof Bun.spawn>;
+		try {
+			proc = Bun.spawn(args, {
+				cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+				env: process.env,
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(`[cli-runner] Failed to spawn process: ${msg}`);
+			queueMicrotask(() => callbacks.onError(msg));
+			return;
+		}
 
 		const entry: RunningProcess = {
 			process: proc,
@@ -120,12 +128,20 @@ export class CLIRunner {
 			sessionId,
 		];
 
-		const proc = Bun.spawn(args, {
-			cwd: entry.cwd,
-			stdout: "pipe",
-			stderr: "pipe",
-			env: process.env,
-		});
+		let proc: ReturnType<typeof Bun.spawn>;
+		try {
+			proc = Bun.spawn(args, {
+				cwd: entry.cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+				env: process.env,
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(`[cli-runner] Failed to spawn answer process: ${msg}`);
+			queueMicrotask(() => entry.callbacks.onError(msg));
+			return;
+		}
 
 		const newEntry: RunningProcess = {
 			process: proc,
@@ -157,12 +173,20 @@ export class CLIRunner {
 			sessionId,
 		];
 
-		const proc = Bun.spawn(args, {
-			cwd,
-			stdout: "pipe",
-			stderr: "pipe",
-			env: process.env,
-		});
+		let proc: ReturnType<typeof Bun.spawn>;
+		try {
+			proc = Bun.spawn(args, {
+				cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+				env: process.env,
+			});
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.error(`[cli-runner] Failed to spawn resume process: ${msg}`);
+			queueMicrotask(() => callbacks.onError(msg));
+			return;
+		}
 
 		const entry: RunningProcess = {
 			process: proc,

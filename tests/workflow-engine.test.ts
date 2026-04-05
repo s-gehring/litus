@@ -95,6 +95,14 @@ describe("WorkflowEngine", () => {
 			expect(engine.getWorkflow()?.status).toBe("running");
 		});
 
+		test("paused → error (late error callback)", async () => {
+			const w = await engine.createWorkflow("test");
+			engine.transition(w.id, "running");
+			engine.transition(w.id, "paused");
+			engine.transition(w.id, "error");
+			expect(engine.getWorkflow()?.status).toBe("error");
+		});
+
 		test("paused → cancelled (abort)", async () => {
 			const w = await engine.createWorkflow("test");
 			engine.transition(w.id, "running");

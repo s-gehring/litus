@@ -353,7 +353,9 @@ async function handleEpicStart(
 				broadcast({ type: "epic:summary", epicId, summary });
 			}
 		})
-		.catch(() => {});
+		.catch((err) => {
+			console.warn(`[epic] Summary generation failed: ${err}`);
+		});
 
 	try {
 		const repoDir = targetRepository || process.cwd();
@@ -621,7 +623,8 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 						default:
 							sendTo(ws, { type: "error", message: "Unknown message type" });
 					}
-				} catch {
+				} catch (err) {
+					console.error("[ws] Message handling error:", err);
 					sendTo(ws, { type: "error", message: "Invalid message format" });
 				}
 			},

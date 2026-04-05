@@ -26,8 +26,8 @@ describe("VALID_TRANSITIONS", () => {
 		]);
 	});
 
-	test("paused can transition to running or cancelled", () => {
-		expect(VALID_TRANSITIONS.paused).toEqual(["running", "cancelled"]);
+	test("paused can transition to running, cancelled, or error", () => {
+		expect(VALID_TRANSITIONS.paused).toEqual(["running", "cancelled", "error"]);
 	});
 
 	test("waiting_for_input can transition to running or cancelled", () => {

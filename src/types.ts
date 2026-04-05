@@ -149,7 +149,7 @@ export const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
 	running: ["waiting_for_input", "completed", "error", "paused"],
 	waiting_for_input: ["running", "cancelled"],
 	waiting_for_dependencies: ["running", "cancelled"],
-	paused: ["running", "cancelled"],
+	paused: ["running", "cancelled", "error"],
 	completed: [],
 	cancelled: [],
 	error: ["running"],
