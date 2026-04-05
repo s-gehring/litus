@@ -1,5 +1,6 @@
 import type {
 	ClientMessage,
+	EpicAggregatedState,
 	EpicClientState,
 	OutputEntry,
 	ServerMessage,
@@ -8,8 +9,10 @@ import type {
 } from "../types";
 import { createConfigPanel, updateConfigPanel } from "./components/config-panel";
 import { createEpicForm, hideEpicForm, showEpicForm } from "./components/epic-form";
+import { renderEpicTree } from "./components/epic-tree";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
+import { EPIC_AGG_STATUS_CLASSES, EPIC_CARD_PREFIX } from "./components/status-maps";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
 import {
 	appendOutput,
@@ -24,6 +27,7 @@ import {
 	updateSummary,
 	updateWorkflowStatus,
 } from "./components/workflow-window";
+import { computeEpicAggregatedState } from "./epic-aggregation";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -37,6 +41,67 @@ const workflows = new Map<string, WorkflowClientState>();
 const epics = new Map<string, EpicClientState>();
 const cardOrder: string[] = [];
 let expandedId: string | null = null;
+
+// Epic tree state
+let expandedEpicId: string | null = null;
+let selectedChildId: string | null = null;
+const epicAggregates = new Map<string, EpicAggregatedState>();
+
+function rebuildEpicAggregates(): void {
+	epicAggregates.clear();
+
+	// Group workflows by epicId
+	const epicGroups = new Map<string, WorkflowState[]>();
+	for (const [, entry] of workflows) {
+		const wf = entry.state;
+		if (wf.epicId) {
+			if (!epicGroups.has(wf.epicId)) epicGroups.set(wf.epicId, []);
+			epicGroups.get(wf.epicId)?.push(wf);
+		}
+	}
+
+	for (const [epicId, children] of epicGroups) {
+		const agg = computeEpicAggregatedState(children);
+		if (agg) epicAggregates.set(epicId, agg);
+	}
+}
+
+function rebuildCardOrder(): void {
+	cardOrder.length = 0;
+	const seenEpics = new Set<string>();
+
+	// Collect all items with their sort keys
+	const items: { key: string; sortDate: string }[] = [];
+
+	for (const [, entry] of workflows) {
+		const wf = entry.state;
+		if (wf.epicId) {
+			if (!seenEpics.has(wf.epicId)) {
+				seenEpics.add(wf.epicId);
+				const agg = epicAggregates.get(wf.epicId);
+				items.push({
+					key: `${EPIC_CARD_PREFIX}${wf.epicId}`,
+					sortDate: agg?.startDate ?? wf.createdAt,
+				});
+			}
+		} else {
+			items.push({ key: wf.id, sortDate: wf.createdAt });
+		}
+	}
+
+	// Also include active epic analysis cards (not yet completed with children)
+	for (const [epicId, epic] of epics) {
+		if (epic.status === "analyzing" || (epic.status === "error" && !seenEpics.has(epicId))) {
+			items.push({ key: epicId, sortDate: epic.startedAt });
+		}
+	}
+
+	// Sort by date ascending
+	items.sort((a, b) => a.sortDate.localeCompare(b.sortDate));
+	for (const item of items) {
+		cardOrder.push(item.key);
+	}
+}
 
 function getWsUrl(): string {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -117,14 +182,19 @@ function handleMessage(msg: ServerMessage): void {
 		case "workflow:list": {
 			// Initial sync: populate all workflows
 			workflows.clear();
-			cardOrder.length = 0;
 			for (const wf of msg.workflows) {
 				addOrUpdateWorkflow(wf);
 			}
+			rebuildEpicAggregates();
+			rebuildCardOrder();
 			renderCards();
-			// If there's exactly one active workflow, auto-expand it
-			if (msg.workflows.length === 1) {
-				expandItem(msg.workflows[0].id);
+			// If there's exactly one non-epic workflow, auto-expand it
+			const standaloneWorkflows = msg.workflows.filter((w) => !w.epicId);
+			if (standaloneWorkflows.length === 1 && epicAggregates.size === 0) {
+				expandItem(standaloneWorkflows[0].id);
+			} else if (epicAggregates.size === 1 && standaloneWorkflows.length === 0) {
+				const epicId = [...epicAggregates.keys()][0];
+				expandItem(`${EPIC_CARD_PREFIX}${epicId}`);
 			} else {
 				renderExpandedView();
 			}
@@ -133,10 +203,20 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "workflow:created": {
 			addOrUpdateWorkflow(msg.workflow);
+			if (msg.workflow.epicId) {
+				rebuildEpicAggregates();
+				rebuildCardOrder();
+			} else if (!cardOrder.includes(msg.workflow.id)) {
+				cardOrder.push(msg.workflow.id);
+			}
 			renderCards();
 			// Don't auto-expand child workflows while viewing the epic analysis
-			if (!epics.has(expandedId ?? "")) {
+			if (!epics.has(expandedId ?? "") && !msg.workflow.epicId) {
 				expandItem(msg.workflow.id);
+			}
+			// If viewing the epic's tree, re-render it
+			if (expandedEpicId && msg.workflow.epicId === expandedEpicId) {
+				renderExpandedView();
 			}
 			break;
 		}
@@ -144,8 +224,16 @@ function handleMessage(msg: ServerMessage): void {
 		case "workflow:state": {
 			if (!msg.workflow) break;
 			addOrUpdateWorkflow(msg.workflow);
+			// Recompute epic aggregate if child changed
+			if (msg.workflow.epicId) {
+				rebuildEpicAggregates();
+			}
 			renderCards();
 			if (expandedId === msg.workflow.id) {
+				renderExpandedView();
+			}
+			// If the epic tree is displayed and this is a child, re-render tree
+			if (expandedEpicId && msg.workflow.epicId === expandedEpicId) {
 				renderExpandedView();
 			}
 			break;
@@ -275,9 +363,13 @@ function handleMessage(msg: ServerMessage): void {
 				epic.completedAt = new Date().toISOString();
 				epic.title = msg.title;
 				epic.workflowIds = msg.workflowIds;
+				// Rebuild aggregates and card order to transition from analysis card to epic card
+				rebuildEpicAggregates();
+				rebuildCardOrder();
 				renderCards();
+				// Auto-expand the epic tree
 				if (expandedId === msg.epicId) {
-					renderExpandedView();
+					expandItem(`${EPIC_CARD_PREFIX}${msg.epicId}`);
 				}
 			}
 			break;
@@ -304,6 +396,10 @@ function handleMessage(msg: ServerMessage): void {
 				entry.state.epicDependencyStatus = msg.epicDependencyStatus;
 				renderCards();
 				if (expandedId === msg.workflowId) {
+					renderExpandedView();
+				}
+				// Re-render epic tree if this child's epic is displayed
+				if (expandedEpicId && entry.state.epicId === expandedEpicId) {
 					renderExpandedView();
 				}
 			}
@@ -333,24 +429,67 @@ function handleMessage(msg: ServerMessage): void {
 	}
 }
 
-function expandItem(workflowId: string): void {
-	if (expandedId === workflowId) {
-		// Toggle collapse
-		expandedId = null;
+function expandItem(id: string): void {
+	// Check if it's an epic card (epic:{epicId})
+	if (id.startsWith(EPIC_CARD_PREFIX)) {
+		const epicId = id.slice(EPIC_CARD_PREFIX.length);
+		if (expandedEpicId === epicId && !selectedChildId) {
+			// Toggle collapse
+			expandedEpicId = null;
+			expandedId = null;
+		} else {
+			expandedEpicId = epicId;
+			selectedChildId = null;
+			expandedId = id;
+		}
 	} else {
-		expandedId = workflowId;
+		// Regular workflow or epic analysis
+		if (expandedId === id) {
+			expandedId = null;
+			expandedEpicId = null;
+			selectedChildId = null;
+		} else {
+			expandedId = id;
+			expandedEpicId = null;
+			selectedChildId = null;
+		}
 	}
 	renderCards();
 	renderExpandedView();
 }
 
+function selectChild(workflowId: string): void {
+	if (selectedChildId === workflowId) {
+		// Deselect: go back to tree
+		selectedChildId = null;
+	} else {
+		selectedChildId = workflowId;
+	}
+	renderExpandedView();
+}
+
+function returnToEpicTree(): void {
+	selectedChildId = null;
+	renderExpandedView();
+}
+
 function renderCards(): void {
-	renderCardStrip(cardOrder, workflows, epics, expandedId, expandItem);
+	renderCardStrip(cardOrder, workflows, epics, epicAggregates, expandedId, expandItem);
 }
 
 function renderExpandedView(): void {
 	const detailArea = $("#detail-area");
 	const welcomeArea = $("#welcome-area");
+	const treeContainer = document.getElementById("epic-tree-panel");
+
+	// Clear tree panel, breadcrumb, analysis details, and fullsize mode
+	if (treeContainer) treeContainer.remove();
+	const existingBreadcrumb = document.getElementById("epic-breadcrumb");
+	if (existingBreadcrumb) existingBreadcrumb.remove();
+	const existingAnalysis = document.getElementById("epic-analysis-details");
+	if (existingAnalysis) existingAnalysis.remove();
+	const outputArea = document.getElementById("output-area");
+	if (outputArea) outputArea.classList.remove("epic-tree-fullsize");
 
 	if (!expandedId) {
 		// Nothing expanded — show welcome
@@ -366,9 +505,9 @@ function renderExpandedView(): void {
 		return;
 	}
 
-	// Check if expanded item is an epic
+	// Check if expanded item is an epic analysis card
 	const epic = epics.get(expandedId);
-	if (epic) {
+	if (epic && !expandedId.startsWith(EPIC_CARD_PREFIX)) {
 		if (welcomeArea) welcomeArea.classList.add("hidden");
 		if (detailArea) detailArea.classList.remove("hidden");
 
@@ -381,10 +520,33 @@ function renderExpandedView(): void {
 		updateDetailActions([]);
 		hideQuestion();
 
+		// Make output area fill available space for epic analysis
+		const oa = $("#output-area");
+		oa.classList.add("epic-tree-fullsize");
+
 		clearOutput();
 		if (epic.outputLines.length > 0) {
 			renderOutputEntries(epic.outputLines);
 		}
+		return;
+	}
+
+	// Check if it's an aggregated epic card
+	if (expandedEpicId) {
+		const agg = epicAggregates.get(expandedEpicId);
+		if (!agg) return;
+
+		if (welcomeArea) welcomeArea.classList.add("hidden");
+		if (detailArea) detailArea.classList.remove("hidden");
+
+		// If a child is selected, show the child's detail view with breadcrumb
+		if (selectedChildId) {
+			renderChildDetailView(selectedChildId, agg);
+			return;
+		}
+
+		// Show epic tree view
+		renderEpicTreeView(agg);
 		return;
 	}
 
@@ -395,6 +557,101 @@ function renderExpandedView(): void {
 	const entry = workflows.get(expandedId);
 	if (!entry) return;
 
+	renderWorkflowDetail(entry);
+}
+
+function renderEpicTreeView(agg: EpicAggregatedState): void {
+	// Update status area for epic
+	const statusBadge = $("#workflow-status");
+	statusBadge.textContent = agg.status;
+	statusBadge.className = `status-badge ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
+
+	renderPipelineSteps(null);
+	updateSummary(`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`);
+	updateStepSummary("");
+	updateFlavor("");
+	updateDetailActions([]);
+	hideQuestion();
+	clearOutput();
+
+	// Hide the step history
+	const stepHistory = $("#step-history");
+	if (stepHistory) stepHistory.replaceChildren();
+
+	// Show epic analysis output in a collapsible section
+	const epicData = epics.get(agg.epicId);
+	if (epicData) {
+		updateSpecDetails(epicData.description);
+		renderEpicAnalysisDetails(epicData);
+	} else {
+		updateSpecDetails("");
+	}
+
+	// Make output area fill available space for epic tree
+	const outputArea = $("#output-area");
+	outputArea.classList.add("epic-tree-fullsize");
+
+	// Build workflow map from child IDs
+	const childWorkflows = new Map<string, WorkflowState>();
+	for (const id of agg.childWorkflowIds) {
+		const entry = workflows.get(id);
+		if (entry) childWorkflows.set(id, entry.state);
+	}
+
+	// Render the tree inside the output area
+	const outputLog = $("#output-log");
+	outputLog.replaceChildren();
+
+	const tree = renderEpicTree(agg, childWorkflows, selectChild);
+	outputLog.appendChild(tree);
+}
+
+function renderEpicAnalysisDetails(epicData: EpicClientState): void {
+	// Remove existing if present
+	const existing = document.getElementById("epic-analysis-details");
+	if (existing) existing.remove();
+
+	if (epicData.outputLines.length === 0) return;
+
+	const details = document.createElement("details");
+	details.className = "spec-details";
+	details.id = "epic-analysis-details";
+
+	const summary = document.createElement("summary");
+	summary.className = "spec-details-summary";
+	summary.textContent = "Epic Analysis Output";
+	details.appendChild(summary);
+
+	const content = document.createElement("div");
+	content.className = "spec-details-text";
+
+	// Render output lines as text
+	const lines: string[] = [];
+	for (const line of epicData.outputLines) {
+		if (line.kind === "text") {
+			lines.push(line.text);
+		} else if (line.kind === "tools") {
+			lines.push(`[tools: ${Object.keys(line.tools).join(", ")}]`);
+		}
+	}
+	content.textContent = lines.join("\n");
+	details.appendChild(content);
+
+	// Insert after spec-details
+	const specDetails = document.getElementById("spec-details");
+	if (specDetails) {
+		specDetails.parentElement?.insertBefore(details, specDetails.nextSibling);
+	}
+}
+
+function renderChildDetailView(childId: string, epicAgg: EpicAggregatedState): void {
+	const entry = workflows.get(childId);
+	if (!entry) return;
+
+	renderWorkflowDetail(entry, epicAgg);
+}
+
+function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggregatedState): void {
 	const wf = entry.state;
 
 	// Render status, pipeline, summary
@@ -425,6 +682,20 @@ function renderExpandedView(): void {
 
 	// Render output from accumulated entries
 	clearOutput();
+
+	// Add breadcrumb above spec-details if viewing within an epic context
+	if (epicContext) {
+		const specDetails = document.getElementById("spec-details");
+		if (specDetails) {
+			const breadcrumb = document.createElement("div");
+			breadcrumb.className = "epic-breadcrumb";
+			breadcrumb.id = "epic-breadcrumb";
+			breadcrumb.textContent = `\u2190 Epic: ${epicContext.title}`;
+			breadcrumb.addEventListener("click", returnToEpicTree);
+			specDetails.parentElement?.insertBefore(breadcrumb, specDetails);
+		}
+	}
+
 	if (entry.outputLines.length > 0) {
 		renderOutputEntries(entry.outputLines);
 	} else if (wf.status === "error") {

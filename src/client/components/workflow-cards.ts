@@ -1,26 +1,17 @@
-import type { EpicClientState, WorkflowClientState, WorkflowState } from "../../types";
+import type {
+	EpicAggregatedState,
+	EpicClientState,
+	WorkflowClientState,
+	WorkflowState,
+} from "../../types";
+import {
+	EPIC_AGG_STATUS_CLASSES,
+	EPIC_CARD_PREFIX,
+	STATUS_CLASSES,
+	STATUS_LABELS,
+} from "./status-maps";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
-
-const STATUS_LABELS: Record<string, string> = {
-	idle: "Idle",
-	running: "Running",
-	waiting_for_input: "Waiting",
-	waiting_for_dependencies: "Waiting",
-	completed: "Done",
-	cancelled: "Cancelled",
-	error: "Error",
-};
-
-const STATUS_CLASSES: Record<string, string> = {
-	idle: "card-status-idle",
-	running: "card-status-running",
-	waiting_for_input: "card-status-waiting",
-	waiting_for_dependencies: "card-status-waiting-deps",
-	completed: "card-status-completed",
-	cancelled: "card-status-cancelled",
-	error: "card-status-error",
-};
 
 // Store reference for dependency name resolution
 let allWorkflowsRef: Map<string, WorkflowClientState> | null = null;
@@ -29,6 +20,7 @@ export function renderCardStrip(
 	cardOrder: string[],
 	workflows: Map<string, WorkflowClientState>,
 	epics: Map<string, EpicClientState>,
+	epicAggregates: Map<string, EpicAggregatedState>,
 	expandedId: string | null,
 	onCardClick: (id: string) => void,
 ): void {
@@ -39,11 +31,24 @@ export function renderCardStrip(
 	container.replaceChildren();
 
 	for (const id of cardOrder) {
+		// Aggregated epic card (epic:{epicId})
+		if (id.startsWith(EPIC_CARD_PREFIX)) {
+			const epicId = id.slice(EPIC_CARD_PREFIX.length);
+			const agg = epicAggregates.get(epicId);
+			if (agg) {
+				container.appendChild(createAggregatedEpicCard(agg, expandedId, onCardClick));
+				continue;
+			}
+		}
+
+		// Epic analysis card (transient)
 		const epic = epics.get(id);
 		if (epic) {
-			container.appendChild(createEpicCard(epic, expandedId, onCardClick));
+			container.appendChild(createEpicAnalysisCard(epic, expandedId, onCardClick));
 			continue;
 		}
+
+		// Regular workflow card
 		const entry = workflows.get(id);
 		if (entry) {
 			container.appendChild(createCompactCard(entry.state, expandedId, onCardClick));
@@ -144,7 +149,70 @@ const EPIC_STATUS_CLASSES: Record<string, string> = {
 	error: "card-status-error",
 };
 
-function createEpicCard(
+const EPIC_AGG_STATUS_LABELS: Record<string, string> = {
+	idle: "Idle",
+	running: "Running",
+	waiting: "Waiting",
+	error: "Error",
+	in_progress: "In Progress",
+	completed: "Done",
+};
+
+function createAggregatedEpicCard(
+	agg: EpicAggregatedState,
+	expandedId: string | null,
+	onClick: (id: string) => void,
+): HTMLElement {
+	const card = document.createElement("div");
+	card.className = "workflow-card epic-card";
+	card.dataset.epicId = agg.epicId;
+
+	const cardId = `${EPIC_CARD_PREFIX}${agg.epicId}`;
+	if (expandedId === cardId) {
+		card.classList.add("card-expanded");
+	}
+
+	if (agg.status === "error" && expandedId !== cardId) {
+		card.classList.add("card-error-glow");
+	}
+
+	// Pulse when waiting and not expanded
+	if (agg.status === "waiting" && expandedId !== cardId) {
+		card.classList.add("card-pulse");
+	}
+
+	// Epic icon + status badge
+	const badge = document.createElement("span");
+	badge.className = `card-status ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
+	badge.textContent = EPIC_AGG_STATUS_LABELS[agg.status] || agg.status;
+	card.appendChild(badge);
+
+	// Epic label
+	const label = document.createElement("span");
+	label.className = "card-epic-label";
+	label.textContent = `Epic: ${agg.title}`;
+	card.appendChild(label);
+
+	// Progress text
+	const progress = document.createElement("span");
+	progress.className = "card-summary";
+	progress.textContent = `${agg.progress.completed}/${agg.progress.total} completed`;
+	card.appendChild(progress);
+
+	// Timer — sum of active work time across children
+	const timer = document.createElement("span");
+	timer.className = "card-timer";
+	timer.dataset.activeWorkMs = String(agg.activeWorkMs);
+	timer.dataset.activeWorkStartedAt = agg.activeWorkStartedAt || "";
+	timer.textContent = formatTimer(agg.activeWorkMs, agg.activeWorkStartedAt);
+	card.appendChild(timer);
+
+	card.addEventListener("click", () => onClick(cardId));
+
+	return card;
+}
+
+function createEpicAnalysisCard(
 	epic: EpicClientState,
 	expandedId: string | null,
 	onClick: (id: string) => void,

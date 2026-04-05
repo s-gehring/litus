@@ -139,27 +139,23 @@ export interface EpicAnalysisCallbacks {
 
 const DEFAULT_EPIC_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
-export async function analyzeEpic(
-	epicDescription: string,
-	targetRepoDir: string,
-	onKillRef?: { current: EpicAnalysisProcess | null },
-	timeoutMs: number = DEFAULT_EPIC_TIMEOUT_MS,
-	callbacks?: EpicAnalysisCallbacks,
-): Promise<EpicAnalysisResult> {
-	const prompt = buildDecompositionPrompt(epicDescription);
-	const args = [
-		"claude",
-		"-p",
-		prompt,
-		"--output-format",
-		"stream-json",
-		"--verbose",
-		"--dangerously-skip-permissions",
-		"--include-partial-messages",
-	];
+interface StreamResult {
+	accumulatedText: string;
+	sessionId: string | null;
+	exitCode: number;
+	timedOut: boolean;
+	stderr: string;
+}
 
+async function runCLIStream(
+	args: string[],
+	cwd: string,
+	timeoutMs: number,
+	onKillRef?: { current: EpicAnalysisProcess | null },
+	callbacks?: EpicAnalysisCallbacks,
+): Promise<StreamResult> {
 	const proc = Bun.spawn(args, {
-		cwd: targetRepoDir,
+		cwd,
 		stdout: "pipe",
 		stderr: "pipe",
 		env: process.env,
@@ -174,7 +170,6 @@ export async function analyzeEpic(
 		throw new Error("Failed to capture CLI stdout");
 	}
 
-	// Set up timeout
 	let timedOut = false;
 	const timeoutId = setTimeout(() => {
 		timedOut = true;
@@ -185,6 +180,7 @@ export async function analyzeEpic(
 	const decoder = new TextDecoder();
 	let buffer = "";
 	let accumulatedText = "";
+	let sessionId: string | null = null;
 	let deltaBuffer = "";
 	let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -211,6 +207,9 @@ export async function analyzeEpic(
 				if (!line.trim()) continue;
 				try {
 					const event = JSON.parse(line);
+					if (event.session_id && !sessionId) {
+						sessionId = event.session_id;
+					}
 					if (event.type === "assistant" && event.message?.content) {
 						flushDeltaBuffer();
 						const toolCounts = new Map<string, number>();
@@ -232,7 +231,6 @@ export async function analyzeEpic(
 						deltaFlushTimer = setTimeout(flushDeltaBuffer, 50);
 					}
 				} catch {
-					// Non-JSON line — emit as raw output
 					callbacks?.onOutput?.(line);
 				}
 			}
@@ -246,18 +244,92 @@ export async function analyzeEpic(
 	const exitCode = await proc.exited;
 	if (onKillRef) onKillRef.current = null;
 
-	if (timedOut) {
-		throw new Error("Epic analysis timed out");
+	const stderrStream = proc.stderr;
+	const stderr =
+		stderrStream && typeof stderrStream !== "number"
+			? await new Response(stderrStream as ReadableStream).text()
+			: "";
+
+	return { accumulatedText, sessionId, exitCode, timedOut, stderr: stderr.trim() };
+}
+
+const MAX_JSON_RETRIES = 2;
+
+const JSON_FIX_PROMPT =
+	"Your previous response could not be parsed. Please respond with ONLY the valid JSON code block in the exact format requested. No other text.";
+
+export async function analyzeEpic(
+	epicDescription: string,
+	targetRepoDir: string,
+	onKillRef?: { current: EpicAnalysisProcess | null },
+	timeoutMs: number = DEFAULT_EPIC_TIMEOUT_MS,
+	callbacks?: EpicAnalysisCallbacks,
+): Promise<EpicAnalysisResult> {
+	const prompt = buildDecompositionPrompt(epicDescription);
+	const args = [
+		"claude",
+		"-p",
+		prompt,
+		"--output-format",
+		"stream-json",
+		"--verbose",
+		"--dangerously-skip-permissions",
+		"--include-partial-messages",
+	];
+
+	const result = await runCLIStream(args, targetRepoDir, timeoutMs, onKillRef, callbacks);
+
+	if (result.timedOut) throw new Error("Epic analysis timed out");
+	if (result.exitCode !== 0) {
+		throw new Error(result.stderr || `CLI process exited with code ${result.exitCode}`);
 	}
 
-	if (exitCode !== 0) {
-		const stderrStream = proc.stderr;
-		const stderr =
-			stderrStream && typeof stderrStream !== "number"
-				? await new Response(stderrStream as ReadableStream).text()
-				: "";
-		throw new Error(stderr.trim() || `CLI process exited with code ${exitCode}`);
+	// Try parsing, retry with --resume on JSON errors
+	let lastError: Error | null = null;
+	let sessionId = result.sessionId;
+	let accumulatedText = result.accumulatedText;
+
+	for (let attempt = 0; attempt <= MAX_JSON_RETRIES; attempt++) {
+		try {
+			return parseAnalysisResult(accumulatedText);
+		} catch (err) {
+			lastError = err as Error;
+			if (attempt >= MAX_JSON_RETRIES || !sessionId) break;
+
+			callbacks?.onOutput?.(`\n\n--- Retrying: ${lastError.message} ---\n\n`);
+
+			const retryArgs = [
+				"claude",
+				"-p",
+				JSON_FIX_PROMPT,
+				"--resume",
+				sessionId,
+				"--output-format",
+				"stream-json",
+				"--verbose",
+				"--dangerously-skip-permissions",
+				"--include-partial-messages",
+			];
+
+			const retryResult = await runCLIStream(
+				retryArgs,
+				targetRepoDir,
+				timeoutMs,
+				onKillRef,
+				callbacks,
+			);
+
+			if (retryResult.timedOut) throw new Error("Epic analysis timed out during retry");
+			if (retryResult.exitCode !== 0) {
+				throw new Error(
+					retryResult.stderr || `CLI process exited with code ${retryResult.exitCode}`,
+				);
+			}
+
+			if (retryResult.sessionId) sessionId = retryResult.sessionId;
+			accumulatedText = retryResult.accumulatedText;
+		}
 	}
 
-	return parseAnalysisResult(accumulatedText);
+	throw lastError ?? new Error("Could not parse decomposition result");
 }
