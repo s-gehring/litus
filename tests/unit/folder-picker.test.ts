@@ -23,26 +23,21 @@ describe("folder-picker component contract", () => {
 		expect(pickerSource).toContain('placeholder = "~/git"');
 	});
 
-	test("creates a browse button", () => {
-		expect(pickerSource).toContain("Browse");
-		expect(pickerSource).toContain("folder-picker-btn");
+	test("creates a dropdown for suggestions", () => {
+		expect(pickerSource).toContain("folder-picker-dropdown");
 	});
 
-	test("calls /api/browse-folder endpoint on browse click", () => {
-		expect(pickerSource).toContain('fetch("/api/browse-folder")');
+	test("calls /api/suggest-folders endpoint for suggestions", () => {
+		expect(pickerSource).toContain("/api/suggest-folders");
 	});
 
-	test("hides browse button on endpoint failure (graceful degradation)", () => {
-		expect(pickerSource).toContain("endpointAvailable = false");
-		expect(pickerSource).toContain('browseBtn.classList.add("hidden")');
+	test("supports keyboard navigation (ArrowDown/ArrowUp/Enter/Escape)", () => {
+		expect(pickerSource).toContain("ArrowDown");
+		expect(pickerSource).toContain("ArrowUp");
+		expect(pickerSource).toContain("Escape");
 	});
 
-	test("disables button during browse request to prevent double-clicks", () => {
-		expect(pickerSource).toContain("browseBtn.disabled = true");
-		expect(pickerSource).toContain("browseBtn.disabled = false");
-	});
-
-	test("dispatches input event after path selection for form reactivity", () => {
+	test("dispatches input event after selection for form reactivity", () => {
 		expect(pickerSource).toContain('new Event("input"');
 		expect(pickerSource).toContain("bubbles: true");
 	});
@@ -51,12 +46,21 @@ describe("folder-picker component contract", () => {
 		expect(pickerSource).toContain("input.value.trim()");
 	});
 
-	test("populates input when server returns a path", () => {
-		expect(pickerSource).toContain("if (data.path)");
-		expect(pickerSource).toContain("input.value = data.path");
+	test("hides dropdown on blur", () => {
+		expect(pickerSource).toContain("blur");
+		expect(pickerSource).toContain("hideDropdown");
 	});
 
-	test("handles non-ok response by hiding browse button", () => {
-		expect(pickerSource).toContain("if (!res.ok)");
+	test("shows dropdown on focus when suggestions exist", () => {
+		expect(pickerSource).toContain("focus");
+		expect(pickerSource).toContain("showDropdown");
+	});
+
+	test("extracts parent directory from path for suggestions", () => {
+		expect(pickerSource).toContain("getParentDir");
+	});
+
+	test("pre-fetches suggestions when setValue is called", () => {
+		expect(pickerSource).toContain("fetchSuggestions");
 	});
 });

@@ -95,49 +95,39 @@ describe("getLastTargetRepo logic", () => {
 	});
 });
 
-describe("server-side /api/browse-folder endpoint", () => {
-	test("endpoint registered at /api/browse-folder", () => {
-		expect(serverSource).toContain('url.pathname === "/api/browse-folder"');
+describe("server-side /api/suggest-folders endpoint", () => {
+	test("endpoint registered at /api/suggest-folders", () => {
+		expect(serverSource).toContain('url.pathname === "/api/suggest-folders"');
 	});
 
 	test("endpoint only responds to GET requests", () => {
 		expect(serverSource).toContain('req.method === "GET"');
 	});
 
-	test("returns JSON with path property on success", () => {
-		expect(serverSource).toContain("Response.json({ path })");
+	test("requires parent query parameter", () => {
+		expect(serverSource).toContain('url.searchParams.get("parent")');
+		expect(serverSource).toContain("parent parameter required");
 	});
 
-	test("returns HTTP 500 on error", () => {
-		expect(serverSource).toContain("status: 500");
+	test("returns HTTP 400 when parent is missing", () => {
+		expect(serverSource).toContain("status: 400");
 	});
 
-	test("uses platform-specific folder picker commands", () => {
-		expect(serverSource).toContain("process.platform");
-		expect(serverSource).toContain("win32");
-		expect(serverSource).toContain("darwin");
-		expect(serverSource).toContain("FolderBrowserDialog");
-		expect(serverSource).toContain("osascript");
-		expect(serverSource).toContain("zenity");
+	test("returns JSON with folders array", () => {
+		expect(serverSource).toContain("Response.json({ folders })");
 	});
 
-	test("handles user cancellation by returning null path", () => {
-		expect(serverSource).toContain("CANCELLED");
-		expect(serverSource).toContain("return null");
+	test("listSubdirectories reads directory entries", () => {
+		expect(serverSource).toContain("readdirSync(parentDir)");
+		expect(serverSource).toContain("isDirectory()");
 	});
 
-	test("handles zenity cancel (exit code 1)", () => {
-		expect(serverSource).toContain("exitCode === 1");
+	test("skips hidden directories (dotfiles)", () => {
+		expect(serverSource).toContain('entry.startsWith(".")');
 	});
 
-	test("osascript uses multiple -e flags instead of multiline single arg", () => {
-		const darwinSection = serverSource.slice(
-			serverSource.indexOf('"darwin"'),
-			serverSource.indexOf("zenity"),
-		);
-		// Count occurrences of "-e" — should be multiple separate flags
-		const eFlags = darwinSection.match(/"-e"/g) || [];
-		expect(eFlags.length).toBeGreaterThanOrEqual(4);
+	test("sorts results alphabetically", () => {
+		expect(serverSource).toContain("folders.sort");
 	});
 });
 
