@@ -1,4 +1,7 @@
+import { marked } from "marked";
 import type { EpicStatus, OutputEntry, WorkflowState } from "../../types";
+
+marked.setOptions({ async: false, breaks: true });
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -48,22 +51,19 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 			prLink.classList.add("hidden");
 		}
 	}
-
-	// Render collapsed completed steps
-	renderStepHistory(workflow);
 }
 
 const EPIC_STATUS_MAP: Record<EpicStatus, { label: string; css: string }> = {
 	analyzing: { label: "Analyzing Epic", css: "running" },
 	completed: { label: "completed", css: "completed" },
 	error: { label: "error", css: "error" },
+	infeasible: { label: "infeasible", css: "error" },
 };
 
 export function updateEpicStatus(status: EpicStatus): void {
 	const statusBadge = $("#workflow-status");
 	const stepLabel = $("#current-step-label");
 	const prLink = $("#pr-link") as HTMLAnchorElement | null;
-	const historyContainer = $("#step-history");
 
 	const mapped = EPIC_STATUS_MAP[status];
 	statusBadge.textContent = mapped.label;
@@ -71,52 +71,6 @@ export function updateEpicStatus(status: EpicStatus): void {
 
 	if (stepLabel) stepLabel.classList.add("hidden");
 	if (prLink) prLink.classList.add("hidden");
-	if (historyContainer) historyContainer.replaceChildren();
-}
-
-function renderStepHistory(workflow: WorkflowState | null): void {
-	const historyContainer = $("#step-history");
-	if (!historyContainer) return;
-
-	if (!workflow || workflow.steps.length === 0) {
-		historyContainer.replaceChildren();
-		return;
-	}
-
-	historyContainer.replaceChildren();
-
-	for (let i = 0; i < workflow.steps.length; i++) {
-		const step = workflow.steps[i];
-		if (step.status !== "completed" && step.status !== "error") continue;
-
-		const item = document.createElement("details");
-		item.className = "step-history-item";
-
-		const summary = document.createElement("summary");
-		summary.className = "step-history-summary";
-		const label = step.status === "error" ? "error" : "completed";
-		summary.textContent = `${step.displayName} — ${label}`;
-		if (step.status === "error") summary.classList.add("step-history-error");
-		item.appendChild(summary);
-
-		if (step.output) {
-			const output = document.createElement("div");
-			output.className = "step-history-output";
-			// Show last 500 chars to keep it manageable
-			const trimmed = step.output.length > 500 ? `...${step.output.slice(-500)}` : step.output;
-			output.textContent = trimmed;
-			item.appendChild(output);
-		}
-
-		if (step.error) {
-			const errorDiv = document.createElement("div");
-			errorDiv.className = "step-history-output step-history-error-msg";
-			errorDiv.textContent = `Error: ${step.error}`;
-			item.appendChild(errorDiv);
-		}
-
-		historyContainer.appendChild(item);
-	}
 }
 
 export function appendOutput(text: string, type: "normal" | "error" | "system" = "normal"): void {
@@ -195,6 +149,19 @@ export function updateStepSummary(stepSummary: string): void {
 export function updateFlavor(flavor: string): void {
 	const el = $("#workflow-flavor");
 	el.textContent = flavor;
+}
+
+export function updateUserInput(text: string): void {
+	const el = $("#user-input");
+	if (!el) return;
+
+	if (text) {
+		el.innerHTML = marked.parse(text) as string;
+		el.classList.remove("hidden");
+	} else {
+		el.innerHTML = "";
+		el.classList.add("hidden");
+	}
 }
 
 export function updateSpecDetails(text: string): void {

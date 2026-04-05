@@ -26,6 +26,7 @@ Return ONLY a JSON code block with this exact structure:
 \`\`\`json
 {
   "title": "Short epic title",
+  "summary": "A 1-3 paragraph overview of the decomposition: what the epic achieves, how the specs relate to each other, and any important architectural decisions or trade-offs.",
   "specs": [
     {
       "id": "a",
@@ -48,8 +49,10 @@ Rules:
 - \`id\` values are simple lowercase letters (a, b, c, ...)
 - \`dependencies\` reference other spec \`id\` values within this decomposition
 - \`description\` should be detailed enough to serve as a specification input
+- \`summary\` must be a human-readable overview (1-3 paragraphs, markdown allowed)
 - If the epic is already atomic (cannot be split), return a single spec
-- If parts are infeasible, set \`infeasibleNotes\` to explain why`;
+- If parts are infeasible, set \`infeasibleNotes\` to explain why
+- If the ENTIRE epic is infeasible, \`specs\` can be an empty array with \`infeasibleNotes\` explaining why`;
 
 export function buildDecompositionPrompt(epicDescription: string): string {
 	return DECOMPOSITION_PROMPT_TEMPLATE.replace("${epicDescription}", epicDescription);
@@ -86,8 +89,15 @@ export function parseAnalysisResult(text: string): EpicAnalysisResult {
 	if (!obj.title || typeof obj.title !== "string") {
 		throw new Error("Invalid schema: missing or invalid 'title'");
 	}
-	if (!Array.isArray(obj.specs) || obj.specs.length === 0) {
-		throw new Error("Invalid schema: missing or empty 'specs' array");
+	if (!Array.isArray(obj.specs)) {
+		throw new Error("Invalid schema: missing 'specs' array");
+	}
+
+	// Allow empty specs only if infeasibleNotes is present
+	const hasInfeasibleNotes =
+		typeof obj.infeasibleNotes === "string" && obj.infeasibleNotes.trim().length > 0;
+	if (obj.specs.length === 0 && !hasInfeasibleNotes) {
+		throw new Error("Invalid schema: empty 'specs' array without infeasibleNotes");
 	}
 
 	for (const spec of obj.specs) {
@@ -106,7 +116,12 @@ export function parseAnalysisResult(text: string): EpicAnalysisResult {
 		}
 	}
 
-	const result = parsed as EpicAnalysisResult;
+	const result: EpicAnalysisResult = {
+		title: obj.title as string,
+		specs: (parsed as { specs: EpicAnalysisResult["specs"] }).specs,
+		infeasibleNotes: hasInfeasibleNotes ? (obj.infeasibleNotes as string) : null,
+		summary: typeof obj.summary === "string" ? obj.summary : null,
+	};
 
 	// Validate dependency references point to known spec IDs
 	const specIds = new Set(result.specs.map((s) => s.id));

@@ -44,6 +44,7 @@ describe("createEpicWorkflows", () => {
 			{ id: "c", title: "Admin", description: "Add admin dashboard", dependencies: ["a", "b"] },
 		],
 		infeasibleNotes: null,
+		summary: null,
 	};
 
 	test("creates workflows with shared epicId", async () => {
@@ -85,6 +86,7 @@ describe("createEpicWorkflows", () => {
 			title: "Simple Feature",
 			specs: [{ id: "a", title: "Only spec", description: "Do the thing", dependencies: [] }],
 			infeasibleNotes: null,
+			summary: null,
 		};
 		const { workflows, epicId } = await createAndTrack(singleResult, undefined);
 		expect(workflows).toHaveLength(1);

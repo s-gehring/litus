@@ -5,6 +5,7 @@ import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import { analyzeEpic, type EpicAnalysisProcess } from "./epic-analyzer";
+import { EpicStore } from "./epic-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -30,6 +31,7 @@ const WS_TOPIC = "workflow";
 
 // Shared dependencies across all orchestrator instances
 const sharedStore = new WorkflowStore();
+const sharedEpicStore = new EpicStore();
 const sharedCliRunner = new CLIRunner();
 const sharedSummarizer = new Summarizer();
 const sharedAuditLogger = new AuditLogger();
@@ -367,6 +369,33 @@ async function handleEpicStart(
 		const analysisMs = Date.now() - analysisStartedAt;
 		console.log(`[epic] Analysis complete (${epicId.slice(0, 8)}): ${result.specs.length} specs`);
 
+		// Handle infeasible epic (empty specs with infeasibleNotes)
+		if (result.specs.length === 0 && result.infeasibleNotes) {
+			console.log(
+				`[epic] Infeasible (${epicId.slice(0, 8)}): ${result.infeasibleNotes.slice(0, 80)}`,
+			);
+			const epicData = {
+				epicId,
+				description: trimmedDesc,
+				status: "infeasible" as const,
+				title: result.title,
+				workflowIds: [],
+				startedAt: new Date(analysisStartedAt).toISOString(),
+				completedAt: new Date().toISOString(),
+				errorMessage: null,
+				infeasibleNotes: result.infeasibleNotes,
+				analysisSummary: result.summary,
+			};
+			await sharedEpicStore.save(epicData);
+			broadcast({
+				type: "epic:infeasible",
+				epicId,
+				title: result.title,
+				infeasibleNotes: result.infeasibleNotes,
+			});
+			return;
+		}
+
 		const { workflows } = await createEpicWorkflows(result, targetRepository, epicId);
 
 		// Store the analysis duration on the first child workflow
@@ -393,12 +422,27 @@ async function handleEpicStart(
 			}
 		}
 
+		const epicData = {
+			epicId,
+			description: trimmedDesc,
+			status: "completed" as const,
+			title: result.title,
+			workflowIds,
+			startedAt: new Date(analysisStartedAt).toISOString(),
+			completedAt: new Date().toISOString(),
+			errorMessage: null,
+			infeasibleNotes: result.infeasibleNotes,
+			analysisSummary: result.summary,
+		};
+		await sharedEpicStore.save(epicData);
+
 		broadcast({
 			type: "epic:result",
 			epicId,
 			title: result.title,
 			specCount: result.specs.length,
 			workflowIds,
+			summary: result.summary,
 		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : "Epic analysis failed";
@@ -564,6 +608,10 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 				ws.subscribe(WS_TOPIC);
 				const workflows = await getAllWorkflowStates();
 				sendTo(ws, { type: "workflow:list", workflows });
+				const epics = await sharedEpicStore.loadAll();
+				if (epics.length > 0) {
+					sendTo(ws, { type: "epic:list", epics });
+				}
 			},
 			message(ws: ServerWebSocket<WsData>, message: string | Buffer) {
 				try {

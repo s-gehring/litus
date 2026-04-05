@@ -141,12 +141,14 @@ const EPIC_STATUS_LABELS: Record<string, string> = {
 	analyzing: "Analyzing",
 	completed: "Done",
 	error: "Error",
+	infeasible: "Infeasible",
 };
 
 const EPIC_STATUS_CLASSES: Record<string, string> = {
 	analyzing: "card-status-running",
 	completed: "card-status-completed",
 	error: "card-status-error",
+	infeasible: "card-status-error",
 };
 
 const EPIC_AGG_STATUS_LABELS: Record<string, string> = {
