@@ -358,6 +358,7 @@ export interface EpicClientState {
 	outputLines: OutputEntry[];
 	workflowIds: string[];
 	startedAt: string;
+	completedAt: string | null;
 	errorMessage: string | null;
 }
 

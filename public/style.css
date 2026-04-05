@@ -113,10 +113,22 @@ header h1 {
 
 /* Epic card accent */
 .epic-card {
+  border: 1px solid var(--accent-blue);
   border-left: 3px solid var(--accent-blue);
+  background: linear-gradient(135deg, var(--surface) 0%, rgba(74, 158, 255, 0.06) 100%);
+}
+
+.epic-card:hover {
+  border-color: var(--accent-blue);
+}
+
+.epic-card.card-expanded {
+  border-color: var(--accent-blue);
+  border-left-width: 3px;
 }
 
 .epic-card.card-error-glow {
+  border-color: var(--accent);
   border-left-color: var(--accent);
 }
 
@@ -273,6 +285,37 @@ header h1 {
 
 .flavor-text:empty {
   display: none;
+}
+
+/* ── Specification Details ────────────────────────────── */
+
+.spec-details {
+  padding: 0 16px;
+}
+
+.spec-details-summary {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.spec-details-text {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+  padding: 6px 0;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* ── Detail Actions ───────────────────────────────────── */
+
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  padding: 6px 16px;
 }
 
 .output-area {

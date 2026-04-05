@@ -32,7 +32,7 @@ let sendFn: ((msg: ClientMessage) => void) | null = null;
 let allWorkflowsRef: Map<string, WorkflowClientState> | null = null;
 
 export function renderCardStrip(
-	workflowOrder: string[],
+	cardOrder: string[],
 	workflows: Map<string, WorkflowClientState>,
 	epics: Map<string, EpicClientState>,
 	expandedId: string | null,
@@ -46,18 +46,16 @@ export function renderCardStrip(
 	allWorkflowsRef = workflows;
 	container.replaceChildren();
 
-	// Render epic cards first
-	for (const epic of epics.values()) {
-		const card = createEpicCard(epic, expandedId, onCardClick);
-		container.appendChild(card);
-	}
-
-	for (const id of workflowOrder) {
+	for (const id of cardOrder) {
+		const epic = epics.get(id);
+		if (epic) {
+			container.appendChild(createEpicCard(epic, expandedId, onCardClick));
+			continue;
+		}
 		const entry = workflows.get(id);
-		if (!entry) continue;
-
-		const card = createCompactCard(entry.state, expandedId, onCardClick);
-		container.appendChild(card);
+		if (entry) {
+			container.appendChild(createCompactCard(entry.state, expandedId, onCardClick));
+		}
 	}
 }
 
@@ -214,12 +212,16 @@ function createEpicCard(
 	summary.textContent = summaryText.length > 120 ? `${summaryText.slice(0, 120)}...` : summaryText;
 	card.appendChild(summary);
 
-	// Timer
+	// Timer — compute elapsed ms for completed/error epics, live for analyzing
 	const timer = document.createElement("span");
 	timer.className = "card-timer";
-	timer.dataset.activeWorkMs = "0";
-	timer.dataset.activeWorkStartedAt = epic.status === "analyzing" ? epic.startedAt : "";
-	timer.textContent = formatTimer(0, epic.status === "analyzing" ? epic.startedAt : null);
+	const isAnalyzing = epic.status === "analyzing";
+	const elapsedMs = epic.completedAt
+		? new Date(epic.completedAt).getTime() - new Date(epic.startedAt).getTime()
+		: 0;
+	timer.dataset.activeWorkMs = String(elapsedMs);
+	timer.dataset.activeWorkStartedAt = isAnalyzing ? epic.startedAt : "";
+	timer.textContent = formatTimer(elapsedMs, isAnalyzing ? epic.startedAt : null);
 	card.appendChild(timer);
 
 	card.addEventListener("click", () => onClick(epic.epicId));

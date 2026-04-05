@@ -214,3 +214,39 @@ export function updateFlavor(flavor: string): void {
 	const el = $("#workflow-flavor");
 	el.textContent = flavor;
 }
+
+export function updateSpecDetails(text: string): void {
+	const details = $("#spec-details");
+	const textEl = $("#spec-details-text");
+	if (!details || !textEl) return;
+
+	if (text) {
+		textEl.textContent = text;
+		details.classList.remove("hidden");
+	} else {
+		details.classList.add("hidden");
+	}
+}
+
+export function updateDetailActions(
+	buttons: { label: string; className: string; onClick: () => void }[],
+): void {
+	const container = $("#detail-actions");
+	if (!container) return;
+
+	container.replaceChildren();
+
+	if (buttons.length === 0) {
+		container.classList.add("hidden");
+		return;
+	}
+
+	for (const btn of buttons) {
+		const el = document.createElement("button");
+		el.className = `btn ${btn.className}`;
+		el.textContent = btn.label;
+		el.addEventListener("click", btn.onClick);
+		container.appendChild(el);
+	}
+	container.classList.remove("hidden");
+}

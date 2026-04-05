@@ -16,8 +16,10 @@ import {
 	appendToolIcons,
 	clearOutput,
 	renderOutputEntries,
+	updateDetailActions,
 	updateEpicStatus,
 	updateFlavor,
+	updateSpecDetails,
 	updateStepSummary,
 	updateSummary,
 	updateWorkflowStatus,
@@ -32,8 +34,8 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Multi-workflow client state
 const workflows = new Map<string, WorkflowClientState>();
-const workflowOrder: string[] = [];
 const epics = new Map<string, EpicClientState>();
+const cardOrder: string[] = [];
 let expandedId: string | null = null;
 
 function getWsUrl(): string {
@@ -104,8 +106,8 @@ function addOrUpdateWorkflow(wfState: WorkflowState): void {
 			outputLines: [],
 			isExpanded: false,
 		});
-		if (!workflowOrder.includes(wfState.id)) {
-			workflowOrder.push(wfState.id);
+		if (!cardOrder.includes(wfState.id)) {
+			cardOrder.push(wfState.id);
 		}
 	}
 }
@@ -115,7 +117,7 @@ function handleMessage(msg: ServerMessage): void {
 		case "workflow:list": {
 			// Initial sync: populate all workflows
 			workflows.clear();
-			workflowOrder.length = 0;
+			cardOrder.length = 0;
 			for (const wf of msg.workflows) {
 				addOrUpdateWorkflow(wf);
 			}
@@ -217,8 +219,10 @@ function handleMessage(msg: ServerMessage): void {
 				outputLines: [],
 				workflowIds: [],
 				startedAt: new Date().toISOString(),
+				completedAt: null,
 				errorMessage: null,
 			});
+			cardOrder.push(msg.epicId);
 			renderCards();
 			expandItem(msg.epicId);
 			break;
@@ -268,6 +272,7 @@ function handleMessage(msg: ServerMessage): void {
 			const epic = epics.get(msg.epicId);
 			if (epic) {
 				epic.status = "completed";
+				epic.completedAt = new Date().toISOString();
 				epic.title = msg.title;
 				epic.workflowIds = msg.workflowIds;
 				renderCards();
@@ -282,6 +287,7 @@ function handleMessage(msg: ServerMessage): void {
 			const epic = epics.get(msg.epicId);
 			if (epic) {
 				epic.status = "error";
+				epic.completedAt = new Date().toISOString();
 				epic.errorMessage = msg.message;
 				epic.outputLines.push({ kind: "text", text: `Error: ${msg.message}`, type: "error" });
 				renderCards();
@@ -339,7 +345,7 @@ function expandItem(workflowId: string): void {
 }
 
 function renderCards(): void {
-	renderCardStrip(workflowOrder, workflows, epics, expandedId, expandItem, send);
+	renderCardStrip(cardOrder, workflows, epics, expandedId, expandItem, send);
 }
 
 function renderExpandedView(): void {
@@ -355,6 +361,8 @@ function renderExpandedView(): void {
 		renderPipelineSteps(null);
 		updateSummary("");
 		updateFlavor("");
+		updateSpecDetails("");
+		updateDetailActions([]);
 		return;
 	}
 
@@ -369,6 +377,8 @@ function renderExpandedView(): void {
 		updateSummary(epic.title || epic.description);
 		updateStepSummary("");
 		updateFlavor("");
+		updateSpecDetails(epic.description);
+		updateDetailActions([]);
 		hideQuestion();
 
 		clearOutput();
@@ -393,6 +403,25 @@ function renderExpandedView(): void {
 	if (wf.summary) updateSummary(wf.summary);
 	updateStepSummary(wf.stepSummary ?? "");
 	updateFlavor(wf.flavor ?? "");
+	updateSpecDetails(wf.specification);
+
+	// Action buttons for idle/waiting epic workflows
+	const actions: { label: string; className: string; onClick: () => void }[] = [];
+	if (wf.status === "idle" && wf.epicId) {
+		actions.push({
+			label: "Start",
+			className: "btn-primary",
+			onClick: () => send({ type: "workflow:start-existing", workflowId: wf.id }),
+		});
+	}
+	if (wf.status === "waiting_for_dependencies") {
+		actions.push({
+			label: "Force Start",
+			className: "btn-secondary",
+			onClick: () => send({ type: "workflow:force-start", workflowId: wf.id }),
+		});
+	}
+	updateDetailActions(actions);
 
 	// Render output from accumulated entries
 	clearOutput();
