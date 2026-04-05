@@ -1,4 +1,4 @@
-import type { OutputEntry, WorkflowState } from "../../types";
+import type { EpicStatus, OutputEntry, WorkflowState } from "../../types";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -24,7 +24,7 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 	const btnRetry = $("#btn-retry") as HTMLButtonElement | null;
 	const status = workflow?.status || "idle";
 
-	statusBadge.textContent = status.replace("_", " ");
+	statusBadge.textContent = status.replaceAll("_", " ");
 	statusBadge.className = `status-badge ${status}`;
 
 	const isActive = status === "running" || status === "waiting_for_input";
@@ -65,6 +65,31 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 
 	// Render collapsed completed steps
 	renderStepHistory(workflow);
+}
+
+const EPIC_STATUS_MAP: Record<EpicStatus, { label: string; css: string }> = {
+	analyzing: { label: "Analyzing Epic", css: "running" },
+	completed: { label: "completed", css: "completed" },
+	error: { label: "error", css: "error" },
+};
+
+export function updateEpicStatus(status: EpicStatus): void {
+	const statusBadge = $("#workflow-status");
+	const btnCancel = $("#btn-cancel") as HTMLButtonElement;
+	const btnRetry = $("#btn-retry") as HTMLButtonElement | null;
+	const stepLabel = $("#current-step-label");
+	const prLink = $("#pr-link") as HTMLAnchorElement | null;
+	const historyContainer = $("#step-history");
+
+	const mapped = EPIC_STATUS_MAP[status];
+	statusBadge.textContent = mapped.label;
+	statusBadge.className = `status-badge ${mapped.css}`;
+
+	btnCancel.classList.toggle("hidden", status !== "analyzing");
+	if (btnRetry) btnRetry.classList.toggle("hidden", status !== "error");
+	if (stepLabel) stepLabel.classList.add("hidden");
+	if (prLink) prLink.classList.add("hidden");
+	if (historyContainer) historyContainer.replaceChildren();
 }
 
 function renderStepHistory(workflow: WorkflowState | null): void {
@@ -188,4 +213,40 @@ export function updateStepSummary(stepSummary: string): void {
 export function updateFlavor(flavor: string): void {
 	const el = $("#workflow-flavor");
 	el.textContent = flavor;
+}
+
+export function updateSpecDetails(text: string): void {
+	const details = $("#spec-details");
+	const textEl = $("#spec-details-text");
+	if (!details || !textEl) return;
+
+	if (text) {
+		textEl.textContent = text;
+		details.classList.remove("hidden");
+	} else {
+		details.classList.add("hidden");
+	}
+}
+
+export function updateDetailActions(
+	buttons: { label: string; className: string; onClick: () => void }[],
+): void {
+	const container = $("#detail-actions");
+	if (!container) return;
+
+	container.replaceChildren();
+
+	if (buttons.length === 0) {
+		container.classList.add("hidden");
+		return;
+	}
+
+	for (const btn of buttons) {
+		const el = document.createElement("button");
+		el.className = `btn ${btn.className}`;
+		el.textContent = btn.label;
+		el.addEventListener("click", btn.onClick);
+		container.appendChild(el);
+	}
+	container.classList.remove("hidden");
 }

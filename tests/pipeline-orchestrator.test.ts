@@ -63,6 +63,10 @@ function createFakeEngine() {
 					maxAttempts: 3,
 				},
 				prUrl: null,
+				epicId: null,
+				epicTitle: null,
+				epicDependencies: [],
+				epicDependencyStatus: null,
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,
 				createdAt: now,
@@ -167,7 +171,7 @@ function createFakeWorkflowStore() {
 	return {
 		save: mock(async () => {}),
 		load: mock(async () => null),
-		loadAll: mock(async () => []),
+		loadAll: mock(async (): Promise<Workflow[]> => []),
 		loadIndex: mock(async () => []),
 		remove: mock(async () => {}),
 	};
@@ -181,6 +185,7 @@ function makeCallbacks(): PipelineCallbacks {
 		onComplete: mock(() => {}),
 		onError: mock(() => {}),
 		onStateChange: mock(() => {}),
+		onEpicDependencyUpdate: mock(() => {}),
 	};
 }
 
@@ -202,6 +207,7 @@ describe("PipelineOrchestrator", () => {
 	let rc: ReturnType<typeof createFakeReviewClassifier>;
 	let summarizer: ReturnType<typeof createFakeSummarizer>;
 	let auditLogger: ReturnType<typeof createFakeAuditLogger>;
+	let store: ReturnType<typeof createFakeWorkflowStore>;
 
 	beforeEach(() => {
 		callbacks = makeCallbacks();
@@ -211,6 +217,7 @@ describe("PipelineOrchestrator", () => {
 		rc = createFakeReviewClassifier();
 		summarizer = createFakeSummarizer();
 		auditLogger = createFakeAuditLogger();
+		store = createFakeWorkflowStore();
 
 		// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
 		const deps: Record<string, any> = {
@@ -220,7 +227,7 @@ describe("PipelineOrchestrator", () => {
 			reviewClassifier: rc,
 			summarizer,
 			auditLogger,
-			workflowStore: createFakeWorkflowStore(),
+			workflowStore: store,
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});
@@ -865,6 +872,33 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.steps[0].error).toBe("Cancelled by user");
 		});
 
+		test("cancelPipeline triggers epic dependency check when epicId is set", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+			wf.epicId = "epic-123";
+
+			// Mock a sibling workflow that depends on this one and is waiting
+			const sibling = {
+				...wf,
+				id: "sibling-wf",
+				epicId: "epic-123",
+				epicDependencies: [wf.id],
+				epicDependencyStatus: "waiting" as const,
+				status: "waiting_for_dependencies" as const,
+			};
+			store.loadAll = mock(async () => [wf, sibling]);
+			store.save = mock(async () => {});
+
+			orchestrator.cancelPipeline("test-wf-id");
+
+			expect(wf.status).toBe("cancelled");
+			// checkEpicDependencies is async — give it a tick
+			await new Promise((r) => setTimeout(r, 50));
+			expect(callbacks.onEpicDependencyUpdate).toHaveBeenCalledWith("sibling-wf", "blocked", [
+				wf.id,
+			]);
+		});
+
 		test("cancellation during Q&A sets cancelled state", async () => {
 			await orchestrator.startPipeline("test");
 			const wf = getWf(engine);
@@ -883,6 +917,91 @@ describe("PipelineOrchestrator", () => {
 			orchestrator.cancelPipeline("test-wf-id");
 
 			expect(wf.status).toBe("cancelled");
+		});
+	});
+
+	describe("epic dependency resolution", () => {
+		test("cancellation resolves satisfied for sibling whose deps are all completed", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+			wf.epicId = "epic-456";
+
+			// Sibling depends on wf.id, and wf is already completed in the store snapshot
+			const sibling = {
+				...wf,
+				id: "sibling-wf",
+				epicId: "epic-456",
+				epicDependencies: [wf.id],
+				epicDependencyStatus: "waiting" as const,
+				status: "waiting_for_dependencies" as const,
+			};
+			const completedWf = { ...wf, status: "completed" as const };
+			store.loadAll = mock(async () => [completedWf, sibling]);
+			store.save = mock(async () => {});
+
+			// Cancel triggers checkEpicDependencies; store shows wf as completed
+			orchestrator.cancelPipeline("test-wf-id");
+
+			await new Promise((r) => setTimeout(r, 50));
+			expect(callbacks.onEpicDependencyUpdate).toHaveBeenCalledWith("sibling-wf", "satisfied", []);
+		});
+
+		test("cancellation notifies sibling with blocked status", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+			wf.epicId = "epic-789";
+
+			const sibling = {
+				...wf,
+				id: "sibling-err",
+				epicId: "epic-789",
+				epicDependencies: [wf.id],
+				epicDependencyStatus: "waiting" as const,
+				status: "waiting_for_dependencies" as const,
+			};
+			// wf appears as cancelled in the store after cancelPipeline
+			const cancelledWf = { ...wf, status: "cancelled" as const };
+			store.loadAll = mock(async () => [cancelledWf, sibling]);
+			store.save = mock(async () => {});
+
+			orchestrator.cancelPipeline("test-wf-id");
+
+			await new Promise((r) => setTimeout(r, 50));
+			expect(callbacks.onEpicDependencyUpdate).toHaveBeenCalledWith("sibling-err", "blocked", [
+				wf.id,
+			]);
+		});
+
+		test("sibling with multiple deps stays waiting when only some are satisfied", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+			wf.epicId = "epic-multi";
+
+			// Sibling depends on wf + another workflow that's still running
+			const sibling = {
+				...wf,
+				id: "sibling-multi",
+				epicId: "epic-multi",
+				epicDependencies: [wf.id, "other-wf"],
+				epicDependencyStatus: "waiting" as const,
+				status: "waiting_for_dependencies" as const,
+			};
+			const completedWf = { ...wf, status: "completed" as const };
+			const otherRunning = {
+				...wf,
+				id: "other-wf",
+				epicId: "epic-multi",
+				status: "running" as const,
+			};
+			store.loadAll = mock(async () => [completedWf, sibling, otherRunning]);
+			store.save = mock(async () => {});
+
+			orchestrator.cancelPipeline("test-wf-id");
+
+			await new Promise((r) => setTimeout(r, 50));
+			expect(callbacks.onEpicDependencyUpdate).toHaveBeenCalledWith("sibling-multi", "waiting", [
+				"other-wf",
+			]);
 		});
 	});
 });

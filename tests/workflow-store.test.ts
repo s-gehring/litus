@@ -137,6 +137,7 @@ describe("WorkflowStore", () => {
 			branch: "test",
 			status: "running",
 			summary: "",
+			epicId: null,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString(),
 		});

@@ -13,8 +13,8 @@ import type {
 import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS } from "../src/types";
 
 describe("VALID_TRANSITIONS", () => {
-	test("idle can only transition to running", () => {
-		expect(VALID_TRANSITIONS.idle).toEqual(["running"]);
+	test("idle can transition to running or waiting_for_dependencies", () => {
+		expect(VALID_TRANSITIONS.idle).toEqual(["running", "waiting_for_dependencies"]);
 	});
 
 	test("running can transition to waiting_for_input, completed, error, cancelled", () => {
@@ -44,6 +44,7 @@ describe("VALID_TRANSITIONS", () => {
 			"idle",
 			"running",
 			"waiting_for_input",
+			"waiting_for_dependencies",
 			"completed",
 			"cancelled",
 			"error",

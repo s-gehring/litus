@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
 import type { ServerWebSocket } from "bun";
 import { AuditLogger } from "./audit-logger";
 import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
+import { computeDependencyStatus } from "./dependency-resolver";
+import { analyzeEpic, type EpicAnalysisProcess } from "./epic-analyzer";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -16,6 +19,7 @@ import type {
 	Workflow,
 	WorkflowState,
 } from "./types";
+import { createEpicWorkflows } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
 
 type WsData = Record<string, never>;
@@ -68,6 +72,34 @@ function createCallbacks() {
 		},
 		onStateChange: (workflowId: string) => {
 			broadcastWorkflowState(workflowId);
+		},
+		onEpicDependencyUpdate: (
+			dependentWorkflowId: string,
+			status: import("./types").EpicDependencyStatus,
+			blockingWorkflows: string[],
+		) => {
+			broadcast({
+				type: "epic:dependency-update",
+				workflowId: dependentWorkflowId,
+				epicDependencyStatus: status,
+				blockingWorkflows,
+			});
+
+			// Update in-memory workflow state for all dependency statuses
+			const depOrch = orchestrators.get(dependentWorkflowId);
+			if (depOrch) {
+				const depWorkflow = depOrch.getEngine().getWorkflow();
+				if (depWorkflow) {
+					depWorkflow.epicDependencyStatus = status;
+					depWorkflow.updatedAt = new Date().toISOString();
+
+					if (status === "satisfied" && depWorkflow.status === "waiting_for_dependencies") {
+						depOrch.startPipelineFromWorkflow(depWorkflow);
+					}
+				}
+			}
+
+			broadcastWorkflowState(dependentWorkflowId);
 		},
 	};
 }
@@ -246,6 +278,146 @@ function handleConfigReset(_ws: ServerWebSocket<WsData>, key?: string) {
 	broadcast({ type: "config:state", config: configStore.get() });
 }
 
+// ── Epic analysis state ──────────────────────────────────
+const epicAnalysisRef: { current: EpicAnalysisProcess | null } = { current: null };
+
+async function handleEpicStart(
+	ws: ServerWebSocket<WsData>,
+	description: string,
+	targetRepository: string | undefined,
+	autoStart: boolean,
+) {
+	if (!description || description.trim().length < 10) {
+		sendTo(ws, { type: "error", message: "Epic description must be at least 10 characters" });
+		return;
+	}
+
+	if (targetRepository) {
+		const validation = await validateTargetRepository(targetRepository);
+		if (!validation.valid) {
+			sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
+			return;
+		}
+	}
+
+	const epicId = randomUUID();
+	const trimmedDesc = description.trim();
+	console.log(`[epic] Starting analysis (${epicId.slice(0, 8)}): "${trimmedDesc.slice(0, 80)}"`);
+
+	broadcast({ type: "epic:created", epicId, description: trimmedDesc });
+
+	// Generate summary async (non-blocking)
+	sharedSummarizer
+		.generateSpecSummary(trimmedDesc)
+		.then(({ summary }) => {
+			if (summary) {
+				broadcast({ type: "epic:summary", epicId, summary });
+			}
+		})
+		.catch(() => {});
+
+	try {
+		const repoDir = targetRepository || process.cwd();
+		const result = await analyzeEpic(trimmedDesc, repoDir, epicAnalysisRef, undefined, {
+			onOutput: (text) => broadcast({ type: "epic:output", epicId, text }),
+			onTools: (tools) => broadcast({ type: "epic:tools", epicId, tools }),
+		});
+
+		console.log(`[epic] Analysis complete (${epicId.slice(0, 8)}): ${result.specs.length} specs`);
+
+		const { workflows } = await createEpicWorkflows(result, targetRepository, epicId);
+
+		const workflowIds: string[] = [];
+
+		// Persist and register orchestrators for each workflow
+		for (const workflow of workflows) {
+			await sharedStore.save(workflow);
+
+			const orch = createOrchestrator();
+			orch.getEngine().setWorkflow(workflow);
+			orchestrators.set(workflow.id, orch);
+
+			broadcast({ type: "workflow:created", workflow: stripInternalFields(workflow) });
+			workflowIds.push(workflow.id);
+
+			// Auto-start independent specs when autoStart is true
+			if (autoStart && workflow.epicDependencyStatus === "satisfied") {
+				orch.startPipelineFromWorkflow(workflow);
+			}
+		}
+
+		broadcast({
+			type: "epic:result",
+			epicId,
+			title: result.title,
+			specCount: result.specs.length,
+			workflowIds,
+		});
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "Epic analysis failed";
+		console.error(`[epic] Analysis failed (${epicId.slice(0, 8)}): ${message}`);
+		if (err instanceof Error && err.stack) {
+			console.error(`[epic] Stack trace: ${err.stack}`);
+		}
+		broadcast({ type: "epic:error", epicId, message });
+	}
+}
+
+function handleEpicCancel() {
+	if (epicAnalysisRef.current) {
+		epicAnalysisRef.current.kill();
+		epicAnalysisRef.current = null;
+	}
+}
+
+function handleStartExisting(ws: ServerWebSocket<WsData>, workflowId: string) {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) {
+		sendTo(ws, { type: "error", message: "Workflow not found" });
+		return;
+	}
+
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow || workflow.status !== "idle") {
+		sendTo(ws, { type: "error", message: "Workflow is not idle" });
+		return;
+	}
+
+	try {
+		orch.startPipelineFromWorkflow(workflow);
+	} catch (err) {
+		sendTo(ws, { type: "error", message: `Failed to start workflow: ${err}` });
+		return;
+	}
+	broadcastWorkflowState(workflowId);
+}
+
+function handleForceStart(ws: ServerWebSocket<WsData>, workflowId: string) {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) {
+		sendTo(ws, { type: "error", message: "Workflow not found" });
+		return;
+	}
+
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow || workflow.status !== "waiting_for_dependencies") {
+		sendTo(ws, { type: "error", message: "Workflow is not waiting for dependencies" });
+		return;
+	}
+
+	workflow.epicDependencyStatus = "overridden";
+	workflow.updatedAt = new Date().toISOString();
+
+	try {
+		orch.startPipelineFromWorkflow(workflow);
+	} catch (err) {
+		workflow.epicDependencyStatus = "waiting";
+		sendTo(ws, { type: "error", message: `Failed to force-start workflow: ${err}` });
+		return;
+	}
+	broadcastWorkflowState(workflowId);
+}
+
 function handleRetry(ws: ServerWebSocket<WsData>, workflowId: string) {
 	const orch = orchestrators.get(workflowId);
 	if (!orch) {
@@ -335,6 +507,23 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 						case "workflow:retry":
 							handleRetry(ws, msg.workflowId);
 							break;
+						case "epic:start":
+							handleEpicStart(ws, msg.description, msg.targetRepository, msg.autoStart).catch(
+								(err) => {
+									const text = err instanceof Error ? err.message : "Internal error";
+									sendTo(ws, { type: "error", message: text });
+								},
+							);
+							break;
+						case "epic:cancel":
+							handleEpicCancel();
+							break;
+						case "workflow:start-existing":
+							handleStartExisting(ws, msg.workflowId);
+							break;
+						case "workflow:force-start":
+							handleForceStart(ws, msg.workflowId);
+							break;
 						case "config:get":
 							handleConfigGet(ws);
 							break;
@@ -422,6 +611,38 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 
 		if (restoredCount > 0) {
 			console.log(`[startup] Restored ${restoredCount} workflow(s)`);
+		}
+
+		// Re-evaluate waiting_for_dependencies workflows whose deps may have completed while server was down
+		for (const workflow of allWorkflows) {
+			if (workflow.status !== "waiting_for_dependencies") continue;
+			if (!workflow.epicId || workflow.epicDependencies.length === 0) continue;
+
+			const completedIds = new Set<string>();
+			const errorIds = new Set<string>();
+			for (const w of allWorkflows) {
+				if (w.epicId !== workflow.epicId) continue;
+				if (w.status === "completed") completedIds.add(w.id);
+				if (w.status === "error" || w.status === "cancelled") errorIds.add(w.id);
+			}
+
+			const depStatus = computeDependencyStatus(workflow.epicDependencies, completedIds, errorIds);
+
+			if (depStatus.status === "satisfied") {
+				workflow.epicDependencyStatus = "satisfied";
+				workflow.updatedAt = new Date().toISOString();
+				await sharedStore.save(workflow);
+
+				const orch = orchestrators.get(workflow.id);
+				if (orch) {
+					console.log(`[startup] Auto-starting unblocked workflow ${workflow.id}`);
+					orch.startPipelineFromWorkflow(workflow);
+				}
+			} else if (depStatus.status === "blocked") {
+				workflow.epicDependencyStatus = "blocked";
+				workflow.updatedAt = new Date().toISOString();
+				await sharedStore.save(workflow);
+			}
 		}
 	} catch (err) {
 		console.error(`[startup] Failed to restore workflows: ${err}`);

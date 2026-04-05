@@ -111,6 +111,28 @@ header h1 {
   box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
 }
 
+/* Epic card accent */
+.epic-card {
+  border: 2px solid var(--accent-blue);
+  background: linear-gradient(135deg, var(--surface) 0%, rgba(74, 158, 255, 0.08) 100%);
+  box-shadow: 0 0 6px rgba(74, 158, 255, 0.15);
+}
+
+.epic-card:hover {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 10px rgba(74, 158, 255, 0.25);
+}
+
+.epic-card.card-expanded {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 12px rgba(74, 158, 255, 0.35);
+}
+
+.epic-card.card-error-glow {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(233, 69, 96, 0.3);
+}
+
 /* Pulse animation for waiting_for_input */
 @keyframes card-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(240, 192, 64, 0); }
@@ -218,6 +240,7 @@ header h1 {
 .status-badge.idle { background: var(--border); color: var(--text-dim); }
 .status-badge.running { background: rgba(74,158,255,0.2); color: var(--accent-blue); }
 .status-badge.waiting_for_input { background: rgba(240,192,64,0.2); color: var(--accent-yellow); }
+.status-badge.waiting_for_dependencies { background: rgba(240,192,64,0.15); color: var(--accent-yellow); }
 .status-badge.completed { background: rgba(78,204,163,0.2); color: var(--accent-green); }
 .status-badge.cancelled { background: rgba(136,136,170,0.2); color: var(--text-dim); }
 .status-badge.error { background: rgba(233,69,96,0.2); color: var(--accent); }
@@ -263,6 +286,37 @@ header h1 {
 
 .flavor-text:empty {
   display: none;
+}
+
+/* ── Specification Details ────────────────────────────── */
+
+.spec-details {
+  padding: 0 16px;
+}
+
+.spec-details-summary {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.spec-details-text {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+  padding: 6px 0;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* ── Detail Actions ───────────────────────────────────── */
+
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  padding: 6px 16px;
 }
 
 .output-area {
@@ -914,6 +968,148 @@ body::-webkit-scrollbar-track {
   .config-panel {
     width: 100vw;
   }
+}
+
+/* ── Epic Form ────────────────────────────────────────── */
+
+.epic-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.epic-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.epic-form-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--accent-blue);
+}
+
+.epic-form-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.epic-form-close:hover {
+  color: var(--text);
+}
+
+.epic-target-repo {
+  margin-bottom: 10px;
+}
+
+.epic-target-repo-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.epic-target-repo-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.epic-target-repo-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.epic-target-repo-input:disabled {
+  opacity: 0.5;
+}
+
+.epic-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+  margin-bottom: 10px;
+}
+
+.epic-textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.epic-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.epic-error {
+  color: var(--accent);
+  font-size: 0.8rem;
+  margin-bottom: 8px;
+}
+
+
+/* ── Epic Label on Cards ─────────────────────────────── */
+
+.card-epic-label {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(74, 158, 255, 0.15);
+  color: var(--accent-blue);
+  align-self: flex-start;
+}
+
+/* ── Dependency Text on Cards ────────────────────────── */
+
+.card-dependency-text {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ── Waiting for Dependencies Badge ──────────────────── */
+
+.card-status-waiting-deps {
+  background: rgba(240, 192, 64, 0.15);
+  color: var(--accent-yellow);
+}
+
+/* ── Card Action Buttons ────────────────────────────── */
+
+.btn-force-start,
+.btn-card-action {
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  background: rgba(240, 192, 64, 0.2);
+  border: 1px solid rgba(240, 192, 64, 0.4);
+  border-radius: 4px;
+  color: var(--accent-yellow);
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.btn-force-start:hover,
+.btn-card-action:hover {
+  background: rgba(240, 192, 64, 0.35);
 }
 
 .hidden { display: none !important; }

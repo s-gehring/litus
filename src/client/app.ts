@@ -1,11 +1,13 @@
 import type {
 	ClientMessage,
+	EpicClientState,
 	OutputEntry,
 	ServerMessage,
 	WorkflowClientState,
 	WorkflowState,
 } from "../types";
 import { createConfigPanel, updateConfigPanel } from "./components/config-panel";
+import { createEpicForm, hideEpicForm, showEpicForm } from "./components/epic-form";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
@@ -14,7 +16,10 @@ import {
 	appendToolIcons,
 	clearOutput,
 	renderOutputEntries,
+	updateDetailActions,
+	updateEpicStatus,
 	updateFlavor,
+	updateSpecDetails,
 	updateStepSummary,
 	updateSummary,
 	updateWorkflowStatus,
@@ -29,8 +34,9 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Multi-workflow client state
 const workflows = new Map<string, WorkflowClientState>();
-const workflowOrder: string[] = [];
-let expandedWorkflowId: string | null = null;
+const epics = new Map<string, EpicClientState>();
+const cardOrder: string[] = [];
+let expandedId: string | null = null;
 
 function getWsUrl(): string {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -100,8 +106,8 @@ function addOrUpdateWorkflow(wfState: WorkflowState): void {
 			outputLines: [],
 			isExpanded: false,
 		});
-		if (!workflowOrder.includes(wfState.id)) {
-			workflowOrder.push(wfState.id);
+		if (!cardOrder.includes(wfState.id)) {
+			cardOrder.push(wfState.id);
 		}
 	}
 }
@@ -111,14 +117,14 @@ function handleMessage(msg: ServerMessage): void {
 		case "workflow:list": {
 			// Initial sync: populate all workflows
 			workflows.clear();
-			workflowOrder.length = 0;
+			cardOrder.length = 0;
 			for (const wf of msg.workflows) {
 				addOrUpdateWorkflow(wf);
 			}
 			renderCards();
 			// If there's exactly one active workflow, auto-expand it
 			if (msg.workflows.length === 1) {
-				expandWorkflow(msg.workflows[0].id);
+				expandItem(msg.workflows[0].id);
 			} else {
 				renderExpandedView();
 			}
@@ -128,7 +134,10 @@ function handleMessage(msg: ServerMessage): void {
 		case "workflow:created": {
 			addOrUpdateWorkflow(msg.workflow);
 			renderCards();
-			expandWorkflow(msg.workflow.id);
+			// Don't auto-expand child workflows while viewing the epic analysis
+			if (!epics.has(expandedId ?? "")) {
+				expandItem(msg.workflow.id);
+			}
 			break;
 		}
 
@@ -136,7 +145,7 @@ function handleMessage(msg: ServerMessage): void {
 			if (!msg.workflow) break;
 			addOrUpdateWorkflow(msg.workflow);
 			renderCards();
-			if (expandedWorkflowId === msg.workflow.id) {
+			if (expandedId === msg.workflow.id) {
 				renderExpandedView();
 			}
 			break;
@@ -150,7 +159,7 @@ function handleMessage(msg: ServerMessage): void {
 				if (entry.outputLines.length > maxOutputLines) {
 					entry.outputLines.splice(0, entry.outputLines.length - maxOutputLines);
 				}
-				if (expandedWorkflowId === msg.workflowId) {
+				if (expandedId === msg.workflowId) {
 					appendOutput(msg.text);
 				}
 			}
@@ -165,7 +174,7 @@ function handleMessage(msg: ServerMessage): void {
 				if (entry.outputLines.length > maxOutputLines) {
 					entry.outputLines.splice(0, entry.outputLines.length - maxOutputLines);
 				}
-				if (expandedWorkflowId === msg.workflowId) {
+				if (expandedId === msg.workflowId) {
 					appendToolIcons(msg.tools);
 				}
 			}
@@ -177,7 +186,7 @@ function handleMessage(msg: ServerMessage): void {
 			if (entry) {
 				entry.state.pendingQuestion = msg.question;
 				renderCards();
-				if (expandedWorkflowId === msg.workflowId) {
+				if (expandedId === msg.workflowId) {
 					showQuestion(msg.question);
 				}
 			}
@@ -192,9 +201,110 @@ function handleMessage(msg: ServerMessage): void {
 				const stepText = `── Step: ${msg.currentStep} ──`;
 				entry.outputLines.push({ kind: "text", text: stepText, type: "system" });
 				renderCards();
-				if (expandedWorkflowId === msg.workflowId) {
+				if (expandedId === msg.workflowId) {
 					clearOutput();
 					appendOutput(stepText, "system");
+				}
+			}
+			break;
+		}
+
+		case "epic:created": {
+			hideEpicForm();
+			epics.set(msg.epicId, {
+				epicId: msg.epicId,
+				description: msg.description,
+				status: "analyzing",
+				title: null,
+				outputLines: [],
+				workflowIds: [],
+				startedAt: new Date().toISOString(),
+				completedAt: null,
+				errorMessage: null,
+			});
+			cardOrder.push(msg.epicId);
+			renderCards();
+			expandItem(msg.epicId);
+			break;
+		}
+
+		case "epic:summary": {
+			const epic = epics.get(msg.epicId);
+			if (epic) {
+				epic.title = msg.summary;
+				renderCards();
+				if (expandedId === msg.epicId) {
+					updateSummary(msg.summary);
+				}
+			}
+			break;
+		}
+
+		case "epic:output": {
+			const epic = epics.get(msg.epicId);
+			if (epic) {
+				epic.outputLines.push({ kind: "text", text: msg.text });
+				if (epic.outputLines.length > maxOutputLines) {
+					epic.outputLines.splice(0, epic.outputLines.length - maxOutputLines);
+				}
+				if (expandedId === msg.epicId) {
+					appendOutput(msg.text);
+				}
+			}
+			break;
+		}
+
+		case "epic:tools": {
+			const epic = epics.get(msg.epicId);
+			if (epic) {
+				epic.outputLines.push({ kind: "tools", tools: msg.tools });
+				if (epic.outputLines.length > maxOutputLines) {
+					epic.outputLines.splice(0, epic.outputLines.length - maxOutputLines);
+				}
+				if (expandedId === msg.epicId) {
+					appendToolIcons(msg.tools);
+				}
+			}
+			break;
+		}
+
+		case "epic:result": {
+			const epic = epics.get(msg.epicId);
+			if (epic) {
+				epic.status = "completed";
+				epic.completedAt = new Date().toISOString();
+				epic.title = msg.title;
+				epic.workflowIds = msg.workflowIds;
+				renderCards();
+				if (expandedId === msg.epicId) {
+					renderExpandedView();
+				}
+			}
+			break;
+		}
+
+		case "epic:error": {
+			const epic = epics.get(msg.epicId);
+			if (epic) {
+				epic.status = "error";
+				epic.completedAt = new Date().toISOString();
+				epic.errorMessage = msg.message;
+				epic.outputLines.push({ kind: "text", text: `Error: ${msg.message}`, type: "error" });
+				renderCards();
+				if (expandedId === msg.epicId) {
+					appendOutput(`Error: ${msg.message}`, "error");
+				}
+			}
+			break;
+		}
+
+		case "epic:dependency-update": {
+			const entry = workflows.get(msg.workflowId);
+			if (entry) {
+				entry.state.epicDependencyStatus = msg.epicDependencyStatus;
+				renderCards();
+				if (expandedId === msg.workflowId) {
+					renderExpandedView();
 				}
 			}
 			break;
@@ -223,27 +333,27 @@ function handleMessage(msg: ServerMessage): void {
 	}
 }
 
-function expandWorkflow(workflowId: string): void {
-	if (expandedWorkflowId === workflowId) {
+function expandItem(workflowId: string): void {
+	if (expandedId === workflowId) {
 		// Toggle collapse
-		expandedWorkflowId = null;
+		expandedId = null;
 	} else {
-		expandedWorkflowId = workflowId;
+		expandedId = workflowId;
 	}
 	renderCards();
 	renderExpandedView();
 }
 
 function renderCards(): void {
-	renderCardStrip(workflowOrder, workflows, expandedWorkflowId, expandWorkflow);
+	renderCardStrip(cardOrder, workflows, epics, expandedId, expandItem);
 }
 
 function renderExpandedView(): void {
 	const detailArea = $("#detail-area");
 	const welcomeArea = $("#welcome-area");
 
-	if (!expandedWorkflowId) {
-		// No workflow expanded — show welcome or empty state
+	if (!expandedId) {
+		// Nothing expanded — show welcome
 		if (detailArea) detailArea.classList.add("hidden");
 		if (welcomeArea) welcomeArea.classList.remove("hidden");
 		hideQuestion();
@@ -251,13 +361,38 @@ function renderExpandedView(): void {
 		renderPipelineSteps(null);
 		updateSummary("");
 		updateFlavor("");
+		updateSpecDetails("");
+		updateDetailActions([]);
 		return;
 	}
 
+	// Check if expanded item is an epic
+	const epic = epics.get(expandedId);
+	if (epic) {
+		if (welcomeArea) welcomeArea.classList.add("hidden");
+		if (detailArea) detailArea.classList.remove("hidden");
+
+		updateEpicStatus(epic.status);
+		renderPipelineSteps(null);
+		updateSummary(epic.title || epic.description);
+		updateStepSummary("");
+		updateFlavor("");
+		updateSpecDetails(epic.description);
+		updateDetailActions([]);
+		hideQuestion();
+
+		clearOutput();
+		if (epic.outputLines.length > 0) {
+			renderOutputEntries(epic.outputLines);
+		}
+		return;
+	}
+
+	// Regular workflow
 	if (welcomeArea) welcomeArea.classList.add("hidden");
 	if (detailArea) detailArea.classList.remove("hidden");
 
-	const entry = workflows.get(expandedWorkflowId);
+	const entry = workflows.get(expandedId);
 	if (!entry) return;
 
 	const wf = entry.state;
@@ -268,6 +403,25 @@ function renderExpandedView(): void {
 	if (wf.summary) updateSummary(wf.summary);
 	updateStepSummary(wf.stepSummary ?? "");
 	updateFlavor(wf.flavor ?? "");
+	updateSpecDetails(wf.specification);
+
+	// Action buttons for idle/waiting epic workflows
+	const actions: { label: string; className: string; onClick: () => void }[] = [];
+	if (wf.status === "idle" && wf.epicId) {
+		actions.push({
+			label: "Start",
+			className: "btn-primary",
+			onClick: () => send({ type: "workflow:start-existing", workflowId: wf.id }),
+		});
+	}
+	if (wf.status === "waiting_for_dependencies") {
+		actions.push({
+			label: "Force Start",
+			className: "btn-secondary",
+			onClick: () => send({ type: "workflow:force-start", workflowId: wf.id }),
+		});
+	}
+	updateDetailActions(actions);
 
 	// Render output from accumulated entries
 	clearOutput();
@@ -322,43 +476,43 @@ document.addEventListener("DOMContentLoaded", () => {
 	});
 
 	btnCancel.addEventListener("click", () => {
-		if (expandedWorkflowId) {
-			send({ type: "workflow:cancel", workflowId: expandedWorkflowId });
+		if (expandedId) {
+			send({ type: "workflow:cancel", workflowId: expandedId });
 		}
 	});
 
 	if (btnRetry) {
 		btnRetry.addEventListener("click", () => {
-			if (expandedWorkflowId) {
-				send({ type: "workflow:retry", workflowId: expandedWorkflowId });
+			if (expandedId) {
+				send({ type: "workflow:retry", workflowId: expandedId });
 			}
 		});
 	}
 
 	btnSubmitAnswer.addEventListener("click", () => {
 		const answer = getAnswer();
-		if (!answer || !expandedWorkflowId) return;
+		if (!answer || !expandedId) return;
 
-		const entry = workflows.get(expandedWorkflowId);
+		const entry = workflows.get(expandedId);
 		if (!entry?.state.pendingQuestion) return;
 
 		send({
 			type: "workflow:answer",
-			workflowId: expandedWorkflowId,
+			workflowId: expandedId,
 			questionId: entry.state.pendingQuestion.id,
 			answer,
 		});
 	});
 
 	btnSkip.addEventListener("click", () => {
-		if (!expandedWorkflowId) return;
+		if (!expandedId) return;
 
-		const entry = workflows.get(expandedWorkflowId);
+		const entry = workflows.get(expandedId);
 		if (!entry?.state.pendingQuestion) return;
 
 		send({
 			type: "workflow:skip",
-			workflowId: expandedWorkflowId,
+			workflowId: expandedId,
 			questionId: entry.state.pendingQuestion.id,
 		});
 	});
@@ -379,6 +533,16 @@ document.addEventListener("DOMContentLoaded", () => {
 			btnStart.click();
 		}
 	});
+
+	// Epic form
+	const epicForm = createEpicForm(send, () => targetRepoInput.value.trim());
+	const inputArea = document.getElementById("input-area");
+	if (inputArea) inputArea.parentElement?.insertBefore(epicForm, inputArea);
+
+	const btnEpic = document.getElementById("btn-epic");
+	if (btnEpic) {
+		btnEpic.addEventListener("click", () => showEpicForm());
+	}
 
 	// Config panel
 	const configPanel = createConfigPanel(send);

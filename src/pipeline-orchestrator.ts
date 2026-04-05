@@ -3,6 +3,7 @@ import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
+import { computeDependencyStatus } from "./dependency-resolver";
 import {
 	mergePr as defaultMergePr,
 	resolveConflicts as defaultResolveConflicts,
@@ -28,6 +29,11 @@ export interface PipelineCallbacks {
 	onComplete: (workflowId: string) => void;
 	onError: (workflowId: string, error: string) => void;
 	onStateChange: (workflowId: string) => void;
+	onEpicDependencyUpdate?: (
+		dependentWorkflowId: string,
+		status: import("./types").EpicDependencyStatus,
+		blockingWorkflows: string[],
+	) => void;
 }
 
 export interface PipelineDeps {
@@ -84,6 +90,35 @@ export class PipelineOrchestrator {
 
 	getEngine(): WorkflowEngine {
 		return this.engine;
+	}
+
+	/** Start the pipeline for an already-created workflow (used by epic flow). */
+	startPipelineFromWorkflow(workflow: Workflow): void {
+		this.engine.setWorkflow(workflow);
+		this.engine.transition(workflow.id, "running");
+
+		const branchCwd = workflow.targetRepository || process.cwd();
+		this.getBranch(branchCwd).then((branch) => {
+			this.pipelineName = branch ?? workflow.worktreeBranch;
+			this.currentAuditRunId = this.auditLogger.startRun(
+				this.pipelineName,
+				workflow.worktreeBranch,
+			);
+		});
+
+		this.persistWorkflow(workflow);
+		this.startStep(workflow);
+
+		this.summarizer
+			.generateSpecSummary(workflow.specification)
+			.then(({ summary, flavor }) => {
+				if (summary && !workflow.summary) workflow.summary = summary;
+				if (flavor) workflow.flavor = flavor;
+				workflow.updatedAt = new Date().toISOString();
+				this.persistWorkflow(workflow);
+				this.callbacks.onStateChange(workflow.id);
+			})
+			.catch(() => {});
 	}
 
 	async startPipeline(specification: string, targetRepository?: string): Promise<Workflow> {
@@ -271,6 +306,13 @@ export class PipelineOrchestrator {
 		step.pid = null;
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
+
+		// Update epic dependency status for siblings if this workflow was cancelled
+		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
+			this.checkEpicDependencies(workflow).catch((err) => {
+				console.error(`[pipeline] Failed to check epic dependencies: ${err}`);
+			});
+		}
 	}
 
 	private startStep(workflow: Workflow): void {
@@ -767,6 +809,45 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.callbacks.onComplete(workflow.id);
 		this.callbacks.onStateChange(workflow.id);
+
+		// Check epic dependencies — notify server to resolve dependent workflows
+		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
+			this.checkEpicDependencies(workflow).catch((err) => {
+				console.error(`[pipeline] Failed to check epic dependencies: ${err}`);
+			});
+		}
+	}
+
+	private async checkEpicDependencies(triggerWorkflow: Workflow): Promise<void> {
+		if (!triggerWorkflow.epicId) return;
+
+		const allWorkflows = await this.store.loadAll();
+		const siblings = allWorkflows.filter(
+			(w) => w.epicId === triggerWorkflow.epicId && w.id !== triggerWorkflow.id,
+		);
+
+		// Build sets of completed and errored workflow IDs
+		const completedIds = new Set<string>();
+		const errorIds = new Set<string>();
+		for (const w of allWorkflows) {
+			if (w.epicId === triggerWorkflow.epicId) {
+				if (w.status === "completed") completedIds.add(w.id);
+				if (w.status === "error" || w.status === "cancelled") errorIds.add(w.id);
+			}
+		}
+
+		for (const sibling of siblings) {
+			if (!sibling.epicDependencies.includes(triggerWorkflow.id)) continue;
+			if (sibling.status !== "waiting_for_dependencies") continue;
+
+			const depStatus = computeDependencyStatus(sibling.epicDependencies, completedIds, errorIds);
+
+			sibling.epicDependencyStatus = depStatus.status;
+			sibling.updatedAt = new Date().toISOString();
+			await this.store.save(sibling);
+
+			this.callbacks.onEpicDependencyUpdate?.(sibling.id, depStatus.status, depStatus.blocking);
+		}
 	}
 
 	private advanceToNextStep(workflow: Workflow): void {
@@ -807,6 +888,13 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.callbacks.onError(workflowId, error);
 		this.callbacks.onStateChange(workflowId);
+
+		// Update epic dependency status for siblings if this workflow errored
+		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
+			this.checkEpicDependencies(workflow).catch((err) => {
+				console.error(`[pipeline] Failed to check epic dependencies: ${err}`);
+			});
+		}
 	}
 
 	private handlePid(workflowId: string, pid: number): void {
