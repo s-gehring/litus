@@ -8,8 +8,9 @@ import type {
 	WorkflowState,
 } from "../types";
 import { createConfigPanel, updateConfigPanel } from "./components/config-panel";
-import { createEpicForm, hideEpicForm, showEpicForm } from "./components/epic-form";
+import { createModal } from "./components/creation-modal";
 import { renderEpicTree } from "./components/epic-tree";
+import { createFolderPicker } from "./components/folder-picker";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
 import { EPIC_AGG_STATUS_CLASSES, EPIC_CARD_PREFIX } from "./components/status-maps";
@@ -298,7 +299,6 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "epic:created": {
-			hideEpicForm();
 			epics.set(msg.epicId, {
 				epicId: msg.epicId,
 				description: msg.description,
@@ -662,8 +662,25 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	updateFlavor(wf.flavor ?? "");
 	updateSpecDetails(wf.specification);
 
-	// Action buttons for idle/waiting epic workflows
+	// Action buttons: Cancel, Retry, and epic-specific actions
 	const actions: { label: string; className: string; onClick: () => void }[] = [];
+	const isActive = wf.status === "running" || wf.status === "waiting_for_input";
+	const isError = wf.status === "error";
+
+	if (isActive) {
+		actions.push({
+			label: "Cancel",
+			className: "btn-danger",
+			onClick: () => send({ type: "workflow:cancel", workflowId: wf.id }),
+		});
+	}
+	if (isError) {
+		actions.push({
+			label: "Retry",
+			className: "btn-secondary",
+			onClick: () => send({ type: "workflow:retry", workflowId: wf.id }),
+		});
+	}
 	if (wf.status === "idle" && wf.epicId) {
 		actions.push({
 			label: "Start",
@@ -723,43 +740,167 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	}
 }
 
-// Wire up UI events
-document.addEventListener("DOMContentLoaded", () => {
-	const btnStart = $("#btn-start") as HTMLButtonElement;
-	const btnCancel = $("#btn-cancel") as HTMLButtonElement;
-	const btnRetry = document.getElementById("btn-retry") as HTMLButtonElement | null;
-	const btnSubmitAnswer = $("#btn-submit-answer") as HTMLButtonElement;
-	const btnSkip = $("#btn-skip-question") as HTMLButtonElement;
-	const specInput = $("#specification-input") as HTMLTextAreaElement;
-	const targetRepoInput = $("#target-repo-input") as HTMLInputElement;
+function getLastTargetRepo(): string {
+	// Find the most recently created workflow with a targetRepository
+	let latest: { repo: string; date: string } | null = null;
+	for (const [, entry] of workflows) {
+		const repo = entry.state.targetRepository;
+		if (repo) {
+			if (!latest || entry.state.createdAt > latest.date) {
+				latest = { repo, date: entry.state.createdAt };
+			}
+		}
+	}
+	return latest?.repo ?? "";
+}
 
-	btnStart.addEventListener("click", () => {
+function openSpecModal(): void {
+	const content = document.createElement("div");
+
+	const repoField = document.createElement("div");
+	repoField.className = "modal-field";
+	const repoLabel = document.createElement("label");
+	repoLabel.textContent = "Target Repository";
+	repoField.appendChild(repoLabel);
+	const repoPicker = createFolderPicker("~/git");
+	repoPicker.setValue(getLastTargetRepo());
+	repoField.appendChild(repoPicker.element);
+
+	const specField = document.createElement("div");
+	specField.className = "modal-field";
+	const specLabel = document.createElement("label");
+	specLabel.textContent = "Specification";
+	specField.appendChild(specLabel);
+	const specInput = document.createElement("textarea");
+	specInput.placeholder = "Describe the feature you want to build...";
+	specInput.rows = 5;
+	specField.appendChild(specInput);
+
+	const errorEl = document.createElement("div");
+	errorEl.className = "modal-error hidden";
+
+	const actions = document.createElement("div");
+	actions.className = "modal-actions";
+	const btnStart = document.createElement("button");
+	btnStart.className = "btn btn-primary";
+	btnStart.textContent = "Start";
+	actions.appendChild(btnStart);
+
+	content.appendChild(repoField);
+	content.appendChild(specField);
+	content.appendChild(errorEl);
+	content.appendChild(actions);
+
+	const modal = createModal("New Specification", content);
+
+	function submit() {
 		const spec = specInput.value.trim();
-		if (!spec) return;
-
-		const targetRepo = targetRepoInput.value.trim();
+		if (!spec) {
+			errorEl.textContent = "Specification is required";
+			errorEl.classList.remove("hidden");
+			return;
+		}
+		errorEl.classList.add("hidden");
+		const targetRepo = repoPicker.getValue();
 		send({
 			type: "workflow:start",
 			specification: spec,
 			...(targetRepo ? { targetRepository: targetRepo } : {}),
 		});
-		specInput.value = "";
-	});
+		modal.hide();
+	}
 
-	btnCancel.addEventListener("click", () => {
-		if (expandedId) {
-			send({ type: "workflow:cancel", workflowId: expandedId });
+	btnStart.addEventListener("click", submit);
+	specInput.addEventListener("keydown", (e) => {
+		if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+			e.preventDefault();
+			submit();
 		}
 	});
 
-	if (btnRetry) {
-		btnRetry.addEventListener("click", () => {
-			if (expandedId) {
-				send({ type: "workflow:retry", workflowId: expandedId });
-			}
+	modal.show();
+}
+
+function openEpicModal(): void {
+	const content = document.createElement("div");
+
+	const repoField = document.createElement("div");
+	repoField.className = "modal-field";
+	const repoLabel = document.createElement("label");
+	repoLabel.textContent = "Target Repository";
+	repoField.appendChild(repoLabel);
+	const repoPicker = createFolderPicker("~/git");
+	repoPicker.setValue(getLastTargetRepo());
+	repoField.appendChild(repoPicker.element);
+
+	const descField = document.createElement("div");
+	descField.className = "modal-field";
+	const descLabel = document.createElement("label");
+	descLabel.textContent = "Epic Description";
+	descField.appendChild(descLabel);
+	const descInput = document.createElement("textarea");
+	descInput.placeholder = "Describe a large feature to decompose into multiple specs...";
+	descInput.rows = 5;
+	descField.appendChild(descInput);
+
+	const errorEl = document.createElement("div");
+	errorEl.className = "modal-error hidden";
+
+	const actions = document.createElement("div");
+	actions.className = "modal-actions";
+	const btnCreateStart = document.createElement("button");
+	btnCreateStart.className = "btn btn-primary";
+	btnCreateStart.textContent = "Create + Start";
+	const btnCreate = document.createElement("button");
+	btnCreate.className = "btn btn-secondary";
+	btnCreate.textContent = "Create";
+	actions.appendChild(btnCreateStart);
+	actions.appendChild(btnCreate);
+
+	content.appendChild(repoField);
+	content.appendChild(descField);
+	content.appendChild(errorEl);
+	content.appendChild(actions);
+
+	const modal = createModal("New Epic", content);
+
+	function submitEpic(autoStart: boolean) {
+		const desc = descInput.value.trim();
+		if (desc.length < 10) {
+			errorEl.textContent = "Description must be at least 10 characters";
+			errorEl.classList.remove("hidden");
+			return;
+		}
+		errorEl.classList.add("hidden");
+		const targetRepo = repoPicker.getValue();
+		send({
+			type: "epic:start",
+			description: desc,
+			autoStart,
+			...(targetRepo ? { targetRepository: targetRepo } : {}),
 		});
+		modal.hide();
 	}
 
+	btnCreateStart.addEventListener("click", () => submitEpic(true));
+	btnCreate.addEventListener("click", () => submitEpic(false));
+
+	modal.show();
+}
+
+// Wire up UI events
+document.addEventListener("DOMContentLoaded", () => {
+	const btnSubmitAnswer = $("#btn-submit-answer") as HTMLButtonElement;
+	const btnSkip = $("#btn-skip-question") as HTMLButtonElement;
+
+	// Header buttons → modals
+	const btnNewSpec = document.getElementById("btn-new-spec");
+	if (btnNewSpec) btnNewSpec.addEventListener("click", openSpecModal);
+
+	const btnNewEpic = document.getElementById("btn-new-epic");
+	if (btnNewEpic) btnNewEpic.addEventListener("click", openEpicModal);
+
+	// Question panel
 	btnSubmitAnswer.addEventListener("click", () => {
 		const answer = getAnswer();
 		if (!answer || !expandedId) return;
@@ -796,24 +937,6 @@ document.addEventListener("DOMContentLoaded", () => {
 			btnSubmitAnswer.click();
 		}
 	});
-
-	// Allow Ctrl+Enter to start workflow
-	specInput.addEventListener("keydown", (e) => {
-		if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-			e.preventDefault();
-			btnStart.click();
-		}
-	});
-
-	// Epic form
-	const epicForm = createEpicForm(send, () => targetRepoInput.value.trim());
-	const inputArea = document.getElementById("input-area");
-	if (inputArea) inputArea.parentElement?.insertBefore(epicForm, inputArea);
-
-	const btnEpic = document.getElementById("btn-epic");
-	if (btnEpic) {
-		btnEpic.addEventListener("click", () => showEpicForm());
-	}
 
 	// Config panel
 	const configPanel = createConfigPanel(send);

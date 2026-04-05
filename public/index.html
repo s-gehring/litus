@@ -11,6 +11,10 @@
     <header>
       <h1>crab-studio</h1>
       <div id="connection-status" class="status-dot disconnected" title="Disconnected"></div>
+      <div class="header-actions">
+        <button id="btn-new-spec" class="btn-header" title="New Specification">New Specification</button>
+        <button id="btn-new-epic" class="btn-header" title="New Epic">New Epic</button>
+      </div>
       <button id="btn-config" class="btn-config" title="Configuration">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -23,7 +27,7 @@
 
     <!-- Welcome / empty state (shown when no workflow is expanded) -->
     <div id="welcome-area" class="welcome-area">
-      <p class="welcome-text">Start a specification workflow below</p>
+      <p class="welcome-text">Click "New Specification" or "New Epic" to get started</p>
     </div>
 
     <!-- Detail area: expanded workflow view (hidden until a card is clicked) -->
@@ -78,20 +82,6 @@
       </div>
     </div>
 
-    <!-- Input area: always visible at bottom -->
-    <div id="input-area" class="input-area-fixed">
-      <div class="target-repo-field">
-        <label for="target-repo-input" class="target-repo-label">Target Repository</label>
-        <input id="target-repo-input" type="text" class="target-repo-input" placeholder="~/git" />
-      </div>
-      <textarea id="specification-input" class="spec-input" placeholder="Enter your feature description..." rows="3"></textarea>
-      <div class="input-actions">
-        <button id="btn-start" class="btn btn-primary">Start</button>
-        <button id="btn-epic" class="btn btn-secondary">Specify Epic</button>
-        <button id="btn-cancel" class="btn btn-danger hidden">Cancel</button>
-        <button id="btn-retry" class="btn btn-secondary hidden">Retry</button>
-      </div>
-    </div>
     <div id="config-panel" class="config-panel hidden"></div>
   </div>
 

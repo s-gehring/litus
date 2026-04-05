@@ -434,6 +434,56 @@ function handleRetry(ws: ServerWebSocket<WsData>, workflowId: string) {
 	orch.retryStep(workflowId);
 }
 
+async function openFolderPicker(): Promise<string | null> {
+	const platform = process.platform;
+	let cmd: string[];
+
+	if (platform === "win32") {
+		cmd = [
+			"powershell",
+			"-NoProfile",
+			"-Command",
+			`Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.ShowNewFolderButton = $true; if ($f.ShowDialog() -eq 'OK') { $f.SelectedPath } else { 'CANCELLED' }`,
+		];
+	} else if (platform === "darwin") {
+		cmd = [
+			"osascript",
+			"-e",
+			"try",
+			"-e",
+			"set f to POSIX path of (choose folder)",
+			"-e",
+			"f",
+			"-e",
+			"on error",
+			"-e",
+			'"CANCELLED"',
+			"-e",
+			"end try",
+		];
+	} else {
+		cmd = ["zenity", "--file-selection", "--directory"];
+	}
+
+	const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+	const exitCode = await proc.exited;
+
+	if (platform === "linux" && exitCode === 1) {
+		// zenity returns 1 on cancel
+		return null;
+	}
+
+	if (exitCode !== 0) {
+		throw new Error("Folder picker not available on this platform");
+	}
+
+	const output = await new Response(proc.stdout).text();
+	const result = output.trim();
+
+	if (!result || result === "CANCELLED") return null;
+	return result;
+}
+
 function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 	return Bun.serve<WsData>({
 		port,
@@ -463,6 +513,17 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 					status: "ok",
 					activeWorkflows,
 				});
+			}
+
+			// Browse folder — native OS folder picker dialog
+			if (url.pathname === "/api/browse-folder" && req.method === "GET") {
+				try {
+					const path = await openFolderPicker();
+					return Response.json({ path });
+				} catch (err) {
+					const message = err instanceof Error ? err.message : "Folder picker not available";
+					return Response.json({ error: message }, { status: 500 });
+				}
 			}
 
 			// Static file serving (CR-010: path traversal prevention)
