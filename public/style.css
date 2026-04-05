@@ -212,6 +212,8 @@ header h1 {
   border-radius: var(--radius);
   overflow: hidden;
   flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .status-area {
@@ -325,6 +327,12 @@ header h1 {
   border-bottom: 1px solid var(--border);
 }
 
+.output-area.epic-tree-fullsize {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+
 .output-log {
   height: 100%;
   overflow-y: auto;
@@ -335,6 +343,11 @@ header h1 {
   white-space: pre-wrap;
   word-break: break-word;
   max-width: 120ch;
+}
+
+.output-area.epic-tree-fullsize .output-log {
+  height: 100%;
+  max-width: none;
 }
 
 .output-line {
@@ -1118,6 +1131,7 @@ body::-webkit-scrollbar-track {
   position: relative;
   overflow: auto;
   min-height: 200px;
+  height: 100%;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
@@ -1143,8 +1157,8 @@ body::-webkit-scrollbar-track {
   position: absolute;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: 2px;
+  padding: 6px 8px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1158,12 +1172,41 @@ body::-webkit-scrollbar-track {
   box-shadow: 0 0 6px rgba(74, 158, 255, 0.2);
 }
 
+.tree-node-dimmed {
+  opacity: 0.25;
+  transition: opacity 0.15s;
+}
+
+.tree-node-highlighted {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
+  transition: opacity 0.15s;
+}
+
+.tree-edge-dimmed {
+  opacity: 0.1;
+  transition: opacity 0.15s;
+}
+
+.tree-edge-highlighted {
+  stroke-width: 3 !important;
+  opacity: 1;
+  transition: opacity 0.15s;
+}
+
+.tree-node .card-status {
+  font-size: 0.6rem;
+  padding: 1px 6px;
+}
+
 .tree-node-title {
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   color: var(--text);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.3;
 }
 
 .tree-empty {

@@ -247,19 +247,51 @@ export async function createEpicWorkflows(
 		workflows.push(workflow);
 	}
 
-	// Second pass: map temp dependency IDs to real workflow IDs and set status
+	// Second pass: map temp dependency IDs to real workflow IDs
 	for (let i = 0; i < result.specs.length; i++) {
 		const spec = result.specs[i];
 		const workflow = workflows[i];
 		workflow.epicDependencies = spec.dependencies
 			.map((tempId) => tempIdToWorkflowId.get(tempId))
 			.filter((id): id is string => id !== undefined);
+	}
 
-		if (workflow.epicDependencies.length > 0) {
-			workflow.epicDependencyStatus = "waiting";
-			workflow.status = "waiting_for_dependencies";
+	// Transitive reduction: remove edges implied by longer paths
+	const depsMap = new Map<string, string[]>();
+	for (const wf of workflows) {
+		depsMap.set(wf.id, wf.epicDependencies);
+	}
+
+	function isReachable(from: string, target: string, visited: Set<string>): boolean {
+		if (from === target) return true;
+		if (visited.has(from)) return false;
+		visited.add(from);
+		for (const dep of depsMap.get(from) ?? []) {
+			if (isReachable(dep, target, visited)) return true;
+		}
+		return false;
+	}
+
+	for (const wf of workflows) {
+		if (wf.epicDependencies.length < 2) continue;
+		const reduced: string[] = [];
+		for (const dep of wf.epicDependencies) {
+			// Keep dep only if it's NOT reachable through any other direct dependency
+			const redundant = wf.epicDependencies.some(
+				(other) => other !== dep && isReachable(other, dep, new Set()),
+			);
+			if (!redundant) reduced.push(dep);
+		}
+		wf.epicDependencies = reduced;
+	}
+
+	// Set dependency status
+	for (const wf of workflows) {
+		if (wf.epicDependencies.length > 0) {
+			wf.epicDependencyStatus = "waiting";
+			wf.status = "waiting_for_dependencies";
 		} else {
-			workflow.epicDependencyStatus = "satisfied";
+			wf.epicDependencyStatus = "satisfied";
 		}
 	}
 

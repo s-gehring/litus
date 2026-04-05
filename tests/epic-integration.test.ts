@@ -55,12 +55,13 @@ describe("createEpicWorkflows", () => {
 		}
 	});
 
-	test("maps temp dependency IDs to real workflow IDs", async () => {
+	test("maps temp dependency IDs to real workflow IDs with transitive reduction", async () => {
 		const { workflows } = await createAndTrack(mockResult, undefined);
 		const [wfA, wfB, wfC] = workflows;
 		expect(wfA.epicDependencies).toEqual([]);
 		expect(wfB.epicDependencies).toEqual([wfA.id]);
-		expect(wfC.epicDependencies).toEqual([wfA.id, wfB.id]);
+		// C's dep on A is transitive (B already depends on A), so only B remains
+		expect(wfC.epicDependencies).toEqual([wfB.id]);
 	});
 
 	test("sets dependency status correctly", async () => {

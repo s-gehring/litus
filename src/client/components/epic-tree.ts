@@ -16,12 +16,12 @@ export interface TreeEdge {
 	status: "satisfied" | "waiting" | "blocked";
 }
 
-const COLUMN_WIDTH = 220;
-const ROW_HEIGHT = 90;
-const NODE_WIDTH = 180;
+const COLUMN_WIDTH = 250;
+const ROW_HEIGHT = 70;
+const NODE_WIDTH = 190;
 const NODE_HEIGHT = 60;
-const PADDING_X = 40;
-const PADDING_Y = 30;
+const PADDING_X = 20;
+const PADDING_Y = 15;
 
 export function computeTreeLayout(workflows: WorkflowState[]): TreeNode[] {
 	if (workflows.length === 0) return [];
@@ -181,13 +181,71 @@ export function renderTreeNode(
 	const title = document.createElement("span");
 	title.className = "tree-node-title";
 	const titleText = workflow.summary || workflow.specification;
-	title.textContent = titleText.length > 40 ? `${titleText.slice(0, 40)}...` : titleText;
+	title.textContent = titleText;
 	title.title = titleText;
 	el.appendChild(title);
 
 	el.addEventListener("click", (e) => {
 		e.stopPropagation();
 		onClick(node.workflowId);
+	});
+
+	// Highlight dependencies on hover
+	el.addEventListener("mouseenter", () => {
+		const container = el.closest(".epic-tree-container");
+		if (!container) return;
+
+		// Collect all related workflow IDs (this node + all its dependencies, recursively)
+		const related = new Set<string>();
+		related.add(node.workflowId);
+		function collectDeps(id: string) {
+			const n = container?.querySelector(`.tree-node[data-workflow-id="${id}"]`);
+			if (!n) return;
+			// Find edges pointing to this node
+			const svg = container?.querySelector(".tree-svg");
+			if (!svg) return;
+			for (const path of svg.querySelectorAll(`path[data-to="${id}"]`)) {
+				const fromId = path.getAttribute("data-from");
+				if (fromId && !related.has(fromId)) {
+					related.add(fromId);
+					collectDeps(fromId);
+				}
+			}
+		}
+		collectDeps(node.workflowId);
+
+		// Dim all nodes and edges, then highlight related ones
+		container.classList.add("tree-hovering");
+		for (const n of container.querySelectorAll(".tree-node")) {
+			const nId = (n as HTMLElement).dataset.workflowId;
+			n.classList.toggle("tree-node-highlighted", related.has(nId ?? ""));
+			n.classList.toggle("tree-node-dimmed", !related.has(nId ?? ""));
+		}
+		const svg = container.querySelector(".tree-svg");
+		if (svg) {
+			for (const path of svg.querySelectorAll("path")) {
+				const from = path.getAttribute("data-from");
+				const to = path.getAttribute("data-to");
+				const isRelated = related.has(from ?? "") && related.has(to ?? "");
+				path.classList.toggle("tree-edge-highlighted", isRelated);
+				path.classList.toggle("tree-edge-dimmed", !isRelated);
+			}
+		}
+	});
+
+	el.addEventListener("mouseleave", () => {
+		const container = el.closest(".epic-tree-container");
+		if (!container) return;
+		container.classList.remove("tree-hovering");
+		for (const n of container.querySelectorAll(".tree-node")) {
+			n.classList.remove("tree-node-highlighted", "tree-node-dimmed");
+		}
+		const svg = container.querySelector(".tree-svg");
+		if (svg) {
+			for (const path of svg.querySelectorAll("path")) {
+				path.classList.remove("tree-edge-highlighted", "tree-edge-dimmed");
+			}
+		}
 	});
 
 	return el;

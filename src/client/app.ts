@@ -482,10 +482,14 @@ function renderExpandedView(): void {
 	const welcomeArea = $("#welcome-area");
 	const treeContainer = document.getElementById("epic-tree-panel");
 
-	// Clear tree panel and breadcrumb if they exist
+	// Clear tree panel, breadcrumb, analysis details, and fullsize mode
 	if (treeContainer) treeContainer.remove();
 	const existingBreadcrumb = document.getElementById("epic-breadcrumb");
 	if (existingBreadcrumb) existingBreadcrumb.remove();
+	const existingAnalysis = document.getElementById("epic-analysis-details");
+	if (existingAnalysis) existingAnalysis.remove();
+	const outputArea = document.getElementById("output-area");
+	if (outputArea) outputArea.classList.remove("epic-tree-fullsize");
 
 	if (!expandedId) {
 		// Nothing expanded — show welcome
@@ -515,6 +519,10 @@ function renderExpandedView(): void {
 		updateSpecDetails(epic.description);
 		updateDetailActions([]);
 		hideQuestion();
+
+		// Make output area fill available space for epic analysis
+		const oa = $("#output-area");
+		oa.classList.add("epic-tree-fullsize");
 
 		clearOutput();
 		if (epic.outputLines.length > 0) {
@@ -562,14 +570,26 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 	updateSummary(`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`);
 	updateStepSummary("");
 	updateFlavor("");
-	updateSpecDetails("");
 	updateDetailActions([]);
 	hideQuestion();
 	clearOutput();
 
-	// Hide the step history and spec details
+	// Hide the step history
 	const stepHistory = $("#step-history");
 	if (stepHistory) stepHistory.replaceChildren();
+
+	// Show epic analysis output in a collapsible section
+	const epicData = epics.get(agg.epicId);
+	if (epicData) {
+		updateSpecDetails(epicData.description);
+		renderEpicAnalysisDetails(epicData);
+	} else {
+		updateSpecDetails("");
+	}
+
+	// Make output area fill available space for epic tree
+	const outputArea = $("#output-area");
+	outputArea.classList.add("epic-tree-fullsize");
 
 	// Build workflow map from child IDs
 	const childWorkflows = new Map<string, WorkflowState>();
@@ -584,6 +604,44 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 
 	const tree = renderEpicTree(agg, childWorkflows, selectChild);
 	outputLog.appendChild(tree);
+}
+
+function renderEpicAnalysisDetails(epicData: EpicClientState): void {
+	// Remove existing if present
+	const existing = document.getElementById("epic-analysis-details");
+	if (existing) existing.remove();
+
+	if (epicData.outputLines.length === 0) return;
+
+	const details = document.createElement("details");
+	details.className = "spec-details";
+	details.id = "epic-analysis-details";
+
+	const summary = document.createElement("summary");
+	summary.className = "spec-details-summary";
+	summary.textContent = "Epic Analysis Output";
+	details.appendChild(summary);
+
+	const content = document.createElement("div");
+	content.className = "spec-details-text";
+
+	// Render output lines as text
+	const lines: string[] = [];
+	for (const line of epicData.outputLines) {
+		if (line.kind === "text") {
+			lines.push(line.text);
+		} else if (line.kind === "tools") {
+			lines.push(`[tools: ${Object.keys(line.tools).join(", ")}]`);
+		}
+	}
+	content.textContent = lines.join("\n");
+	details.appendChild(content);
+
+	// Insert after spec-details
+	const specDetails = document.getElementById("spec-details");
+	if (specDetails) {
+		specDetails.parentElement?.insertBefore(details, specDetails.nextSibling);
+	}
 }
 
 function renderChildDetailView(childId: string, epicAgg: EpicAggregatedState): void {
@@ -625,16 +683,16 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	// Render output from accumulated entries
 	clearOutput();
 
-	// Add breadcrumb before the output area (outside scrollable container) if viewing within an epic context
+	// Add breadcrumb above spec-details if viewing within an epic context
 	if (epicContext) {
-		const outputArea = document.getElementById("output-area");
-		if (outputArea) {
+		const specDetails = document.getElementById("spec-details");
+		if (specDetails) {
 			const breadcrumb = document.createElement("div");
 			breadcrumb.className = "epic-breadcrumb";
 			breadcrumb.id = "epic-breadcrumb";
 			breadcrumb.textContent = `\u2190 Epic: ${epicContext.title}`;
 			breadcrumb.addEventListener("click", returnToEpicTree);
-			outputArea.parentElement?.insertBefore(breadcrumb, outputArea);
+			specDetails.parentElement?.insertBefore(breadcrumb, specDetails);
 		}
 	}
 
