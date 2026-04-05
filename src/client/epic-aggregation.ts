@@ -35,11 +35,11 @@ export function computeEpicAggregatedState(children: WorkflowState[]): EpicAggre
 		if (c.createdAt < startDate) startDate = c.createdAt;
 	}
 
-	// Sum active work time across children
+	// Sum active work time across children (including epic analysis time)
 	let totalActiveWorkMs = 0;
 	let anyActiveWorkStartedAt: string | null = null;
 	for (const c of children) {
-		totalActiveWorkMs += c.activeWorkMs;
+		totalActiveWorkMs += c.activeWorkMs + (c.epicAnalysisMs ?? 0);
 		if (c.activeWorkStartedAt) {
 			if (!anyActiveWorkStartedAt || c.activeWorkStartedAt < anyActiveWorkStartedAt) {
 				anyActiveWorkStartedAt = c.activeWorkStartedAt;

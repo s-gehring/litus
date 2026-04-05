@@ -136,6 +136,7 @@ function createFakeEngine() {
 				epicTitle: null,
 				epicDependencies: [],
 				epicDependencyStatus: null,
+				epicAnalysisMs: 0,
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,
 				createdAt: now,
