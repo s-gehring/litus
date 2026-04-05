@@ -108,9 +108,13 @@ Done.`;
 describe("analyzeEpic", () => {
 	test("throws on timeout when CLI is available", async () => {
 		// Check if claude CLI is available — skip if not (e.g. CI)
-		const which = Bun.spawn(["claude", "--version"], { stdout: "pipe", stderr: "pipe" });
-		const code = await which.exited;
-		if (code !== 0) return; // CLI not available, skip
+		try {
+			const which = Bun.spawn(["claude", "--version"], { stdout: "pipe", stderr: "pipe" });
+			const code = await which.exited;
+			if (code !== 0) return;
+		} catch {
+			return; // CLI not found in PATH
+		}
 
 		await expect(
 			analyzeEpic("Some epic description that is long enough", process.cwd(), undefined, 1),
