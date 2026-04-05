@@ -306,6 +306,16 @@ async function handleEpicStart(
 
 	broadcast({ type: "epic:created", epicId, description: trimmedDesc });
 
+	// Generate summary async (non-blocking)
+	sharedSummarizer
+		.generateSpecSummary(trimmedDesc)
+		.then(({ summary }) => {
+			if (summary) {
+				broadcast({ type: "epic:summary", epicId, summary });
+			}
+		})
+		.catch(() => {});
+
 	try {
 		const repoDir = targetRepository || process.cwd();
 		const result = await analyzeEpic(trimmedDesc, repoDir, epicAnalysisRef, undefined, {

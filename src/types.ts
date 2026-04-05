@@ -316,6 +316,7 @@ export type ServerMessage =
 	| { type: "epic:created"; epicId: string; description: string }
 	| { type: "epic:output"; epicId: string; text: string }
 	| { type: "epic:tools"; epicId: string; tools: Record<string, number> }
+	| { type: "epic:summary"; epicId: string; summary: string }
 	| {
 			type: "epic:result";
 			epicId: string;
