@@ -80,9 +80,25 @@ describe("WorkflowEngine", () => {
 			expect(engine.getWorkflow()?.status).toBe("error");
 		});
 
-		test("running → cancelled", async () => {
+		test("running → paused", async () => {
 			const w = await engine.createWorkflow("test");
 			engine.transition(w.id, "running");
+			engine.transition(w.id, "paused");
+			expect(engine.getWorkflow()?.status).toBe("paused");
+		});
+
+		test("paused → running (resume)", async () => {
+			const w = await engine.createWorkflow("test");
+			engine.transition(w.id, "running");
+			engine.transition(w.id, "paused");
+			engine.transition(w.id, "running");
+			expect(engine.getWorkflow()?.status).toBe("running");
+		});
+
+		test("paused → cancelled (abort)", async () => {
+			const w = await engine.createWorkflow("test");
+			engine.transition(w.id, "running");
+			engine.transition(w.id, "paused");
 			engine.transition(w.id, "cancelled");
 			expect(engine.getWorkflow()?.status).toBe("cancelled");
 		});
@@ -120,8 +136,15 @@ describe("WorkflowEngine", () => {
 		test("cancelled → running throws", async () => {
 			const w = await engine.createWorkflow("test");
 			engine.transition(w.id, "running");
+			engine.transition(w.id, "paused");
 			engine.transition(w.id, "cancelled");
 			expect(() => engine.transition(w.id, "running")).toThrow("Invalid transition");
+		});
+
+		test("running → cancelled throws (must pause first)", async () => {
+			const w = await engine.createWorkflow("test");
+			engine.transition(w.id, "running");
+			expect(() => engine.transition(w.id, "cancelled")).toThrow("Invalid transition");
 		});
 
 		test("error → running is allowed (retry)", async () => {

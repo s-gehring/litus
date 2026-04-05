@@ -394,6 +394,7 @@ export type ClientMessage =
 	| { type: "workflow:answer"; workflowId: string; questionId: string; answer: string }
 	| { type: "workflow:skip"; workflowId: string; questionId: string }
 	| { type: "workflow:pause"; workflowId: string }
+	| { type: "workflow:resume"; workflowId: string }
 	| { type: "workflow:abort"; workflowId: string }
 	| { type: "workflow:retry"; workflowId: string }
 	| { type: "epic:start"; description: string; targetRepository?: string; autoStart: boolean }

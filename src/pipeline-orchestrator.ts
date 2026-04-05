@@ -272,6 +272,61 @@ export class PipelineOrchestrator {
 		this.runStep(workflow, step.prompt, cwd);
 	}
 
+	pause(workflowId: string): void {
+		const workflow = this.engine.getWorkflow();
+		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
+
+		this.cliRunner.kill(workflowId);
+		if (this.monitorAbortController) {
+			this.monitorAbortController.abort();
+			this.monitorAbortController = null;
+		}
+
+		const step = workflow.steps[workflow.currentStepIndex];
+		step.status = "paused";
+		step.pid = null;
+		workflow.updatedAt = new Date().toISOString();
+
+		this.engine.transition(workflowId, "paused");
+		this.flushPersistDebounce(workflow);
+		this.persistWorkflow(workflow);
+		this.callbacks.onStateChange(workflowId);
+	}
+
+	resume(workflowId: string): void {
+		const workflow = this.engine.getWorkflow();
+		if (!workflow || workflow.id !== workflowId || workflow.status !== "paused") return;
+
+		const step = workflow.steps[workflow.currentStepIndex];
+		step.status = "running";
+		workflow.updatedAt = new Date().toISOString();
+
+		this.engine.transition(workflowId, "running");
+		this.persistWorkflow(workflow);
+		this.callbacks.onStateChange(workflowId);
+
+		this.assistantTextBuffer = "";
+		this.questionDetector.reset();
+
+		const cwd = workflow.worktreePath || process.cwd();
+		const cliCallbacks: CLICallbacks = {
+			onOutput: (text) => this.handleStepOutput(workflow.id, text),
+			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
+			onComplete: () => this.handleStepComplete(workflow.id),
+			onError: (error) => this.handleStepError(workflow.id, error),
+			onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
+			onPid: (pid) => this.handlePid(workflow.id, pid),
+		};
+
+		if (step.name === "monitor-ci") {
+			this.runMonitorCi(workflow);
+		} else if (step.sessionId) {
+			this.cliRunner.resume(workflowId, step.sessionId, cwd, cliCallbacks);
+		} else {
+			this.runStep(workflow, step.prompt, cwd);
+		}
+	}
+
 	cancelPipeline(workflowId: string): void {
 		const workflow = this.getWorkflowOrThrow(workflowId);
 

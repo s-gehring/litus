@@ -1005,4 +1005,61 @@ describe("PipelineOrchestrator", () => {
 			]);
 		});
 	});
+
+	describe("pause and resume", () => {
+		test("pause() kills process, sets step to paused, transitions workflow to paused", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			// Simulate session ID being set
+			wf.steps[0].sessionId = "test-session-123";
+
+			orchestrator.pause("test-wf-id");
+
+			expect(cli.kill).toHaveBeenCalledWith("test-wf-id");
+			expect(wf.steps[0].status).toBe("paused");
+			expect(wf.status).toBe("paused");
+			expect(wf.steps[0].sessionId).toBe("test-session-123");
+			expect(store.save).toHaveBeenCalled();
+			expect(callbacks.onStateChange).toHaveBeenCalledWith("test-wf-id");
+		});
+
+		test("pause() silently ignores if workflow is not running", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			// Set to completed
+			wf.status = "completed";
+			orchestrator.pause("test-wf-id");
+
+			// Should not have changed anything
+			expect(wf.status).toBe("completed");
+		});
+
+		test("resume() restarts CLI with session, sets step to running, transitions workflow to running", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			wf.steps[0].sessionId = "test-session-123";
+			orchestrator.pause("test-wf-id");
+
+			orchestrator.resume("test-wf-id");
+
+			expect(wf.steps[0].status).toBe("running");
+			expect(wf.status).toBe("running");
+			expect(cli.resume).toHaveBeenCalled();
+			expect(callbacks.onStateChange).toHaveBeenCalledWith("test-wf-id");
+		});
+
+		test("resume() silently ignores if workflow is not paused", async () => {
+			await orchestrator.startPipeline("test");
+			const wf = getWf(engine);
+
+			// Still running — resume should be a no-op
+			orchestrator.resume("test-wf-id");
+
+			// resume mock should not have been called for resume flow
+			expect(wf.status).toBe("running");
+		});
+	});
 });

@@ -243,15 +243,53 @@ function handleSkip(ws: ServerWebSocket<WsData>, workflowId: string, questionId:
 	orch.skipQuestion(workflowId, questionId);
 }
 
-function handleCancel(ws: ServerWebSocket<WsData>, workflowId: string) {
+function handlePause(ws: ServerWebSocket<WsData>, workflowId: string) {
 	const orch = orchestrators.get(workflowId);
 	if (!orch) {
 		sendTo(ws, { type: "error", message: "Workflow not found" });
 		return;
 	}
 
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow || workflow.status !== "running") return;
+
+	orch.pause(workflowId);
+}
+
+function handleAbort(ws: ServerWebSocket<WsData>, workflowId: string) {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) {
+		sendTo(ws, { type: "error", message: "Workflow not found" });
+		return;
+	}
+
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow) return;
+
+	// Abort is valid from paused, waiting_for_input, and waiting_for_dependencies
+	if (
+		workflow.status !== "paused" &&
+		workflow.status !== "waiting_for_input" &&
+		workflow.status !== "waiting_for_dependencies"
+	) {
+		return;
+	}
+
 	orch.cancelPipeline(workflowId);
 	orchestrators.delete(workflowId);
+}
+
+function handleResume(ws: ServerWebSocket<WsData>, workflowId: string) {
+	const orch = orchestrators.get(workflowId);
+	if (!orch) {
+		sendTo(ws, { type: "error", message: "Workflow not found" });
+		return;
+	}
+
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow || workflow.status !== "paused") return;
+
+	orch.resume(workflowId);
 }
 
 function handleConfigGet(ws: ServerWebSocket<WsData>) {
@@ -542,8 +580,14 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 						case "workflow:skip":
 							handleSkip(ws, msg.workflowId, msg.questionId);
 							break;
-						case "workflow:cancel":
-							handleCancel(ws, msg.workflowId);
+						case "workflow:pause":
+							handlePause(ws, msg.workflowId);
+							break;
+						case "workflow:resume":
+							handleResume(ws, msg.workflowId);
+							break;
+						case "workflow:abort":
+							handleAbort(ws, msg.workflowId);
 							break;
 						case "workflow:retry":
 							handleRetry(ws, msg.workflowId);
