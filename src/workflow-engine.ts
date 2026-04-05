@@ -216,7 +216,6 @@ export class WorkflowEngine {
 export async function createEpicWorkflows(
 	result: EpicAnalysisResult,
 	targetRepository: string | undefined,
-	autoStart: boolean,
 ): Promise<{ workflows: Workflow[]; epicId: string }> {
 	const epicId = randomUUID();
 	const tempIdToWorkflowId = new Map<string, string>();
@@ -260,9 +259,6 @@ export async function createEpicWorkflows(
 			workflow.status = "waiting_for_dependencies";
 		} else {
 			workflow.epicDependencyStatus = "satisfied";
-			if (autoStart) {
-				// Independent specs auto-start; idle ones stay idle for manual start
-			}
 		}
 	}
 

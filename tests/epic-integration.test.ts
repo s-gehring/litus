@@ -29,12 +29,8 @@ afterAll(async () => {
 	createdWorkflows.length = 0;
 });
 
-async function createAndTrack(
-	result: EpicAnalysisResult,
-	targetRepository: string | undefined,
-	autoStart: boolean,
-) {
-	const out = await createEpicWorkflows(result, targetRepository, autoStart);
+async function createAndTrack(result: EpicAnalysisResult, targetRepository: string | undefined) {
+	const out = await createEpicWorkflows(result, targetRepository);
 	createdWorkflows.push(...out.workflows);
 	return out;
 }
@@ -51,7 +47,7 @@ describe("createEpicWorkflows", () => {
 	};
 
 	test("creates workflows with shared epicId", async () => {
-		const { workflows, epicId } = await createAndTrack(mockResult, undefined, false);
+		const { workflows, epicId } = await createAndTrack(mockResult, undefined);
 		expect(workflows).toHaveLength(3);
 		for (const wf of workflows) {
 			expect(wf.epicId).toBe(epicId);
@@ -60,7 +56,7 @@ describe("createEpicWorkflows", () => {
 	});
 
 	test("maps temp dependency IDs to real workflow IDs", async () => {
-		const { workflows } = await createAndTrack(mockResult, undefined, false);
+		const { workflows } = await createAndTrack(mockResult, undefined);
 		const [wfA, wfB, wfC] = workflows;
 		expect(wfA.epicDependencies).toEqual([]);
 		expect(wfB.epicDependencies).toEqual([wfA.id]);
@@ -68,28 +64,17 @@ describe("createEpicWorkflows", () => {
 	});
 
 	test("sets dependency status correctly", async () => {
-		const { workflows } = await createAndTrack(mockResult, undefined, false);
+		const { workflows } = await createAndTrack(mockResult, undefined);
 		const [wfA, wfB, wfC] = workflows;
 		expect(wfA.epicDependencyStatus).toBe("satisfied");
 		expect(wfB.epicDependencyStatus).toBe("waiting");
 		expect(wfC.epicDependencyStatus).toBe("waiting");
 	});
 
-	test("autoStart sets waiting_for_dependencies on dependent specs", async () => {
-		const { workflows } = await createAndTrack(mockResult, undefined, true);
+	test("independent specs stay idle, dependent specs get waiting_for_dependencies", async () => {
+		const { workflows } = await createAndTrack(mockResult, undefined);
 		const [wfA, wfB, wfC] = workflows;
-		// Independent spec stays idle (startPipeline handles the transition)
 		expect(wfA.status).toBe("idle");
-		expect(wfB.status).toBe("waiting_for_dependencies");
-		expect(wfC.status).toBe("waiting_for_dependencies");
-	});
-
-	test("without autoStart: independent specs idle, dependent specs wait for dependencies", async () => {
-		const { workflows } = await createAndTrack(mockResult, undefined, false);
-		const [wfA, wfB, wfC] = workflows;
-		// Independent spec stays idle (user starts manually)
-		expect(wfA.status).toBe("idle");
-		// Dependent specs go to waiting_for_dependencies so auto-start works when deps complete
 		expect(wfB.status).toBe("waiting_for_dependencies");
 		expect(wfC.status).toBe("waiting_for_dependencies");
 	});
@@ -100,7 +85,7 @@ describe("createEpicWorkflows", () => {
 			specs: [{ id: "a", title: "Only spec", description: "Do the thing", dependencies: [] }],
 			infeasibleNotes: null,
 		};
-		const { workflows, epicId } = await createAndTrack(singleResult, undefined, true);
+		const { workflows, epicId } = await createAndTrack(singleResult, undefined);
 		expect(workflows).toHaveLength(1);
 		expect(workflows[0].epicId).toBe(epicId);
 		expect(workflows[0].epicDependencyStatus).toBe("satisfied");

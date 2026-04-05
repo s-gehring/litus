@@ -305,7 +305,7 @@ async function handleEpicStart(
 		const repoDir = targetRepository || process.cwd();
 		const result = await analyzeEpic(description.trim(), repoDir, epicAnalysisRef);
 
-		const { workflows, epicId } = await createEpicWorkflows(result, targetRepository, autoStart);
+		const { workflows, epicId } = await createEpicWorkflows(result, targetRepository);
 
 		// Persist and register orchestrators for each workflow
 		for (const workflow of workflows) {
@@ -355,7 +355,12 @@ function handleStartExisting(ws: ServerWebSocket<WsData>, workflowId: string) {
 		return;
 	}
 
-	orch.startPipelineFromWorkflow(workflow);
+	try {
+		orch.startPipelineFromWorkflow(workflow);
+	} catch (err) {
+		sendTo(ws, { type: "error", message: `Failed to start workflow: ${err}` });
+		return;
+	}
 	broadcastWorkflowState(workflowId);
 }
 
@@ -375,7 +380,13 @@ function handleForceStart(ws: ServerWebSocket<WsData>, workflowId: string) {
 	workflow.epicDependencyStatus = "overridden";
 	workflow.updatedAt = new Date().toISOString();
 
-	orch.startPipelineFromWorkflow(workflow);
+	try {
+		orch.startPipelineFromWorkflow(workflow);
+	} catch (err) {
+		workflow.epicDependencyStatus = "waiting";
+		sendTo(ws, { type: "error", message: `Failed to force-start workflow: ${err}` });
+		return;
+	}
 	broadcastWorkflowState(workflowId);
 }
 

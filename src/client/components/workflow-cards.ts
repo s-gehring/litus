@@ -6,7 +6,7 @@ const STATUS_LABELS: Record<string, string> = {
 	idle: "Idle",
 	running: "Running",
 	waiting_for_input: "Waiting",
-	waiting_for_dependencies: "Blocked",
+	waiting_for_dependencies: "Waiting",
 	completed: "Done",
 	cancelled: "Cancelled",
 	error: "Error",
@@ -109,7 +109,7 @@ function createCompactCard(
 	// Start button for idle epic workflows (non-autoStart)
 	if (wf.status === "idle" && wf.epicId && sendFn) {
 		const startBtn = document.createElement("button");
-		startBtn.className = "btn-force-start";
+		startBtn.className = "btn-card-action";
 		startBtn.textContent = "Start";
 		startBtn.addEventListener("click", (e) => {
 			e.stopPropagation();

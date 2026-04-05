@@ -1030,9 +1030,10 @@ body::-webkit-scrollbar-track {
   color: var(--accent-yellow);
 }
 
-/* ── Force Start Button ──────────────────────────────── */
+/* ── Card Action Buttons ────────────────────────────── */
 
-.btn-force-start {
+.btn-force-start,
+.btn-card-action {
   font-size: 0.65rem;
   padding: 2px 8px;
   background: rgba(240, 192, 64, 0.2);
@@ -1043,7 +1044,8 @@ body::-webkit-scrollbar-track {
   align-self: flex-start;
 }
 
-.btn-force-start:hover {
+.btn-force-start:hover,
+.btn-card-action:hover {
   background: rgba(240, 192, 64, 0.35);
 }
 
