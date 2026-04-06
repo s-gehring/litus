@@ -2,6 +2,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import type { EpicAnalysisResult, Workflow } from "../src/types";
 import { createEpicWorkflows } from "../src/workflow-engine";
 
+// Use crab-studio repo as test target (real git repo needed for worktrees)
+const TEST_TARGET_REPO = process.cwd();
+
 // Track all workflows created during tests for cleanup
 const createdWorkflows: Workflow[] = [];
 
@@ -9,7 +12,7 @@ afterAll(async () => {
 	for (const wf of createdWorkflows) {
 		if (!wf.worktreePath) continue;
 		try {
-			const cwd = wf.targetRepository || process.cwd();
+			const cwd = wf.targetRepository ?? TEST_TARGET_REPO;
 			const rm = Bun.spawn(["git", "worktree", "remove", wf.worktreePath, "--force"], {
 				cwd,
 				stdout: "pipe",
@@ -29,7 +32,7 @@ afterAll(async () => {
 	createdWorkflows.length = 0;
 });
 
-async function createAndTrack(result: EpicAnalysisResult, targetRepository: string | undefined) {
+async function createAndTrack(result: EpicAnalysisResult, targetRepository: string) {
 	const out = await createEpicWorkflows(result, targetRepository);
 	createdWorkflows.push(...out.workflows);
 	return out;
@@ -48,7 +51,7 @@ describe("createEpicWorkflows", () => {
 	};
 
 	test("creates workflows with shared epicId", async () => {
-		const { workflows, epicId } = await createAndTrack(mockResult, undefined);
+		const { workflows, epicId } = await createAndTrack(mockResult, TEST_TARGET_REPO);
 		expect(workflows).toHaveLength(3);
 		for (const wf of workflows) {
 			expect(wf.epicId).toBe(epicId);
@@ -57,7 +60,7 @@ describe("createEpicWorkflows", () => {
 	});
 
 	test("maps temp dependency IDs to real workflow IDs with transitive reduction", async () => {
-		const { workflows } = await createAndTrack(mockResult, undefined);
+		const { workflows } = await createAndTrack(mockResult, TEST_TARGET_REPO);
 		const [wfA, wfB, wfC] = workflows;
 		expect(wfA.epicDependencies).toEqual([]);
 		expect(wfB.epicDependencies).toEqual([wfA.id]);
@@ -66,7 +69,7 @@ describe("createEpicWorkflows", () => {
 	});
 
 	test("sets dependency status correctly", async () => {
-		const { workflows } = await createAndTrack(mockResult, undefined);
+		const { workflows } = await createAndTrack(mockResult, TEST_TARGET_REPO);
 		const [wfA, wfB, wfC] = workflows;
 		expect(wfA.epicDependencyStatus).toBe("satisfied");
 		expect(wfB.epicDependencyStatus).toBe("waiting");
@@ -74,7 +77,7 @@ describe("createEpicWorkflows", () => {
 	});
 
 	test("independent specs stay idle, dependent specs get waiting_for_dependencies", async () => {
-		const { workflows } = await createAndTrack(mockResult, undefined);
+		const { workflows } = await createAndTrack(mockResult, TEST_TARGET_REPO);
 		const [wfA, wfB, wfC] = workflows;
 		expect(wfA.status).toBe("idle");
 		expect(wfB.status).toBe("waiting_for_dependencies");
@@ -88,7 +91,7 @@ describe("createEpicWorkflows", () => {
 			infeasibleNotes: null,
 			summary: null,
 		};
-		const { workflows, epicId } = await createAndTrack(singleResult, undefined);
+		const { workflows, epicId } = await createAndTrack(singleResult, TEST_TARGET_REPO);
 		expect(workflows).toHaveLength(1);
 		expect(workflows[0].epicId).toBe(epicId);
 		expect(workflows[0].epicDependencyStatus).toBe("satisfied");

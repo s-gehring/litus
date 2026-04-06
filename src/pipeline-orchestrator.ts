@@ -14,8 +14,16 @@ import {
 import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
+import { runSetupChecks as defaultRunSetupChecks } from "./setup-checker";
 import { Summarizer } from "./summarizer";
-import type { EffortLevel, ModelConfig, PipelineStepName, Question, Workflow } from "./types";
+import type {
+	EffortLevel,
+	ModelConfig,
+	PipelineStepName,
+	Question,
+	SetupResult,
+	Workflow,
+} from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
 
@@ -61,9 +69,28 @@ export interface PipelineDeps {
 	mergePr?: typeof defaultMergePr;
 	resolveConflicts?: typeof defaultResolveConflicts;
 	syncRepo?: typeof defaultSyncRepo;
+	runSetupChecks?: (targetDir: string) => Promise<SetupResult>;
 }
 
 const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
+
+function requireWorktreePath(workflow: Workflow): string {
+	if (!workflow.worktreePath) {
+		throw new Error(
+			`Workflow ${workflow.id} has no worktreePath — cannot determine working directory`,
+		);
+	}
+	return workflow.worktreePath;
+}
+
+function requireTargetRepository(workflow: Workflow): string {
+	if (!workflow.targetRepository) {
+		throw new Error(
+			`Workflow ${workflow.id} has no targetRepository — cannot determine target directory`,
+		);
+	}
+	return workflow.targetRepository;
+}
 
 export function extractPrUrl(output: string): string | null {
 	const matches = output.match(PR_URL_PATTERN);
@@ -87,6 +114,7 @@ export class PipelineOrchestrator {
 	private mergePrFn: typeof defaultMergePr;
 	private resolveConflictsFn: typeof defaultResolveConflicts;
 	private syncRepoFn: typeof defaultSyncRepo;
+	private runSetupChecksFn: (targetDir: string) => Promise<SetupResult>;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -99,6 +127,7 @@ export class PipelineOrchestrator {
 		this.mergePrFn = deps?.mergePr ?? defaultMergePr;
 		this.resolveConflictsFn = deps?.resolveConflicts ?? defaultResolveConflicts;
 		this.syncRepoFn = deps?.syncRepo ?? defaultSyncRepo;
+		this.runSetupChecksFn = deps?.runSetupChecks ?? defaultRunSetupChecks;
 		this.callbacks = callbacks;
 	}
 
@@ -111,7 +140,7 @@ export class PipelineOrchestrator {
 		this.engine.setWorkflow(workflow);
 		this.engine.transition(workflow.id, "running");
 
-		const branchCwd = workflow.targetRepository || process.cwd();
+		const branchCwd = requireTargetRepository(workflow);
 		this.getBranch(branchCwd).then((branch) => {
 			this.pipelineName = branch ?? workflow.worktreeBranch;
 			this.currentAuditRunId = this.auditLogger.startRun(
@@ -137,11 +166,11 @@ export class PipelineOrchestrator {
 			});
 	}
 
-	async startPipeline(specification: string, targetRepository?: string): Promise<Workflow> {
+	async startPipeline(specification: string, targetRepository: string): Promise<Workflow> {
 		const workflow = await this.engine.createWorkflow(specification, targetRepository);
 		this.engine.transition(workflow.id, "running");
 
-		const branchCwd = targetRepository || process.cwd();
+		const branchCwd = targetRepository;
 		this.pipelineName = (await this.getBranch(branchCwd)) ?? workflow.worktreeBranch;
 		this.currentAuditRunId = this.auditLogger.startRun(this.pipelineName, workflow.worktreeBranch);
 
@@ -207,6 +236,12 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 
+		if (step.name === "setup") {
+			// User answered the optional warnings prompt — skip and advance
+			this.advanceAfterStep(workflowId);
+			return;
+		}
+
 		if (step.name === "monitor-ci") {
 			if (answer.toLowerCase().includes("abort")) {
 				this.handleStepError(workflowId, "Workflow aborted by user after cancelled CI checks");
@@ -228,7 +263,7 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		const cwd = workflow.worktreePath || process.cwd();
+		const cwd = requireWorktreePath(workflow);
 		const cliCallbacks: CLICallbacks = {
 			onOutput: (text) => this.handleStepOutput(workflow.id, text),
 			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
@@ -273,9 +308,10 @@ export class PipelineOrchestrator {
 		const step = workflow.steps[workflow.currentStepIndex];
 		if (!step.sessionId) return;
 
-		const cwd = workflow.worktreePath || process.cwd();
+		const cwd = requireWorktreePath(workflow);
+		const targetDir = requireTargetRepository(workflow);
 		const pipelineName =
-			this.pipelineName ?? (await this.getBranch(process.cwd())) ?? workflow.worktreeBranch;
+			this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
 		this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
 
 		this.assistantTextBuffer = "";
@@ -311,9 +347,10 @@ export class PipelineOrchestrator {
 		step.startedAt = new Date().toISOString();
 		workflow.updatedAt = new Date().toISOString();
 
-		const cwd = workflow.worktreePath || process.cwd();
+		const cwd = requireWorktreePath(workflow);
+		const targetDir = requireTargetRepository(workflow);
 		const pipelineName =
-			this.pipelineName ?? (await this.getBranch(process.cwd())) ?? workflow.worktreeBranch;
+			this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
 		this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
 
 		this.engine.transition(workflowId, "running");
@@ -371,9 +408,11 @@ export class PipelineOrchestrator {
 		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
 
-		const cwd = workflow.worktreePath || process.cwd();
+		const cwd = requireWorktreePath(workflow);
 
-		if (step.name === "monitor-ci") {
+		if (step.name === "setup") {
+			this.runSetup(workflow);
+		} else if (step.name === "monitor-ci") {
 			this.runMonitorCi(workflow);
 		} else if (step.sessionId) {
 			const cliCallbacks: CLICallbacks = {
@@ -478,6 +517,11 @@ export class PipelineOrchestrator {
 		);
 		this.callbacks.onStateChange(workflow.id);
 
+		if (step.name === "setup") {
+			this.runSetup(workflow);
+			return;
+		}
+
 		if (step.name === "monitor-ci") {
 			this.runMonitorCi(workflow);
 			return;
@@ -498,7 +542,7 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		const cwd = workflow.worktreePath || process.cwd();
+		const cwd = requireWorktreePath(workflow);
 		const config = configStore.get();
 		const configKey = STEP_CONFIG_KEY[step.name];
 		this.runStep(
@@ -508,6 +552,51 @@ export class PipelineOrchestrator {
 			configKey ? config.models[configKey] : undefined,
 			configKey ? config.efforts[configKey] : undefined,
 		);
+	}
+
+	private runSetup(workflow: Workflow): void {
+		const targetDir = requireTargetRepository(workflow);
+
+		this.runSetupChecksFn(targetDir)
+			.then((result) => {
+				const wf = this.engine.getWorkflow();
+				if (!wf || wf.id !== workflow.id) return;
+
+				// Log all check results as output
+				for (const check of result.checks) {
+					const icon = check.passed ? "✓" : "✗";
+					const label = check.required ? "" : " (optional)";
+					const msg = check.passed
+						? `${icon} ${check.name}${label}`
+						: `${icon} ${check.name}${label}: ${check.error}`;
+					this.handleStepOutput(wf.id, msg);
+				}
+
+				if (!result.passed) {
+					// Required checks failed — halt with all failures
+					const errors = result.requiredFailures.map((f) => `• ${f.name}: ${f.error}`).join("\n");
+					this.handleStepError(wf.id, `Setup failed — fix the following and retry:\n${errors}`);
+					return;
+				}
+
+				if (result.optionalWarnings.length > 0) {
+					// Optional warnings — ask user to skip or fix
+					const warnings = result.optionalWarnings.map((w) => `• ${w.name}: ${w.error}`).join("\n");
+					this.pauseForQuestion(wf.id, {
+						id: `setup-warnings-${Date.now()}`,
+						content: `Optional setup warnings:\n${warnings}\n\nYou can continue without fixing these. Type "skip" to proceed or fix the issues and retry.`,
+						detectedAt: new Date().toISOString(),
+					});
+					return;
+				}
+
+				// All checks passed, no warnings — advance
+				this.advanceAfterStep(wf.id);
+			})
+			.catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				this.handleStepError(workflow.id, `Setup checks failed: ${msg}`);
+			});
 	}
 
 	private runMonitorCi(workflow: Workflow): void {
@@ -538,6 +627,9 @@ export class PipelineOrchestrator {
 	private handleMonitorResult(workflowId: string, result: MonitorResult): void {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId) return;
+
+		// If workflow was paused/cancelled while monitoring, ignore the result
+		if (workflow.status !== "running") return;
 
 		this.monitorAbortController = null;
 
@@ -586,7 +678,7 @@ export class PipelineOrchestrator {
 				const prompt = buildFixPrompt(prUrl, logs);
 				this.persistWorkflow(workflow);
 
-				const cwd = workflow.worktreePath || process.cwd();
+				const cwd = requireWorktreePath(workflow);
 				const config = configStore.get();
 				this.runStep(workflow, prompt, cwd, config.models.ciFix, config.efforts.ciFix);
 			})
@@ -875,7 +967,7 @@ export class PipelineOrchestrator {
 			this.persistWorkflow(workflow);
 		}
 
-		const cwd = workflow.worktreePath || process.cwd();
+		const cwd = requireWorktreePath(workflow);
 
 		this.mergePrFn(workflow.prUrl, cwd, (msg) => this.handleStepOutput(workflow.id, msg))
 			.then((result) => this.handleMergeResult(workflow.id, result))
@@ -906,7 +998,7 @@ export class PipelineOrchestrator {
 			}
 
 			// Resolve conflicts and loop back to monitor-ci
-			const cwd = workflow.worktreePath || process.cwd();
+			const cwd = requireWorktreePath(workflow);
 			this.resolveConflictsFn(cwd, workflow.summary || workflow.specification, (msg) =>
 				this.handleStepOutput(workflow.id, msg),
 			)
@@ -926,7 +1018,7 @@ export class PipelineOrchestrator {
 	}
 
 	private runSyncRepo(workflow: Workflow): void {
-		const targetRepo = workflow.targetRepository || process.cwd();
+		const targetRepo = requireTargetRepository(workflow);
 
 		this.syncRepoFn(targetRepo, workflow.worktreePath, this.engine, workflow.id, (msg) =>
 			this.handleStepOutput(workflow.id, msg),

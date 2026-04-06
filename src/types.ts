@@ -203,6 +203,7 @@ export interface Question {
 
 // Pipeline step names in execution order
 export type PipelineStepName =
+	| "setup"
 	| "specify"
 	| "clarify"
 	| "plan"
@@ -297,6 +298,21 @@ export interface SyncResult {
 	warning: string | null;
 }
 
+// Setup check types
+export interface SetupCheckResult {
+	name: string;
+	passed: boolean;
+	error?: string;
+	required: boolean;
+}
+
+export interface SetupResult {
+	passed: boolean;
+	checks: SetupCheckResult[];
+	requiredFailures: SetupCheckResult[];
+	optionalWarnings: SetupCheckResult[];
+}
+
 // Review severity classification
 export type ReviewSeverity = "critical" | "major" | "minor" | "trivial" | "nit";
 
@@ -313,6 +329,7 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	displayName: string;
 	prompt: string;
 }> = [
+	{ name: "setup", displayName: "Setup", prompt: "" },
 	{ name: "specify", displayName: "Specifying", prompt: "/speckit.specify" },
 	{ name: "clarify", displayName: "Clarifying", prompt: "/speckit.clarify" },
 	{ name: "plan", displayName: "Planning", prompt: "/speckit.plan" },

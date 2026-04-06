@@ -21,7 +21,7 @@ function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 		id,
 		specification: "test",
 		status: "running",
-		targetRepository: null,
+		targetRepository: "/tmp/test-repo",
 		worktreePath: "/tmp/test-worktree",
 		worktreeBranch: "test-branch",
 		featureBranch: null,
@@ -257,7 +257,7 @@ describe("CLIRunner", () => {
 			});
 
 			runner.start(
-				makeWorkflow("w2", { worktreePath: null }),
+				makeWorkflow("w2", { worktreePath: "/tmp/test-worktree" }),
 				makeCallbacks({
 					onOutput: (text) => outputs.push(text),
 					onTools: (tools) => toolCalls.push(tools),
@@ -310,7 +310,7 @@ describe("CLIRunner", () => {
 			});
 
 			runner.start(
-				makeWorkflow("w-tools", { worktreePath: null }),
+				makeWorkflow("w-tools", { worktreePath: "/tmp/test-worktree" }),
 				makeCallbacks({
 					onTools: (tools) => toolCalls.push(tools),
 					onComplete: () => resolveComplete(),
@@ -342,7 +342,7 @@ describe("CLIRunner", () => {
 			});
 
 			runner.start(
-				makeWorkflow("w3", { worktreePath: null }),
+				makeWorkflow("w3", { worktreePath: "/tmp/test-worktree" }),
 				makeCallbacks({ onComplete: () => resolveComplete() }),
 			);
 
@@ -371,7 +371,7 @@ describe("CLIRunner", () => {
 			});
 
 			runner.start(
-				makeWorkflow("w4", { worktreePath: null }),
+				makeWorkflow("w4", { worktreePath: "/tmp/test-worktree" }),
 				makeCallbacks({ onError: (err) => resolveError(err) }),
 			);
 
@@ -393,7 +393,7 @@ describe("CLIRunner", () => {
 				pid: 1,
 			});
 
-			runner.start(makeWorkflow("w5", { worktreePath: null }), makeCallbacks());
+			runner.start(makeWorkflow("w5", { worktreePath: "/tmp/test-worktree" }), makeCallbacks());
 
 			runner.kill("w5");
 			expect(killed).toBe(true);
@@ -401,6 +401,41 @@ describe("CLIRunner", () => {
 
 		test("kill on non-existent workflow does not throw", () => {
 			expect(() => runner.kill("nonexistent")).not.toThrow();
+		});
+	});
+
+	describe("null worktreePath", () => {
+		test("calls onError and does not spawn when worktreePath is null", async () => {
+			let spawnCalled = false;
+			BunGlobal.Bun.spawn = () => {
+				spawnCalled = true;
+				return {
+					stdout: new ReadableStream({ start() {} }),
+					stderr: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					exited: Promise.resolve(0),
+					kill: () => {},
+					pid: 1,
+				};
+			};
+
+			let errorMsg = "";
+			runner.start(
+				makeWorkflow("w-null", { worktreePath: null }),
+				makeCallbacks({
+					onError: (err) => {
+						errorMsg = err;
+					},
+				}),
+			);
+
+			// Error is delivered via queueMicrotask
+			await new Promise((r) => setTimeout(r, 10));
+			expect(spawnCalled).toBe(false);
+			expect(errorMsg).toContain("has no worktreePath");
 		});
 	});
 

@@ -16,17 +16,15 @@ export class WorkflowEngine {
 		this.workflow = workflow;
 	}
 
-	async createWorkflow(specification: string, targetRepository?: string | null): Promise<Workflow> {
+	async createWorkflow(specification: string, targetRepository: string): Promise<Workflow> {
 		const id = randomUUID();
 		const branchName = `crab-studio/${id.slice(0, 8)}`;
 		let worktreePath: string | null = null;
-		const effectiveRepo = targetRepository || null;
-		const baseCwd = targetRepository || process.cwd();
 
 		// Create git worktree and copy gitignored files
 		try {
-			worktreePath = await this.createWorktree(branchName, baseCwd);
-			await this.copyGitignoredFiles(baseCwd, worktreePath);
+			worktreePath = await this.createWorktree(branchName, targetRepository);
+			await this.copyGitignoredFiles(targetRepository, worktreePath);
 		} catch (err) {
 			throw new Error(
 				`Failed to create git worktree: ${err instanceof Error ? err.message : String(err)}`,
@@ -38,7 +36,7 @@ export class WorkflowEngine {
 			id,
 			specification,
 			status: "idle",
-			targetRepository: effectiveRepo,
+			targetRepository,
 			worktreePath,
 			worktreeBranch: branchName,
 			featureBranch: null,
@@ -217,7 +215,7 @@ export class WorkflowEngine {
 /** Create multiple workflows from an epic decomposition result. */
 export async function createEpicWorkflows(
 	result: EpicAnalysisResult,
-	targetRepository: string | undefined,
+	targetRepository: string,
 	epicId?: string,
 ): Promise<{ workflows: Workflow[]; epicId: string }> {
 	if (!epicId) epicId = randomUUID();

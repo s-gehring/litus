@@ -48,13 +48,13 @@ function createFakeEngine() {
 
 	return {
 		getWorkflow: () => workflow,
-		createWorkflow: async (spec: string) => {
+		createWorkflow: async (spec: string, targetRepository: string) => {
 			const now = new Date().toISOString();
 			workflow = {
 				id: "test-wf-id",
 				specification: spec,
 				status: "idle" as WorkflowStatus,
-				targetRepository: null,
+				targetRepository,
 				worktreePath: "/tmp/test-worktree",
 				worktreeBranch: "crab-studio/test",
 				featureBranch: null,
@@ -232,9 +232,15 @@ describe("CI Pipeline Routing", () => {
 				loadIndex: async () => [],
 				remove: async () => {},
 			} as never,
+			runSetupChecks: async () => ({
+				passed: true,
+				checks: [],
+				requiredFailures: [],
+				optionalWarnings: [],
+			}),
 		});
 
-		await orchestrator.startPipeline("test spec");
+		await orchestrator.startPipeline("test spec", "/tmp/test-repo");
 		// start() triggers the first step (specify) — we need to provide CLI callbacks
 		await new Promise((r) => setTimeout(r, 10));
 	});

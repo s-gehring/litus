@@ -63,7 +63,16 @@ export class CLIRunner {
 		model?: string,
 		effort?: EffortLevel,
 	): void {
-		const cwd = workflow.worktreePath || process.cwd();
+		if (!workflow.worktreePath) {
+			// Async error: start() is void-returning so callers can't catch a throw
+			queueMicrotask(() =>
+				callbacks.onError(
+					`Workflow ${workflow.id} has no worktreePath — cannot determine working directory`,
+				),
+			);
+			return;
+		}
+		const cwd = workflow.worktreePath;
 		const args = [
 			"claude",
 			"-p",

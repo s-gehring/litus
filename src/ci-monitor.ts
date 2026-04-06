@@ -50,7 +50,12 @@ export async function pollCiChecks(prUrl: string): Promise<CiCheckResult[]> {
 	const stderr = await new Response(proc.stderr as ReadableStream).text();
 
 	if (code !== 0) {
-		throw new Error(stderr.trim() || `gh pr checks failed with code ${code}`);
+		const msg = stderr.trim();
+		// gh returns non-zero when no checks exist — treat as empty
+		if (msg.includes("no checks") || msg.includes("no commit") || stdout.trim() === "[]") {
+			return [];
+		}
+		throw new Error(msg || `gh pr checks failed with code ${code}`);
 	}
 
 	return parseCiChecks(stdout);
