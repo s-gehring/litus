@@ -64,6 +64,7 @@ export class CLIRunner {
 		effort?: EffortLevel,
 	): void {
 		if (!workflow.worktreePath) {
+			// Async error: start() is void-returning so callers can't catch a throw
 			queueMicrotask(() =>
 				callbacks.onError(
 					`Workflow ${workflow.id} has no worktreePath — cannot determine working directory`,

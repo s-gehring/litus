@@ -309,8 +309,9 @@ export class PipelineOrchestrator {
 		if (!step.sessionId) return;
 
 		const cwd = requireWorktreePath(workflow);
+		const targetDir = requireTargetRepository(workflow);
 		const pipelineName =
-			this.pipelineName ?? (await this.getBranch(process.cwd())) ?? workflow.worktreeBranch;
+			this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
 		this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
 
 		this.assistantTextBuffer = "";
@@ -347,8 +348,9 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		const cwd = requireWorktreePath(workflow);
+		const targetDir = requireTargetRepository(workflow);
 		const pipelineName =
-			this.pipelineName ?? (await this.getBranch(process.cwd())) ?? workflow.worktreeBranch;
+			this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
 		this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
 
 		this.engine.transition(workflowId, "running");

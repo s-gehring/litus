@@ -20,13 +20,11 @@ export class WorkflowEngine {
 		const id = randomUUID();
 		const branchName = `crab-studio/${id.slice(0, 8)}`;
 		let worktreePath: string | null = null;
-		const effectiveRepo = targetRepository;
-		const baseCwd = targetRepository;
 
 		// Create git worktree and copy gitignored files
 		try {
-			worktreePath = await this.createWorktree(branchName, baseCwd);
-			await this.copyGitignoredFiles(baseCwd, worktreePath);
+			worktreePath = await this.createWorktree(branchName, targetRepository);
+			await this.copyGitignoredFiles(targetRepository, worktreePath);
 		} catch (err) {
 			throw new Error(
 				`Failed to create git worktree: ${err instanceof Error ? err.message : String(err)}`,
@@ -38,7 +36,7 @@ export class WorkflowEngine {
 			id,
 			specification,
 			status: "idle",
-			targetRepository: effectiveRepo,
+			targetRepository,
 			worktreePath,
 			worktreeBranch: branchName,
 			featureBranch: null,

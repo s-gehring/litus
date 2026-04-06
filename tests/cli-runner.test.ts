@@ -404,6 +404,41 @@ describe("CLIRunner", () => {
 		});
 	});
 
+	describe("null worktreePath", () => {
+		test("calls onError and does not spawn when worktreePath is null", async () => {
+			let spawnCalled = false;
+			BunGlobal.Bun.spawn = () => {
+				spawnCalled = true;
+				return {
+					stdout: new ReadableStream({ start() {} }),
+					stderr: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					exited: Promise.resolve(0),
+					kill: () => {},
+					pid: 1,
+				};
+			};
+
+			let errorMsg = "";
+			runner.start(
+				makeWorkflow("w-null", { worktreePath: null }),
+				makeCallbacks({
+					onError: (err) => {
+						errorMsg = err;
+					},
+				}),
+			);
+
+			// Error is delivered via queueMicrotask
+			await new Promise((r) => setTimeout(r, 10));
+			expect(spawnCalled).toBe(false);
+			expect(errorMsg).toContain("has no worktreePath");
+		});
+	});
+
 	describe("killAll", () => {
 		test("kills all running processes", () => {
 			const killed: string[] = [];
