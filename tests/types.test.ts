@@ -48,6 +48,69 @@ import type {
 } from "../src/types";
 import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS } from "../src/types";
 
+function makeAppConfig(): AppConfig {
+	return {
+		models: {
+			questionDetection: "",
+			reviewClassification: "",
+			activitySummarization: "",
+			specSummarization: "",
+			epicDecomposition: "",
+			mergeConflictResolution: "",
+			ciFix: "",
+			specify: "",
+			clarify: "",
+			plan: "",
+			tasks: "",
+			implement: "",
+			review: "",
+			implementReview: "",
+			commitPushPr: "",
+		},
+		efforts: {
+			questionDetection: "low",
+			reviewClassification: "low",
+			activitySummarization: "low",
+			specSummarization: "low",
+			epicDecomposition: "medium",
+			mergeConflictResolution: "medium",
+			ciFix: "medium",
+			specify: "medium",
+			clarify: "medium",
+			plan: "medium",
+			tasks: "medium",
+			implement: "medium",
+			review: "medium",
+			implementReview: "medium",
+			commitPushPr: "medium",
+		},
+		prompts: {
+			questionDetection: "",
+			reviewClassification: "",
+			activitySummarization: "",
+			specSummarization: "",
+			mergeConflictResolution: "",
+			ciFixInstruction: "",
+			epicDecomposition: "",
+		},
+		limits: {
+			reviewCycleMaxIterations: 16,
+			ciFixMaxAttempts: 3,
+			mergeMaxAttempts: 3,
+			maxJsonRetries: 3,
+		},
+		timing: {
+			ciGlobalTimeoutMs: 600000,
+			ciPollIntervalMs: 30000,
+			activitySummaryIntervalMs: 60000,
+			rateLimitBackoffMs: 5000,
+			maxCiLogLength: 10000,
+			maxClientOutputLines: 500,
+			epicTimeoutMs: 300000,
+		},
+	};
+}
+
 describe("VALID_TRANSITIONS", () => {
 	test("idle can transition to running or waiting_for_dependencies", () => {
 		expect(VALID_TRANSITIONS.idle).toEqual(["running", "waiting_for_dependencies"]);
@@ -68,6 +131,10 @@ describe("VALID_TRANSITIONS", () => {
 
 	test("waiting_for_input can transition to running or cancelled", () => {
 		expect(VALID_TRANSITIONS.waiting_for_input).toEqual(["running", "cancelled"]);
+	});
+
+	test("waiting_for_dependencies can transition to running or cancelled", () => {
+		expect(VALID_TRANSITIONS.waiting_for_dependencies).toEqual(["running", "cancelled"]);
 	});
 
 	test("completed and cancelled are terminal states", () => {
@@ -396,6 +463,8 @@ describe("Workflow Lifecycle", () => {
 					error: null,
 					startedAt: "2026-04-06T00:00:00Z",
 					completedAt: "2026-04-06T00:01:00Z",
+					// @ts-expect-error sessionId is stripped from WorkflowState steps
+					sessionId: "sess-1",
 				},
 			],
 			currentStepIndex: 1,
@@ -420,10 +489,8 @@ describe("Workflow Lifecycle", () => {
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:00:00Z",
 		};
-		const stepKeys = Object.keys(ws.steps[0]);
-		expect(stepKeys).not.toContain("sessionId");
-		expect(stepKeys).not.toContain("prompt");
-		expect(stepKeys).not.toContain("pid");
+		expect(ws.steps[0].name).toBe("setup");
+		expect(ws.steps[0].status).toBe("completed");
 	});
 
 	test("WorkflowIndexEntry shape", () => {
@@ -610,66 +677,7 @@ describe("ServerMessage variants", () => {
 		const msgs: ServerMessage[] = [
 			{
 				type: "config:state",
-				config: {
-					models: {
-						questionDetection: "",
-						reviewClassification: "",
-						activitySummarization: "",
-						specSummarization: "",
-						epicDecomposition: "",
-						mergeConflictResolution: "",
-						ciFix: "",
-						specify: "",
-						clarify: "",
-						plan: "",
-						tasks: "",
-						implement: "",
-						review: "",
-						implementReview: "",
-						commitPushPr: "",
-					},
-					efforts: {
-						questionDetection: "low",
-						reviewClassification: "low",
-						activitySummarization: "low",
-						specSummarization: "low",
-						epicDecomposition: "medium",
-						mergeConflictResolution: "medium",
-						ciFix: "medium",
-						specify: "medium",
-						clarify: "medium",
-						plan: "medium",
-						tasks: "medium",
-						implement: "medium",
-						review: "medium",
-						implementReview: "medium",
-						commitPushPr: "medium",
-					},
-					prompts: {
-						questionDetection: "",
-						reviewClassification: "",
-						activitySummarization: "",
-						specSummarization: "",
-						mergeConflictResolution: "",
-						ciFixInstruction: "",
-						epicDecomposition: "",
-					},
-					limits: {
-						reviewCycleMaxIterations: 16,
-						ciFixMaxAttempts: 3,
-						mergeMaxAttempts: 3,
-						maxJsonRetries: 3,
-					},
-					timing: {
-						ciGlobalTimeoutMs: 600000,
-						ciPollIntervalMs: 30000,
-						activitySummaryIntervalMs: 60000,
-						rateLimitBackoffMs: 5000,
-						maxCiLogLength: 10000,
-						maxClientOutputLines: 500,
-						epicTimeoutMs: 300000,
-					},
-				},
+				config: makeAppConfig(),
 				warnings: [],
 			},
 			{
@@ -951,66 +959,7 @@ describe("Config types", () => {
 	});
 
 	test("AppConfig shape (5 sub-objects)", () => {
-		const config: AppConfig = {
-			models: {
-				questionDetection: "",
-				reviewClassification: "",
-				activitySummarization: "",
-				specSummarization: "",
-				epicDecomposition: "",
-				mergeConflictResolution: "",
-				ciFix: "",
-				specify: "",
-				clarify: "",
-				plan: "",
-				tasks: "",
-				implement: "",
-				review: "",
-				implementReview: "",
-				commitPushPr: "",
-			},
-			efforts: {
-				questionDetection: "low",
-				reviewClassification: "low",
-				activitySummarization: "low",
-				specSummarization: "low",
-				epicDecomposition: "medium",
-				mergeConflictResolution: "medium",
-				ciFix: "medium",
-				specify: "medium",
-				clarify: "medium",
-				plan: "medium",
-				tasks: "medium",
-				implement: "medium",
-				review: "medium",
-				implementReview: "medium",
-				commitPushPr: "medium",
-			},
-			prompts: {
-				questionDetection: "",
-				reviewClassification: "",
-				activitySummarization: "",
-				specSummarization: "",
-				mergeConflictResolution: "",
-				ciFixInstruction: "",
-				epicDecomposition: "",
-			},
-			limits: {
-				reviewCycleMaxIterations: 16,
-				ciFixMaxAttempts: 3,
-				mergeMaxAttempts: 3,
-				maxJsonRetries: 3,
-			},
-			timing: {
-				ciGlobalTimeoutMs: 600000,
-				ciPollIntervalMs: 30000,
-				activitySummaryIntervalMs: 60000,
-				rateLimitBackoffMs: 5000,
-				maxCiLogLength: 10000,
-				maxClientOutputLines: 500,
-				epicTimeoutMs: 300000,
-			},
-		};
+		const config: AppConfig = makeAppConfig();
 		expect(Object.keys(config)).toHaveLength(5);
 		expect(Object.keys(config.models)).toHaveLength(15);
 	});
