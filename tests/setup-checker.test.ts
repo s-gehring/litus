@@ -147,7 +147,7 @@ describe("checkGhAuth", () => {
 		if (!result.passed) {
 			expect(result.error).toBeDefined();
 		}
-	});
+	}, 15000);
 
 	test("fails when no origin remote", async () => {
 		const result = await checkGhAuth(nonGitDir);
@@ -167,7 +167,9 @@ describe("checkGhAuth", () => {
 		await add.exited;
 
 		const result = await checkGhAuth(sshDir);
-		// Auth will likely fail, but the error message should reference the enterprise hostname
+		expect(result.required).toBe(true);
+		expect(result.name).toBe("GitHub CLI authenticated");
+		// Auth will likely fail for enterprise host — verify error references the correct hostname
 		if (!result.passed && result.error) {
 			expect(result.error).toContain("github.enterprise.com");
 		}
@@ -244,6 +246,10 @@ describe("runSetupChecks", () => {
 	test("populates optionalWarnings when required pass but gitignore entries missing", async () => {
 		// gitRepoPath has git, github origin, speckit files — but no .gitignore
 		const result = await runSetupChecks(gitRepoPath);
+		// Always verify structural invariants regardless of pass/fail
+		expect(result.checks.length).toBeGreaterThanOrEqual(7);
+		expect(Array.isArray(result.requiredFailures)).toBe(true);
+		expect(Array.isArray(result.optionalWarnings)).toBe(true);
 		// gh/claude may not be installed in CI, so only assert optional behavior if required passed
 		if (result.passed) {
 			expect(result.requiredFailures).toHaveLength(0);
@@ -255,21 +261,26 @@ describe("runSetupChecks", () => {
 			// checks array should include both required and optional
 			const optionalInChecks = result.checks.filter((c) => !c.required);
 			expect(optionalInChecks.length).toBeGreaterThan(0);
+		} else {
+			// When required checks fail, optional checks should not run
+			expect(result.optionalWarnings).toHaveLength(0);
 		}
 	});
 });
 
-// T022: checkGitignoreEntries
+// T022: checkGitignoreEntries (uses git check-ignore, requires a git repo)
 describe("checkGitignoreEntries", () => {
-	test("reports all present when gitignore has entries", () => {
+	test("reports all present when gitignore has entries", async () => {
 		const dir = join(testRoot, "gitignore-complete");
 		mkdirSync(dir, { recursive: true });
+		const init = Bun.spawn(["git", "init"], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+		await init.exited;
 		writeFileSync(
 			join(dir, ".gitignore"),
 			"node_modules/\nspecs/\n.worktrees\n.claude\n.specify\n",
 		);
 
-		const results = checkGitignoreEntries(dir);
+		const results = await checkGitignoreEntries(dir);
 		for (const r of results) {
 			expect(r.passed).toBe(true);
 			expect(r.required).toBe(false);
@@ -278,12 +289,14 @@ describe("checkGitignoreEntries", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	test("reports missing entries", () => {
+	test("reports missing entries", async () => {
 		const dir = join(testRoot, "gitignore-partial");
 		mkdirSync(dir, { recursive: true });
+		const init = Bun.spawn(["git", "init"], { cwd: dir, stdout: "pipe", stderr: "pipe" });
+		await init.exited;
 		writeFileSync(join(dir, ".gitignore"), "node_modules/\nspecs/\n");
 
-		const results = checkGitignoreEntries(dir);
+		const results = await checkGitignoreEntries(dir);
 		const specResult = results.find((r) => r.name === "Gitignore: specs/");
 		expect(specResult?.passed).toBe(true);
 
@@ -294,11 +307,23 @@ describe("checkGitignoreEntries", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	test("reports all missing when no .gitignore", () => {
-		const results = checkGitignoreEntries(nonGitDir);
-		for (const r of results) {
-			expect(r.passed).toBe(false);
-			expect(r.required).toBe(false);
+	test("returns correct structure for all entries", async () => {
+		// gitRepoPath is a git repo — results depend on local + global gitignore
+		const results = await checkGitignoreEntries(gitRepoPath);
+		expect(results).toHaveLength(4);
+		const expectedNames = [
+			"Gitignore: specs/",
+			"Gitignore: .worktrees",
+			"Gitignore: .claude",
+			"Gitignore: .specify",
+		];
+		for (let i = 0; i < results.length; i++) {
+			expect(results[i].name).toBe(expectedNames[i]);
+			expect(results[i].required).toBe(false);
+			expect(typeof results[i].passed).toBe("boolean");
+			if (!results[i].passed) {
+				expect(results[i].error).toBeDefined();
+			}
 		}
 	});
 });

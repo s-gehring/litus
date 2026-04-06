@@ -162,36 +162,23 @@ export async function checkClaudeCli(): Promise<SetupCheckResult> {
 
 const GITIGNORE_ENTRIES = ["specs/", ".worktrees", ".claude", ".specify"];
 
-export function checkGitignoreEntries(targetDir: string): SetupCheckResult[] {
-	let lines: string[];
-	try {
-		const content = readFileSync(join(targetDir, ".gitignore"), "utf-8");
-		lines = content
-			.split("\n")
-			.map((l) => l.trim())
-			.filter((l) => l && !l.startsWith("#"));
-	} catch {
-		// No .gitignore file — all entries are missing
-		return GITIGNORE_ENTRIES.map((entry) => ({
+export async function checkGitignoreEntries(targetDir: string): Promise<SetupCheckResult[]> {
+	const results: SetupCheckResult[] = [];
+	for (const entry of GITIGNORE_ENTRIES) {
+		// git check-ignore respects all gitignore sources: local .gitignore, global gitignore,
+		// .git/info/exclude — satisfying FR-011's requirement for global gitignore support
+		const result = await runCommand(["git", "check-ignore", "-q", entry], targetDir);
+		const passed = result.code === 0;
+		results.push({
 			name: `Gitignore: ${entry}`,
-			passed: false,
-			error: `"${entry}" is not listed in .gitignore`,
+			passed,
+			error: passed
+				? undefined
+				: `"${entry}" is not gitignored (check local .gitignore, global gitignore, or .git/info/exclude)`,
 			required: false,
-		}));
+		});
 	}
-
-	return GITIGNORE_ENTRIES.map((entry) => {
-		// Check if any line matches the entry (with or without trailing slash)
-		const found = lines.some(
-			(line) => line === entry || line === entry.replace(/\/$/, "") || line === `${entry}/`,
-		);
-		return {
-			name: `Gitignore: ${entry}`,
-			passed: found,
-			error: found ? undefined : `"${entry}" is not listed in .gitignore`,
-			required: false,
-		};
-	});
+	return results;
 }
 
 export async function runSetupChecks(targetDir: string): Promise<SetupResult> {
@@ -242,7 +229,7 @@ export async function runSetupChecks(targetDir: string): Promise<SetupResult> {
 	const passed = requiredFailures.length === 0;
 
 	// Only run optional checks if all required checks passed
-	const optionalChecks = passed ? checkGitignoreEntries(targetDir) : [];
+	const optionalChecks = passed ? await checkGitignoreEntries(targetDir) : [];
 	const optionalWarnings = optionalChecks.filter((c) => !c.passed);
 
 	return {
