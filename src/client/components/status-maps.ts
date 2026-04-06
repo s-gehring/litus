@@ -1,8 +1,8 @@
 export const STATUS_LABELS: Record<string, string> = {
 	idle: "Idle",
 	running: "Running",
-	waiting_for_input: "Waiting",
-	waiting_for_dependencies: "Waiting",
+	waiting_for_input: "Waiting: Input",
+	waiting_for_dependencies: "Waiting: Deps",
 	paused: "Paused",
 	completed: "Done",
 	cancelled: "Cancelled",

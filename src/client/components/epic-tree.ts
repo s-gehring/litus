@@ -1,5 +1,6 @@
 import type { EpicAggregatedState, WorkflowState } from "../../types";
 import { STATUS_CLASSES, STATUS_LABELS } from "./status-maps";
+import { formatTimer } from "./workflow-cards";
 
 export interface TreeNode {
 	workflowId: string;
@@ -17,9 +18,9 @@ export interface TreeEdge {
 }
 
 const COLUMN_WIDTH = 250;
-const ROW_HEIGHT = 70;
+const ROW_HEIGHT = 88;
 const NODE_WIDTH = 190;
-const NODE_HEIGHT = 60;
+const NODE_HEIGHT = 78;
 const PADDING_X = 20;
 const PADDING_Y = 15;
 
@@ -184,6 +185,35 @@ export function renderTreeNode(
 	title.textContent = titleText;
 	title.title = titleText;
 	el.appendChild(title);
+
+	// Info row: step name (left) + working time (right)
+	const isActive = workflow.status === "running" || workflow.status === "waiting_for_input";
+	const hasTimer = workflow.activeWorkMs > 0 || workflow.activeWorkStartedAt;
+	if (isActive || hasTimer) {
+		const infoRow = document.createElement("div");
+		infoRow.className = "tree-node-info";
+
+		if (isActive && workflow.steps.length > 0) {
+			const currentStep = workflow.steps[workflow.currentStepIndex];
+			if (currentStep) {
+				const stepEl = document.createElement("span");
+				stepEl.className = "tree-node-step";
+				stepEl.textContent = currentStep.displayName;
+				infoRow.appendChild(stepEl);
+			}
+		}
+
+		if (hasTimer) {
+			const timerEl = document.createElement("span");
+			timerEl.className = "card-timer tree-node-timer";
+			timerEl.dataset.activeWorkMs = String(workflow.activeWorkMs);
+			timerEl.dataset.activeWorkStartedAt = workflow.activeWorkStartedAt || "";
+			timerEl.textContent = formatTimer(workflow.activeWorkMs, workflow.activeWorkStartedAt);
+			infoRow.appendChild(timerEl);
+		}
+
+		el.appendChild(infoRow);
+	}
 
 	el.addEventListener("click", (e) => {
 		e.stopPropagation();

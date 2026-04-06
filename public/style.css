@@ -1234,6 +1234,28 @@ body::-webkit-scrollbar-track {
   line-height: 1.3;
 }
 
+.tree-node-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+  gap: 4px;
+}
+
+.tree-node-step {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.tree-node-timer {
+  flex-shrink: 0;
+  font-size: 0.65rem;
+}
+
 .tree-empty {
   color: var(--text-dim);
   font-size: 0.85rem;

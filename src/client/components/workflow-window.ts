@@ -38,6 +38,8 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 		} else {
 			stepLabel.classList.add("hidden");
 		}
+	} else if (stepLabel) {
+		stepLabel.classList.add("hidden");
 	}
 
 	// PR link
