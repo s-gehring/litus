@@ -419,6 +419,8 @@ export type ServerMessage =
 	  }
 	| { type: "config:state"; config: AppConfig; warnings?: ConfigWarning[] }
 	| { type: "config:error"; errors: ConfigValidationError[] }
+	| { type: "purge:progress"; step: string; current: number; total: number }
+	| { type: "purge:complete"; warnings: string[] }
 	| { type: "log"; text: string }
 	| { type: "error"; message: string };
 
@@ -469,4 +471,5 @@ export type ClientMessage =
 	| { type: "workflow:force-start"; workflowId: string }
 	| { type: "config:get" }
 	| { type: "config:save"; config: Partial<AppConfig> }
-	| { type: "config:reset"; key?: string };
+	| { type: "config:reset"; key?: string }
+	| { type: "purge:all" };

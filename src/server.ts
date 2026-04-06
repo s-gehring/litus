@@ -6,7 +6,7 @@ import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import { analyzeEpic, type EpicAnalysisProcess } from "./epic-analyzer";
 import { EpicStore } from "./epic-store";
-import { setGitLogCallback } from "./git-logger";
+import { gitSpawn, setGitLogCallback } from "./git-logger";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -526,6 +526,138 @@ function handleRetry(ws: ServerWebSocket<WsData>, workflowId: string) {
 	orch.retryStep(workflowId);
 }
 
+async function handlePurgeAll(): Promise<void> {
+	const warnings: string[] = [];
+
+	// 1. Kill all running orchestrators
+	broadcast({
+		type: "purge:progress",
+		step: "Stopping running workflows...",
+		current: 0,
+		total: 0,
+	});
+	for (const [id, orch] of orchestrators) {
+		try {
+			const w = orch.getEngine().getWorkflow();
+			if (w && (w.status === "running" || w.status === "waiting_for_input")) {
+				orch.cancelPipeline(id);
+			}
+		} catch {
+			// Best effort
+		}
+	}
+	orchestrators.clear();
+
+	// Cancel any in-progress epic analysis
+	if (epicAnalysisRef.current) {
+		epicAnalysisRef.current.kill();
+		epicAnalysisRef.current = null;
+	}
+
+	// 2. Load all workflows to find worktrees and branches to clean up
+	broadcast({ type: "purge:progress", step: "Loading workflows...", current: 0, total: 0 });
+	const allWorkflows = await sharedStore.loadAll();
+
+	// Group by target repository for git cleanup
+	const repoCleanup = new Map<string, { worktreePaths: string[]; branches: string[] }>();
+	for (const w of allWorkflows) {
+		if (!w.targetRepository) continue;
+		let entry = repoCleanup.get(w.targetRepository);
+		if (!entry) {
+			entry = { worktreePaths: [], branches: [] };
+			repoCleanup.set(w.targetRepository, entry);
+		}
+		if (w.worktreePath) {
+			entry.worktreePaths.push(w.worktreePath);
+		}
+		const branch = w.featureBranch ?? w.worktreeBranch;
+		if (branch && !["master", "main"].includes(branch)) {
+			entry.branches.push(branch);
+		}
+	}
+
+	// Count total operations for progress
+	let totalOps = 0;
+	for (const { worktreePaths, branches } of repoCleanup.values()) {
+		totalOps += worktreePaths.length + branches.length;
+	}
+	// +1 for prune per repo, +1 for persistence wipe
+	totalOps += repoCleanup.size + 1;
+	let completedOps = 0;
+
+	// 3. Remove worktrees and delete branches per repository
+	for (const [repo, { worktreePaths, branches }] of repoCleanup) {
+		for (const wtPath of worktreePaths) {
+			const shortPath = wtPath.split(/[/\\]/).slice(-2).join("/");
+			broadcast({
+				type: "purge:progress",
+				step: `Removing worktree ${shortPath}`,
+				current: completedOps,
+				total: totalOps,
+			});
+			try {
+				const result = await gitSpawn(["git", "worktree", "remove", wtPath, "--force"], {
+					cwd: repo,
+				});
+				if (result.code !== 0) {
+					warnings.push(`Worktree remove failed (${wtPath}): ${result.stderr}`);
+				}
+			} catch (err) {
+				warnings.push(`Worktree remove error (${wtPath}): ${err}`);
+			}
+			completedOps++;
+		}
+
+		broadcast({
+			type: "purge:progress",
+			step: "Pruning worktree metadata",
+			current: completedOps,
+			total: totalOps,
+		});
+		await gitSpawn(["git", "worktree", "prune"], { cwd: repo });
+		completedOps++;
+
+		for (const branch of branches) {
+			broadcast({
+				type: "purge:progress",
+				step: `Deleting branch ${branch}`,
+				current: completedOps,
+				total: totalOps,
+			});
+			try {
+				const result = await gitSpawn(["git", "branch", "-D", branch], { cwd: repo });
+				if (result.code !== 0 && !result.stderr.includes("not found")) {
+					warnings.push(`Branch delete failed (${branch}): ${result.stderr}`);
+				}
+			} catch (err) {
+				warnings.push(`Branch delete error (${branch}): ${err}`);
+			}
+			completedOps++;
+		}
+	}
+
+	// 4. Wipe persistence: workflows, epics, audit logs
+	broadcast({
+		type: "purge:progress",
+		step: "Deleting persistence files",
+		current: completedOps,
+		total: totalOps,
+	});
+	await sharedStore.removeAll();
+	await sharedEpicStore.removeAll();
+	sharedAuditLogger.removeAll();
+	completedOps++;
+
+	console.log(
+		`[purge] All data purged (${allWorkflows.length} workflows, ${repoCleanup.size} repos)`,
+	);
+	if (warnings.length > 0) {
+		console.warn(`[purge] Warnings: ${warnings.join("; ")}`);
+	}
+
+	broadcast({ type: "purge:complete", warnings });
+}
+
 async function listSubdirectories(parentDir: string): Promise<string[]> {
 	const { readdirSync, statSync } = await import("node:fs");
 	const { join } = await import("node:path");
@@ -668,6 +800,12 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 							break;
 						case "config:reset":
 							handleConfigReset(ws, msg.key);
+							break;
+						case "purge:all":
+							handlePurgeAll().catch((err) => {
+								const text = err instanceof Error ? err.message : "Purge failed";
+								sendTo(ws, { type: "error", message: text });
+							});
 							break;
 						default:
 							sendTo(ws, { type: "error", message: "Unknown message type" });

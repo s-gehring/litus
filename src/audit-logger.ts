@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AuditConfig, AuditEvent, AuditEventType } from "./types";
@@ -22,6 +22,21 @@ export class AuditLogger {
 			mkdirSync(this.auditDir, { recursive: true });
 		} catch (err) {
 			console.warn(`[audit] Failed to create audit directory: ${err}`);
+		}
+	}
+
+	removeAll(): void {
+		try {
+			const files = readdirSync(this.auditDir).filter((f) => f.endsWith(".jsonl"));
+			for (const file of files) {
+				try {
+					unlinkSync(join(this.auditDir, file));
+				} catch {
+					// Already gone
+				}
+			}
+		} catch {
+			// Directory doesn't exist
 		}
 	}
 

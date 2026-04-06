@@ -6,6 +6,7 @@ import type { Workflow, WorkflowIndexEntry } from "./types";
 export class WorkflowStore {
 	private baseDir: string;
 	private indexLock: Promise<void> = Promise.resolve();
+	private writeLocks: Map<string, Promise<void>> = new Map();
 
 	constructor(baseDir?: string) {
 		this.baseDir = baseDir ?? join(homedir(), ".crab-studio", "workflows");
@@ -28,16 +29,58 @@ export class WorkflowStore {
 		const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const tmpPath = `${filePath}.${suffix}.tmp`;
 		await Bun.write(tmpPath, data);
-		renameSync(tmpPath, filePath);
+
+		// On Windows, rename can fail with EPERM if another handle has the
+		// target file open (antivirus, concurrent read, etc.). Retry briefly.
+		for (let attempt = 0; ; attempt++) {
+			try {
+				renameSync(tmpPath, filePath);
+				return;
+			} catch (err) {
+				if (attempt >= 3) {
+					// Final fallback: direct overwrite (non-atomic but won't EPERM)
+					try {
+						unlinkSync(tmpPath);
+					} catch {
+						/* tmp cleanup */
+					}
+					await Bun.write(filePath, data);
+					return;
+				}
+				const code = (err as NodeJS.ErrnoException).code;
+				if (code === "EPERM" || code === "EACCES") {
+					await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
+					continue;
+				}
+				throw err;
+			}
+		}
 	}
 
 	async save(workflow: Workflow): Promise<void> {
-		this.ensureDir();
+		await this.withWriteLock(workflow.id, async () => {
+			this.ensureDir();
+			const data = JSON.stringify(workflow, null, 2);
+			await this.atomicWrite(this.workflowPath(workflow.id), data);
+			await this.updateIndex(workflow);
+		});
+	}
 
-		const data = JSON.stringify(workflow, null, 2);
-		await this.atomicWrite(this.workflowPath(workflow.id), data);
-
-		await this.updateIndex(workflow);
+	/** Serialize writes per workflow ID so concurrent saves don't race. */
+	private async withWriteLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+		const prev = this.writeLocks.get(id) ?? Promise.resolve();
+		const { promise, resolve } = Promise.withResolvers<void>();
+		this.writeLocks.set(id, promise);
+		try {
+			await prev;
+			return await fn();
+		} finally {
+			resolve();
+			// Clean up lock entry if nothing else is queued
+			if (this.writeLocks.get(id) === promise) {
+				this.writeLocks.delete(id);
+			}
+		}
 	}
 
 	async load(id: string): Promise<Workflow | null> {
@@ -107,6 +150,18 @@ export class WorkflowStore {
 		} catch {
 			// Index missing or corrupted — rebuild from directory scan
 			return this.rebuildIndex();
+		}
+	}
+
+	async removeAll(): Promise<void> {
+		if (!existsSync(this.baseDir)) return;
+		const files = readdirSync(this.baseDir).filter((f) => f.endsWith(".json"));
+		for (const file of files) {
+			try {
+				unlinkSync(join(this.baseDir, file));
+			} catch {
+				// Already gone
+			}
 		}
 	}
 

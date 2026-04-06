@@ -541,7 +541,73 @@ export function createConfigPanel(send: (msg: ClientMessage) => void): HTMLEleme
 	});
 	panel.appendChild(resetAll);
 
+	// Purge all data button (danger zone)
+	const purgeBtn = el("button", "cfg-purge-btn", "Purge All Data");
+	purgeBtn.type = "button";
+	purgeBtn.title =
+		"Delete all workflows, epics, audit logs, worktrees, and branches. This cannot be undone.";
+	purgeBtn.addEventListener("click", () => {
+		const confirmed = confirm(
+			"This will permanently delete ALL workflows, epics, audit logs, git worktrees, and feature branches across all repositories.\n\nThis cannot be undone. Continue?",
+		);
+		if (confirmed) {
+			sendFn?.({ type: "purge:all" });
+		}
+	});
+	panel.appendChild(purgeBtn);
+
 	return panel;
+}
+
+function ensurePurgeOverlay(): HTMLElement {
+	let overlay = document.getElementById("purge-progress");
+	if (!overlay) {
+		overlay = document.createElement("div");
+		overlay.id = "purge-progress";
+		overlay.className = "purge-progress hidden";
+		overlay.innerHTML = `
+			<div class="purge-progress-title">Purging all data...</div>
+			<div class="purge-progress-bar-track">
+				<div class="purge-progress-bar-fill" id="purge-bar-fill"></div>
+			</div>
+			<div class="purge-progress-step" id="purge-step-label"></div>
+			<div class="purge-progress-log" id="purge-log"></div>
+		`;
+		// Append to the outer config-panel container so it covers the whole panel
+		const container = document.getElementById("config-panel");
+		if (container) container.appendChild(overlay);
+	}
+	return overlay;
+}
+
+export function showPurgeProgress(): void {
+	const overlay = ensurePurgeOverlay();
+	overlay.classList.remove("hidden");
+	const log = document.getElementById("purge-log");
+	if (log) log.textContent = "";
+}
+
+export function updatePurgeProgress(step: string, current: number, total: number): void {
+	const fill = document.getElementById("purge-bar-fill") as HTMLElement | null;
+	const label = document.getElementById("purge-step-label");
+	const log = document.getElementById("purge-log");
+
+	if (label) label.textContent = step;
+	if (fill) {
+		const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+		fill.style.width = `${pct}%`;
+	}
+	if (log) {
+		const line = document.createElement("div");
+		line.textContent = step;
+		log.appendChild(line);
+		log.scrollTop = log.scrollHeight;
+	}
+}
+
+export function hidePurgeProgress(): void {
+	const el = document.getElementById("purge-progress");
+	if (el) el.classList.add("hidden");
 }
 
 export function hideConfigPanel(): void {

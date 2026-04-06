@@ -882,6 +882,9 @@ export class PipelineOrchestrator {
 		step.pid = null;
 		workflow.updatedAt = new Date().toISOString();
 
+		// Reset activity buffer between steps so the next step starts fresh
+		this.summarizer.resetBuffer(workflowId);
+
 		if (step.name === "commit-push-pr") {
 			const url = extractPrUrl(step.output);
 			if (url) workflow.prUrl = url;
@@ -889,13 +892,26 @@ export class PipelineOrchestrator {
 
 		// After specify completes, detect the feature branch and rename
 		// the worktree directory to match the feature branch name.
+		// Await rename before routing to next step so worktreePath is settled.
 		if (step.name === "specify" && workflow.worktreePath) {
 			this.detectFeatureBranch(workflow);
-			this.renameWorktreeToFeatureBranch(workflow);
+			if (this.shouldRenameWorktree(workflow)) {
+				this.renameWorktreeToFeatureBranch(workflow).then(() => {
+					this.routeAfterStep(workflow);
+				});
+				return;
+			}
 		}
 
+		this.routeAfterStep(workflow);
+	}
+
+	/** Persist and route to the appropriate next step after completion. */
+	private routeAfterStep(workflow: Workflow): void {
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
+
+		const step = workflow.steps[workflow.currentStepIndex];
 
 		// After commit-push-pr completes, route to monitor-ci
 		if (step.name === "commit-push-pr") {
@@ -944,7 +960,7 @@ export class PipelineOrchestrator {
 			this.handleImplementReviewComplete(workflow).catch((err) => {
 				const msg = err instanceof Error ? err.message : String(err);
 				console.error(`[pipeline] Implement-review completion error: ${msg}`);
-				this.handleStepError(workflowId, msg);
+				this.handleStepError(workflow.id, msg);
 			});
 			return;
 		}
@@ -1156,6 +1172,9 @@ export class PipelineOrchestrator {
 				if (w.status === "error" || w.status === "cancelled") errorIds.add(w.id);
 			}
 		}
+		// The trigger workflow just completed — ensure it's in the set even if
+		// the fire-and-forget persist hasn't flushed to disk yet.
+		completedIds.add(triggerWorkflow.id);
 
 		for (const sibling of siblings) {
 			if (!sibling.epicDependencies.includes(triggerWorkflow.id)) continue;
@@ -1209,33 +1228,36 @@ export class PipelineOrchestrator {
 		}
 	}
 
+	/** Check whether a worktree rename is needed (synchronous precondition check). */
+	private shouldRenameWorktree(workflow: Workflow): boolean {
+		if (!workflow.featureBranch || !workflow.worktreePath || !workflow.targetRepository)
+			return false;
+		const dirName = workflow.worktreePath.split(/[/\\]/).pop() ?? "";
+		return dirName.startsWith("tmp-");
+	}
+
 	/**
 	 * After detectFeatureBranch() sets workflow.featureBranch, rename the
 	 * worktree directory from its temp name (tmp-{uuid}) to match the branch.
 	 * Non-fatal: if the rename fails, the workflow continues with the old path.
+	 * Caller must check shouldRenameWorktree() first.
 	 */
-	private renameWorktreeToFeatureBranch(workflow: Workflow): void {
-		if (!workflow.featureBranch || !workflow.worktreePath || !workflow.targetRepository) return;
-
-		// Only rename temp worktrees (avoid double-renaming)
-		const dirName = workflow.worktreePath.split(/[/\\]/).pop() ?? "";
-		if (!dirName.startsWith("tmp-")) return;
-
+	private async renameWorktreeToFeatureBranch(workflow: Workflow): Promise<void> {
+		const worktreePath = workflow.worktreePath as string;
+		const targetRepo = workflow.targetRepository as string;
 		const newRelativePath = `.worktrees/${workflow.featureBranch}`;
 
-		this.engine
-			.moveWorktree(workflow.worktreePath, newRelativePath, workflow.targetRepository)
-			.then((newAbsPath) => {
-				workflow.worktreePath = newAbsPath;
-				workflow.worktreeBranch = workflow.featureBranch as string;
-				this.persistWorkflow(workflow);
-				this.callbacks.onStateChange(workflow.id);
-				console.log(`[pipeline] Renamed worktree to ${newRelativePath}`);
-			})
-			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				console.warn(`[pipeline] Worktree rename failed (non-fatal): ${msg}`);
-			});
+		try {
+			const newAbsPath = await this.engine.moveWorktree(worktreePath, newRelativePath, targetRepo);
+			workflow.worktreePath = newAbsPath;
+			workflow.worktreeBranch = workflow.featureBranch as string;
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflow.id);
+			console.log(`[pipeline] Renamed worktree to ${newRelativePath}`);
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			console.warn(`[pipeline] Worktree rename failed (non-fatal): ${msg}`);
+		}
 	}
 
 	/** Build extra env vars to inject into CLI processes. */
@@ -1261,6 +1283,8 @@ export class PipelineOrchestrator {
 	private handleStepError(workflowId: string, error: string): void {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId) return;
+
+		this.summarizer.cleanup(workflowId);
 
 		if (this.currentAuditRunId) {
 			this.auditLogger.endRun(this.currentAuditRunId, { error });

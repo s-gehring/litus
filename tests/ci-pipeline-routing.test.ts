@@ -217,6 +217,7 @@ describe("CI Pipeline Routing", () => {
 			summarizer: {
 				maybeSummarize: () => {},
 				generateSpecSummary: async () => ({ summary: "", flavor: "" }),
+				resetBuffer: () => {},
 				cleanup: () => {},
 			} as never,
 			auditLogger: {
