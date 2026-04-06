@@ -8,7 +8,12 @@ import type {
 	WorkflowClientState,
 	WorkflowState,
 } from "../types";
-import { createConfigPanel, updateConfigPanel } from "./components/config-panel";
+import {
+	createConfigPanel,
+	hideConfigPanel,
+	showConfigPanel,
+	updateConfigPanel,
+} from "./components/config-panel";
 import { createModal } from "./components/creation-modal";
 import { renderEpicTree } from "./components/epic-tree";
 import { createFolderPicker } from "./components/folder-picker";
@@ -1040,15 +1045,21 @@ document.addEventListener("DOMContentLoaded", () => {
 	const configContainer = document.getElementById("config-panel");
 	if (configContainer) configContainer.appendChild(configPanel);
 
+	// Config overlay (click-outside-to-close)
+	const overlay = document.createElement("div");
+	overlay.id = "config-overlay";
+	overlay.className = "config-overlay hidden";
+	overlay.addEventListener("click", () => hideConfigPanel());
+	document.body.appendChild(overlay);
+
 	const btnConfig = document.getElementById("btn-config");
 	if (btnConfig) {
 		btnConfig.addEventListener("click", () => {
 			const panel = document.getElementById("config-panel");
-			if (panel) {
-				panel.classList.toggle("hidden");
-				if (!panel.classList.contains("hidden")) {
-					send({ type: "config:get" });
-				}
+			if (panel?.classList.contains("hidden")) {
+				showConfigPanel(send);
+			} else {
+				hideConfigPanel();
 			}
 		});
 	}

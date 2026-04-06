@@ -905,6 +905,83 @@ body::-webkit-scrollbar-track {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.config-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 99;
+}
+
+.cfg-close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 1.1rem;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.cfg-close-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.cfg-subgroup-heading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cfg-subgroup-heading--spaced {
+  margin-top: 16px;
+}
+
+.cfg-subgroup-desc {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.cfg-model-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cfg-model-input-wrap .cfg-text-input {
+  flex: 1;
+}
+
+.cfg-effort-select {
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.75rem;
+  min-width: 72px;
+}
+
+.cfg-effort-select:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
 @media (max-width: 768px) {
   .config-panel {
     width: 100vw;

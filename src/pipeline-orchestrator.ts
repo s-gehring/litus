@@ -5,6 +5,7 @@ import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
+import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import {
 	mergePr as defaultMergePr,
@@ -14,7 +15,7 @@ import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
 import { Summarizer } from "./summarizer";
-import type { PipelineStepName, Question, Workflow } from "./types";
+import type { EffortLevel, PipelineStepName, Question, Workflow } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
 
@@ -443,7 +444,14 @@ export class PipelineOrchestrator {
 		}
 
 		const cwd = workflow.worktreePath || process.cwd();
-		this.runStep(workflow, step.prompt, cwd);
+		const config = configStore.get();
+		this.runStep(
+			workflow,
+			step.prompt,
+			cwd,
+			config.models.mainPipeline,
+			config.efforts.mainPipeline,
+		);
 	}
 
 	private runMonitorCi(workflow: Workflow): void {
@@ -523,7 +531,8 @@ export class PipelineOrchestrator {
 				this.persistWorkflow(workflow);
 
 				const cwd = workflow.worktreePath || process.cwd();
-				this.runStep(workflow, prompt, cwd);
+				const config = configStore.get();
+				this.runStep(workflow, prompt, cwd, config.models.ciFix, config.efforts.ciFix);
 			})
 			.catch((err) => {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -545,7 +554,13 @@ export class PipelineOrchestrator {
 		this.startStep(workflow);
 	}
 
-	private runStep(workflow: Workflow, prompt: string, cwd: string): void {
+	private runStep(
+		workflow: Workflow,
+		prompt: string,
+		cwd: string,
+		model?: string,
+		effort?: EffortLevel,
+	): void {
 		const stepWorkflow: Workflow = {
 			...workflow,
 			specification: prompt,
@@ -561,7 +576,7 @@ export class PipelineOrchestrator {
 			onPid: (pid) => this.handlePid(workflow.id, pid),
 		};
 
-		this.cliRunner.start(stepWorkflow, cliCallbacks, this.buildStepEnv(workflow));
+		this.cliRunner.start(stepWorkflow, cliCallbacks, this.buildStepEnv(workflow), model, effort);
 	}
 
 	private handleStepOutput(workflowId: string, text: string): void {

@@ -1,10 +1,31 @@
 // ── Config types ──────────────────────────────────────────
 
 export interface ModelConfig {
+	// Lightweight models (required, non-empty)
 	questionDetection: string;
 	reviewClassification: string;
 	activitySummarization: string;
 	specSummarization: string;
+	// Workflow step models (optional, empty = use CLI default)
+	epicDecomposition: string;
+	mergeConflictResolution: string;
+	ciFix: string;
+	mainPipeline: string;
+}
+
+export type EffortLevel = "low" | "medium" | "high" | "max";
+
+export interface EffortConfig {
+	// Lightweight models — default "low"
+	questionDetection: EffortLevel;
+	reviewClassification: EffortLevel;
+	activitySummarization: EffortLevel;
+	specSummarization: EffortLevel;
+	// Workflow step models — default "medium"
+	epicDecomposition: EffortLevel;
+	mergeConflictResolution: EffortLevel;
+	ciFix: EffortLevel;
+	mainPipeline: EffortLevel;
 }
 
 export interface PromptConfig {
@@ -14,12 +35,14 @@ export interface PromptConfig {
 	specSummarization: string;
 	mergeConflictResolution: string;
 	ciFixInstruction: string;
+	epicDecomposition: string;
 }
 
 export interface LimitConfig {
 	reviewCycleMaxIterations: number;
 	ciFixMaxAttempts: number;
 	mergeMaxAttempts: number;
+	maxJsonRetries: number;
 }
 
 export interface TimingConfig {
@@ -30,10 +53,12 @@ export interface TimingConfig {
 	rateLimitBackoffMs: number;
 	maxCiLogLength: number;
 	maxClientOutputLines: number;
+	epicTimeoutMs: number;
 }
 
 export interface AppConfig {
 	models: ModelConfig;
+	efforts: EffortConfig;
 	prompts: PromptConfig;
 	limits: LimitConfig;
 	timing: TimingConfig;
