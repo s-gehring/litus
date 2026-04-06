@@ -895,12 +895,11 @@ export class PipelineOrchestrator {
 			if (url) workflow.prUrl = url;
 		}
 
-		// After specify completes, detect the feature branch so subsequent
-		// steps can locate the spec even if the worktree is still on the
-		// initial crab-studio/* branch (e.g. after a pause/resume that
-		// interrupted the git checkout).
+		// After specify completes, detect the feature branch and rename
+		// the worktree directory to match the feature branch name.
 		if (step.name === "specify" && workflow.worktreePath) {
 			this.detectFeatureBranch(workflow);
+			this.renameWorktreeToFeatureBranch(workflow);
 		}
 
 		this.flushPersistDebounce(workflow);
@@ -1183,8 +1182,7 @@ export class PipelineOrchestrator {
 	/**
 	 * Scan the worktree's specs/ directory for the newest feature directory
 	 * and store its name as the feature branch.  This is used to set
-	 * SPECIFY_FEATURE for subsequent steps so that the speckit scripts
-	 * locate the spec even when the git branch is still crab-studio/*.
+	 * SPECIFY_FEATURE for subsequent steps and to rename the worktree.
 	 */
 	private detectFeatureBranch(workflow: Workflow): void {
 		const specsDir = join(workflow.worktreePath as string, "specs");
@@ -1217,6 +1215,35 @@ export class PipelineOrchestrator {
 		} catch {
 			// specs/ directory might not exist yet — not fatal
 		}
+	}
+
+	/**
+	 * After detectFeatureBranch() sets workflow.featureBranch, rename the
+	 * worktree directory from its temp name (tmp-{uuid}) to match the branch.
+	 * Non-fatal: if the rename fails, the workflow continues with the old path.
+	 */
+	private renameWorktreeToFeatureBranch(workflow: Workflow): void {
+		if (!workflow.featureBranch || !workflow.worktreePath || !workflow.targetRepository) return;
+
+		// Only rename temp worktrees (avoid double-renaming)
+		const dirName = workflow.worktreePath.split(/[/\\]/).pop() ?? "";
+		if (!dirName.startsWith("tmp-")) return;
+
+		const newRelativePath = `.worktrees/${workflow.featureBranch}`;
+
+		this.engine
+			.moveWorktree(workflow.worktreePath, newRelativePath, workflow.targetRepository)
+			.then((newAbsPath) => {
+				workflow.worktreePath = newAbsPath;
+				workflow.worktreeBranch = workflow.featureBranch as string;
+				this.persistWorkflow(workflow);
+				this.callbacks.onStateChange(workflow.id);
+				console.log(`[pipeline] Renamed worktree to ${newRelativePath}`);
+			})
+			.catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				console.warn(`[pipeline] Worktree rename failed (non-fatal): ${msg}`);
+			});
 	}
 
 	/** Build extra env vars to inject into CLI processes. */

@@ -18,12 +18,13 @@ export class WorkflowEngine {
 
 	async createWorkflow(specification: string, targetRepository: string): Promise<Workflow> {
 		const id = randomUUID();
-		const branchName = `crab-studio/${id.slice(0, 8)}`;
+		const shortId = id.slice(0, 8);
 		let worktreePath: string | null = null;
 
-		// Create git worktree and copy gitignored files
+		// Create git worktree in detached HEAD — speckit's specify step
+		// will create the real feature branch via git checkout -b.
 		try {
-			worktreePath = await this.createWorktree(branchName, targetRepository);
+			worktreePath = await this.createWorktree(shortId, targetRepository);
 			await this.copyGitignoredFiles(targetRepository, worktreePath);
 		} catch (err) {
 			throw new Error(
@@ -38,7 +39,7 @@ export class WorkflowEngine {
 			status: "idle",
 			targetRepository,
 			worktreePath,
-			worktreeBranch: branchName,
+			worktreeBranch: `tmp-${shortId}`,
 			featureBranch: null,
 			summary: "",
 			stepSummary: "",
@@ -169,9 +170,33 @@ export class WorkflowEngine {
 		}
 	}
 
-	private async createWorktree(branchName: string, cwd: string): Promise<string> {
-		const worktreePath = `.worktrees/${branchName.replaceAll("/", "-")}`;
-		const proc = Bun.spawn(["git", "worktree", "add", worktreePath, "-b", branchName], {
+	async moveWorktree(
+		oldPath: string,
+		newRelativePath: string,
+		targetRepo: string,
+	): Promise<string> {
+		const proc = Bun.spawn(["git", "worktree", "move", oldPath, newRelativePath], {
+			cwd: targetRepo,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+
+		const code = await proc.exited;
+		if (code !== 0) {
+			const stderrStream = proc.stderr;
+			const stderr =
+				stderrStream && typeof stderrStream !== "number"
+					? await new Response(stderrStream as ReadableStream).text()
+					: "";
+			throw new Error(stderr.trim() || `git worktree move failed with code ${code}`);
+		}
+
+		return resolve(targetRepo, newRelativePath);
+	}
+
+	private async createWorktree(shortId: string, cwd: string): Promise<string> {
+		const worktreePath = `.worktrees/tmp-${shortId}`;
+		const proc = Bun.spawn(["git", "worktree", "add", "--detach", worktreePath], {
 			cwd,
 			stdout: "pipe",
 			stderr: "pipe",

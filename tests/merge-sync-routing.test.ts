@@ -95,7 +95,7 @@ function createFakeEngine() {
 				status: "idle" as WorkflowStatus,
 				targetRepository,
 				worktreePath: "/tmp/test-worktree",
-				worktreeBranch: "crab-studio/test",
+				worktreeBranch: "tmp-test0001",
 				featureBranch: null,
 				summary: "",
 				stepSummary: "",
@@ -179,6 +179,7 @@ function createFakeEngine() {
 			}
 		},
 		removeWorktree: mock(async () => {}),
+		moveWorktree: mock(async () => "/tmp/test-worktree"),
 		_getWorkflow: () => workflow,
 	};
 }

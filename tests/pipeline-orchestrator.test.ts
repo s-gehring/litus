@@ -30,7 +30,7 @@ function createFakeEngine() {
 				status: "idle" as WorkflowStatus,
 				targetRepository,
 				worktreePath: "/tmp/test-worktree",
-				worktreeBranch: "crab-studio/test",
+				worktreeBranch: "tmp-test0001",
 				featureBranch: null,
 				summary: "",
 				stepSummary: "",
@@ -113,6 +113,7 @@ function createFakeEngine() {
 				workflow.updatedAt = new Date().toISOString();
 			}
 		},
+		moveWorktree: async () => "/tmp/test-worktree",
 		// Expose for test assertions
 		_getWorkflow: () => workflow,
 	};
@@ -821,7 +822,7 @@ describe("PipelineOrchestrator", () => {
 			const pipelineName = auditLogger.startRun.mock.calls[0][0] as string;
 			expect(pipelineName).not.toBe("");
 			// branch arg is the worktree branch
-			expect(auditLogger.startRun.mock.calls[0][1]).toBe("crab-studio/test");
+			expect(auditLogger.startRun.mock.calls[0][1]).toBe("tmp-test0001");
 		});
 
 		test("pipeline completion calls auditLogger.endRun", async () => {

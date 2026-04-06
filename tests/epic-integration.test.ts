@@ -19,12 +19,6 @@ afterAll(async () => {
 				stderr: "pipe",
 			});
 			await rm.exited;
-			const del = Bun.spawn(["git", "branch", "-D", wf.worktreeBranch], {
-				cwd,
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			await del.exited;
 		} catch {
 			// Best-effort cleanup
 		}

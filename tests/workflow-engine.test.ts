@@ -38,7 +38,7 @@ describe("WorkflowEngine", () => {
 		expect(w.specification).toBe("Build a login page");
 		expect(w.status).toBe("idle");
 		expect(w.worktreePath).toBeTruthy();
-		expect(w.worktreeBranch).toMatch(/^crab-studio\//);
+		expect(w.worktreeBranch).toMatch(/^tmp-/);
 		expect(w.summary).toBe("");
 		expect(w.pendingQuestion).toBeNull();
 		expect(w.lastOutput).toBe("");
