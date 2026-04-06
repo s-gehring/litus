@@ -1005,28 +1005,30 @@ document.addEventListener("DOMContentLoaded", () => {
 	// Question panel
 	btnSubmitAnswer.addEventListener("click", () => {
 		const answer = getAnswer();
-		if (!answer || !expandedId) return;
+		const workflowId = selectedChildId ?? expandedId;
+		if (!answer || !workflowId) return;
 
-		const entry = workflows.get(expandedId);
+		const entry = workflows.get(workflowId);
 		if (!entry?.state.pendingQuestion) return;
 
 		send({
 			type: "workflow:answer",
-			workflowId: expandedId,
+			workflowId,
 			questionId: entry.state.pendingQuestion.id,
 			answer,
 		});
 	});
 
 	btnSkip.addEventListener("click", () => {
-		if (!expandedId) return;
+		const workflowId = selectedChildId ?? expandedId;
+		if (!workflowId) return;
 
-		const entry = workflows.get(expandedId);
+		const entry = workflows.get(workflowId);
 		if (!entry?.state.pendingQuestion) return;
 
 		send({
 			type: "workflow:skip",
-			workflowId: expandedId,
+			workflowId,
 			questionId: entry.state.pendingQuestion.id,
 		});
 	});
