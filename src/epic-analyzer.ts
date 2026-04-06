@@ -176,10 +176,7 @@ async function runCLIStream(
 						flushDeltaBuffer();
 						const toolCounts = new Map<string, number>();
 						for (const block of event.message.content) {
-							if (block.type === "text" && block.text) {
-								accumulatedText += block.text;
-								callbacks?.onOutput?.(block.text);
-							} else if (block.type === "tool_use" && block.name) {
+							if (block.type === "tool_use" && block.name) {
 								toolCounts.set(block.name, (toolCounts.get(block.name) ?? 0) + 1);
 							}
 						}
