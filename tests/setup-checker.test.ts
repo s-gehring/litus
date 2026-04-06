@@ -12,6 +12,7 @@ import {
 	checkIsGitRepo,
 	checkSpeckitFiles,
 	runSetupChecks,
+	SPECKIT_FILES,
 } from "../src/setup-checker";
 
 const testRoot = join(tmpdir(), `crab-setup-test-${Date.now()}`);
@@ -19,16 +20,6 @@ const gitRepoPath = join(testRoot, "valid-repo");
 const nonGitDir = join(testRoot, "not-a-repo");
 const speckitCompleteDir = join(testRoot, "speckit-complete");
 const speckitMissingDir = join(testRoot, "speckit-missing");
-
-const SPECKIT_FILES = [
-	"speckit.clarify.md",
-	"speckit.implement.md",
-	"speckit.plan.md",
-	"speckit.specify.md",
-	"speckit.tasks.md",
-	"speckit.review.md",
-	"speckit.implementreview.md",
-];
 
 beforeAll(async () => {
 	mkdirSync(gitRepoPath, { recursive: true });

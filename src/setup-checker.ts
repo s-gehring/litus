@@ -117,7 +117,7 @@ export async function checkGhAuth(targetDir: string): Promise<SetupCheckResult> 
 	};
 }
 
-const SPECKIT_FILES = [
+export const SPECKIT_FILES = [
 	"speckit.clarify.md",
 	"speckit.implement.md",
 	"speckit.plan.md",

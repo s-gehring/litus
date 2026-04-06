@@ -1305,11 +1305,21 @@ describe("PipelineOrchestrator", () => {
 				passed: true,
 				checks: [
 					{ name: "Git installed", passed: true, required: true },
-					{ name: "Gitignore: specs/", passed: false, error: '"specs/" not in .gitignore', required: false },
+					{
+						name: "Gitignore: specs/",
+						passed: false,
+						error: '"specs/" not in .gitignore',
+						required: false,
+					},
 				],
 				requiredFailures: [],
 				optionalWarnings: [
-					{ name: "Gitignore: specs/", passed: false, error: '"specs/" not in .gitignore', required: false },
+					{
+						name: "Gitignore: specs/",
+						passed: false,
+						error: '"specs/" not in .gitignore',
+						required: false,
+					},
 				],
 			});
 
@@ -1326,9 +1336,7 @@ describe("PipelineOrchestrator", () => {
 		test("answering optional warnings question advances pipeline", async () => {
 			const { orch, engine, cli } = makeSetupOrchestrator({
 				passed: true,
-				checks: [
-					{ name: "Gitignore: specs/", passed: false, error: "missing", required: false },
-				],
+				checks: [{ name: "Gitignore: specs/", passed: false, error: "missing", required: false }],
 				requiredFailures: [],
 				optionalWarnings: [
 					{ name: "Gitignore: specs/", passed: false, error: "missing", required: false },
@@ -1342,7 +1350,8 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.steps[0].status).toBe("waiting_for_input");
 
 			// Answer to skip
-			const questionId = wf.pendingQuestion!.id;
+			expect(wf.pendingQuestion).toBeDefined();
+			const questionId = wf.pendingQuestion?.id ?? "";
 			orch.answerQuestion(wf.id, questionId, "skip");
 
 			expect(wf.steps[0].status).toBe("completed");
@@ -1351,8 +1360,37 @@ describe("PipelineOrchestrator", () => {
 			expect(cli._startCalls.length).toBe(1);
 		});
 
+		test("runSetupChecks rejection sets step to error", async () => {
+			const localEngine = createFakeEngine();
+			const localCli = createFakeCliRunner();
+			const localCallbacks = makeCallbacks();
+			// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
+			const deps: Record<string, any> = {
+				engine: localEngine,
+				cliRunner: localCli,
+				questionDetector: createFakeQuestionDetector(),
+				reviewClassifier: createFakeReviewClassifier(),
+				summarizer: createFakeSummarizer(),
+				auditLogger: createFakeAuditLogger(),
+				workflowStore: createFakeWorkflowStore(),
+				runSetupChecks: async () => {
+					throw new Error("Spawn failed");
+				},
+			};
+			const orch = new PipelineOrchestrator(localCallbacks, deps);
+
+			await orch.startPipeline("test");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(localEngine);
+			expect(wf.steps[0].name).toBe("setup");
+			expect(wf.steps[0].status).toBe("error");
+			expect(wf.steps[0].error).toContain("Spawn failed");
+			expect(wf.status).toBe("error");
+		});
+
 		test("all pass with no warnings auto-advances to specify", async () => {
-			const { orch, engine, cli } = makeSetupOrchestrator({
+			const { orch, engine } = makeSetupOrchestrator({
 				passed: true,
 				checks: [{ name: "Git installed", passed: true, required: true }],
 				requiredFailures: [],
