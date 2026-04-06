@@ -264,6 +264,7 @@ describe("checkGitignoreEntries", () => {
 	test("reports all present when gitignore has entries", async () => {
 		const dir = join(testRoot, "gitignore-complete");
 		mkdirSync(dir, { recursive: true });
+		Bun.spawnSync(["git", "init"], { cwd: dir });
 		writeFileSync(
 			join(dir, ".gitignore"),
 			"node_modules/\nspecs/\n.worktrees\n.claude\n.specify\n",
@@ -281,6 +282,7 @@ describe("checkGitignoreEntries", () => {
 	test("reports missing entries", async () => {
 		const dir = join(testRoot, "gitignore-partial");
 		mkdirSync(dir, { recursive: true });
+		Bun.spawnSync(["git", "init"], { cwd: dir });
 		writeFileSync(join(dir, ".gitignore"), "node_modules/\nspecs/\n");
 
 		const results = await checkGitignoreEntries(dir);
