@@ -69,7 +69,7 @@ function createCallbacks() {
 		},
 		onError: (workflowId: string, error: string) => {
 			console.error(`[pipeline] Step error (${workflowId}): ${error}`);
-			broadcast({ type: "error", message: error });
+			broadcast({ type: "workflow:output", workflowId, text: `Error: ${error}` });
 			broadcastWorkflowState(workflowId);
 		},
 		onStateChange: (workflowId: string) => {
