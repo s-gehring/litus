@@ -456,6 +456,24 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "purge:complete": {
+			// Clear all client state
+			workflows.clear();
+			epics.clear();
+			epicAggregates.clear();
+			cardOrder.length = 0;
+			expandedId = null;
+			expandedEpicId = null;
+			selectedChildId = null;
+			selectedStepIndex = null;
+			renderCards();
+			renderExpandedView();
+			if (msg.warnings.length > 0) {
+				appendOutput(`Purge completed with warnings: ${msg.warnings.join("; ")}`, "error");
+			}
+			break;
+		}
+
 		case "config:state": {
 			updateConfigPanel(msg.config, msg.warnings);
 			if (msg.config.timing?.maxClientOutputLines) {

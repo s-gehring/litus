@@ -541,6 +541,21 @@ export function createConfigPanel(send: (msg: ClientMessage) => void): HTMLEleme
 	});
 	panel.appendChild(resetAll);
 
+	// Purge all data button (danger zone)
+	const purgeBtn = el("button", "cfg-purge-btn", "Purge All Data");
+	purgeBtn.type = "button";
+	purgeBtn.title =
+		"Delete all workflows, epics, audit logs, worktrees, and branches. This cannot be undone.";
+	purgeBtn.addEventListener("click", () => {
+		const confirmed = confirm(
+			"This will permanently delete ALL workflows, epics, audit logs, git worktrees, and feature branches across all repositories.\n\nThis cannot be undone. Continue?",
+		);
+		if (confirmed) {
+			sendFn?.({ type: "purge:all" });
+		}
+	});
+	panel.appendChild(purgeBtn);
+
 	return panel;
 }
 

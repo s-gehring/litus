@@ -913,6 +913,25 @@ body::-webkit-scrollbar-track {
   background: rgba(233, 69, 96, 0.2);
 }
 
+.cfg-purge-btn {
+  width: 100%;
+  padding: 10px;
+  margin-top: 16px;
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid rgba(220, 38, 38, 0.5);
+  border-radius: var(--radius);
+  color: #ef4444;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.cfg-purge-btn:hover {
+  background: rgba(220, 38, 38, 0.3);
+  border-color: rgba(220, 38, 38, 0.7);
+}
+
 .cfg-warning-toast {
   position: fixed;
   bottom: 20px;

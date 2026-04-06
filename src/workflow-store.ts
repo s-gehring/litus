@@ -110,6 +110,18 @@ export class WorkflowStore {
 		}
 	}
 
+	async removeAll(): Promise<void> {
+		if (!existsSync(this.baseDir)) return;
+		const files = readdirSync(this.baseDir).filter((f) => f.endsWith(".json"));
+		for (const file of files) {
+			try {
+				unlinkSync(join(this.baseDir, file));
+			} catch {
+				// Already gone
+			}
+		}
+	}
+
 	async remove(id: string): Promise<void> {
 		const filePath = this.workflowPath(id);
 		try {

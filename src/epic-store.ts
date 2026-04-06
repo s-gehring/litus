@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { PersistedEpic } from "./types";
@@ -27,6 +27,17 @@ export class EpicStore {
 			return data as PersistedEpic[];
 		} catch {
 			return [];
+		}
+	}
+
+	async removeAll(): Promise<void> {
+		const fp = this.filePath();
+		if (existsSync(fp)) {
+			try {
+				unlinkSync(fp);
+			} catch {
+				// Already gone
+			}
 		}
 	}
 
