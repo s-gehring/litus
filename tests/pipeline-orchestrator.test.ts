@@ -9,6 +9,7 @@ import type {
 	PipelineStepName,
 	Question,
 	ReviewSeverity,
+	SetupResult,
 	Workflow,
 	WorkflowStatus,
 } from "../src/types";
@@ -1250,6 +1251,122 @@ describe("PipelineOrchestrator", () => {
 			} finally {
 				rmSync(tmpDir, { recursive: true, force: true });
 			}
+		});
+	});
+
+	// Setup step routing tests
+	describe("setup step routing", () => {
+		function makeSetupOrchestrator(setupResult: SetupResult) {
+			const localEngine = createFakeEngine();
+			const localCli = createFakeCliRunner();
+			const localQd = createFakeQuestionDetector();
+			const localRc = createFakeReviewClassifier();
+			const localCallbacks = makeCallbacks();
+			// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
+			const deps: Record<string, any> = {
+				engine: localEngine,
+				cliRunner: localCli,
+				questionDetector: localQd,
+				reviewClassifier: localRc,
+				summarizer: createFakeSummarizer(),
+				auditLogger: createFakeAuditLogger(),
+				workflowStore: createFakeWorkflowStore(),
+				runSetupChecks: async () => setupResult,
+			};
+			const orch = new PipelineOrchestrator(localCallbacks, deps);
+			return { orch, engine: localEngine, cli: localCli, callbacks: localCallbacks };
+		}
+
+		test("required failure halts pipeline with error", async () => {
+			const { orch, engine } = makeSetupOrchestrator({
+				passed: false,
+				checks: [
+					{ name: "Git installed", passed: true, required: true },
+					{ name: "Git repository", passed: false, error: "Not a git repo", required: true },
+				],
+				requiredFailures: [
+					{ name: "Git repository", passed: false, error: "Not a git repo", required: true },
+				],
+				optionalWarnings: [],
+			});
+
+			await orch.startPipeline("test");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(engine);
+			expect(wf.steps[0].name).toBe("setup");
+			expect(wf.steps[0].status).toBe("error");
+			expect(wf.steps[0].error).toContain("Not a git repo");
+			expect(wf.status).toBe("error");
+		});
+
+		test("optional warnings pause with question", async () => {
+			const { orch, engine } = makeSetupOrchestrator({
+				passed: true,
+				checks: [
+					{ name: "Git installed", passed: true, required: true },
+					{ name: "Gitignore: specs/", passed: false, error: '"specs/" not in .gitignore', required: false },
+				],
+				requiredFailures: [],
+				optionalWarnings: [
+					{ name: "Gitignore: specs/", passed: false, error: '"specs/" not in .gitignore', required: false },
+				],
+			});
+
+			await orch.startPipeline("test");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(engine);
+			expect(wf.steps[0].name).toBe("setup");
+			expect(wf.steps[0].status).toBe("waiting_for_input");
+			expect(wf.pendingQuestion).toBeDefined();
+			expect(wf.pendingQuestion?.content).toContain("specs/");
+		});
+
+		test("answering optional warnings question advances pipeline", async () => {
+			const { orch, engine, cli } = makeSetupOrchestrator({
+				passed: true,
+				checks: [
+					{ name: "Gitignore: specs/", passed: false, error: "missing", required: false },
+				],
+				requiredFailures: [],
+				optionalWarnings: [
+					{ name: "Gitignore: specs/", passed: false, error: "missing", required: false },
+				],
+			});
+
+			await orch.startPipeline("test");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(engine);
+			expect(wf.steps[0].status).toBe("waiting_for_input");
+
+			// Answer to skip
+			const questionId = wf.pendingQuestion!.id;
+			orch.answerQuestion(wf.id, questionId, "skip");
+
+			expect(wf.steps[0].status).toBe("completed");
+			expect(wf.currentStepIndex).toBe(1);
+			expect(wf.steps[1].status).toBe("running");
+			expect(cli._startCalls.length).toBe(1);
+		});
+
+		test("all pass with no warnings auto-advances to specify", async () => {
+			const { orch, engine, cli } = makeSetupOrchestrator({
+				passed: true,
+				checks: [{ name: "Git installed", passed: true, required: true }],
+				requiredFailures: [],
+				optionalWarnings: [],
+			});
+
+			await orch.startPipeline("test");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(engine);
+			expect(wf.steps[0].status).toBe("completed");
+			expect(wf.currentStepIndex).toBe(1);
+			expect(wf.steps[1].name).toBe("specify");
+			expect(wf.steps[1].status).toBe("running");
 		});
 	});
 });

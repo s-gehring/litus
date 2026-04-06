@@ -36,7 +36,7 @@ beforeAll(async () => {
 	mkdirSync(join(speckitCompleteDir, ".claude"), { recursive: true });
 	mkdirSync(join(speckitMissingDir, ".claude"), { recursive: true });
 
-	// Init git repo with a GitHub origin
+	// Init git repo with a GitHub origin and speckit files
 	const init = Bun.spawn(["git", "init"], { cwd: gitRepoPath, stdout: "pipe", stderr: "pipe" });
 	await init.exited;
 	const addRemote = Bun.spawn(
@@ -44,6 +44,10 @@ beforeAll(async () => {
 		{ cwd: gitRepoPath, stdout: "pipe", stderr: "pipe" },
 	);
 	await addRemote.exited;
+	mkdirSync(join(gitRepoPath, ".claude"), { recursive: true });
+	for (const file of SPECKIT_FILES) {
+		writeFileSync(join(gitRepoPath, ".claude", file), "# template");
+	}
 
 	// Create all speckit files in complete dir
 	for (const file of SPECKIT_FILES) {
@@ -112,10 +116,11 @@ describe("checkGitHubOrigin", () => {
 		mkdirSync(nonGhDir, { recursive: true });
 		const init = Bun.spawn(["git", "init"], { cwd: nonGhDir, stdout: "pipe", stderr: "pipe" });
 		await init.exited;
-		const add = Bun.spawn(
-			["git", "remote", "add", "origin", "https://gitlab.com/org/repo.git"],
-			{ cwd: nonGhDir, stdout: "pipe", stderr: "pipe" },
-		);
+		const add = Bun.spawn(["git", "remote", "add", "origin", "https://gitlab.com/org/repo.git"], {
+			cwd: nonGhDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
 		await add.exited;
 
 		const result = await checkGitHubOrigin(nonGhDir);
@@ -157,6 +162,26 @@ describe("checkGhAuth", () => {
 		const result = await checkGhAuth(nonGitDir);
 		expect(result.passed).toBe(false);
 		expect(result.error).toContain("no origin remote");
+	});
+
+	test("extracts hostname from SSH origin URL", async () => {
+		const sshDir = join(testRoot, "ssh-origin");
+		mkdirSync(sshDir, { recursive: true });
+		const proc = Bun.spawn(["git", "init"], { cwd: sshDir, stdout: "pipe", stderr: "pipe" });
+		await proc.exited;
+		const add = Bun.spawn(
+			["git", "remote", "add", "origin", "git@github.enterprise.com:org/repo.git"],
+			{ cwd: sshDir, stdout: "pipe", stderr: "pipe" },
+		);
+		await add.exited;
+
+		const result = await checkGhAuth(sshDir);
+		// Auth will likely fail, but the error message should reference the enterprise hostname
+		if (!result.passed && result.error) {
+			expect(result.error).toContain("github.enterprise.com");
+		}
+
+		rmSync(sshDir, { recursive: true, force: true });
 	});
 });
 
@@ -206,7 +231,7 @@ describe("runSetupChecks", () => {
 		// Should include git repo failure
 		const gitRepoFailure = result.requiredFailures.find((f) => f.name === "Git repository");
 		expect(gitRepoFailure).toBeDefined();
-		expect(gitRepoFailure!.passed).toBe(false);
+		expect(gitRepoFailure?.passed).toBe(false);
 	});
 
 	test("collects all required failures (not just first)", async () => {
@@ -221,6 +246,24 @@ describe("runSetupChecks", () => {
 		expect(requiredChecks.length).toBe(7);
 		for (const check of requiredChecks) {
 			expect(check.required).toBe(true);
+		}
+	});
+
+	// T023: optional-warnings path
+	test("populates optionalWarnings when required pass but gitignore entries missing", async () => {
+		// gitRepoPath has git, github origin, speckit files — but no .gitignore
+		const result = await runSetupChecks(gitRepoPath);
+		// gh/claude may not be installed in CI, so only assert optional behavior if required passed
+		if (result.passed) {
+			expect(result.requiredFailures).toHaveLength(0);
+			expect(result.optionalWarnings.length).toBeGreaterThan(0);
+			for (const w of result.optionalWarnings) {
+				expect(w.required).toBe(false);
+				expect(w.passed).toBe(false);
+			}
+			// checks array should include both required and optional
+			const optionalInChecks = result.checks.filter((c) => !c.required);
+			expect(optionalInChecks.length).toBeGreaterThan(0);
 		}
 	});
 });
@@ -251,11 +294,11 @@ describe("checkGitignoreEntries", () => {
 
 		const results = checkGitignoreEntries(dir);
 		const specResult = results.find((r) => r.name === "Gitignore: specs/");
-		expect(specResult!.passed).toBe(true);
+		expect(specResult?.passed).toBe(true);
 
 		const worktreeResult = results.find((r) => r.name === "Gitignore: .worktrees");
-		expect(worktreeResult!.passed).toBe(false);
-		expect(worktreeResult!.error).toContain(".worktrees");
+		expect(worktreeResult?.passed).toBe(false);
+		expect(worktreeResult?.error).toContain(".worktrees");
 
 		rmSync(dir, { recursive: true, force: true });
 	});

@@ -97,11 +97,12 @@ export async function checkGhAuth(targetDir: string): Promise<SetupCheckResult> 
 	const sshMatch = url.match(/@([^:]+):/);
 	if (sshMatch) {
 		hostname = sshMatch[1];
-	}
-	// Handle HTTPS: https://github.example.com/org/repo.git
-	const httpsMatch = url.match(/https?:\/\/([^/]+)/);
-	if (httpsMatch) {
-		hostname = httpsMatch[1];
+	} else {
+		// Handle HTTPS: https://github.example.com/org/repo.git
+		const httpsMatch = url.match(/https?:\/\/([^/]+)/);
+		if (httpsMatch) {
+			hostname = httpsMatch[1];
+		}
 	}
 
 	const result = await runCommand(["gh", "auth", "status", "--hostname", hostname]);
@@ -240,15 +241,12 @@ export async function runSetupChecks(targetDir: string): Promise<SetupResult> {
 	const passed = requiredFailures.length === 0;
 
 	// Only run optional checks if all required checks passed
-	let optionalWarnings: SetupCheckResult[] = [];
-	if (passed) {
-		const optionalChecks = checkGitignoreEntries(targetDir);
-		optionalWarnings = optionalChecks.filter((c) => !c.passed);
-	}
+	const optionalChecks = passed ? checkGitignoreEntries(targetDir) : [];
+	const optionalWarnings = optionalChecks.filter((c) => !c.passed);
 
 	return {
 		passed,
-		checks: [...requiredChecks, ...(passed ? checkGitignoreEntries(targetDir) : [])],
+		checks: [...requiredChecks, ...optionalChecks],
 		requiredFailures,
 		optionalWarnings,
 	};
