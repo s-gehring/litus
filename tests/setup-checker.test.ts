@@ -30,6 +30,13 @@ beforeAll(async () => {
 	// Init git repo with a GitHub origin and speckit files
 	const init = Bun.spawn(["git", "init"], { cwd: gitRepoPath, stdout: "pipe", stderr: "pipe" });
 	await init.exited;
+	// Disable global gitignore so tests control exactly what's ignored
+	const disableGlobal = Bun.spawn(["git", "config", "core.excludesFile", ""], {
+		cwd: gitRepoPath,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	await disableGlobal.exited;
 	const addRemote = Bun.spawn(
 		["git", "remote", "add", "origin", "https://github.com/test-org/test-repo.git"],
 		{ cwd: gitRepoPath, stdout: "pipe", stderr: "pipe" },
@@ -265,6 +272,7 @@ describe("checkGitignoreEntries", () => {
 		const dir = join(testRoot, "gitignore-complete");
 		mkdirSync(dir, { recursive: true });
 		Bun.spawnSync(["git", "init"], { cwd: dir });
+		Bun.spawnSync(["git", "config", "core.excludesFile", ""], { cwd: dir });
 		writeFileSync(
 			join(dir, ".gitignore"),
 			"node_modules/\nspecs/\n.worktrees\n.claude\n.specify\n",
@@ -283,6 +291,7 @@ describe("checkGitignoreEntries", () => {
 		const dir = join(testRoot, "gitignore-partial");
 		mkdirSync(dir, { recursive: true });
 		Bun.spawnSync(["git", "init"], { cwd: dir });
+		Bun.spawnSync(["git", "config", "core.excludesFile", ""], { cwd: dir });
 		writeFileSync(join(dir, ".gitignore"), "node_modules/\nspecs/\n");
 
 		const results = await checkGitignoreEntries(dir);

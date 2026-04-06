@@ -666,6 +666,7 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 	statusBadge.textContent = agg.status;
 	statusBadge.className = `status-badge ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
 
+	updateBranchInfo(null);
 	renderPipelineSteps(null);
 	updateSummary(`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`);
 	updateStepSummary("");

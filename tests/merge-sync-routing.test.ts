@@ -285,6 +285,7 @@ describe("Merge & Sync Pipeline Routing", () => {
 				requiredFailures: [],
 				optionalWarnings: [],
 			}),
+			checkoutMaster: async () => ({ code: 0, stderr: "" }),
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});
