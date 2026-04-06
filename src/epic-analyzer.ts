@@ -132,13 +132,14 @@ async function runCLIStream(
 		throw new Error("Failed to capture CLI stdout");
 	}
 
+	const reader = (stdout as ReadableStream<Uint8Array>).getReader();
+
 	let timedOut = false;
 	const timeoutId = setTimeout(() => {
 		timedOut = true;
+		reader.cancel().catch(() => {});
 		proc.kill();
 	}, timeoutMs);
-
-	const reader = (stdout as ReadableStream<Uint8Array>).getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";
 	let deltaAccumulated = "";
@@ -234,9 +235,6 @@ async function runCLIStream(
 
 	// Prefer assistant event text (authoritative); fall back to delta-accumulated text
 	const accumulatedText = lastAssistantText || deltaAccumulated;
-	console.log(
-		`[epic] Stream done: assistantText=${lastAssistantText.length} chars, deltaText=${deltaAccumulated.length} chars`,
-	);
 
 	return { accumulatedText, sessionId, exitCode, timedOut, stderr: stderr.trim() };
 }
@@ -292,9 +290,6 @@ export async function analyzeEpic(
 			lastError = err as Error;
 			console.error(
 				`[epic] Parse attempt ${attempt + 1}/${maxJsonRetries + 1} failed: ${lastError.message}`,
-			);
-			console.error(
-				`[epic] Accumulated text (${accumulatedText.length} chars): ${accumulatedText.slice(0, 200)}...${accumulatedText.slice(-200)}`,
 			);
 			if (attempt >= maxJsonRetries || !sessionId) break;
 

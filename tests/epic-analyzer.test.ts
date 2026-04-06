@@ -116,8 +116,17 @@ describe("analyzeEpic", () => {
 			return; // CLI not found in PATH
 		}
 
+		const killRef: { current: { kill: () => void } | null } = { current: null };
 		await expect(
-			analyzeEpic("Some epic description that is long enough", process.cwd(), undefined, 1),
+			analyzeEpic("Some epic description that is long enough", process.cwd(), killRef, 1),
 		).rejects.toThrow("Epic analysis timed out");
+		// Ensure the process tree is fully dead to avoid dangling processes
+		// and stale git lock files that break subsequent tests
+		killRef.current?.kill();
+		if (process.platform === "win32") {
+			// On Windows, proc.kill() only kills the parent — child processes may linger.
+			// Wait briefly for the process tree to clean up and release git locks.
+			await new Promise((r) => setTimeout(r, 500));
+		}
 	});
 });
