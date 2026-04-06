@@ -81,6 +81,113 @@ describe("CLIRunner", () => {
 		BunGlobal.Bun.spawn = originalSpawn;
 	});
 
+	describe("model and effort flags", () => {
+		test("includes --model and --effort when both are provided", async () => {
+			let capturedArgs: string[] = [];
+			const { promise, resolve } = createDeferredPromise();
+
+			BunGlobal.Bun.spawn = (args: string[]) => {
+				capturedArgs = args;
+				return {
+					stdout: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					stderr: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					exited: Promise.resolve(0),
+					kill: () => {},
+					pid: 1,
+				};
+			};
+
+			runner.start(
+				makeWorkflow("w-model"),
+				makeCallbacks({ onComplete: () => resolve() }),
+				undefined,
+				"claude-sonnet-4-20250514",
+				"high",
+			);
+
+			await promise;
+			expect(capturedArgs).toContain("--model");
+			expect(capturedArgs).toContain("claude-sonnet-4-20250514");
+			expect(capturedArgs).toContain("--effort");
+			expect(capturedArgs).toContain("high");
+		});
+
+		test("omits --model when model is empty string", async () => {
+			let capturedArgs: string[] = [];
+			const { promise, resolve } = createDeferredPromise();
+
+			BunGlobal.Bun.spawn = (args: string[]) => {
+				capturedArgs = args;
+				return {
+					stdout: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					stderr: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					exited: Promise.resolve(0),
+					kill: () => {},
+					pid: 1,
+				};
+			};
+
+			runner.start(
+				makeWorkflow("w-no-model"),
+				makeCallbacks({ onComplete: () => resolve() }),
+				undefined,
+				"",
+				"medium",
+			);
+
+			await promise;
+			expect(capturedArgs).not.toContain("--model");
+			expect(capturedArgs).toContain("--effort");
+			expect(capturedArgs).toContain("medium");
+		});
+
+		test("omits --model and --effort when neither is provided", async () => {
+			let capturedArgs: string[] = [];
+			const { promise, resolve } = createDeferredPromise();
+
+			BunGlobal.Bun.spawn = (args: string[]) => {
+				capturedArgs = args;
+				return {
+					stdout: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					stderr: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					exited: Promise.resolve(0),
+					kill: () => {},
+					pid: 1,
+				};
+			};
+
+			runner.start(makeWorkflow("w-defaults"), makeCallbacks({ onComplete: () => resolve() }));
+
+			await promise;
+			expect(capturedArgs).not.toContain("--model");
+			expect(capturedArgs).not.toContain("--effort");
+		});
+	});
+
 	describe("handleStreamEvent (via streamOutput)", () => {
 		test("extracts session_id from stream events", async () => {
 			const { promise: sessionPromise, resolve: resolveSession } = createDeferredPromise<string>();

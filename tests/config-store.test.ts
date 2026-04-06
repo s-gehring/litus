@@ -139,7 +139,12 @@ describe("T003: atomic write", () => {
 	test("save() writes a valid JSON file to disk", () => {
 		const store = new ConfigStore(configPath(dir));
 		const { errors } = store.save({
-			limits: { ciFixMaxAttempts: 4, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 },
+			limits: {
+				ciFixMaxAttempts: 4,
+				reviewCycleMaxIterations: 16,
+				mergeMaxAttempts: 3,
+				maxJsonRetries: 2,
+			},
 		});
 
 		expect(errors).toHaveLength(0);
@@ -164,7 +169,12 @@ describe("T003: reset single key", () => {
 	test("reset('limits.ciFixMaxAttempts') reverts that key to default", () => {
 		const store = new ConfigStore(configPath(dir));
 		store.save({
-			limits: { ciFixMaxAttempts: 9, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 },
+			limits: {
+				ciFixMaxAttempts: 9,
+				reviewCycleMaxIterations: 16,
+				mergeMaxAttempts: 3,
+				maxJsonRetries: 2,
+			},
 		});
 
 		expect(store.get().limits.ciFixMaxAttempts).toBe(9);
@@ -191,7 +201,12 @@ describe("T003: reset whole section", () => {
 	test("reset('limits') reverts all limits keys to defaults", () => {
 		const store = new ConfigStore(configPath(dir));
 		store.save({
-			limits: { ciFixMaxAttempts: 9, reviewCycleMaxIterations: 10, mergeMaxAttempts: 5 },
+			limits: {
+				ciFixMaxAttempts: 9,
+				reviewCycleMaxIterations: 10,
+				mergeMaxAttempts: 5,
+				maxJsonRetries: 2,
+			},
 		});
 
 		store.reset("limits");
@@ -214,12 +229,28 @@ describe("T003: reset all", () => {
 	test("reset() with no argument reverts the entire config to defaults", () => {
 		const store = new ConfigStore(configPath(dir));
 		store.save({
-			limits: { ciFixMaxAttempts: 9, reviewCycleMaxIterations: 10, mergeMaxAttempts: 5 },
+			limits: {
+				ciFixMaxAttempts: 9,
+				reviewCycleMaxIterations: 10,
+				mergeMaxAttempts: 5,
+				maxJsonRetries: 2,
+			},
 			models: {
 				questionDetection: "custom-model",
 				reviewClassification: "claude-haiku-4-5-20251001",
 				activitySummarization: "claude-haiku-4-5-20251001",
 				specSummarization: "claude-haiku-4-5-20251001",
+				epicDecomposition: "",
+				mergeConflictResolution: "",
+				ciFix: "",
+				specify: "",
+				clarify: "",
+				plan: "",
+				tasks: "",
+				implement: "",
+				review: "",
+				implementReview: "",
+				commitPushPr: "",
 			},
 		});
 
@@ -245,7 +276,12 @@ describe("T005: positive integer check", () => {
 	test("save with limits.ciFixMaxAttempts = -1 returns an error", () => {
 		const store = new ConfigStore(configPath(dir));
 		const { errors } = store.save({
-			limits: { ciFixMaxAttempts: -1, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 },
+			limits: {
+				ciFixMaxAttempts: -1,
+				reviewCycleMaxIterations: 16,
+				mergeMaxAttempts: 3,
+				maxJsonRetries: 2,
+			},
 		});
 
 		expect(errors.length).toBeGreaterThan(0);
@@ -276,6 +312,7 @@ describe("T005: min bound enforcement", () => {
 				rateLimitBackoffMs: DEFAULT_CONFIG.timing.rateLimitBackoffMs,
 				maxCiLogLength: DEFAULT_CONFIG.timing.maxCiLogLength,
 				maxClientOutputLines: DEFAULT_CONFIG.timing.maxClientOutputLines,
+				epicTimeoutMs: DEFAULT_CONFIG.timing.epicTimeoutMs,
 			},
 		});
 
@@ -305,6 +342,17 @@ describe("T005: non-empty string check", () => {
 				reviewClassification: "claude-haiku-4-5-20251001",
 				activitySummarization: "claude-haiku-4-5-20251001",
 				specSummarization: "claude-haiku-4-5-20251001",
+				epicDecomposition: "",
+				mergeConflictResolution: "",
+				ciFix: "",
+				specify: "",
+				clarify: "",
+				plan: "",
+				tasks: "",
+				implement: "",
+				review: "",
+				implementReview: "",
+				commitPushPr: "",
 			},
 		});
 
@@ -330,7 +378,12 @@ describe("T005: partial save validation — no write on error", () => {
 
 		// Save valid data first so we have a baseline on disk
 		store.save({
-			limits: { ciFixMaxAttempts: 3, reviewCycleMaxIterations: 16, mergeMaxAttempts: 3 },
+			limits: {
+				ciFixMaxAttempts: 3,
+				reviewCycleMaxIterations: 16,
+				mergeMaxAttempts: 3,
+				maxJsonRetries: 2,
+			},
 		});
 
 		// Now attempt a partial save with an invalid field mixed in
@@ -339,6 +392,7 @@ describe("T005: partial save validation — no write on error", () => {
 				ciFixMaxAttempts: -99, // invalid
 				reviewCycleMaxIterations: 16,
 				mergeMaxAttempts: 3,
+				maxJsonRetries: 2,
 			},
 		});
 
@@ -379,5 +433,126 @@ describe("T005: template variable warning generation", () => {
 
 		// The save must still have persisted the new prompt
 		expect(store.get().prompts.questionDetection).toBe("Is this a question? Answer yes or no.");
+	});
+});
+
+// ── T022: New model keys, effort validation, optional model validation ────
+
+describe("T022: optional model keys allow empty strings", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = makeTempDir();
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	test("save with epicDecomposition = '' succeeds (optional model)", () => {
+		const store = new ConfigStore(configPath(dir));
+		const { errors } = store.save({
+			models: {
+				...DEFAULT_CONFIG.models,
+				epicDecomposition: "",
+			},
+		});
+
+		expect(errors).toHaveLength(0);
+	});
+
+	test("save with implement = 'custom-model' succeeds", () => {
+		const store = new ConfigStore(configPath(dir));
+		const { errors } = store.save({
+			models: {
+				...DEFAULT_CONFIG.models,
+				implement: "custom-model",
+			},
+		});
+
+		expect(errors).toHaveLength(0);
+		expect(store.get().models.implement).toBe("custom-model");
+	});
+});
+
+describe("T022: effort validation", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = makeTempDir();
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	test("save with valid effort level succeeds", () => {
+		const store = new ConfigStore(configPath(dir));
+		const { errors } = store.save({
+			efforts: {
+				...DEFAULT_CONFIG.efforts,
+				questionDetection: "high",
+				epicDecomposition: "max",
+			},
+		});
+
+		expect(errors).toHaveLength(0);
+		expect(store.get().efforts.questionDetection).toBe("high");
+		expect(store.get().efforts.epicDecomposition).toBe("max");
+	});
+
+	test("save with invalid effort level returns an error", () => {
+		const store = new ConfigStore(configPath(dir));
+		const { errors } = store.save({
+			efforts: {
+				...DEFAULT_CONFIG.efforts,
+				questionDetection: "invalid" as "low",
+			},
+		});
+
+		expect(errors.length).toBeGreaterThan(0);
+		const err = errors.find((e) => e.path === "efforts.questionDetection");
+		expect(err).toBeDefined();
+	});
+});
+
+describe("T022: new defaults include efforts section", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = makeTempDir();
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	test("get() returns efforts section with correct defaults", () => {
+		const store = new ConfigStore(join(dir, "nonexistent", "config.json"));
+		const config = store.get();
+
+		expect(config.efforts.questionDetection).toBe("low");
+		expect(config.efforts.epicDecomposition).toBe("medium");
+		expect(config.efforts.implement).toBe("medium");
+	});
+
+	test("get() returns new model keys with empty string defaults", () => {
+		const store = new ConfigStore(join(dir, "nonexistent", "config.json"));
+		const config = store.get();
+
+		expect(config.models.epicDecomposition).toBe("");
+		expect(config.models.mergeConflictResolution).toBe("");
+		expect(config.models.ciFix).toBe("");
+		expect(config.models.specify).toBe("");
+		expect(config.models.implement).toBe("");
+		expect(config.models.commitPushPr).toBe("");
+	});
+
+	test("get() returns new limits and timing defaults", () => {
+		const store = new ConfigStore(join(dir, "nonexistent", "config.json"));
+		const config = store.get();
+
+		expect(config.limits.maxJsonRetries).toBe(2);
+		expect(config.timing.epicTimeoutMs).toBe(900_000);
 	});
 });

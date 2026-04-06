@@ -30,7 +30,12 @@ describe("T004: save then load roundtrip", () => {
 		const first = new ConfigStore(path);
 
 		const { errors } = first.save({
-			limits: { ciFixMaxAttempts: 6, reviewCycleMaxIterations: 12, mergeMaxAttempts: 2 },
+			limits: {
+				ciFixMaxAttempts: 6,
+				reviewCycleMaxIterations: 12,
+				mergeMaxAttempts: 2,
+				maxJsonRetries: 2,
+			},
 		});
 		expect(errors).toHaveLength(0);
 
@@ -60,10 +65,8 @@ describe("T004: survive simulated restart", () => {
 		const original = new ConfigStore(path);
 		original.save({
 			models: {
+				...DEFAULT_CONFIG.models,
 				questionDetection: "my-custom-model",
-				reviewClassification: "claude-haiku-4-5-20251001",
-				activitySummarization: "claude-haiku-4-5-20251001",
-				specSummarization: "claude-haiku-4-5-20251001",
 			},
 			timing: {
 				ciPollIntervalMs: 30_000,
@@ -73,6 +76,7 @@ describe("T004: survive simulated restart", () => {
 				rateLimitBackoffMs: DEFAULT_CONFIG.timing.rateLimitBackoffMs,
 				maxCiLogLength: DEFAULT_CONFIG.timing.maxCiLogLength,
 				maxClientOutputLines: DEFAULT_CONFIG.timing.maxClientOutputLines,
+				epicTimeoutMs: DEFAULT_CONFIG.timing.epicTimeoutMs,
 			},
 		});
 

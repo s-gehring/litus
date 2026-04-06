@@ -8,18 +8,19 @@ export class ReviewClassifier {
 		const promptTemplate = configStore.get().prompts.reviewClassification;
 		const prompt = promptTemplate.replaceAll("${reviewOutput}", reviewOutput);
 
-		const proc = Bun.spawn(
-			[
-				"claude",
-				"-p",
-				prompt,
-				"--model",
-				configStore.get().models.reviewClassification,
-				"--output-format",
-				"text",
-			],
-			{ stdout: "pipe", stderr: "pipe" },
-		);
+		const config = configStore.get();
+		const args = [
+			"claude",
+			"-p",
+			prompt,
+			"--model",
+			config.models.reviewClassification,
+			"--output-format",
+			"text",
+			"--effort",
+			config.efforts.reviewClassification,
+		];
+		const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
 
 		const code = await proc.exited;
 		if (code !== 0) return "major";

@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Workflow } from "./types";
+import type { EffortLevel, Workflow } from "./types";
 
 export function isProcessAlive(pid: number): boolean {
 	try {
@@ -56,7 +56,13 @@ const EVENTS_FILE = join(EVENTS_DIR, "events.jsonl");
 export class CLIRunner {
 	private running: Map<string, RunningProcess> = new Map();
 
-	start(workflow: Workflow, callbacks: CLICallbacks, extraEnv?: Record<string, string>): void {
+	start(
+		workflow: Workflow,
+		callbacks: CLICallbacks,
+		extraEnv?: Record<string, string>,
+		model?: string,
+		effort?: EffortLevel,
+	): void {
 		const cwd = workflow.worktreePath || process.cwd();
 		const args = [
 			"claude",
@@ -68,6 +74,12 @@ export class CLIRunner {
 			"--dangerously-skip-permissions",
 			"--include-partial-messages",
 		];
+		if (model && model.trim() !== "") {
+			args.push("--model", model);
+		}
+		if (effort) {
+			args.push("--effort", effort);
+		}
 
 		const env = extraEnv ? { ...process.env, ...extraEnv } : process.env;
 

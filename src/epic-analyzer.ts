@@ -1,61 +1,10 @@
+import { configStore } from "./config-store";
 import { buildGraph, detectCycles } from "./dependency-resolver";
 import type { EpicAnalysisResult } from "./types";
 
-const DECOMPOSITION_PROMPT_TEMPLATE = `You are analyzing a codebase to decompose a large feature epic into multiple
-self-contained implementation specifications.
-
-## Epic Description
-
-\${epicDescription}
-
-## Instructions
-
-1. Analyze the current codebase structure, patterns, and architecture.
-2. Decompose the epic into the smallest set of self-contained specifications
-   that together deliver the full scope of the epic.
-3. Each spec MUST be independently implementable and testable.
-4. Identify dependency relationships: if spec B requires changes from spec A
-   to exist first, B depends on A.
-5. Avoid circular dependencies.
-6. If any part of the epic is infeasible given the current codebase, note it.
-
-## Output Format
-
-Return ONLY a JSON code block with this exact structure:
-
-\`\`\`json
-{
-  "title": "Short epic title",
-  "summary": "A 1-3 paragraph overview of the decomposition: what the epic achieves, how the specs relate to each other, and any important architectural decisions or trade-offs.",
-  "specs": [
-    {
-      "id": "a",
-      "title": "Short spec title",
-      "description": "Full specification description for this piece",
-      "dependencies": []
-    },
-    {
-      "id": "b",
-      "title": "Another spec title",
-      "description": "Full specification description",
-      "dependencies": ["a"]
-    }
-  ],
-  "infeasibleNotes": null
-}
-\`\`\`
-
-Rules:
-- \`id\` values are simple lowercase letters (a, b, c, ...)
-- \`dependencies\` reference other spec \`id\` values within this decomposition
-- \`description\` should be detailed enough to serve as a specification input
-- \`summary\` must be a human-readable overview (1-3 paragraphs, markdown allowed)
-- If the epic is already atomic (cannot be split), return a single spec
-- If parts are infeasible, set \`infeasibleNotes\` to explain why
-- If the ENTIRE epic is infeasible, \`specs\` can be an empty array with \`infeasibleNotes\` explaining why`;
-
 export function buildDecompositionPrompt(epicDescription: string): string {
-	return DECOMPOSITION_PROMPT_TEMPLATE.replace("${epicDescription}", epicDescription);
+	const template = configStore.get().prompts.epicDecomposition;
+	return template.replace("${epicDescription}", epicDescription);
 }
 
 export function parseAnalysisResult(text: string): EpicAnalysisResult {
@@ -151,8 +100,6 @@ export interface EpicAnalysisCallbacks {
 	onOutput?: (text: string) => void;
 	onTools?: (tools: Record<string, number>) => void;
 }
-
-const DEFAULT_EPIC_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 interface StreamResult {
 	accumulatedText: string;
@@ -268,8 +215,6 @@ async function runCLIStream(
 	return { accumulatedText, sessionId, exitCode, timedOut, stderr: stderr.trim() };
 }
 
-const MAX_JSON_RETRIES = 2;
-
 const JSON_FIX_PROMPT =
 	"Your previous response could not be parsed. Please respond with ONLY the valid JSON code block in the exact format requested. No other text.";
 
@@ -277,10 +222,15 @@ export async function analyzeEpic(
 	epicDescription: string,
 	targetRepoDir: string,
 	onKillRef?: { current: EpicAnalysisProcess | null },
-	timeoutMs: number = DEFAULT_EPIC_TIMEOUT_MS,
+	timeoutMs?: number,
 	callbacks?: EpicAnalysisCallbacks,
 ): Promise<EpicAnalysisResult> {
 	const prompt = buildDecompositionPrompt(epicDescription);
+	const config = configStore.get();
+	const model = config.models.epicDecomposition;
+	const effort = config.efforts.epicDecomposition;
+	const effectiveTimeout = timeoutMs ?? config.timing.epicTimeoutMs;
+	const maxJsonRetries = config.limits.maxJsonRetries;
 	const args = [
 		"claude",
 		"-p",
@@ -290,9 +240,14 @@ export async function analyzeEpic(
 		"--verbose",
 		"--dangerously-skip-permissions",
 		"--include-partial-messages",
+		"--effort",
+		effort,
 	];
+	if (model.trim() !== "") {
+		args.push("--model", model);
+	}
 
-	const result = await runCLIStream(args, targetRepoDir, timeoutMs, onKillRef, callbacks);
+	const result = await runCLIStream(args, targetRepoDir, effectiveTimeout, onKillRef, callbacks);
 
 	if (result.timedOut) throw new Error("Epic analysis timed out");
 	if (result.exitCode !== 0) {
@@ -304,12 +259,12 @@ export async function analyzeEpic(
 	let sessionId = result.sessionId;
 	let accumulatedText = result.accumulatedText;
 
-	for (let attempt = 0; attempt <= MAX_JSON_RETRIES; attempt++) {
+	for (let attempt = 0; attempt <= maxJsonRetries; attempt++) {
 		try {
 			return parseAnalysisResult(accumulatedText);
 		} catch (err) {
 			lastError = err as Error;
-			if (attempt >= MAX_JSON_RETRIES || !sessionId) break;
+			if (attempt >= maxJsonRetries || !sessionId) break;
 
 			callbacks?.onOutput?.(`\n\n--- Retrying: ${lastError.message} ---\n\n`);
 
@@ -329,7 +284,7 @@ export async function analyzeEpic(
 			const retryResult = await runCLIStream(
 				retryArgs,
 				targetRepoDir,
-				timeoutMs,
+				effectiveTimeout,
 				onKillRef,
 				callbacks,
 			);

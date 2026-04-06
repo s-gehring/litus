@@ -12,6 +12,7 @@ import type {
 	AppConfig,
 	ConfigValidationError,
 	ConfigWarning,
+	EffortLevel,
 	NumericSettingMeta,
 	PromptConfig,
 	PromptVariableInfo,
@@ -23,6 +24,34 @@ export const DEFAULT_CONFIG: AppConfig = {
 		reviewClassification: "claude-haiku-4-5-20251001",
 		activitySummarization: "claude-haiku-4-5-20251001",
 		specSummarization: "claude-haiku-4-5-20251001",
+		epicDecomposition: "",
+		mergeConflictResolution: "",
+		ciFix: "",
+		specify: "",
+		clarify: "",
+		plan: "",
+		tasks: "",
+		implement: "",
+		review: "",
+		implementReview: "",
+		commitPushPr: "",
+	},
+	efforts: {
+		questionDetection: "low",
+		reviewClassification: "low",
+		activitySummarization: "low",
+		specSummarization: "low",
+		epicDecomposition: "medium",
+		mergeConflictResolution: "medium",
+		ciFix: "medium",
+		specify: "medium",
+		clarify: "medium",
+		plan: "medium",
+		tasks: "medium",
+		implement: "medium",
+		review: "medium",
+		implementReview: "medium",
+		commitPushPr: "medium",
 	},
 	prompts: {
 		questionDetection:
@@ -62,11 +91,64 @@ Steps:
 \${logSections}
 
 Fix these CI failures. After fixing, commit and push the changes.`,
+		epicDecomposition: `You are analyzing a codebase to decompose a large feature epic into multiple
+self-contained implementation specifications.
+
+## Epic Description
+
+\${epicDescription}
+
+## Instructions
+
+1. Analyze the current codebase structure, patterns, and architecture.
+2. Decompose the epic into the smallest set of self-contained specifications
+   that together deliver the full scope of the epic.
+3. Each spec MUST be independently implementable and testable.
+4. Identify dependency relationships: if spec B requires changes from spec A
+   to exist first, B depends on A.
+5. Avoid circular dependencies.
+6. If any part of the epic is infeasible given the current codebase, note it.
+
+## Output Format
+
+Return ONLY a JSON code block with this exact structure:
+
+\`\`\`json
+{
+  "title": "Short epic title",
+  "summary": "A 1-3 paragraph overview of the decomposition: what the epic achieves, how the specs relate to each other, and any important architectural decisions or trade-offs.",
+  "specs": [
+    {
+      "id": "a",
+      "title": "Short spec title",
+      "description": "Full specification description for this piece",
+      "dependencies": []
+    },
+    {
+      "id": "b",
+      "title": "Another spec title",
+      "description": "Full specification description",
+      "dependencies": ["a"]
+    }
+  ],
+  "infeasibleNotes": null
+}
+\`\`\`
+
+Rules:
+- \`id\` values are simple lowercase letters (a, b, c, ...)
+- \`dependencies\` reference other spec \`id\` values within this decomposition
+- \`description\` should be detailed enough to serve as a specification input
+- \`summary\` must be a human-readable overview (1-3 paragraphs, markdown allowed)
+- If the epic is already atomic (cannot be split), return a single spec
+- If parts are infeasible, set \`infeasibleNotes\` to explain why
+- If the ENTIRE epic is infeasible, \`specs\` can be an empty array with \`infeasibleNotes\` explaining why`,
 	},
 	limits: {
 		reviewCycleMaxIterations: 16,
 		ciFixMaxAttempts: 3,
 		mergeMaxAttempts: 3,
+		maxJsonRetries: 2,
 	},
 	timing: {
 		ciGlobalTimeoutMs: 1_800_000,
@@ -76,6 +158,7 @@ Fix these CI failures. After fixing, commit and push the changes.`,
 		rateLimitBackoffMs: 60_000,
 		maxCiLogLength: 50_000,
 		maxClientOutputLines: 5_000,
+		epicTimeoutMs: 900_000,
 	},
 };
 
@@ -92,6 +175,9 @@ export const PROMPT_VARIABLES: Record<keyof PromptConfig, PromptVariableInfo[]> 
 	ciFixInstruction: [
 		{ name: "prUrl", description: "The pull request URL" },
 		{ name: "logSections", description: "Formatted CI failure log sections" },
+	],
+	epicDecomposition: [
+		{ name: "epicDescription", description: "The epic description to decompose into specs" },
 	],
 };
 
@@ -176,6 +262,22 @@ export const NUMERIC_SETTING_META: NumericSettingMeta[] = [
 		defaultValue: 5_000,
 		unit: "lines",
 	},
+	{
+		key: "limits.maxJsonRetries",
+		label: "Max JSON Retries",
+		description: "Maximum retry attempts when epic analysis returns unparseable JSON",
+		min: 0,
+		defaultValue: 2,
+		unit: "retries",
+	},
+	{
+		key: "timing.epicTimeoutMs",
+		label: "Epic Analysis Timeout",
+		description: "Maximum time to wait for epic decomposition analysis",
+		min: 60_000,
+		defaultValue: 900_000,
+		unit: "ms",
+	},
 ];
 
 export class ConfigStore {
@@ -191,6 +293,7 @@ export class ConfigStore {
 		const saved = this.savedConfig ?? {};
 		return {
 			models: { ...DEFAULT_CONFIG.models, ...(saved.models ?? {}) },
+			efforts: { ...DEFAULT_CONFIG.efforts, ...(saved.efforts ?? {}) },
 			prompts: { ...DEFAULT_CONFIG.prompts, ...(saved.prompts ?? {}) },
 			limits: { ...DEFAULT_CONFIG.limits, ...(saved.limits ?? {}) },
 			timing: { ...DEFAULT_CONFIG.timing, ...(saved.timing ?? {}) },
@@ -210,6 +313,9 @@ export class ConfigStore {
 		const current = this.savedConfig ?? {};
 		if (partial.models) {
 			current.models = { ...(current.models ?? {}), ...partial.models };
+		}
+		if (partial.efforts) {
+			current.efforts = { ...(current.efforts ?? {}), ...partial.efforts };
 		}
 		if (partial.prompts) {
 			current.prompts = { ...(current.prompts ?? {}), ...partial.prompts };
@@ -297,12 +403,46 @@ export class ConfigStore {
 	private validate(partial: Partial<AppConfig>): ConfigValidationError[] {
 		const errors: ConfigValidationError[] = [];
 
+		const OPTIONAL_MODEL_KEYS = new Set([
+			"epicDecomposition",
+			"mergeConflictResolution",
+			"ciFix",
+			"specify",
+			"clarify",
+			"plan",
+			"tasks",
+			"implement",
+			"review",
+			"implementReview",
+			"commitPushPr",
+		]);
+
 		if (partial.models) {
 			for (const [key, value] of Object.entries(partial.models)) {
-				if (typeof value !== "string" || value.trim() === "") {
+				if (typeof value !== "string") {
+					errors.push({
+						path: `models.${key}`,
+						message: "Must be a string",
+						value,
+					});
+				} else if (value.trim() === "" && !OPTIONAL_MODEL_KEYS.has(key)) {
 					errors.push({
 						path: `models.${key}`,
 						message: "Must be a non-empty string",
+						value,
+					});
+				}
+			}
+		}
+
+		const VALID_EFFORT_LEVELS: EffortLevel[] = ["low", "medium", "high", "max"];
+
+		if (partial.efforts) {
+			for (const [key, value] of Object.entries(partial.efforts)) {
+				if (!VALID_EFFORT_LEVELS.includes(value as EffortLevel)) {
+					errors.push({
+						path: `efforts.${key}`,
+						message: `Must be one of: ${VALID_EFFORT_LEVELS.join(", ")}`,
 						value,
 					});
 				}
@@ -346,20 +486,13 @@ export class ConfigStore {
 		errors: ConfigValidationError[],
 	): void {
 		for (const [key, value] of Object.entries(section)) {
-			if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
-				errors.push({
-					path: `${sectionName}.${key}`,
-					message: "Must be a positive integer",
-					value,
-				});
-				continue;
-			}
-
 			const meta = NUMERIC_SETTING_META.find((m) => m.key === `${sectionName}.${key}`);
-			if (meta && value < meta.min) {
+			const minVal = meta ? meta.min : 1;
+
+			if (typeof value !== "number" || !Number.isInteger(value) || value < minVal) {
 				errors.push({
 					path: `${sectionName}.${key}`,
-					message: `Must be at least ${meta.min}`,
+					message: meta ? `Must be at least ${meta.min}` : "Must be a positive integer",
 					value,
 				});
 			}

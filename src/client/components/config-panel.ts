@@ -1,4 +1,4 @@
-import type { AppConfig, ClientMessage, ConfigWarning } from "../../types";
+import type { AppConfig, ClientMessage, ConfigWarning, EffortLevel } from "../../types";
 
 // Metadata mirrored from config-store (server-side) — kept in sync manually.
 // Keys use "section.field" dot-path notation.
@@ -26,6 +26,14 @@ const NUMERIC_SETTING_META = [
 		min: 1,
 		defaultValue: 3,
 		unit: "attempts",
+	},
+	{
+		key: "limits.maxJsonRetries",
+		label: "Max JSON Retries",
+		description: "Maximum retry attempts when epic analysis returns unparseable JSON",
+		min: 0,
+		defaultValue: 2,
+		unit: "retries",
 	},
 	{
 		key: "timing.ciGlobalTimeoutMs",
@@ -83,6 +91,14 @@ const NUMERIC_SETTING_META = [
 		defaultValue: 5_000,
 		unit: "lines",
 	},
+	{
+		key: "timing.epicTimeoutMs",
+		label: "Epic Analysis Timeout",
+		description: "Maximum time to wait for epic decomposition analysis",
+		min: 60_000,
+		defaultValue: 900_000,
+		unit: "ms",
+	},
 ];
 
 const PROMPT_VARIABLES: Record<string, Array<{ name: string; description: string }>> = {
@@ -99,7 +115,12 @@ const PROMPT_VARIABLES: Record<string, Array<{ name: string; description: string
 		{ name: "prUrl", description: "The pull request URL" },
 		{ name: "logSections", description: "Formatted CI failure log sections" },
 	],
+	epicDecomposition: [
+		{ name: "epicDescription", description: "The epic description to decompose into specs" },
+	],
 };
+
+const EFFORT_LEVELS: EffortLevel[] = ["low", "medium", "high", "max"];
 
 // Module-level send reference — set when createConfigPanel is called
 // biome-ignore lint/suspicious/noExplicitAny: internal dispatch uses dynamic message shapes
@@ -108,7 +129,7 @@ let sendFn: ((msg: any) => void) | null = null;
 // Cached panel root for updateConfigPanel / showConfigWarning
 let panelRoot: HTMLElement | null = null;
 
-// ── Helpers ────────────────────────────────────────────────
+// ── Helpers ────��───────────────────────────────────────────
 
 function el<K extends keyof HTMLElementTagNameMap>(
 	tag: K,
@@ -144,109 +165,213 @@ function makeResetButton(dotPath: string): HTMLButtonElement {
 	return btn;
 }
 
-function makeFieldRow(
-	label: string,
-	inputEl: HTMLElement,
-	dotPath: string,
-	description?: string,
-): HTMLElement {
-	const row = el("div", "cfg-field-row");
+function makeEffortSelect(modelKey: string): HTMLSelectElement {
+	const select = el("select", "cfg-effort-select") as HTMLSelectElement;
+	select.dataset.cfgPath = `efforts.${modelKey}`;
+	for (const level of EFFORT_LEVELS) {
+		const option = el("option");
+		option.value = level;
+		option.textContent = level;
+		select.appendChild(option);
+	}
+	select.addEventListener("change", () => {
+		sendFn?.({
+			type: "config:save",
+			config: { efforts: { [modelKey]: select.value } },
+		});
+	});
+	return select;
+}
 
-	const labelEl = el("label", "cfg-label", label);
-	if (description) labelEl.title = description;
+function formatNumber(value: number): string {
+	return new Intl.NumberFormat().format(value);
+}
 
-	const inputWrap = el("div", "cfg-input-wrap");
-	inputWrap.appendChild(inputEl);
-	inputWrap.appendChild(makeResetButton(dotPath));
-
-	row.appendChild(labelEl);
-	row.appendChild(inputWrap);
-	return row;
+function parseNumericValue(raw: string): number {
+	return Number.parseInt(raw.replace(/[^\d-]/g, ""), 10);
 }
 
 // ── Section builders ───────────────────────────────────────
 
 function buildModelsSection(): HTMLElement {
 	const section = el("div", "cfg-section");
-	const fields: Array<{ key: keyof AppConfig["models"]; label: string }> = [
-		{ key: "questionDetection", label: "Question Detection" },
-		{ key: "reviewClassification", label: "Review Classification" },
-		{ key: "activitySummarization", label: "Activity Summarization" },
-		{ key: "specSummarization", label: "Spec Summarization" },
+
+	// Classification Models sub-group
+	const classificationHeading = el("div", "cfg-subgroup-heading", "Classification Models");
+	const classificationDesc = el(
+		"div",
+		"cfg-subgroup-desc",
+		"Quick classification and summary tasks (pinned to specific models)",
+	);
+	section.appendChild(classificationHeading);
+	section.appendChild(classificationDesc);
+
+	const classificationFields: Array<{
+		key: keyof AppConfig["models"];
+		label: string;
+		description: string;
+	}> = [
+		{
+			key: "questionDetection",
+			label: "Question Detection",
+			description: "Classifies whether agent output contains a question",
+		},
+		{
+			key: "reviewClassification",
+			label: "Review Classification",
+			description: "Classifies code review severity (critical/major/minor)",
+		},
+		{
+			key: "activitySummarization",
+			label: "Activity Summarization",
+			description: "Generates short summaries of recent agent activity",
+		},
+		{
+			key: "specSummarization",
+			label: "Spec Summarization",
+			description: "Generates summary and flavor text for specifications",
+		},
 	];
 
-	for (const { key, label } of fields) {
-		const input = el("input", "cfg-text-input") as HTMLInputElement;
-		input.type = "text";
-		input.dataset.cfgPath = `models.${key}`;
-		input.placeholder = "model name";
-		input.addEventListener("change", () => {
-			sendFn?.({
-				type: "config:save",
-				config: { models: { [key]: input.value.trim() } },
-			});
-		});
-		section.appendChild(makeFieldRow(label, input, `models.${key}`));
+	for (const { key, label, description } of classificationFields) {
+		section.appendChild(buildModelRow(key, label, "model name", description));
+	}
+
+	// Workflow Step Models sub-group
+	const workflowHeading = el(
+		"div",
+		"cfg-subgroup-heading cfg-subgroup-heading--spaced",
+		"Workflow Step Models",
+	);
+	const workflowDesc = el(
+		"div",
+		"cfg-subgroup-desc",
+		"Full agent sessions (leave empty to use CLI default model)",
+	);
+	section.appendChild(workflowHeading);
+	section.appendChild(workflowDesc);
+
+	const workflowFields: Array<{
+		key: keyof AppConfig["models"];
+		label: string;
+		description: string;
+	}> = [
+		{ key: "specify", label: "Specify", description: "Generates the feature specification" },
+		{ key: "clarify", label: "Clarify", description: "Asks clarifying questions about the spec" },
+		{ key: "plan", label: "Plan", description: "Creates the implementation plan" },
+		{ key: "tasks", label: "Tasks", description: "Generates task breakdown from the plan" },
+		{
+			key: "implement",
+			label: "Implement",
+			description: "Implements code changes for each task",
+		},
+		{ key: "review", label: "Review", description: "Reviews the implemented code changes" },
+		{
+			key: "implementReview",
+			label: "Implement Review",
+			description: "Applies fixes from review feedback",
+		},
+		{
+			key: "commitPushPr",
+			label: "Commit / Push / PR",
+			description: "Commits changes and opens a pull request",
+		},
+		{ key: "ciFix", label: "CI Fix", description: "Fixes failing CI checks" },
+		{
+			key: "epicDecomposition",
+			label: "Epic Decomposition",
+			description: "Decomposes epics into smaller specifications",
+		},
+		{
+			key: "mergeConflictResolution",
+			label: "Merge Conflict Resolution",
+			description: "Resolves git merge conflicts automatically",
+		},
+	];
+
+	for (const { key, label, description } of workflowFields) {
+		section.appendChild(buildModelRow(key, label, "empty = CLI default", description));
 	}
 
 	return section;
 }
 
-function buildLimitsSection(): HTMLElement {
-	const section = el("div", "cfg-section");
-	const limitsMeta = NUMERIC_SETTING_META.filter((m) => m.key.startsWith("limits."));
+function buildModelRow(
+	key: keyof AppConfig["models"],
+	label: string,
+	placeholder: string,
+	description?: string,
+): HTMLElement {
+	const row = el("div", "cfg-field-row");
+	const labelEl = el("label", "cfg-label", label);
+	if (description) labelEl.title = description;
 
-	for (const meta of limitsMeta) {
-		const fieldKey = meta.key.split(".")[1] as keyof AppConfig["limits"];
+	const input = el("input", "cfg-text-input") as HTMLInputElement;
+	input.type = "text";
+	input.dataset.cfgPath = `models.${key}`;
+	input.placeholder = placeholder;
+	input.addEventListener("change", () => {
+		sendFn?.({
+			type: "config:save",
+			config: { models: { [key]: input.value.trim() } },
+		});
+	});
+
+	const effortLabel = el("span", "cfg-effort-label", "Effort:");
+	const effortSelect = makeEffortSelect(key);
+
+	const resetBtn = el("button", "cfg-reset-btn", "↺");
+	resetBtn.title = "Reset to default";
+	resetBtn.type = "button";
+	resetBtn.addEventListener("click", () => {
+		sendFn?.({ type: "config:reset", key: `models.${key}` });
+		sendFn?.({ type: "config:reset", key: `efforts.${key}` });
+	});
+
+	const inputWrap = el("div", "cfg-input-wrap cfg-model-input-wrap");
+	inputWrap.appendChild(input);
+	inputWrap.appendChild(effortLabel);
+	inputWrap.appendChild(effortSelect);
+	inputWrap.appendChild(resetBtn);
+
+	row.appendChild(labelEl);
+	row.appendChild(inputWrap);
+	return row;
+}
+
+function buildNumericSection(sectionKey: string): HTMLElement {
+	const section = el("div", "cfg-section");
+	const metas = NUMERIC_SETTING_META.filter((m) => m.key.startsWith(`${sectionKey}.`));
+
+	for (const meta of metas) {
+		const fieldKey = meta.key.split(".")[1];
 		const input = el("input", "cfg-number-input") as HTMLInputElement;
-		input.type = "number";
-		input.min = String(meta.min);
-		input.step = "1";
+		input.type = "text";
+		input.inputMode = "numeric";
 		input.dataset.cfgPath = meta.key;
-		input.addEventListener("change", () => {
-			const val = Number.parseInt(input.value, 10);
+		input.dataset.rawValue = String(meta.defaultValue);
+
+		// Format on blur
+		input.addEventListener("blur", () => {
+			const val = parseNumericValue(input.value);
 			if (!Number.isNaN(val)) {
-				sendFn?.({
-					type: "config:save",
-					config: { limits: { [fieldKey]: val } },
-				});
+				input.dataset.rawValue = String(val);
+				input.value = formatNumber(val);
 			}
 		});
 
-		const unitSpan = meta.unit ? el("span", "cfg-unit", meta.unit) : null;
-		const inputWrap = el("div", "cfg-input-wrap");
-		inputWrap.appendChild(input);
-		if (unitSpan) inputWrap.appendChild(unitSpan);
-		inputWrap.appendChild(makeResetButton(meta.key));
+		// Show raw on focus
+		input.addEventListener("focus", () => {
+			input.value = input.dataset.rawValue ?? input.value;
+		});
 
-		const row = el("div", "cfg-field-row");
-		const labelEl = el("label", "cfg-label", meta.label);
-		labelEl.title = meta.description;
-		row.appendChild(labelEl);
-		row.appendChild(inputWrap);
-		section.appendChild(row);
-	}
-
-	return section;
-}
-
-function buildTimingSection(): HTMLElement {
-	const section = el("div", "cfg-section");
-	const timingMeta = NUMERIC_SETTING_META.filter((m) => m.key.startsWith("timing."));
-
-	for (const meta of timingMeta) {
-		const fieldKey = meta.key.split(".")[1] as keyof AppConfig["timing"];
-		const input = el("input", "cfg-number-input") as HTMLInputElement;
-		input.type = "number";
-		input.min = String(meta.min);
-		input.step = "1";
-		input.dataset.cfgPath = meta.key;
 		input.addEventListener("change", () => {
-			const val = Number.parseInt(input.value, 10);
+			const val = parseNumericValue(input.value);
 			if (!Number.isNaN(val)) {
+				input.dataset.rawValue = String(val);
 				sendFn?.({
 					type: "config:save",
-					config: { timing: { [fieldKey]: val } },
+					config: { [sectionKey]: { [fieldKey]: val } },
 				});
 			}
 		});
@@ -270,16 +395,50 @@ function buildTimingSection(): HTMLElement {
 
 function buildPromptsSection(): HTMLElement {
 	const section = el("div", "cfg-section");
-	const promptFields: Array<{ key: keyof AppConfig["prompts"]; label: string }> = [
-		{ key: "questionDetection", label: "Question Detection" },
-		{ key: "reviewClassification", label: "Review Classification" },
-		{ key: "activitySummarization", label: "Activity Summarization" },
-		{ key: "specSummarization", label: "Spec Summarization" },
-		{ key: "mergeConflictResolution", label: "Merge Conflict Resolution" },
-		{ key: "ciFixInstruction", label: "CI Fix Instruction" },
+	const promptFields: Array<{
+		key: keyof AppConfig["prompts"];
+		label: string;
+		description: string;
+	}> = [
+		{
+			key: "questionDetection",
+			label: "Question Detection",
+			description:
+				"Prompt used to classify whether agent output is a question requiring user input",
+		},
+		{
+			key: "reviewClassification",
+			label: "Review Classification",
+			description: "Prompt used to classify code review severity level",
+		},
+		{
+			key: "activitySummarization",
+			label: "Activity Summarization",
+			description: "Prompt used to generate short summaries of recent agent activity",
+		},
+		{
+			key: "specSummarization",
+			label: "Spec Summarization",
+			description: "Prompt used to generate summary and flavor text for feature specifications",
+		},
+		{
+			key: "mergeConflictResolution",
+			label: "Merge Conflict Resolution",
+			description: "Prompt given to the agent when resolving git merge conflicts",
+		},
+		{
+			key: "ciFixInstruction",
+			label: "CI Fix Instruction",
+			description: "Prompt given to the agent when fixing failing CI checks",
+		},
+		{
+			key: "epicDecomposition",
+			label: "Epic Decomposition",
+			description: "Prompt used to decompose a large epic into smaller specifications",
+		},
 	];
 
-	for (const { key, label } of promptFields) {
+	for (const { key, label, description } of promptFields) {
 		const textarea = el("textarea", "cfg-textarea") as HTMLTextAreaElement;
 		textarea.rows = 4;
 		textarea.dataset.cfgPath = `prompts.${key}`;
@@ -301,8 +460,12 @@ function buildPromptsSection(): HTMLElement {
 
 		const row = el("div", "cfg-field-row cfg-field-row--textarea");
 		const labelEl = el("label", "cfg-label", label);
+		labelEl.title = description;
+
+		const descEl = el("div", "cfg-prompt-desc", description);
 
 		const inputWrap = el("div", "cfg-input-wrap cfg-input-wrap--textarea");
+		inputWrap.appendChild(descEl);
 		inputWrap.appendChild(textarea);
 		if (vars.length > 0) inputWrap.appendChild(varInfo);
 		inputWrap.appendChild(makeResetButton(`prompts.${key}`));
@@ -338,6 +501,13 @@ export function createConfigPanel(send: (msg: ClientMessage) => void): HTMLEleme
 	const panel = el("div", "cfg-panel");
 	panelRoot = panel;
 
+	// Close button
+	const closeBtn = el("button", "cfg-close-btn", "×");
+	closeBtn.type = "button";
+	closeBtn.title = "Close";
+	closeBtn.addEventListener("click", () => hideConfigPanel());
+	panel.appendChild(closeBtn);
+
 	// Warnings container (at top of panel)
 	const warningsContainer = el("div", "cfg-warnings");
 	warningsContainer.id = "cfg-warnings";
@@ -350,13 +520,13 @@ export function createConfigPanel(send: (msg: ClientMessage) => void): HTMLEleme
 	panel.appendChild(modelsBody);
 
 	// Limits section
-	const limitsBody = buildLimitsSection();
+	const limitsBody = buildNumericSection("limits");
 	const limitsHeader = makeSectionHeader("Limits", limitsBody);
 	panel.appendChild(limitsHeader);
 	panel.appendChild(limitsBody);
 
 	// Timing section
-	const timingBody = buildTimingSection();
+	const timingBody = buildNumericSection("timing");
 	const timingHeader = makeSectionHeader("Timing", timingBody);
 	panel.appendChild(timingHeader);
 	panel.appendChild(timingBody);
@@ -382,12 +552,27 @@ export function createConfigPanel(send: (msg: ClientMessage) => void): HTMLEleme
 	return panel;
 }
 
+export function hideConfigPanel(): void {
+	const panel = document.getElementById("config-panel");
+	const overlay = document.getElementById("config-overlay");
+	if (panel) panel.classList.add("hidden");
+	if (overlay) overlay.classList.add("hidden");
+}
+
+export function showConfigPanel(send: (msg: ClientMessage) => void): void {
+	const panel = document.getElementById("config-panel");
+	const overlay = document.getElementById("config-overlay");
+	if (panel) panel.classList.remove("hidden");
+	if (overlay) overlay.classList.remove("hidden");
+	send({ type: "config:get" });
+}
+
 export function updateConfigPanel(config: AppConfig, warnings?: ConfigWarning[]): void {
 	if (!panelRoot) return;
 
-	// Update all inputs by data-cfg-path
+	// Update all text/textarea inputs by data-cfg-path
 	const allInputs = panelRoot.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-		"[data-cfg-path]",
+		"input[data-cfg-path], textarea[data-cfg-path]",
 	);
 	for (const input of allInputs) {
 		const path = input.dataset.cfgPath;
@@ -399,7 +584,35 @@ export function updateConfigPanel(config: AppConfig, warnings?: ConfigWarning[])
 
 		const value = sectionData[key];
 		if (value !== undefined) {
-			input.value = String(value);
+			// For numeric text inputs, store raw value and display formatted
+			if (input.classList.contains("cfg-number-input")) {
+				const numVal = Number(value);
+				(input as HTMLInputElement).dataset.rawValue = String(numVal);
+				// Only format if the input is not focused
+				if (document.activeElement !== input) {
+					input.value = formatNumber(numVal);
+				} else {
+					input.value = String(numVal);
+				}
+			} else {
+				input.value = String(value);
+			}
+		}
+	}
+
+	// Update all effort selects
+	const allSelects = panelRoot.querySelectorAll<HTMLSelectElement>("select[data-cfg-path]");
+	for (const select of allSelects) {
+		const path = select.dataset.cfgPath;
+		if (!path) continue;
+
+		const [section, key] = path.split(".") as [keyof AppConfig, string];
+		const sectionData = config[section] as unknown as Record<string, unknown> | undefined;
+		if (!sectionData) continue;
+
+		const value = sectionData[key];
+		if (value !== undefined) {
+			select.value = String(value);
 		}
 	}
 

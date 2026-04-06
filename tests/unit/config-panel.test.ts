@@ -44,22 +44,52 @@ describe("T013: NUMERIC_SETTING_META covers all limit and timing fields", () => 
 		}
 	});
 
-	test("every NUMERIC_SETTING_META min is positive", () => {
+	test("every NUMERIC_SETTING_META min is non-negative", () => {
 		for (const meta of NUMERIC_SETTING_META) {
-			expect(meta.min).toBeGreaterThan(0);
+			expect(meta.min).toBeGreaterThanOrEqual(0);
 		}
 	});
 });
 
 // ── T024: Config panel models section data ────────────────────────────
 
-describe("T024: ModelConfig fields are all non-empty strings in defaults", () => {
-	test("all 4 model fields have non-empty default values", () => {
+describe("T024: ModelConfig fields are all strings in defaults", () => {
+	const REQUIRED_MODEL_KEYS = [
+		"questionDetection",
+		"reviewClassification",
+		"activitySummarization",
+		"specSummarization",
+	] as const;
+
+	const OPTIONAL_MODEL_KEYS = [
+		"epicDecomposition",
+		"mergeConflictResolution",
+		"ciFix",
+		"specify",
+		"clarify",
+		"plan",
+		"tasks",
+		"implement",
+		"review",
+		"implementReview",
+		"commitPushPr",
+	] as const;
+
+	test("all 15 model fields exist in defaults", () => {
 		const modelKeys = Object.keys(DEFAULT_CONFIG.models) as (keyof AppConfig["models"])[];
-		expect(modelKeys).toHaveLength(4);
-		for (const key of modelKeys) {
+		expect(modelKeys).toHaveLength(15);
+	});
+
+	test("required model fields have non-empty default values", () => {
+		for (const key of REQUIRED_MODEL_KEYS) {
 			expect(typeof DEFAULT_CONFIG.models[key]).toBe("string");
 			expect(DEFAULT_CONFIG.models[key].length).toBeGreaterThan(0);
+		}
+	});
+
+	test("optional model fields default to empty strings", () => {
+		for (const key of OPTIONAL_MODEL_KEYS) {
+			expect(DEFAULT_CONFIG.models[key]).toBe("");
 		}
 	});
 });
@@ -91,9 +121,9 @@ describe("T030: PROMPT_VARIABLES covers all PromptConfig keys", () => {
 		}
 	});
 
-	test("all 6 prompt fields have non-empty default values", () => {
+	test("all 7 prompt fields have non-empty default values", () => {
 		const promptKeys = Object.keys(DEFAULT_CONFIG.prompts) as (keyof AppConfig["prompts"])[];
-		expect(promptKeys).toHaveLength(6);
+		expect(promptKeys).toHaveLength(7);
 		for (const key of promptKeys) {
 			expect(typeof DEFAULT_CONFIG.prompts[key]).toBe("string");
 			expect(DEFAULT_CONFIG.prompts[key].length).toBeGreaterThan(0);
