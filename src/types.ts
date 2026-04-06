@@ -419,6 +419,7 @@ export type ServerMessage =
 	  }
 	| { type: "config:state"; config: AppConfig; warnings?: ConfigWarning[] }
 	| { type: "config:error"; errors: ConfigValidationError[] }
+	| { type: "purge:progress"; step: string; current: number; total: number }
 	| { type: "purge:complete"; warnings: string[] }
 	| { type: "log"; text: string }
 	| { type: "error"; message: string };

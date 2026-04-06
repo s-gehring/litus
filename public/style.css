@@ -932,6 +932,64 @@ body::-webkit-scrollbar-track {
   border-color: rgba(220, 38, 38, 0.7);
 }
 
+.purge-progress {
+  position: absolute;
+  inset: 0;
+  background: var(--bg, #1a1a2e);
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  gap: 12px;
+  z-index: 10;
+}
+
+.purge-progress-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ef4444;
+}
+
+.purge-progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.purge-progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: #ef4444;
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.purge-progress-step {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #8888aa);
+  min-height: 1.2em;
+}
+
+.purge-progress-log {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #8888aa);
+  font-family: monospace;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius, 4px);
+  padding: 8px;
+  max-height: 200px;
+}
+
+.purge-progress-log div {
+  padding: 1px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .cfg-warning-toast {
   position: fixed;
   bottom: 20px;

@@ -530,6 +530,12 @@ async function handlePurgeAll(): Promise<void> {
 	const warnings: string[] = [];
 
 	// 1. Kill all running orchestrators
+	broadcast({
+		type: "purge:progress",
+		step: "Stopping running workflows...",
+		current: 0,
+		total: 0,
+	});
 	for (const [id, orch] of orchestrators) {
 		try {
 			const w = orch.getEngine().getWorkflow();
@@ -549,6 +555,7 @@ async function handlePurgeAll(): Promise<void> {
 	}
 
 	// 2. Load all workflows to find worktrees and branches to clean up
+	broadcast({ type: "purge:progress", step: "Loading workflows...", current: 0, total: 0 });
 	const allWorkflows = await sharedStore.loadAll();
 
 	// Group by target repository for git cleanup
@@ -563,16 +570,31 @@ async function handlePurgeAll(): Promise<void> {
 		if (w.worktreePath) {
 			entry.worktreePaths.push(w.worktreePath);
 		}
-		// Collect branches to delete (feature branch or worktree branch, skip "master"/"main")
 		const branch = w.featureBranch ?? w.worktreeBranch;
 		if (branch && !["master", "main"].includes(branch)) {
 			entry.branches.push(branch);
 		}
 	}
 
+	// Count total operations for progress
+	let totalOps = 0;
+	for (const { worktreePaths, branches } of repoCleanup.values()) {
+		totalOps += worktreePaths.length + branches.length;
+	}
+	// +1 for prune per repo, +1 for persistence wipe
+	totalOps += repoCleanup.size + 1;
+	let completedOps = 0;
+
 	// 3. Remove worktrees and delete branches per repository
 	for (const [repo, { worktreePaths, branches }] of repoCleanup) {
 		for (const wtPath of worktreePaths) {
+			const shortPath = wtPath.split(/[/\\]/).slice(-2).join("/");
+			broadcast({
+				type: "purge:progress",
+				step: `Removing worktree ${shortPath}`,
+				current: completedOps,
+				total: totalOps,
+			});
 			try {
 				const result = await gitSpawn(["git", "worktree", "remove", wtPath, "--force"], {
 					cwd: repo,
@@ -583,12 +605,25 @@ async function handlePurgeAll(): Promise<void> {
 			} catch (err) {
 				warnings.push(`Worktree remove error (${wtPath}): ${err}`);
 			}
+			completedOps++;
 		}
 
-		// Prune worktree metadata for any stale entries
+		broadcast({
+			type: "purge:progress",
+			step: "Pruning worktree metadata",
+			current: completedOps,
+			total: totalOps,
+		});
 		await gitSpawn(["git", "worktree", "prune"], { cwd: repo });
+		completedOps++;
 
 		for (const branch of branches) {
+			broadcast({
+				type: "purge:progress",
+				step: `Deleting branch ${branch}`,
+				current: completedOps,
+				total: totalOps,
+			});
 			try {
 				const result = await gitSpawn(["git", "branch", "-D", branch], { cwd: repo });
 				if (result.code !== 0 && !result.stderr.includes("not found")) {
@@ -597,13 +632,21 @@ async function handlePurgeAll(): Promise<void> {
 			} catch (err) {
 				warnings.push(`Branch delete error (${branch}): ${err}`);
 			}
+			completedOps++;
 		}
 	}
 
 	// 4. Wipe persistence: workflows, epics, audit logs
+	broadcast({
+		type: "purge:progress",
+		step: "Deleting persistence files",
+		current: completedOps,
+		total: totalOps,
+	});
 	await sharedStore.removeAll();
 	await sharedEpicStore.removeAll();
 	sharedAuditLogger.removeAll();
+	completedOps++;
 
 	console.log(
 		`[purge] All data purged (${allWorkflows.length} workflows, ${repoCleanup.size} repos)`,

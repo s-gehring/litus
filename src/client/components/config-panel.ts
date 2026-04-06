@@ -556,7 +556,52 @@ export function createConfigPanel(send: (msg: ClientMessage) => void): HTMLEleme
 	});
 	panel.appendChild(purgeBtn);
 
+	// Purge progress overlay (hidden by default)
+	const progressOverlay = document.createElement("div");
+	progressOverlay.id = "purge-progress";
+	progressOverlay.className = "purge-progress hidden";
+	progressOverlay.innerHTML = `
+		<div class="purge-progress-title">Purging all data...</div>
+		<div class="purge-progress-bar-track">
+			<div class="purge-progress-bar-fill" id="purge-bar-fill"></div>
+		</div>
+		<div class="purge-progress-step" id="purge-step-label"></div>
+		<div class="purge-progress-log" id="purge-log"></div>
+	`;
+	panel.appendChild(progressOverlay);
+
 	return panel;
+}
+
+export function showPurgeProgress(): void {
+	const el = document.getElementById("purge-progress");
+	if (el) el.classList.remove("hidden");
+	// Clear previous log
+	const log = document.getElementById("purge-log");
+	if (log) log.textContent = "";
+}
+
+export function updatePurgeProgress(step: string, current: number, total: number): void {
+	const fill = document.getElementById("purge-bar-fill") as HTMLElement | null;
+	const label = document.getElementById("purge-step-label");
+	const log = document.getElementById("purge-log");
+
+	if (label) label.textContent = step;
+	if (fill) {
+		const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+		fill.style.width = `${pct}%`;
+	}
+	if (log) {
+		const line = document.createElement("div");
+		line.textContent = step;
+		log.appendChild(line);
+		log.scrollTop = log.scrollHeight;
+	}
+}
+
+export function hidePurgeProgress(): void {
+	const el = document.getElementById("purge-progress");
+	if (el) el.classList.add("hidden");
 }
 
 export function hideConfigPanel(): void {

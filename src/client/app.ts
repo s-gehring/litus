@@ -11,8 +11,11 @@ import type {
 import {
 	createConfigPanel,
 	hideConfigPanel,
+	hidePurgeProgress,
 	showConfigPanel,
+	showPurgeProgress,
 	updateConfigPanel,
+	updatePurgeProgress,
 } from "./components/config-panel";
 import { createModal } from "./components/creation-modal";
 import { renderEpicTree } from "./components/epic-tree";
@@ -456,7 +459,15 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "purge:progress": {
+			showPurgeProgress();
+			updatePurgeProgress(msg.step, msg.current, msg.total);
+			break;
+		}
+
 		case "purge:complete": {
+			hidePurgeProgress();
+			hideConfigPanel();
 			// Clear all client state
 			workflows.clear();
 			epics.clear();
