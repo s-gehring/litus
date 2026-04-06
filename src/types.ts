@@ -10,7 +10,14 @@ export interface ModelConfig {
 	epicDecomposition: string;
 	mergeConflictResolution: string;
 	ciFix: string;
-	mainPipeline: string;
+	specify: string;
+	clarify: string;
+	plan: string;
+	tasks: string;
+	implement: string;
+	review: string;
+	implementReview: string;
+	commitPushPr: string;
 }
 
 export type EffortLevel = "low" | "medium" | "high" | "max";
@@ -25,7 +32,14 @@ export interface EffortConfig {
 	epicDecomposition: EffortLevel;
 	mergeConflictResolution: EffortLevel;
 	ciFix: EffortLevel;
-	mainPipeline: EffortLevel;
+	specify: EffortLevel;
+	clarify: EffortLevel;
+	plan: EffortLevel;
+	tasks: EffortLevel;
+	implement: EffortLevel;
+	review: EffortLevel;
+	implementReview: EffortLevel;
+	commitPushPr: EffortLevel;
 }
 
 export interface PromptConfig {

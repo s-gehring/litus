@@ -27,7 +27,14 @@ export const DEFAULT_CONFIG: AppConfig = {
 		epicDecomposition: "",
 		mergeConflictResolution: "",
 		ciFix: "",
-		mainPipeline: "",
+		specify: "",
+		clarify: "",
+		plan: "",
+		tasks: "",
+		implement: "",
+		review: "",
+		implementReview: "",
+		commitPushPr: "",
 	},
 	efforts: {
 		questionDetection: "low",
@@ -37,7 +44,14 @@ export const DEFAULT_CONFIG: AppConfig = {
 		epicDecomposition: "medium",
 		mergeConflictResolution: "medium",
 		ciFix: "medium",
-		mainPipeline: "medium",
+		specify: "medium",
+		clarify: "medium",
+		plan: "medium",
+		tasks: "medium",
+		implement: "medium",
+		review: "medium",
+		implementReview: "medium",
+		commitPushPr: "medium",
 	},
 	prompts: {
 		questionDetection:
@@ -393,7 +407,14 @@ export class ConfigStore {
 			"epicDecomposition",
 			"mergeConflictResolution",
 			"ciFix",
-			"mainPipeline",
+			"specify",
+			"clarify",
+			"plan",
+			"tasks",
+			"implement",
+			"review",
+			"implementReview",
+			"commitPushPr",
 		]);
 
 		if (partial.models) {

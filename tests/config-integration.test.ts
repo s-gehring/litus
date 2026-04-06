@@ -65,14 +65,8 @@ describe("T004: survive simulated restart", () => {
 		const original = new ConfigStore(path);
 		original.save({
 			models: {
+				...DEFAULT_CONFIG.models,
 				questionDetection: "my-custom-model",
-				reviewClassification: "claude-haiku-4-5-20251001",
-				activitySummarization: "claude-haiku-4-5-20251001",
-				specSummarization: "claude-haiku-4-5-20251001",
-				epicDecomposition: "",
-				mergeConflictResolution: "",
-				ciFix: "",
-				mainPipeline: "",
 			},
 			timing: {
 				ciPollIntervalMs: 30_000,

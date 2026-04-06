@@ -725,7 +725,7 @@ body::-webkit-scrollbar-track {
   border-left: 1px solid var(--border);
   overflow-y: auto;
   z-index: 100;
-  padding: 20px;
+  padding: 48px 20px 20px;
   box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
@@ -980,6 +980,18 @@ body::-webkit-scrollbar-track {
 .cfg-effort-select:focus {
   outline: none;
   border-color: var(--accent-blue);
+}
+
+.cfg-effort-label {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.cfg-prompt-desc {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-bottom: 4px;
 }
 
 @media (max-width: 768px) {

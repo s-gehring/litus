@@ -243,7 +243,14 @@ describe("T003: reset all", () => {
 				epicDecomposition: "",
 				mergeConflictResolution: "",
 				ciFix: "",
-				mainPipeline: "",
+				specify: "",
+				clarify: "",
+				plan: "",
+				tasks: "",
+				implement: "",
+				review: "",
+				implementReview: "",
+				commitPushPr: "",
 			},
 		});
 
@@ -338,7 +345,14 @@ describe("T005: non-empty string check", () => {
 				epicDecomposition: "",
 				mergeConflictResolution: "",
 				ciFix: "",
-				mainPipeline: "",
+				specify: "",
+				clarify: "",
+				plan: "",
+				tasks: "",
+				implement: "",
+				review: "",
+				implementReview: "",
+				commitPushPr: "",
 			},
 		});
 
@@ -439,37 +453,25 @@ describe("T022: optional model keys allow empty strings", () => {
 		const store = new ConfigStore(configPath(dir));
 		const { errors } = store.save({
 			models: {
-				questionDetection: "claude-haiku-4-5-20251001",
-				reviewClassification: "claude-haiku-4-5-20251001",
-				activitySummarization: "claude-haiku-4-5-20251001",
-				specSummarization: "claude-haiku-4-5-20251001",
+				...DEFAULT_CONFIG.models,
 				epicDecomposition: "",
-				mergeConflictResolution: "",
-				ciFix: "",
-				mainPipeline: "",
 			},
 		});
 
 		expect(errors).toHaveLength(0);
 	});
 
-	test("save with mainPipeline = 'custom-model' succeeds", () => {
+	test("save with implement = 'custom-model' succeeds", () => {
 		const store = new ConfigStore(configPath(dir));
 		const { errors } = store.save({
 			models: {
-				questionDetection: "claude-haiku-4-5-20251001",
-				reviewClassification: "claude-haiku-4-5-20251001",
-				activitySummarization: "claude-haiku-4-5-20251001",
-				specSummarization: "claude-haiku-4-5-20251001",
-				epicDecomposition: "",
-				mergeConflictResolution: "",
-				ciFix: "",
-				mainPipeline: "custom-model",
+				...DEFAULT_CONFIG.models,
+				implement: "custom-model",
 			},
 		});
 
 		expect(errors).toHaveLength(0);
-		expect(store.get().models.mainPipeline).toBe("custom-model");
+		expect(store.get().models.implement).toBe("custom-model");
 	});
 });
 
@@ -488,14 +490,9 @@ describe("T022: effort validation", () => {
 		const store = new ConfigStore(configPath(dir));
 		const { errors } = store.save({
 			efforts: {
+				...DEFAULT_CONFIG.efforts,
 				questionDetection: "high",
-				reviewClassification: "low",
-				activitySummarization: "low",
-				specSummarization: "low",
 				epicDecomposition: "max",
-				mergeConflictResolution: "medium",
-				ciFix: "medium",
-				mainPipeline: "medium",
 			},
 		});
 
@@ -508,14 +505,8 @@ describe("T022: effort validation", () => {
 		const store = new ConfigStore(configPath(dir));
 		const { errors } = store.save({
 			efforts: {
+				...DEFAULT_CONFIG.efforts,
 				questionDetection: "invalid" as "low",
-				reviewClassification: "low",
-				activitySummarization: "low",
-				specSummarization: "low",
-				epicDecomposition: "medium",
-				mergeConflictResolution: "medium",
-				ciFix: "medium",
-				mainPipeline: "medium",
 			},
 		});
 
@@ -542,7 +533,7 @@ describe("T022: new defaults include efforts section", () => {
 
 		expect(config.efforts.questionDetection).toBe("low");
 		expect(config.efforts.epicDecomposition).toBe("medium");
-		expect(config.efforts.mainPipeline).toBe("medium");
+		expect(config.efforts.implement).toBe("medium");
 	});
 
 	test("get() returns new model keys with empty string defaults", () => {
@@ -552,7 +543,9 @@ describe("T022: new defaults include efforts section", () => {
 		expect(config.models.epicDecomposition).toBe("");
 		expect(config.models.mergeConflictResolution).toBe("");
 		expect(config.models.ciFix).toBe("");
-		expect(config.models.mainPipeline).toBe("");
+		expect(config.models.specify).toBe("");
+		expect(config.models.implement).toBe("");
+		expect(config.models.commitPushPr).toBe("");
 	});
 
 	test("get() returns new limits and timing defaults", () => {

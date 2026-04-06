@@ -206,15 +206,35 @@ function buildModelsSection(): HTMLElement {
 	section.appendChild(classificationHeading);
 	section.appendChild(classificationDesc);
 
-	const classificationFields: Array<{ key: keyof AppConfig["models"]; label: string }> = [
-		{ key: "questionDetection", label: "Question Detection" },
-		{ key: "reviewClassification", label: "Review Classification" },
-		{ key: "activitySummarization", label: "Activity Summarization" },
-		{ key: "specSummarization", label: "Spec Summarization" },
+	const classificationFields: Array<{
+		key: keyof AppConfig["models"];
+		label: string;
+		description: string;
+	}> = [
+		{
+			key: "questionDetection",
+			label: "Question Detection",
+			description: "Classifies whether agent output contains a question",
+		},
+		{
+			key: "reviewClassification",
+			label: "Review Classification",
+			description: "Classifies code review severity (critical/major/minor)",
+		},
+		{
+			key: "activitySummarization",
+			label: "Activity Summarization",
+			description: "Generates short summaries of recent agent activity",
+		},
+		{
+			key: "specSummarization",
+			label: "Spec Summarization",
+			description: "Generates summary and flavor text for specifications",
+		},
 	];
 
-	for (const { key, label } of classificationFields) {
-		section.appendChild(buildModelRow(key, label, "model name"));
+	for (const { key, label, description } of classificationFields) {
+		section.appendChild(buildModelRow(key, label, "model name", description));
 	}
 
 	// Workflow Step Models sub-group
@@ -231,15 +251,46 @@ function buildModelsSection(): HTMLElement {
 	section.appendChild(workflowHeading);
 	section.appendChild(workflowDesc);
 
-	const workflowFields: Array<{ key: keyof AppConfig["models"]; label: string }> = [
-		{ key: "epicDecomposition", label: "Epic Decomposition" },
-		{ key: "mergeConflictResolution", label: "Merge Conflict Resolution" },
-		{ key: "ciFix", label: "CI Fix" },
-		{ key: "mainPipeline", label: "Main Pipeline" },
+	const workflowFields: Array<{
+		key: keyof AppConfig["models"];
+		label: string;
+		description: string;
+	}> = [
+		{ key: "specify", label: "Specify", description: "Generates the feature specification" },
+		{ key: "clarify", label: "Clarify", description: "Asks clarifying questions about the spec" },
+		{ key: "plan", label: "Plan", description: "Creates the implementation plan" },
+		{ key: "tasks", label: "Tasks", description: "Generates task breakdown from the plan" },
+		{
+			key: "implement",
+			label: "Implement",
+			description: "Implements code changes for each task",
+		},
+		{ key: "review", label: "Review", description: "Reviews the implemented code changes" },
+		{
+			key: "implementReview",
+			label: "Implement Review",
+			description: "Applies fixes from review feedback",
+		},
+		{
+			key: "commitPushPr",
+			label: "Commit / Push / PR",
+			description: "Commits changes and opens a pull request",
+		},
+		{ key: "ciFix", label: "CI Fix", description: "Fixes failing CI checks" },
+		{
+			key: "epicDecomposition",
+			label: "Epic Decomposition",
+			description: "Decomposes epics into smaller specifications",
+		},
+		{
+			key: "mergeConflictResolution",
+			label: "Merge Conflict Resolution",
+			description: "Resolves git merge conflicts automatically",
+		},
 	];
 
-	for (const { key, label } of workflowFields) {
-		section.appendChild(buildModelRow(key, label, "empty = CLI default"));
+	for (const { key, label, description } of workflowFields) {
+		section.appendChild(buildModelRow(key, label, "empty = CLI default", description));
 	}
 
 	return section;
@@ -249,9 +300,11 @@ function buildModelRow(
 	key: keyof AppConfig["models"],
 	label: string,
 	placeholder: string,
+	description?: string,
 ): HTMLElement {
 	const row = el("div", "cfg-field-row");
 	const labelEl = el("label", "cfg-label", label);
+	if (description) labelEl.title = description;
 
 	const input = el("input", "cfg-text-input") as HTMLInputElement;
 	input.type = "text";
@@ -264,6 +317,7 @@ function buildModelRow(
 		});
 	});
 
+	const effortLabel = el("span", "cfg-effort-label", "Effort:");
 	const effortSelect = makeEffortSelect(key);
 
 	const resetBtn = el("button", "cfg-reset-btn", "↺");
@@ -276,6 +330,7 @@ function buildModelRow(
 
 	const inputWrap = el("div", "cfg-input-wrap cfg-model-input-wrap");
 	inputWrap.appendChild(input);
+	inputWrap.appendChild(effortLabel);
 	inputWrap.appendChild(effortSelect);
 	inputWrap.appendChild(resetBtn);
 
@@ -340,17 +395,50 @@ function buildNumericSection(sectionKey: string): HTMLElement {
 
 function buildPromptsSection(): HTMLElement {
 	const section = el("div", "cfg-section");
-	const promptFields: Array<{ key: keyof AppConfig["prompts"]; label: string }> = [
-		{ key: "questionDetection", label: "Question Detection" },
-		{ key: "reviewClassification", label: "Review Classification" },
-		{ key: "activitySummarization", label: "Activity Summarization" },
-		{ key: "specSummarization", label: "Spec Summarization" },
-		{ key: "mergeConflictResolution", label: "Merge Conflict Resolution" },
-		{ key: "ciFixInstruction", label: "CI Fix Instruction" },
-		{ key: "epicDecomposition", label: "Epic Decomposition" },
+	const promptFields: Array<{
+		key: keyof AppConfig["prompts"];
+		label: string;
+		description: string;
+	}> = [
+		{
+			key: "questionDetection",
+			label: "Question Detection",
+			description:
+				"Prompt used to classify whether agent output is a question requiring user input",
+		},
+		{
+			key: "reviewClassification",
+			label: "Review Classification",
+			description: "Prompt used to classify code review severity level",
+		},
+		{
+			key: "activitySummarization",
+			label: "Activity Summarization",
+			description: "Prompt used to generate short summaries of recent agent activity",
+		},
+		{
+			key: "specSummarization",
+			label: "Spec Summarization",
+			description: "Prompt used to generate summary and flavor text for feature specifications",
+		},
+		{
+			key: "mergeConflictResolution",
+			label: "Merge Conflict Resolution",
+			description: "Prompt given to the agent when resolving git merge conflicts",
+		},
+		{
+			key: "ciFixInstruction",
+			label: "CI Fix Instruction",
+			description: "Prompt given to the agent when fixing failing CI checks",
+		},
+		{
+			key: "epicDecomposition",
+			label: "Epic Decomposition",
+			description: "Prompt used to decompose a large epic into smaller specifications",
+		},
 	];
 
-	for (const { key, label } of promptFields) {
+	for (const { key, label, description } of promptFields) {
 		const textarea = el("textarea", "cfg-textarea") as HTMLTextAreaElement;
 		textarea.rows = 4;
 		textarea.dataset.cfgPath = `prompts.${key}`;
@@ -372,8 +460,12 @@ function buildPromptsSection(): HTMLElement {
 
 		const row = el("div", "cfg-field-row cfg-field-row--textarea");
 		const labelEl = el("label", "cfg-label", label);
+		labelEl.title = description;
+
+		const descEl = el("div", "cfg-prompt-desc", description);
 
 		const inputWrap = el("div", "cfg-input-wrap cfg-input-wrap--textarea");
+		inputWrap.appendChild(descEl);
 		inputWrap.appendChild(textarea);
 		if (vars.length > 0) inputWrap.appendChild(varInfo);
 		inputWrap.appendChild(makeResetButton(`prompts.${key}`));

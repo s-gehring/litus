@@ -15,9 +15,20 @@ import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
 import { Summarizer } from "./summarizer";
-import type { EffortLevel, PipelineStepName, Question, Workflow } from "./types";
+import type { EffortLevel, ModelConfig, PipelineStepName, Question, Workflow } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
+
+const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {
+	specify: "specify",
+	clarify: "clarify",
+	plan: "plan",
+	tasks: "tasks",
+	implement: "implement",
+	review: "review",
+	"implement-review": "implementReview",
+	"commit-push-pr": "commitPushPr",
+};
 
 export interface PipelineCallbacks {
 	onStepChange: (
@@ -282,7 +293,15 @@ export class PipelineOrchestrator {
 		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
 
-		this.runStep(workflow, step.prompt, cwd);
+		const config = configStore.get();
+		const configKey = STEP_CONFIG_KEY[step.name];
+		this.runStep(
+			workflow,
+			step.prompt,
+			cwd,
+			configKey ? config.models[configKey] : undefined,
+			configKey ? config.efforts[configKey] : undefined,
+		);
 	}
 
 	pause(workflowId: string): void {
@@ -345,7 +364,15 @@ export class PipelineOrchestrator {
 				this.buildStepEnv(workflow),
 			);
 		} else {
-			this.runStep(workflow, step.prompt, cwd);
+			const config = configStore.get();
+			const configKey = STEP_CONFIG_KEY[step.name];
+			this.runStep(
+				workflow,
+				step.prompt,
+				cwd,
+				configKey ? config.models[configKey] : undefined,
+				configKey ? config.efforts[configKey] : undefined,
+			);
 		}
 	}
 
@@ -445,12 +472,13 @@ export class PipelineOrchestrator {
 
 		const cwd = workflow.worktreePath || process.cwd();
 		const config = configStore.get();
+		const configKey = STEP_CONFIG_KEY[step.name];
 		this.runStep(
 			workflow,
 			step.prompt,
 			cwd,
-			config.models.mainPipeline,
-			config.efforts.mainPipeline,
+			configKey ? config.models[configKey] : undefined,
+			configKey ? config.efforts[configKey] : undefined,
 		);
 	}
 
