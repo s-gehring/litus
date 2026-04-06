@@ -277,16 +277,23 @@ describe("Merge & Sync Pipeline Routing", () => {
 			mergePr: mockMergePr,
 			resolveConflicts: mockResolveConflicts,
 			syncRepo: mockSyncRepo,
+			runSetupChecks: async () => ({
+				passed: true,
+				checks: [],
+				requiredFailures: [],
+				optionalWarnings: [],
+			}),
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});
 
 	async function advanceToMonitorCi() {
 		await orchestrator.startPipeline("test");
+		await new Promise((r) => setTimeout(r, 0));
 		const wf = getWf(engine);
 		wf.prUrl = "https://github.com/owner/repo/pull/42";
 
-		// Complete steps 0-4 (specify → implement)
+		// Complete steps 1-5 (specify → implement)
 		for (let i = 0; i < 5; i++) {
 			cli.getLastCallbacks().onComplete();
 		}

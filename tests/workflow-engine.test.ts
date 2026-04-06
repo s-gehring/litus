@@ -217,13 +217,14 @@ describe("WorkflowEngine", () => {
 	});
 
 	describe("pipeline fields", () => {
-		test("createWorkflow initializes steps array with 12 entries", async () => {
+		test("createWorkflow initializes steps array with 13 entries", async () => {
 			const w = await engine.createWorkflow("Build a login page");
-			expect(w.steps).toHaveLength(12);
-			expect(w.steps[0].name).toBe("specify");
-			expect(w.steps[7].name).toBe("commit-push-pr");
-			expect(w.steps[10].name).toBe("merge-pr");
-			expect(w.steps[11].name).toBe("sync-repo");
+			expect(w.steps).toHaveLength(13);
+			expect(w.steps[0].name).toBe("setup");
+			expect(w.steps[1].name).toBe("specify");
+			expect(w.steps[8].name).toBe("commit-push-pr");
+			expect(w.steps[11].name).toBe("merge-pr");
+			expect(w.steps[12].name).toBe("sync-repo");
 		});
 
 		test("all steps start as pending", async () => {
@@ -235,13 +236,13 @@ describe("WorkflowEngine", () => {
 
 		test("specify step prompt includes specification text", async () => {
 			const w = await engine.createWorkflow("Build a login page");
-			expect(w.steps[0].prompt).toBe("/speckit.specify Build a login page");
+			expect(w.steps[1].prompt).toBe("/speckit.specify Build a login page");
 		});
 
 		test("non-specify steps have bare prompts", async () => {
 			const w = await engine.createWorkflow("test");
-			expect(w.steps[1].prompt).toBe("/speckit.clarify");
-			expect(w.steps[2].prompt).toBe("/speckit.plan");
+			expect(w.steps[2].prompt).toBe("/speckit.clarify");
+			expect(w.steps[3].prompt).toBe("/speckit.plan");
 		});
 
 		test("currentStepIndex starts at 0", async () => {

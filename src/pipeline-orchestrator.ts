@@ -14,9 +14,16 @@ import {
 import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
+import { runSetupChecks as defaultRunSetupChecks } from "./setup-checker";
 import { Summarizer } from "./summarizer";
-import { runSetupChecks } from "./setup-checker";
-import type { EffortLevel, ModelConfig, PipelineStepName, Question, Workflow } from "./types";
+import type {
+	EffortLevel,
+	ModelConfig,
+	PipelineStepName,
+	Question,
+	SetupResult,
+	Workflow,
+} from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
 
@@ -62,6 +69,7 @@ export interface PipelineDeps {
 	mergePr?: typeof defaultMergePr;
 	resolveConflicts?: typeof defaultResolveConflicts;
 	syncRepo?: typeof defaultSyncRepo;
+	runSetupChecks?: (targetDir: string) => Promise<SetupResult>;
 }
 
 const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
@@ -88,6 +96,7 @@ export class PipelineOrchestrator {
 	private mergePrFn: typeof defaultMergePr;
 	private resolveConflictsFn: typeof defaultResolveConflicts;
 	private syncRepoFn: typeof defaultSyncRepo;
+	private runSetupChecksFn: (targetDir: string) => Promise<SetupResult>;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -100,6 +109,7 @@ export class PipelineOrchestrator {
 		this.mergePrFn = deps?.mergePr ?? defaultMergePr;
 		this.resolveConflictsFn = deps?.resolveConflicts ?? defaultResolveConflicts;
 		this.syncRepoFn = deps?.syncRepo ?? defaultSyncRepo;
+		this.runSetupChecksFn = deps?.runSetupChecks ?? defaultRunSetupChecks;
 		this.callbacks = callbacks;
 	}
 
@@ -527,12 +537,10 @@ export class PipelineOrchestrator {
 	private runSetup(workflow: Workflow): void {
 		const targetDir = workflow.targetRepository || process.cwd();
 
-		runSetupChecks(targetDir)
+		this.runSetupChecksFn(targetDir)
 			.then((result) => {
 				const wf = this.engine.getWorkflow();
 				if (!wf || wf.id !== workflow.id) return;
-
-				const step = wf.steps[wf.currentStepIndex];
 
 				// Log all check results as output
 				for (const check of result.checks) {
@@ -546,21 +554,14 @@ export class PipelineOrchestrator {
 
 				if (!result.passed) {
 					// Required checks failed — halt with all failures
-					const errors = result.requiredFailures
-						.map((f) => `• ${f.name}: ${f.error}`)
-						.join("\n");
-					this.handleStepError(
-						wf.id,
-						`Setup failed — fix the following and retry:\n${errors}`,
-					);
+					const errors = result.requiredFailures.map((f) => `• ${f.name}: ${f.error}`).join("\n");
+					this.handleStepError(wf.id, `Setup failed — fix the following and retry:\n${errors}`);
 					return;
 				}
 
 				if (result.optionalWarnings.length > 0) {
 					// Optional warnings — ask user to skip or fix
-					const warnings = result.optionalWarnings
-						.map((w) => `• ${w.name}: ${w.error}`)
-						.join("\n");
+					const warnings = result.optionalWarnings.map((w) => `• ${w.name}: ${w.error}`).join("\n");
 					this.pauseForQuestion(wf.id, {
 						id: `setup-warnings-${Date.now()}`,
 						content: `Optional setup warnings:\n${warnings}\n\nYou can continue without fixing these. Type "skip" to proceed or fix the issues and retry.`,

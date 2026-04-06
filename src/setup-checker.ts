@@ -26,7 +26,10 @@ export async function checkGitInstalled(): Promise<SetupCheckResult> {
 	return {
 		name: "Git installed",
 		passed: result.code === 0,
-		error: result.code !== 0 ? "git is not installed or not on PATH. Install it from https://git-scm.com/" : undefined,
+		error:
+			result.code !== 0
+				? "git is not installed or not on PATH. Install it from https://git-scm.com/"
+				: undefined,
 		required: true,
 	};
 }
@@ -68,7 +71,10 @@ export async function checkGhInstalled(): Promise<SetupCheckResult> {
 	return {
 		name: "GitHub CLI installed",
 		passed: result.code === 0,
-		error: result.code !== 0 ? "gh CLI is not installed or not on PATH. Install it from https://cli.github.com/" : undefined,
+		error:
+			result.code !== 0
+				? "gh CLI is not installed or not on PATH. Install it from https://cli.github.com/"
+				: undefined,
 		required: true,
 	};
 }
@@ -102,7 +108,10 @@ export async function checkGhAuth(targetDir: string): Promise<SetupCheckResult> 
 	return {
 		name: "GitHub CLI authenticated",
 		passed: result.code === 0,
-		error: result.code !== 0 ? `gh is not authenticated for ${hostname}. Run: gh auth login --hostname ${hostname}` : undefined,
+		error:
+			result.code !== 0
+				? `gh is not authenticated for ${hostname}. Run: gh auth login --hostname ${hostname}`
+				: undefined,
 		required: true,
 	};
 }
@@ -141,7 +150,10 @@ export async function checkClaudeCli(): Promise<SetupCheckResult> {
 	return {
 		name: "Claude CLI installed",
 		passed: result.code === 0,
-		error: result.code !== 0 ? "claude CLI is not installed or not on PATH. Install it from https://docs.anthropic.com/en/docs/claude-code" : undefined,
+		error:
+			result.code !== 0
+				? "claude CLI is not installed or not on PATH. Install it from https://docs.anthropic.com/en/docs/claude-code"
+				: undefined,
 		required: true,
 	};
 }

@@ -245,27 +245,43 @@ describe("PipelineOrchestrator", () => {
 			summarizer,
 			auditLogger,
 			workflowStore: store,
+			runSetupChecks: async () => ({
+				passed: true,
+				checks: [],
+				requiredFailures: [],
+				optionalWarnings: [],
+			}),
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});
 
+	/** Start pipeline and flush microtasks so the mocked setup step auto-completes */
+	async function startAndFlush(spec: string, targetRepository?: string) {
+		const wf = await orchestrator.startPipeline(spec, targetRepository);
+		await new Promise((r) => setTimeout(r, 0));
+		return wf;
+	}
+
 	// T009: Step sequencing
 	describe("step sequencing", () => {
-		test("startPipeline creates workflow and starts first step", async () => {
-			await orchestrator.startPipeline("Build a login page");
+		test("startPipeline creates workflow and starts first step (setup)", async () => {
+			await startAndFlush("Build a login page");
 			const wf = getWf(engine);
 
 			expect(wf).not.toBeNull();
-			expect(wf.steps[0].status).toBe("running");
-			expect(wf.currentStepIndex).toBe(0);
+			// Setup auto-completed, now specify (index 1) is running
+			expect(wf.steps[0].status).toBe("completed");
+			expect(wf.steps[1].status).toBe("running");
+			expect(wf.currentStepIndex).toBe(1);
 			expect(cli._startCalls.length).toBe(1);
 		});
 
-		test("pipeline has 12 steps in correct order", async () => {
-			await orchestrator.startPipeline("test");
+		test("pipeline has 13 steps in correct order", async () => {
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			const expectedOrder: PipelineStepName[] = [
+				"setup",
 				"specify",
 				"clarify",
 				"plan",
@@ -283,18 +299,19 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("advancing step moves to next step", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
+			// Specify (index 1) is running; complete it
 			cli.getLastCallbacks().onComplete();
 
-			expect(wf.steps[0].status).toBe("completed");
-			expect(wf.steps[1].status).toBe("running");
-			expect(wf.currentStepIndex).toBe(1);
+			expect(wf.steps[1].status).toBe("completed");
+			expect(wf.steps[2].status).toBe("running");
+			expect(wf.currentStepIndex).toBe(2);
 		});
 
 		test("onTools callback forwards tool data to pipeline callbacks", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			const toolData = { Bash: 3, Read: 1 };
@@ -304,42 +321,42 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("completing all steps triggers pipeline completion", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 
-			// Complete steps 0–4 (specify → implement)
+			// Complete steps 1–5 (specify → implement); setup (0) already completed
 			for (let i = 0; i < 5; i++) {
 				cli.getLastCallbacks().onComplete();
 			}
 
-			// Review step (5) completes → always routes to implement-review (6)
+			// Review step (6) completes → always routes to implement-review (7)
 			cli.getLastCallbacks().onComplete();
 
 			const wf = getWf(engine);
-			expect(wf.currentStepIndex).toBe(6);
-			expect(wf.steps[6].name).toBe("implement-review");
+			expect(wf.currentStepIndex).toBe(7);
+			expect(wf.steps[7].name).toBe("implement-review");
 
-			// implement-review (6) completes → classify as minor → advance to commit-push-pr
+			// implement-review (7) completes → classify as minor → advance to commit-push-pr
 			rc._pushClassifyResult("minor");
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.currentStepIndex).toBe(7);
+			expect(wf.currentStepIndex).toBe(8);
 
-			// commit-push-pr (7) completes → routes to monitor-ci (8)
+			// commit-push-pr (8) completes → routes to monitor-ci (9)
 			// monitor-ci is direct code execution, not CLI — without a prUrl it errors
 			cli.getLastCallbacks().onComplete();
 
-			expect(wf.currentStepIndex).toBe(8);
-			expect(wf.steps[8].name).toBe("monitor-ci");
+			expect(wf.currentStepIndex).toBe(9);
+			expect(wf.steps[9].name).toBe("monitor-ci");
 			expect(wf.status).toBe("error");
-			expect(wf.steps[8].error).toBe("No PR URL found — cannot monitor CI checks");
+			expect(wf.steps[9].error).toBe("No PR URL found — cannot monitor CI checks");
 		});
 	});
 
 	// T010: Q&A loop — all questions are classified by Haiku
 	describe("Q&A loop", () => {
 		test("Haiku-confirmed question pauses pipeline", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			const question: Question = {
@@ -353,12 +370,12 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.steps[0].status).toBe("waiting_for_input");
+			expect(wf.steps[1].status).toBe("waiting_for_input");
 			expect(wf.pendingQuestion).toEqual(question);
 		});
 
 		test("Haiku-rejected question advances step", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			const question: Question = {
@@ -372,12 +389,12 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.steps[0].status).toBe("completed");
-			expect(wf.currentStepIndex).toBe(1);
+			expect(wf.steps[1].status).toBe("completed");
+			expect(wf.currentStepIndex).toBe(2);
 		});
 
 		test("answering question resumes step via --resume", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 
 			cli.getLastCallbacks().onSessionId("sess-123");
 
@@ -403,7 +420,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("session ID is preserved after answering question", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			cli.getLastCallbacks().onSessionId("sess-123");
@@ -421,11 +438,11 @@ describe("PipelineOrchestrator", () => {
 
 			orchestrator.answerQuestion("test-wf-id", "q1", "Yes");
 
-			expect(wf.steps[0].sessionId).toBe("sess-123");
+			expect(wf.steps[1].sessionId).toBe("sess-123");
 		});
 
 		test("answering question resets cooldown for next detection", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 
 			cli.getLastCallbacks().onSessionId("sess-123");
 
@@ -446,7 +463,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("Q&A loop pauses again on second question", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			cli.getLastCallbacks().onSessionId("sess-123");
@@ -476,14 +493,14 @@ describe("PipelineOrchestrator", () => {
 	// T011: Review cycling
 	describe("review cycling", () => {
 		async function advanceToReview() {
-			await orchestrator.startPipeline("test");
-			// Complete steps 0-4
+			await startAndFlush("test");
+			// Complete steps 1-5 (specify → implement); setup (0) already completed
 			for (let i = 0; i < 5; i++) {
 				cli.getLastCallbacks().onComplete();
 			}
 			const wf = getWf(engine);
-			expect(wf.currentStepIndex).toBe(5);
-			expect(wf.steps[5].name).toBe("review");
+			expect(wf.currentStepIndex).toBe(6);
+			expect(wf.steps[6].name).toBe("review");
 		}
 
 		test("review always routes to implement-review first", async () => {
@@ -494,9 +511,9 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete();
 
 			expect(wf.reviewCycle.iteration).toBe(2);
-			expect(wf.currentStepIndex).toBe(6); // implement-review
-			expect(wf.steps[6].name).toBe("implement-review");
-			expect(wf.steps[6].status).toBe("running");
+			expect(wf.currentStepIndex).toBe(7); // implement-review
+			expect(wf.steps[7].name).toBe("implement-review");
+			expect(wf.steps[7].status).toBe("running");
 		});
 
 		test("re-cycles on critical severity after implement-review", async () => {
@@ -505,7 +522,7 @@ describe("PipelineOrchestrator", () => {
 
 			// Review completes → implement-review
 			cli.getLastCallbacks().onComplete();
-			expect(wf.currentStepIndex).toBe(6);
+			expect(wf.currentStepIndex).toBe(7);
 
 			// implement-review completes → classify as critical → loop back to review
 			rc._pushClassifyResult("critical");
@@ -513,8 +530,8 @@ describe("PipelineOrchestrator", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.reviewCycle.lastSeverity).toBe("critical");
-			expect(wf.currentStepIndex).toBe(5); // back to review
-			expect(wf.steps[5].status).toBe("running");
+			expect(wf.currentStepIndex).toBe(6); // back to review
+			expect(wf.steps[6].status).toBe("running");
 		});
 
 		test("re-cycles on major severity after implement-review", async () => {
@@ -527,7 +544,7 @@ describe("PipelineOrchestrator", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.reviewCycle.lastSeverity).toBe("major");
-			expect(wf.currentStepIndex).toBe(5); // back to review
+			expect(wf.currentStepIndex).toBe(6); // back to review
 		});
 
 		test("stops cycling on minor severity → advances to commit-push-pr", async () => {
@@ -539,8 +556,8 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete(); // implement-review → classify
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.currentStepIndex).toBe(7);
-			expect(wf.steps[7].name).toBe("commit-push-pr");
+			expect(wf.currentStepIndex).toBe(8);
+			expect(wf.steps[8].name).toBe("commit-push-pr");
 		});
 
 		test("stops cycling on trivial severity", async () => {
@@ -552,7 +569,7 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete(); // implement-review → classify
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.currentStepIndex).toBe(7);
+			expect(wf.currentStepIndex).toBe(8);
 		});
 
 		test("stops cycling on nit severity", async () => {
@@ -564,7 +581,7 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete(); // implement-review → classify
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.currentStepIndex).toBe(7);
+			expect(wf.currentStepIndex).toBe(8);
 		});
 
 		test("caps review cycling at maxIterations", async () => {
@@ -581,7 +598,7 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.currentStepIndex).toBe(7); // commit-push-pr despite critical
+			expect(wf.currentStepIndex).toBe(8); // commit-push-pr despite critical
 		});
 	});
 
@@ -595,7 +612,7 @@ describe("PipelineOrchestrator", () => {
 				},
 			);
 
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			// Set a spec summary that should persist
@@ -623,7 +640,7 @@ describe("PipelineOrchestrator", () => {
 				},
 			);
 
-			await orchestrator.startPipeline("Build auth module");
+			await startAndFlush("Build auth module");
 			const wf = getWf(engine);
 
 			// Wait for generateSpecSummary to resolve
@@ -646,18 +663,18 @@ describe("PipelineOrchestrator", () => {
 	// T012: Step failure and retry
 	describe("step failure and retry", () => {
 		test("step failure sets step to error state", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			cli.getLastCallbacks().onError("CLI crashed");
 
-			expect(wf.steps[0].status).toBe("error");
-			expect(wf.steps[0].error).toBe("CLI crashed");
+			expect(wf.steps[1].status).toBe("error");
+			expect(wf.steps[1].error).toBe("CLI crashed");
 			expect(wf.status).toBe("error");
 		});
 
 		test("retry re-runs the failed step", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			cli.getLastCallbacks().onError("CLI crashed");
@@ -666,12 +683,12 @@ describe("PipelineOrchestrator", () => {
 			await orchestrator.retryStep("test-wf-id");
 
 			expect(cli._startCalls.length).toBe(callsBefore + 1);
-			expect(wf.steps[0].status).toBe("running");
-			expect(wf.steps[0].error).toBeNull();
+			expect(wf.steps[1].status).toBe("running");
+			expect(wf.steps[1].error).toBeNull();
 		});
 
 		test("retry starts a new audit run after error", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 
 			// Error ends the audit run
 			cli.getLastCallbacks().onError("CLI crashed");
@@ -683,29 +700,29 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("completed steps are preserved on retry", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
-			// Complete step 0
+			// Complete step 1 (specify)
 			cli.getLastCallbacks().onComplete();
 
-			// Step 1 fails
+			// Step 2 (clarify) fails
 			cli.getLastCallbacks().onError("crashed");
 
-			expect(wf.steps[0].status).toBe("completed");
-			expect(wf.steps[1].status).toBe("error");
+			expect(wf.steps[1].status).toBe("completed");
+			expect(wf.steps[2].status).toBe("error");
 
-			// Retry step 1
+			// Retry step 2
 			await orchestrator.retryStep("test-wf-id");
-			expect(wf.steps[0].status).toBe("completed");
-			expect(wf.steps[1].status).toBe("running");
+			expect(wf.steps[1].status).toBe("completed");
+			expect(wf.steps[2].status).toBe("running");
 		});
 	});
 
 	// skipQuestion
 	describe("skipQuestion", () => {
 		test("skipQuestion delegates to answerQuestion with canned message", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 
 			cli.getLastCallbacks().onSessionId("sess-skip");
 
@@ -733,23 +750,23 @@ describe("PipelineOrchestrator", () => {
 	// Full re-cycle integration test
 	describe("full re-cycle loop", () => {
 		test("review → implement-review → critical → review → implement-review → minor → commit-push-pr → complete", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
-			// Complete steps 0-4 (specify → implement)
+			// Complete steps 1-5 (specify → implement); setup (0) already completed
 			for (let i = 0; i < 5; i++) {
 				cli.getLastCallbacks().onComplete();
 			}
 
-			expect(wf.currentStepIndex).toBe(5);
-			expect(wf.steps[5].name).toBe("review");
+			expect(wf.currentStepIndex).toBe(6);
+			expect(wf.steps[6].name).toBe("review");
 
 			// First review completes → always routes to implement-review
 			cli.getLastCallbacks().onComplete();
 
 			expect(wf.reviewCycle.iteration).toBe(2);
-			expect(wf.currentStepIndex).toBe(6); // implement-review
-			expect(wf.steps[6].status).toBe("running");
+			expect(wf.currentStepIndex).toBe(7); // implement-review
+			expect(wf.steps[7].status).toBe("running");
 
 			// implement-review completes → classify as critical → loop back to review
 			rc._pushClassifyResult("critical");
@@ -757,15 +774,15 @@ describe("PipelineOrchestrator", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.reviewCycle.lastSeverity).toBe("critical");
-			expect(wf.currentStepIndex).toBe(5); // review again
-			expect(wf.steps[5].status).toBe("running");
+			expect(wf.currentStepIndex).toBe(6); // review again
+			expect(wf.steps[6].status).toBe("running");
 
 			// Second review completes → implement-review again
 			cli.getLastCallbacks().onComplete();
 
 			expect(wf.reviewCycle.iteration).toBe(3);
-			expect(wf.currentStepIndex).toBe(6); // implement-review
-			expect(wf.steps[6].status).toBe("running");
+			expect(wf.currentStepIndex).toBe(7); // implement-review
+			expect(wf.steps[7].status).toBe("running");
 
 			// implement-review completes → classify as minor → advance to commit-push-pr
 			rc._pushClassifyResult("minor");
@@ -773,15 +790,15 @@ describe("PipelineOrchestrator", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.reviewCycle.lastSeverity).toBe("minor");
-			expect(wf.currentStepIndex).toBe(7); // commit-push-pr
-			expect(wf.steps[7].name).toBe("commit-push-pr");
+			expect(wf.currentStepIndex).toBe(8); // commit-push-pr
+			expect(wf.steps[8].name).toBe("commit-push-pr");
 
 			// commit-push-pr completes → routes to monitor-ci
 			// monitor-ci errors (no PR URL) since this test doesn't set prUrl
 			cli.getLastCallbacks().onComplete();
 
-			expect(wf.currentStepIndex).toBe(8);
-			expect(wf.steps[8].name).toBe("monitor-ci");
+			expect(wf.currentStepIndex).toBe(9);
+			expect(wf.steps[9].name).toBe("monitor-ci");
 			expect(wf.status).toBe("error");
 		});
 	});
@@ -789,7 +806,7 @@ describe("PipelineOrchestrator", () => {
 	// Audit trail integration
 	describe("audit trail wiring", () => {
 		test("startPipeline calls auditLogger.startRun with original branch as pipelineName", async () => {
-			await orchestrator.startPipeline("Build a feature");
+			await startAndFlush("Build a feature");
 
 			expect(auditLogger.startRun).toHaveBeenCalledTimes(1);
 			// pipelineName is resolved from the original repo branch, not the worktree branch
@@ -800,9 +817,9 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("pipeline completion calls auditLogger.endRun", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 
-			// Complete steps 0–4
+			// Complete steps 1–5 (specify → implement); setup (0) already completed
 			for (let i = 0; i < 5; i++) {
 				cli.getLastCallbacks().onComplete();
 			}
@@ -821,7 +838,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("cancelPipeline calls auditLogger.endRun with cancelled metadata", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 
 			orchestrator.cancelPipeline("test-wf-id");
 
@@ -829,7 +846,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("step error calls auditLogger.endRun with error metadata", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 
 			cli.getLastCallbacks().onError("CLI crashed");
 
@@ -839,7 +856,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("pauseForQuestion calls auditLogger.logQuery", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 
 			const question: Question = {
 				id: "q1",
@@ -860,7 +877,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("answerQuestion calls auditLogger.logAnswer", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 
 			const question: Question = {
 				id: "q1",
@@ -886,19 +903,19 @@ describe("PipelineOrchestrator", () => {
 	// T026: Cancellation
 	describe("cancellation", () => {
 		test("cancelPipeline kills CLI process and sets cancelled state", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			orchestrator.cancelPipeline("test-wf-id");
 
 			expect(cli.kill).toHaveBeenCalledWith("test-wf-id");
 			expect(wf.status).toBe("cancelled");
-			expect(wf.steps[0].status).toBe("error");
-			expect(wf.steps[0].error).toBe("Cancelled by user");
+			expect(wf.steps[1].status).toBe("error");
+			expect(wf.steps[1].error).toBe("Cancelled by user");
 		});
 
 		test("cancelPipeline triggers epic dependency check when epicId is set", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 			wf.epicId = "epic-123";
 
@@ -925,7 +942,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("cancellation during Q&A sets cancelled state", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			const question: Question = {
@@ -947,7 +964,7 @@ describe("PipelineOrchestrator", () => {
 
 	describe("epic dependency resolution", () => {
 		test("cancellation resolves satisfied for sibling whose deps are all completed", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 			wf.epicId = "epic-456";
 
@@ -972,7 +989,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("cancellation notifies sibling with blocked status", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 			wf.epicId = "epic-789";
 
@@ -998,7 +1015,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("sibling with multiple deps stays waiting when only some are satisfied", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 			wf.epicId = "epic-multi";
 
@@ -1032,24 +1049,24 @@ describe("PipelineOrchestrator", () => {
 
 	describe("pause and resume", () => {
 		test("pause() kills process, sets step to paused, transitions workflow to paused", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			// Simulate session ID being set
-			wf.steps[0].sessionId = "test-session-123";
+			wf.steps[1].sessionId = "test-session-123";
 
 			orchestrator.pause("test-wf-id");
 
 			expect(cli.kill).toHaveBeenCalledWith("test-wf-id");
-			expect(wf.steps[0].status).toBe("paused");
+			expect(wf.steps[1].status).toBe("paused");
 			expect(wf.status).toBe("paused");
-			expect(wf.steps[0].sessionId).toBe("test-session-123");
+			expect(wf.steps[1].sessionId).toBe("test-session-123");
 			expect(store.save).toHaveBeenCalled();
 			expect(callbacks.onStateChange).toHaveBeenCalledWith("test-wf-id");
 		});
 
 		test("pause() silently ignores if workflow is not running", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			// Set to completed
@@ -1061,22 +1078,22 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("resume() restarts CLI with session, sets step to running, transitions workflow to running", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
-			wf.steps[0].sessionId = "test-session-123";
+			wf.steps[1].sessionId = "test-session-123";
 			orchestrator.pause("test-wf-id");
 
 			orchestrator.resume("test-wf-id");
 
-			expect(wf.steps[0].status).toBe("running");
+			expect(wf.steps[1].status).toBe("running");
 			expect(wf.status).toBe("running");
 			expect(cli.resume).toHaveBeenCalled();
 			expect(callbacks.onStateChange).toHaveBeenCalledWith("test-wf-id");
 		});
 
 		test("resume() silently ignores if workflow is not paused", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			// Still running — resume should be a no-op
@@ -1087,12 +1104,12 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("resume() without sessionId falls back to runStep (cliRunner.start)", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			// Clear sessionId so resume takes the fallback branch
-			wf.steps[0].sessionId = null;
-			wf.steps[0].status = "running";
+			wf.steps[1].sessionId = null;
+			wf.steps[1].status = "running";
 
 			const resumeCallsBefore = (cli.resume as ReturnType<typeof mock>).mock.calls.length;
 			orchestrator.pause("test-wf-id");
@@ -1100,7 +1117,7 @@ describe("PipelineOrchestrator", () => {
 
 			orchestrator.resume("test-wf-id");
 
-			expect(wf.steps[0].status).toBe("running");
+			expect(wf.steps[1].status).toBe("running");
 			expect(wf.status).toBe("running");
 			// Should have triggered a new start call (runStep), not cliRunner.resume
 			expect(cli._startCalls.length).toBe(startCallsBefore + 1);
@@ -1108,7 +1125,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("resume() on monitor-ci step calls runMonitorCi (not cliRunner.resume)", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
 			// Advance to monitor-ci step (index 8) and set prUrl so runMonitorCi doesn't error
@@ -1134,28 +1151,28 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("abort from paused: cancelPipeline sets step to error and workflow to cancelled", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
-			wf.steps[0].sessionId = "test-session-123";
+			wf.steps[1].sessionId = "test-session-123";
 			orchestrator.pause("test-wf-id");
 
 			expect(wf.status).toBe("paused");
-			expect(wf.steps[0].status).toBe("paused");
+			expect(wf.steps[1].status).toBe("paused");
 
 			orchestrator.cancelPipeline("test-wf-id");
 
-			expect(wf.steps[0].status).toBe("error");
-			expect(wf.steps[0].error).toBe("Cancelled by user");
+			expect(wf.steps[1].status).toBe("error");
+			expect(wf.steps[1].error).toBe("Cancelled by user");
 			expect(wf.status).toBe("cancelled");
 			expect(store.save).toHaveBeenCalled();
 		});
 
 		test("resume() passes SPECIFY_FEATURE env when featureBranch is set", async () => {
-			await orchestrator.startPipeline("test");
+			await startAndFlush("test");
 			const wf = getWf(engine);
 
-			wf.steps[0].sessionId = "test-session-123";
+			wf.steps[1].sessionId = "test-session-123";
 			wf.featureBranch = "021-my-feature";
 			orchestrator.pause("test-wf-id");
 
@@ -1174,7 +1191,7 @@ describe("PipelineOrchestrator", () => {
 			mkdirSync(join(tmpDir, "specs", "021-my-feature"), { recursive: true });
 
 			try {
-				await orchestrator.startPipeline("test");
+				await startAndFlush("test");
 				const wf = getWf(engine);
 				wf.worktreePath = tmpDir;
 
@@ -1198,7 +1215,7 @@ describe("PipelineOrchestrator", () => {
 			});
 
 			try {
-				await orchestrator.startPipeline("test");
+				await startAndFlush("test");
 				const wf = getWf(engine);
 				wf.worktreePath = tmpDir;
 
@@ -1217,7 +1234,7 @@ describe("PipelineOrchestrator", () => {
 			mkdirSync(join(tmpDir, "specs", "021-my-feature"), { recursive: true });
 
 			try {
-				await orchestrator.startPipeline("test");
+				await startAndFlush("test");
 				const wf = getWf(engine);
 				wf.worktreePath = tmpDir;
 

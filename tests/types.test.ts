@@ -60,8 +60,9 @@ describe("VALID_TRANSITIONS", () => {
 });
 
 describe("PIPELINE_STEP_DEFINITIONS", () => {
-	test("has exactly 12 steps in correct order", () => {
+	test("has exactly 13 steps in correct order", () => {
 		const expectedNames: PipelineStepName[] = [
+			"setup",
 			"specify",
 			"clarify",
 			"plan",

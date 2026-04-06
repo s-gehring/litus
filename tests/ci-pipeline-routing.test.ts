@@ -232,6 +232,12 @@ describe("CI Pipeline Routing", () => {
 				loadIndex: async () => [],
 				remove: async () => {},
 			} as never,
+			runSetupChecks: async () => ({
+				passed: true,
+				checks: [],
+				requiredFailures: [],
+				optionalWarnings: [],
+			}),
 		});
 
 		await orchestrator.startPipeline("test spec");
