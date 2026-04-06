@@ -254,6 +254,7 @@ describe("PipelineOrchestrator", () => {
 				requiredFailures: [],
 				optionalWarnings: [],
 			}),
+			checkoutMaster: async () => ({ code: 0, stderr: "" }),
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});
@@ -1284,6 +1285,7 @@ describe("PipelineOrchestrator", () => {
 				auditLogger: createFakeAuditLogger(),
 				workflowStore: createFakeWorkflowStore(),
 				runSetupChecks: async () => setupResult,
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
 			};
 			const orch = new PipelineOrchestrator(localCallbacks, deps);
 			return { orch, engine: localEngine, cli: localCli, callbacks: localCallbacks };
@@ -1366,6 +1368,8 @@ describe("PipelineOrchestrator", () => {
 			const questionId = wf.pendingQuestion?.id ?? "";
 			orch.answerQuestion(wf.id, questionId, "skip");
 
+			await new Promise((r) => setTimeout(r, 0));
+
 			expect(wf.steps[0].status).toBe("completed");
 			expect(wf.currentStepIndex).toBe(1);
 			expect(wf.steps[1].status).toBe("running");
@@ -1388,6 +1392,7 @@ describe("PipelineOrchestrator", () => {
 				runSetupChecks: async () => {
 					throw new Error("Spawn failed");
 				},
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
 			};
 			const orch = new PipelineOrchestrator(localCallbacks, deps);
 

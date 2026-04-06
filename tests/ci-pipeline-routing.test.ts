@@ -240,6 +240,7 @@ describe("CI Pipeline Routing", () => {
 				requiredFailures: [],
 				optionalWarnings: [],
 			}),
+			checkoutMaster: async () => ({ code: 0, stderr: "" }),
 		});
 
 		await orchestrator.startPipeline("test spec", "/tmp/test-repo");

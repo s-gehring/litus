@@ -71,6 +71,7 @@ export interface PipelineDeps {
 	resolveConflicts?: typeof defaultResolveConflicts;
 	syncRepo?: typeof defaultSyncRepo;
 	runSetupChecks?: (targetDir: string) => Promise<SetupResult>;
+	checkoutMaster?: (cwd: string) => Promise<{ code: number; stderr: string }>;
 }
 
 const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
@@ -116,6 +117,7 @@ export class PipelineOrchestrator {
 	private resolveConflictsFn: typeof defaultResolveConflicts;
 	private syncRepoFn: typeof defaultSyncRepo;
 	private runSetupChecksFn: (targetDir: string) => Promise<SetupResult>;
+	private checkoutMasterFn: (cwd: string) => Promise<{ code: number; stderr: string }>;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -129,6 +131,12 @@ export class PipelineOrchestrator {
 		this.resolveConflictsFn = deps?.resolveConflicts ?? defaultResolveConflicts;
 		this.syncRepoFn = deps?.syncRepo ?? defaultSyncRepo;
 		this.runSetupChecksFn = deps?.runSetupChecks ?? defaultRunSetupChecks;
+		this.checkoutMasterFn =
+			deps?.checkoutMaster ??
+			(async (cwd: string) => {
+				const result = await gitSpawn(["git", "checkout", "master"], { cwd });
+				return { code: result.code, stderr: result.stderr };
+			});
 		this.callbacks = callbacks;
 	}
 
@@ -231,8 +239,8 @@ export class PipelineOrchestrator {
 		this.callbacks.onStateChange(workflowId);
 
 		if (step.name === "setup") {
-			// User answered the optional warnings prompt — skip and advance
-			this.advanceAfterStep(workflowId);
+			// User answered the optional warnings prompt — checkout master then advance
+			this.checkoutMasterInWorktree(workflow);
 			return;
 		}
 
@@ -621,12 +629,34 @@ export class PipelineOrchestrator {
 					return;
 				}
 
-				// All checks passed, no warnings — advance
-				this.advanceAfterStep(wf.id);
+				// All checks passed, no warnings — checkout latest master then advance
+				this.checkoutMasterInWorktree(wf);
 			})
 			.catch((err) => {
 				const msg = err instanceof Error ? err.message : String(err);
 				this.handleStepError(workflow.id, `Setup checks failed: ${msg}`);
+			});
+	}
+
+	private checkoutMasterInWorktree(workflow: Workflow): void {
+		const cwd = requireWorktreePath(workflow);
+		this.handleStepOutput(workflow.id, "[git] git checkout master | cwd=worktree");
+		this.checkoutMasterFn(cwd)
+			.then((result) => {
+				const wf = this.engine.getWorkflow();
+				if (!wf || wf.id !== workflow.id) return;
+
+				if (result.code !== 0) {
+					const errMsg = result.stderr || `exit code ${result.code}`;
+					this.handleStepError(wf.id, `Failed to checkout master in worktree: ${errMsg}`);
+					return;
+				}
+				this.handleStepOutput(wf.id, "✓ Checked out latest master in worktree");
+				this.advanceAfterStep(wf.id);
+			})
+			.catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				this.handleStepError(workflow.id, `Failed to checkout master in worktree: ${msg}`);
 			});
 	}
 
