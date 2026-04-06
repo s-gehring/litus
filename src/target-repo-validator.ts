@@ -1,5 +1,6 @@
 import { stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
+import { gitSpawn } from "./git-logger";
 
 export interface TargetRepoValidation {
 	valid: boolean;
@@ -49,13 +50,11 @@ export async function validateTargetRepository(
 
 	// Must be a git repository
 	try {
-		const proc = Bun.spawn(["git", "rev-parse", "--git-dir"], {
+		const result = await gitSpawn(["git", "rev-parse", "--git-dir"], {
 			cwd: trimmed,
-			stdout: "pipe",
-			stderr: "pipe",
+			extra: { target: trimmed },
 		});
-		const code = await proc.exited;
-		if (code !== 0) {
+		if (result.code !== 0) {
 			return {
 				valid: false,
 				error: `Target repository is not a git repository: ${trimmed}`,

@@ -6,6 +6,7 @@ import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import { analyzeEpic, type EpicAnalysisProcess } from "./epic-analyzer";
 import { EpicStore } from "./epic-store";
+import { setGitLogCallback } from "./git-logger";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -159,6 +160,11 @@ async function getAllWorkflowStates(): Promise<WorkflowState[]> {
 function broadcast(msg: ServerMessage) {
 	server.publish(WS_TOPIC, JSON.stringify(msg));
 }
+
+// Forward git operation logs to all connected clients
+setGitLogCallback((text) => {
+	broadcast({ type: "log", text });
+});
 
 function sendTo(ws: ServerWebSocket<WsData>, msg: ServerMessage) {
 	ws.send(JSON.stringify(msg));

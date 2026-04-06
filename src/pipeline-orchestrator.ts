@@ -7,6 +7,7 @@ import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
+import { gitSpawn } from "./git-logger";
 import {
 	mergePr as defaultMergePr,
 	resolveConflicts as defaultResolveConflicts,
@@ -195,15 +196,8 @@ export class PipelineOrchestrator {
 
 	private async getBranch(cwd: string): Promise<string | null> {
 		try {
-			const proc = Bun.spawn(["git", "rev-parse", "--abbrev-ref", "HEAD"], {
-				cwd,
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			const code = await proc.exited;
-			if (code !== 0) return null;
-			const text = await new Response(proc.stdout as ReadableStream).text();
-			return text.trim() || null;
+			const result = await gitSpawn(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd });
+			return result.code === 0 && result.stdout ? result.stdout : null;
 		} catch {
 			return null;
 		}
@@ -684,16 +678,14 @@ export class PipelineOrchestrator {
 		if (!cwd) return null;
 
 		const branch = workflow.featureBranch ?? workflow.worktreeBranch;
-		const proc = Bun.spawn(
+		const result = await gitSpawn(
 			["gh", "pr", "list", "--head", branch, "--json", "url", "--limit", "1"],
-			{ cwd, stdout: "pipe", stderr: "pipe" },
+			{ cwd, extra: { branch } },
 		);
-		const code = await proc.exited;
-		if (code !== 0) return null;
+		if (result.code !== 0) return null;
 
-		const stdout = await new Response(proc.stdout as ReadableStream).text();
 		try {
-			const parsed = JSON.parse(stdout.trim());
+			const parsed = JSON.parse(result.stdout);
 			if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].url) {
 				return parsed[0].url;
 			}

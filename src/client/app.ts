@@ -472,6 +472,11 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "log": {
+			appendOutput(msg.text, "system");
+			break;
+		}
+
 		case "error": {
 			appendOutput(`Error: ${msg.message}`, "error");
 			break;

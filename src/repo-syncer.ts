@@ -21,7 +21,7 @@ export async function syncRepo(
 	let warning: string | null = null;
 
 	// Check for uncommitted changes
-	onOutput("Checking for uncommitted changes in target repository...");
+	onOutput(`[git] git status --porcelain | cwd=${targetRepo}`);
 	const statusProc = spawn(["git", "status", "--porcelain"], {
 		cwd: targetRepo,
 		stdout: "pipe",
@@ -37,7 +37,7 @@ export async function syncRepo(
 		onOutput(warning);
 	} else {
 		// Pull latest master
-		onOutput("Pulling latest master...");
+		onOutput(`[git] git pull --ff-only origin master | cwd=${targetRepo}`);
 		const pullProc = spawn(["git", "pull", "--ff-only", "origin", "master"], {
 			cwd: targetRepo,
 			stdout: "pipe",

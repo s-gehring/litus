@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { gitSpawn } from "./git-logger";
 import type { SetupCheckResult, SetupResult } from "./types";
 
 async function runCommand(
@@ -7,15 +8,7 @@ async function runCommand(
 	cwd?: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
 	try {
-		const proc = Bun.spawn(cmd, {
-			cwd,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const code = await proc.exited;
-		const stdout = await new Response(proc.stdout as ReadableStream).text();
-		const stderr = await new Response(proc.stderr as ReadableStream).text();
-		return { code, stdout: stdout.trim(), stderr: stderr.trim() };
+		return await gitSpawn(cmd, { cwd, extra: { check: "setup" } });
 	} catch {
 		return { code: 1, stdout: "", stderr: `Failed to execute: ${cmd[0]}` };
 	}
