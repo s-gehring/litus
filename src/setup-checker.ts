@@ -158,7 +158,6 @@ const GITIGNORE_ENTRIES = ["specs/", ".worktrees", ".claude", ".specify"];
 export async function checkGitignoreEntries(targetDir: string): Promise<SetupCheckResult[]> {
 	return Promise.all(
 		GITIGNORE_ENTRIES.map(async (entry) => {
-			// Use git check-ignore to respect all gitignore sources (local, global, system)
 			const result = await runCommand(["git", "check-ignore", entry], targetDir);
 			const passed = result.code === 0;
 			return {
