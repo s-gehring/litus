@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { SetupCheckResult, SetupResult } from "./types";
 
@@ -16,8 +16,9 @@ async function runCommand(
 		const stdout = await new Response(proc.stdout as ReadableStream).text();
 		const stderr = await new Response(proc.stderr as ReadableStream).text();
 		return { code, stdout: stdout.trim(), stderr: stderr.trim() };
-	} catch {
-		return { code: 1, stdout: "", stderr: `Failed to execute: ${cmd[0]}` };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return { code: 1, stdout: "", stderr: `Failed to execute: ${cmd[0]} — ${msg}` };
 	}
 }
 
@@ -91,8 +92,8 @@ export async function checkGhAuth(targetDir: string): Promise<SetupCheckResult> 
 		};
 	}
 
-	let hostname = "github.com";
 	const url = originResult.stdout;
+	let hostname: string | null = null;
 	// Handle SSH: git@github.example.com:org/repo.git
 	const sshMatch = url.match(/@([^:]+):/);
 	if (sshMatch) {
@@ -103,6 +104,15 @@ export async function checkGhAuth(targetDir: string): Promise<SetupCheckResult> 
 		if (httpsMatch) {
 			hostname = httpsMatch[1];
 		}
+	}
+
+	if (!hostname) {
+		return {
+			name: "GitHub CLI authenticated",
+			passed: false,
+			error: `Could not extract hostname from origin URL: ${url}`,
+			required: true,
+		};
 	}
 
 	const result = await runCommand(["gh", "auth", "status", "--hostname", hostname]);
@@ -131,10 +141,7 @@ export function checkSpeckitFiles(targetDir: string): SetupCheckResult {
 	const commandsDir = join(targetDir, ".claude", "commands");
 	const missing: string[] = [];
 	for (const file of SPECKIT_FILES) {
-		const filePath = join(commandsDir, file);
-		try {
-			readFileSync(filePath);
-		} catch {
+		if (!existsSync(join(commandsDir, file))) {
 			missing.push(file);
 		}
 	}
@@ -163,22 +170,23 @@ export async function checkClaudeCli(): Promise<SetupCheckResult> {
 const GITIGNORE_ENTRIES = ["specs/", ".worktrees", ".claude", ".specify"];
 
 export async function checkGitignoreEntries(targetDir: string): Promise<SetupCheckResult[]> {
-	const results: SetupCheckResult[] = [];
-	for (const entry of GITIGNORE_ENTRIES) {
-		// git check-ignore respects all gitignore sources: local .gitignore, global gitignore,
-		// .git/info/exclude — satisfying FR-011's requirement for global gitignore support
-		const result = await runCommand(["git", "check-ignore", "-q", entry], targetDir);
-		const passed = result.code === 0;
-		results.push({
-			name: `Gitignore: ${entry}`,
-			passed,
-			error: passed
-				? undefined
-				: `"${entry}" is not gitignored (check local .gitignore, global gitignore, or .git/info/exclude)`,
-			required: false,
-		});
-	}
-	return results;
+	// Run all git check-ignore calls in parallel (consistent with other parallel patterns)
+	// git check-ignore respects all gitignore sources: local .gitignore, global gitignore,
+	// .git/info/exclude
+	return Promise.all(
+		GITIGNORE_ENTRIES.map(async (entry) => {
+			const result = await runCommand(["git", "check-ignore", "-q", entry], targetDir);
+			const passed = result.code === 0;
+			return {
+				name: `Gitignore: ${entry}`,
+				passed,
+				error: passed
+					? undefined
+					: `"${entry}" is not gitignored (check local .gitignore, global gitignore, or .git/info/exclude)`,
+				required: false,
+			};
+		}),
+	);
 }
 
 export async function runSetupChecks(targetDir: string): Promise<SetupResult> {

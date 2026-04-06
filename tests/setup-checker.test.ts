@@ -155,6 +155,25 @@ describe("checkGhAuth", () => {
 		expect(result.error).toContain("no origin remote");
 	});
 
+	test("fails when origin URL is unparseable", async () => {
+		const badUrlDir = join(testRoot, "bad-url-origin");
+		mkdirSync(badUrlDir, { recursive: true });
+		const proc = Bun.spawn(["git", "init"], { cwd: badUrlDir, stdout: "pipe", stderr: "pipe" });
+		await proc.exited;
+		const add = Bun.spawn(["git", "remote", "add", "origin", "just-a-plain-string"], {
+			cwd: badUrlDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		await add.exited;
+
+		const result = await checkGhAuth(badUrlDir);
+		expect(result.passed).toBe(false);
+		expect(result.error).toContain("Could not extract hostname from origin URL");
+
+		rmSync(badUrlDir, { recursive: true, force: true });
+	});
+
 	test("extracts hostname from SSH origin URL", async () => {
 		const sshDir = join(testRoot, "ssh-origin");
 		mkdirSync(sshDir, { recursive: true });
@@ -270,41 +289,53 @@ describe("runSetupChecks", () => {
 
 // T022: checkGitignoreEntries (uses git check-ignore, requires a git repo)
 describe("checkGitignoreEntries", () => {
-	test("reports all present when gitignore has entries", async () => {
-		const dir = join(testRoot, "gitignore-complete");
-		mkdirSync(dir, { recursive: true });
-		const init = Bun.spawn(["git", "init"], { cwd: dir, stdout: "pipe", stderr: "pipe" });
-		await init.exited;
+	const gitignoreCompleteDir = join(testRoot, "gitignore-complete");
+	const gitignorePartialDir = join(testRoot, "gitignore-partial");
+
+	beforeAll(async () => {
+		mkdirSync(gitignoreCompleteDir, { recursive: true });
+		const initComplete = Bun.spawn(["git", "init"], {
+			cwd: gitignoreCompleteDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		await initComplete.exited;
 		writeFileSync(
-			join(dir, ".gitignore"),
+			join(gitignoreCompleteDir, ".gitignore"),
 			"node_modules/\nspecs/\n.worktrees\n.claude\n.specify\n",
 		);
 
-		const results = await checkGitignoreEntries(dir);
+		mkdirSync(gitignorePartialDir, { recursive: true });
+		const initPartial = Bun.spawn(["git", "init"], {
+			cwd: gitignorePartialDir,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		await initPartial.exited;
+		writeFileSync(join(gitignorePartialDir, ".gitignore"), "node_modules/\nspecs/\n");
+	});
+
+	afterAll(() => {
+		rmSync(gitignoreCompleteDir, { recursive: true, force: true });
+		rmSync(gitignorePartialDir, { recursive: true, force: true });
+	});
+
+	test("reports all present when gitignore has entries", async () => {
+		const results = await checkGitignoreEntries(gitignoreCompleteDir);
 		for (const r of results) {
 			expect(r.passed).toBe(true);
 			expect(r.required).toBe(false);
 		}
-
-		rmSync(dir, { recursive: true, force: true });
 	});
 
 	test("reports missing entries", async () => {
-		const dir = join(testRoot, "gitignore-partial");
-		mkdirSync(dir, { recursive: true });
-		const init = Bun.spawn(["git", "init"], { cwd: dir, stdout: "pipe", stderr: "pipe" });
-		await init.exited;
-		writeFileSync(join(dir, ".gitignore"), "node_modules/\nspecs/\n");
-
-		const results = await checkGitignoreEntries(dir);
+		const results = await checkGitignoreEntries(gitignorePartialDir);
 		const specResult = results.find((r) => r.name === "Gitignore: specs/");
 		expect(specResult?.passed).toBe(true);
 
 		const worktreeResult = results.find((r) => r.name === "Gitignore: .worktrees");
 		expect(worktreeResult?.passed).toBe(false);
 		expect(worktreeResult?.error).toContain(".worktrees");
-
-		rmSync(dir, { recursive: true, force: true });
 	});
 
 	test("returns correct structure for all entries", async () => {

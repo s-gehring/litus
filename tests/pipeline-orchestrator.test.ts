@@ -1300,6 +1300,55 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.status).toBe("error");
 		});
 
+		test("multiple required failures lists all errors", async () => {
+			const { orch, engine } = makeSetupOrchestrator({
+				passed: false,
+				checks: [
+					{ name: "Git installed", passed: true, required: true },
+					{ name: "Git repository", passed: false, error: "Not a git repo", required: true },
+					{
+						name: "GitHub CLI installed",
+						passed: false,
+						error: "gh not installed",
+						required: true,
+					},
+					{
+						name: "Speckit prompt files",
+						passed: false,
+						error: "Missing files: speckit.plan.md",
+						required: true,
+					},
+				],
+				requiredFailures: [
+					{ name: "Git repository", passed: false, error: "Not a git repo", required: true },
+					{
+						name: "GitHub CLI installed",
+						passed: false,
+						error: "gh not installed",
+						required: true,
+					},
+					{
+						name: "Speckit prompt files",
+						passed: false,
+						error: "Missing files: speckit.plan.md",
+						required: true,
+					},
+				],
+				optionalWarnings: [],
+			});
+
+			await orch.startPipeline("test", "/tmp/test-repo");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(engine);
+			expect(wf.steps[0].name).toBe("setup");
+			expect(wf.steps[0].status).toBe("error");
+			expect(wf.steps[0].error).toContain("Not a git repo");
+			expect(wf.steps[0].error).toContain("gh not installed");
+			expect(wf.steps[0].error).toContain("Missing files");
+			expect(wf.status).toBe("error");
+		});
+
 		test("optional warnings pause with question", async () => {
 			const { orch, engine } = makeSetupOrchestrator({
 				passed: true,
