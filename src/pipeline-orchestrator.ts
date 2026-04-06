@@ -15,6 +15,7 @@ import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
 import { Summarizer } from "./summarizer";
+import { runSetupChecks } from "./setup-checker";
 import type { EffortLevel, ModelConfig, PipelineStepName, Question, Workflow } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
@@ -207,6 +208,12 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 
+		if (step.name === "setup") {
+			// User answered the optional warnings prompt — skip and advance
+			this.advanceAfterStep(workflowId);
+			return;
+		}
+
 		if (step.name === "monitor-ci") {
 			if (answer.toLowerCase().includes("abort")) {
 				this.handleStepError(workflowId, "Workflow aborted by user after cancelled CI checks");
@@ -373,7 +380,9 @@ export class PipelineOrchestrator {
 
 		const cwd = workflow.worktreePath || process.cwd();
 
-		if (step.name === "monitor-ci") {
+		if (step.name === "setup") {
+			this.runSetup(workflow);
+		} else if (step.name === "monitor-ci") {
 			this.runMonitorCi(workflow);
 		} else if (step.sessionId) {
 			const cliCallbacks: CLICallbacks = {
@@ -478,6 +487,11 @@ export class PipelineOrchestrator {
 		);
 		this.callbacks.onStateChange(workflow.id);
 
+		if (step.name === "setup") {
+			this.runSetup(workflow);
+			return;
+		}
+
 		if (step.name === "monitor-ci") {
 			this.runMonitorCi(workflow);
 			return;
@@ -508,6 +522,60 @@ export class PipelineOrchestrator {
 			configKey ? config.models[configKey] : undefined,
 			configKey ? config.efforts[configKey] : undefined,
 		);
+	}
+
+	private runSetup(workflow: Workflow): void {
+		const targetDir = workflow.targetRepository || process.cwd();
+
+		runSetupChecks(targetDir)
+			.then((result) => {
+				const wf = this.engine.getWorkflow();
+				if (!wf || wf.id !== workflow.id) return;
+
+				const step = wf.steps[wf.currentStepIndex];
+
+				// Log all check results as output
+				for (const check of result.checks) {
+					const icon = check.passed ? "✓" : "✗";
+					const label = check.required ? "" : " (optional)";
+					const msg = check.passed
+						? `${icon} ${check.name}${label}`
+						: `${icon} ${check.name}${label}: ${check.error}`;
+					this.handleStepOutput(wf.id, msg);
+				}
+
+				if (!result.passed) {
+					// Required checks failed — halt with all failures
+					const errors = result.requiredFailures
+						.map((f) => `• ${f.name}: ${f.error}`)
+						.join("\n");
+					this.handleStepError(
+						wf.id,
+						`Setup failed — fix the following and retry:\n${errors}`,
+					);
+					return;
+				}
+
+				if (result.optionalWarnings.length > 0) {
+					// Optional warnings — ask user to skip or fix
+					const warnings = result.optionalWarnings
+						.map((w) => `• ${w.name}: ${w.error}`)
+						.join("\n");
+					this.pauseForQuestion(wf.id, {
+						id: `setup-warnings-${Date.now()}`,
+						content: `Optional setup warnings:\n${warnings}\n\nYou can continue without fixing these. Type "skip" to proceed or fix the issues and retry.`,
+						detectedAt: new Date().toISOString(),
+					});
+					return;
+				}
+
+				// All checks passed, no warnings — advance
+				this.advanceAfterStep(wf.id);
+			})
+			.catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				this.handleStepError(workflow.id, `Setup checks failed: ${msg}`);
+			});
 	}
 
 	private runMonitorCi(workflow: Workflow): void {
