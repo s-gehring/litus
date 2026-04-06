@@ -261,7 +261,7 @@ describe("runSetupChecks", () => {
 
 // T022: checkGitignoreEntries
 describe("checkGitignoreEntries", () => {
-	test("reports all present when gitignore has entries", () => {
+	test("reports all present when gitignore has entries", async () => {
 		const dir = join(testRoot, "gitignore-complete");
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(
@@ -269,7 +269,7 @@ describe("checkGitignoreEntries", () => {
 			"node_modules/\nspecs/\n.worktrees\n.claude\n.specify\n",
 		);
 
-		const results = checkGitignoreEntries(dir);
+		const results = await checkGitignoreEntries(dir);
 		for (const r of results) {
 			expect(r.passed).toBe(true);
 			expect(r.required).toBe(false);
@@ -278,12 +278,12 @@ describe("checkGitignoreEntries", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	test("reports missing entries", () => {
+	test("reports missing entries", async () => {
 		const dir = join(testRoot, "gitignore-partial");
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(join(dir, ".gitignore"), "node_modules/\nspecs/\n");
 
-		const results = checkGitignoreEntries(dir);
+		const results = await checkGitignoreEntries(dir);
 		const specResult = results.find((r) => r.name === "Gitignore: specs/");
 		expect(specResult?.passed).toBe(true);
 
@@ -294,8 +294,8 @@ describe("checkGitignoreEntries", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	test("reports all missing when no .gitignore", () => {
-		const results = checkGitignoreEntries(nonGitDir);
+	test("reports all missing when no .gitignore", async () => {
+		const results = await checkGitignoreEntries(nonGitDir);
 		for (const r of results) {
 			expect(r.passed).toBe(false);
 			expect(r.required).toBe(false);
