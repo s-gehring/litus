@@ -46,7 +46,7 @@ describe("parseCiChecks", () => {
 });
 
 describe("allChecksComplete", () => {
-	test("returns true when all checks are COMPLETED", () => {
+	test("returns true when all checks have non-pending buckets", () => {
 		expect(
 			allChecksComplete([
 				{ name: "a", state: "COMPLETED", bucket: "pass", link: "" },
@@ -55,7 +55,16 @@ describe("allChecksComplete", () => {
 		).toBe(true);
 	});
 
-	test("returns false when any check is not COMPLETED", () => {
+	test("returns true when state is SUCCESS (not COMPLETED) but bucket is pass", () => {
+		expect(
+			allChecksComplete([
+				{ name: "a", state: "SUCCESS", bucket: "pass", link: "" },
+				{ name: "b", state: "SUCCESS", bucket: "pass", link: "" },
+			]),
+		).toBe(true);
+	});
+
+	test("returns false when any check has pending bucket", () => {
 		expect(
 			allChecksComplete([
 				{ name: "a", state: "COMPLETED", bucket: "pass", link: "" },
@@ -68,10 +77,16 @@ describe("allChecksComplete", () => {
 		expect(allChecksComplete([])).toBe(true);
 	});
 
-	test("returns false for IN_PROGRESS state", () => {
+	test("returns false for IN_PROGRESS with pending bucket", () => {
 		expect(
 			allChecksComplete([{ name: "a", state: "IN_PROGRESS", bucket: "pending", link: "" }]),
 		).toBe(false);
+	});
+
+	test("returns true for cancel bucket", () => {
+		expect(
+			allChecksComplete([{ name: "a", state: "COMPLETED", bucket: "cancel", link: "" }]),
+		).toBe(true);
 	});
 });
 

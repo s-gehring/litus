@@ -25,7 +25,7 @@ export function parseCiChecks(jsonOutput: string): CiCheckResult[] {
 }
 
 export function allChecksComplete(results: CiCheckResult[]): boolean {
-	return results.every((r) => r.state === "COMPLETED");
+	return results.every((r) => r.bucket !== "pending");
 }
 
 /** Returns `true` when all non-SUCCESS checks were cancelled (likely billing/usage-limit). */
