@@ -26,6 +26,7 @@ import {
 	appendToolIcons,
 	clearOutput,
 	renderOutputEntries,
+	updateBranchInfo,
 	updateDetailActions,
 	updateEpicStatus,
 	updateFlavor,
@@ -552,6 +553,7 @@ function renderExpandedView(): void {
 		if (welcomeArea) welcomeArea.classList.remove("hidden");
 		hideQuestion();
 		updateWorkflowStatus(null);
+		updateBranchInfo(null);
 		renderPipelineSteps(null);
 		updateSummary("");
 		updateFlavor("");
@@ -748,6 +750,7 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 
 	// Render status, pipeline, summary
 	updateWorkflowStatus(wf);
+	updateBranchInfo(wf);
 	renderPipelineSteps(wf, selectedStepIndex, selectStep);
 	if (wf.summary) updateSummary(wf.summary);
 	updateStepSummary(wf.stepSummary ?? "");

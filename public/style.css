@@ -292,6 +292,34 @@ header h1 {
   display: none;
 }
 
+/* ── Branch Info ─────────────────────────────────────── */
+
+.branch-info {
+  display: flex;
+  gap: 16px;
+  padding: 6px 16px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.branch-info-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.branch-info-label {
+  opacity: 0.6;
+}
+
+.branch-info-value {
+  color: var(--text);
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.75rem;
+}
+
 /* ── User Input Display ──────────────────────────────── */
 
 .user-input {

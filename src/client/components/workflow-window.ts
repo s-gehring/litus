@@ -151,6 +151,40 @@ export function updateFlavor(flavor: string): void {
 	el.textContent = flavor;
 }
 
+export function updateBranchInfo(workflow: WorkflowState | null): void {
+	const el = $("#branch-info");
+	if (!el) return;
+
+	if (!workflow) {
+		el.classList.add("hidden");
+		el.innerHTML = "";
+		return;
+	}
+
+	const branch = workflow.featureBranch ?? workflow.worktreeBranch;
+	const worktree = workflow.worktreePath;
+
+	const parts: string[] = [];
+	if (branch) {
+		parts.push(
+			`<span class="branch-info-item"><span class="branch-info-label">Branch:</span> <span class="branch-info-value">${branch}</span></span>`,
+		);
+	}
+	if (worktree) {
+		parts.push(
+			`<span class="branch-info-item"><span class="branch-info-label">Worktree:</span> <span class="branch-info-value">${worktree}</span></span>`,
+		);
+	}
+
+	if (parts.length > 0) {
+		el.innerHTML = parts.join("");
+		el.classList.remove("hidden");
+	} else {
+		el.classList.add("hidden");
+		el.innerHTML = "";
+	}
+}
+
 export function updateUserInput(text: string): void {
 	const el = $("#user-input");
 	if (!el) return;
