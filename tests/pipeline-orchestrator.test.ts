@@ -170,6 +170,7 @@ function createFakeSummarizer() {
 	return {
 		maybeSummarize: mock((_id: string, _text: string, _cb: (s: string) => void) => {}),
 		generateSpecSummary: mock(async () => ({ summary: "", flavor: "" })),
+		resetBuffer: mock((_id: string) => {}),
 		cleanup: mock(() => {}),
 	};
 }

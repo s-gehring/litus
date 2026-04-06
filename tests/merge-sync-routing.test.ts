@@ -259,6 +259,7 @@ describe("Merge & Sync Pipeline Routing", () => {
 			summarizer: {
 				maybeSummarize: mock(() => {}),
 				generateSpecSummary: mock(async () => ({ summary: "", flavor: "" })),
+				resetBuffer: mock(() => {}),
 				cleanup: mock(() => {}),
 			},
 			auditLogger: {

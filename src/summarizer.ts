@@ -1,22 +1,32 @@
 import { configStore } from "./config-store";
 
 export class Summarizer {
-	private outputBuffer: Map<string, string[]> = new Map();
+	private charCount: Map<string, number> = new Map();
+	private recentChunks: Map<string, string[]> = new Map();
 	private lastSummaryTime: Map<string, number> = new Map();
 	private pendingSummary: Map<string, boolean> = new Map();
 
 	private readonly MIN_CHARS = 200;
+	private readonly MAX_RECENT_CHUNKS = 10;
 
 	maybeSummarize(workflowId: string, text: string, callback: (summary: string) => void): void {
-		if (!this.outputBuffer.has(workflowId)) {
-			this.outputBuffer.set(workflowId, []);
+		// Track character count without joining the full buffer
+		this.charCount.set(workflowId, (this.charCount.get(workflowId) ?? 0) + text.length);
+
+		// Keep only the most recent chunks (sliding window)
+		let recent = this.recentChunks.get(workflowId);
+		if (!recent) {
+			recent = [];
+			this.recentChunks.set(workflowId, recent);
 		}
-		this.outputBuffer.get(workflowId)?.push(text);
+		recent.push(text);
+		if (recent.length > this.MAX_RECENT_CHUNKS) {
+			recent.splice(0, recent.length - this.MAX_RECENT_CHUNKS);
+		}
 
 		const now = Date.now();
 		const lastTime = this.lastSummaryTime.get(workflowId) || 0;
-		const chunks = this.outputBuffer.get(workflowId) ?? [];
-		const totalChars = chunks.join("").length;
+		const totalChars = this.charCount.get(workflowId) ?? 0;
 
 		if (
 			totalChars >= this.MIN_CHARS &&
@@ -26,19 +36,29 @@ export class Summarizer {
 			this.pendingSummary.set(workflowId, true);
 			this.lastSummaryTime.set(workflowId, now);
 
-			const recentText = chunks.slice(-10).join("\n").slice(-1000);
+			const recentText = recent.join("\n").slice(-1000);
 
 			this.generateSummary(recentText)
 				.then((summary) => {
+					// Only deliver if workflow hasn't been cleaned up while we were generating
+					if (!this.pendingSummary.has(workflowId)) return;
 					this.pendingSummary.set(workflowId, false);
 					if (summary) {
 						callback(summary);
 					}
 				})
 				.catch(() => {
-					this.pendingSummary.set(workflowId, false);
+					if (this.pendingSummary.has(workflowId)) {
+						this.pendingSummary.set(workflowId, false);
+					}
 				});
 		}
+	}
+
+	/** Reset the activity buffer (e.g. between steps) without removing tracking state. */
+	resetBuffer(workflowId: string): void {
+		this.charCount.set(workflowId, 0);
+		this.recentChunks.delete(workflowId);
 	}
 
 	private async generateSummary(text: string): Promise<string | null> {
@@ -108,7 +128,8 @@ export class Summarizer {
 	}
 
 	cleanup(workflowId: string): void {
-		this.outputBuffer.delete(workflowId);
+		this.charCount.delete(workflowId);
+		this.recentChunks.delete(workflowId);
 		this.lastSummaryTime.delete(workflowId);
 		this.pendingSummary.delete(workflowId);
 	}

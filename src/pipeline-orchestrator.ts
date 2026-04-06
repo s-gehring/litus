@@ -882,6 +882,9 @@ export class PipelineOrchestrator {
 		step.pid = null;
 		workflow.updatedAt = new Date().toISOString();
 
+		// Reset activity buffer between steps so the next step starts fresh
+		this.summarizer.resetBuffer(workflowId);
+
 		if (step.name === "commit-push-pr") {
 			const url = extractPrUrl(step.output);
 			if (url) workflow.prUrl = url;
@@ -1277,6 +1280,8 @@ export class PipelineOrchestrator {
 	private handleStepError(workflowId: string, error: string): void {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId) return;
+
+		this.summarizer.cleanup(workflowId);
 
 		if (this.currentAuditRunId) {
 			this.auditLogger.endRun(this.currentAuditRunId, { error });
