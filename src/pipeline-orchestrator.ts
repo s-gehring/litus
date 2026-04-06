@@ -358,6 +358,43 @@ export class PipelineOrchestrator {
 		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
 
+		// Reset step output so it starts fresh
+		step.output = "";
+
+		this.persistWorkflow(workflow);
+		this.callbacks.onStepChange(
+			workflow.id,
+			step.name,
+			step.name,
+			workflow.currentStepIndex,
+			workflow.reviewCycle.iteration,
+		);
+
+		if (step.name === "setup") {
+			this.runSetup(workflow);
+			return;
+		}
+
+		if (step.name === "monitor-ci") {
+			this.runMonitorCi(workflow);
+			return;
+		}
+
+		if (step.name === "fix-ci") {
+			this.runFixCi(workflow);
+			return;
+		}
+
+		if (step.name === "merge-pr") {
+			this.runMergePr(workflow);
+			return;
+		}
+
+		if (step.name === "sync-repo") {
+			this.runSyncRepo(workflow);
+			return;
+		}
+
 		const config = configStore.get();
 		const configKey = STEP_CONFIG_KEY[step.name];
 		this.runStep(
