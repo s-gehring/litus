@@ -26,6 +26,7 @@ import {
 	appendToolIcons,
 	clearOutput,
 	renderOutputEntries,
+	updateBranchInfo,
 	updateDetailActions,
 	updateEpicStatus,
 	updateFlavor,
@@ -471,6 +472,11 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "log": {
+			appendOutput(msg.text, "system");
+			break;
+		}
+
 		case "error": {
 			appendOutput(`Error: ${msg.message}`, "error");
 			break;
@@ -552,6 +558,7 @@ function renderExpandedView(): void {
 		if (welcomeArea) welcomeArea.classList.remove("hidden");
 		hideQuestion();
 		updateWorkflowStatus(null);
+		updateBranchInfo(null);
 		renderPipelineSteps(null);
 		updateSummary("");
 		updateFlavor("");
@@ -748,6 +755,7 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 
 	// Render status, pipeline, summary
 	updateWorkflowStatus(wf);
+	updateBranchInfo(wf);
 	renderPipelineSteps(wf, selectedStepIndex, selectStep);
 	if (wf.summary) updateSummary(wf.summary);
 	updateStepSummary(wf.stepSummary ?? "");

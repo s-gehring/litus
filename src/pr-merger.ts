@@ -45,7 +45,7 @@ export async function mergePr(
 	}
 
 	// Check PR state first
-	onOutput("Checking PR state...");
+	onOutput(`[git] gh pr view ${prUrl} --json state | cwd=${worktreePath}`);
 	const viewProc = spawn(["gh", "pr", "view", prUrl, "--json", "state"], {
 		cwd: worktreePath,
 		stdout: "pipe",
@@ -67,7 +67,9 @@ export async function mergePr(
 	}
 
 	// Attempt squash-merge
-	onOutput("Squash-merging PR...");
+	onOutput(
+		`[git] gh pr merge ${prNumber} --squash --delete-branch --repo ${repo} | cwd=${worktreePath}`,
+	);
 	const mergeProc = spawn(
 		["gh", "pr", "merge", prNumber, "--squash", "--delete-branch", "--repo", repo],
 		{
@@ -115,7 +117,7 @@ export async function resolveConflicts(
 			Bun.spawn(args, opts as Parameters<typeof Bun.spawn>[1]));
 
 	// Fetch and merge master
-	onOutput("Fetching origin master...");
+	onOutput(`[git] git fetch origin master | cwd=${worktreePath}`);
 	const fetchProc = spawn(["git", "fetch", "origin", "master"], {
 		cwd: worktreePath,
 		stdout: "pipe",
@@ -123,7 +125,7 @@ export async function resolveConflicts(
 	});
 	await fetchProc.exited;
 
-	onOutput("Merging origin/master into feature branch...");
+	onOutput(`[git] git merge origin/master | cwd=${worktreePath}`);
 	const mergeProc = spawn(["git", "merge", "origin/master"], {
 		cwd: worktreePath,
 		stdout: "pipe",

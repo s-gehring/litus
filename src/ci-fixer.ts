@@ -1,4 +1,5 @@
 import { configStore } from "./config-store";
+import { gitSpawn } from "./git-logger";
 import type { CiCheckResult, CiFailureLog } from "./types";
 
 const RUN_ID_REGEX = /\/runs\/(\d+)\//;
@@ -24,20 +25,15 @@ export async function fetchFailureLogs(
 	repo: string,
 	checkName: string,
 ): Promise<CiFailureLog> {
-	const proc = Bun.spawn(["gh", "run", "view", runId, "--log-failed", "--repo", repo], {
-		stdout: "pipe",
-		stderr: "pipe",
+	const result = await gitSpawn(["gh", "run", "view", runId, "--log-failed", "--repo", repo], {
+		extra: { check: checkName, runId, repo },
 	});
 
-	const code = await proc.exited;
-	const stdout = await new Response(proc.stdout as ReadableStream).text();
-	const stderr = await new Response(proc.stderr as ReadableStream).text();
-
-	if (code !== 0) {
+	if (result.code !== 0) {
 		return {
 			checkName,
 			runId,
-			logs: `Failed to fetch logs: ${stderr.trim() || `exit code ${code}`}`,
+			logs: `Failed to fetch logs: ${result.stderr || `exit code ${result.code}`}`,
 		};
 	}
 
@@ -45,7 +41,7 @@ export async function fetchFailureLogs(
 	return {
 		checkName,
 		runId,
-		logs: stdout.length > maxLogLength ? stdout.slice(-maxLogLength) : stdout,
+		logs: result.stdout.length > maxLogLength ? result.stdout.slice(-maxLogLength) : result.stdout,
 	};
 }
 

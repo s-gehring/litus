@@ -56,7 +56,7 @@ function createFakeEngine() {
 				status: "idle" as WorkflowStatus,
 				targetRepository,
 				worktreePath: "/tmp/test-worktree",
-				worktreeBranch: "crab-studio/test",
+				worktreeBranch: "tmp-test0001",
 				featureBranch: null,
 				summary: "",
 				stepSummary: "",
@@ -139,6 +139,7 @@ function createFakeEngine() {
 				workflow.updatedAt = new Date().toISOString();
 			}
 		},
+		moveWorktree: async () => "/tmp/test-worktree",
 		_getWorkflow: () => workflow,
 	};
 }

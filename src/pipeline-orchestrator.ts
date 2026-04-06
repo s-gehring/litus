@@ -7,6 +7,7 @@ import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
+import { gitSpawn } from "./git-logger";
 import {
 	mergePr as defaultMergePr,
 	resolveConflicts as defaultResolveConflicts,
@@ -195,15 +196,8 @@ export class PipelineOrchestrator {
 
 	private async getBranch(cwd: string): Promise<string | null> {
 		try {
-			const proc = Bun.spawn(["git", "rev-parse", "--abbrev-ref", "HEAD"], {
-				cwd,
-				stdout: "pipe",
-				stderr: "pipe",
-			});
-			const code = await proc.exited;
-			if (code !== 0) return null;
-			const text = await new Response(proc.stdout as ReadableStream).text();
-			return text.trim() || null;
+			const result = await gitSpawn(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd });
+			return result.code === 0 && result.stdout ? result.stdout : null;
 		} catch {
 			return null;
 		}
@@ -357,6 +351,43 @@ export class PipelineOrchestrator {
 		this.callbacks.onStateChange(workflowId);
 		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
+
+		// Reset step output so it starts fresh
+		step.output = "";
+
+		this.persistWorkflow(workflow);
+		this.callbacks.onStepChange(
+			workflow.id,
+			step.name,
+			step.name,
+			workflow.currentStepIndex,
+			workflow.reviewCycle.iteration,
+		);
+
+		if (step.name === "setup") {
+			this.runSetup(workflow);
+			return;
+		}
+
+		if (step.name === "monitor-ci") {
+			this.runMonitorCi(workflow);
+			return;
+		}
+
+		if (step.name === "fix-ci") {
+			this.runFixCi(workflow);
+			return;
+		}
+
+		if (step.name === "merge-pr") {
+			this.runMergePr(workflow);
+			return;
+		}
+
+		if (step.name === "sync-repo") {
+			this.runSyncRepo(workflow);
+			return;
+		}
 
 		const config = configStore.get();
 		const configKey = STEP_CONFIG_KEY[step.name];
@@ -601,10 +632,28 @@ export class PipelineOrchestrator {
 
 	private runMonitorCi(workflow: Workflow): void {
 		if (!workflow.prUrl) {
-			this.handleStepError(workflow.id, "No PR URL found — cannot monitor CI checks");
+			// Try to discover PR URL from branch
+			this.discoverPrUrl(workflow)
+				.then((url) => {
+					if (!url) {
+						this.handleStepError(workflow.id, "No PR URL found — cannot monitor CI checks");
+						return;
+					}
+					workflow.prUrl = url;
+					this.persistWorkflow(workflow);
+					this.startCiMonitoring(workflow);
+				})
+				.catch((err) => {
+					const msg = err instanceof Error ? err.message : String(err);
+					this.handleStepError(workflow.id, `Failed to discover PR URL: ${msg}`);
+				});
 			return;
 		}
 
+		this.startCiMonitoring(workflow);
+	}
+
+	private startCiMonitoring(workflow: Workflow): void {
 		workflow.ciCycle.monitorStartedAt =
 			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
 		this.persistWorkflow(workflow);
@@ -612,7 +661,7 @@ export class PipelineOrchestrator {
 		this.monitorAbortController = new AbortController();
 
 		startMonitoring(
-			workflow.prUrl,
+			workflow.prUrl as string,
 			workflow.ciCycle,
 			(msg) => this.handleStepOutput(workflow.id, msg),
 			this.monitorAbortController.signal,
@@ -622,6 +671,28 @@ export class PipelineOrchestrator {
 				const msg = err instanceof Error ? err.message : String(err);
 				this.handleStepError(workflow.id, `CI monitoring failed: ${msg}`);
 			});
+	}
+
+	private async discoverPrUrl(workflow: Workflow): Promise<string | null> {
+		const cwd = workflow.worktreePath ?? workflow.targetRepository;
+		if (!cwd) return null;
+
+		const branch = workflow.featureBranch ?? workflow.worktreeBranch;
+		const result = await gitSpawn(
+			["gh", "pr", "list", "--head", branch, "--json", "url", "--limit", "1"],
+			{ cwd, extra: { branch } },
+		);
+		if (result.code !== 0) return null;
+
+		try {
+			const parsed = JSON.parse(result.stdout);
+			if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].url) {
+				return parsed[0].url;
+			}
+		} catch {
+			// ignore parse errors
+		}
+		return null;
 	}
 
 	private handleMonitorResult(workflowId: string, result: MonitorResult): void {
@@ -816,12 +887,11 @@ export class PipelineOrchestrator {
 			if (url) workflow.prUrl = url;
 		}
 
-		// After specify completes, detect the feature branch so subsequent
-		// steps can locate the spec even if the worktree is still on the
-		// initial crab-studio/* branch (e.g. after a pause/resume that
-		// interrupted the git checkout).
+		// After specify completes, detect the feature branch and rename
+		// the worktree directory to match the feature branch name.
 		if (step.name === "specify" && workflow.worktreePath) {
 			this.detectFeatureBranch(workflow);
+			this.renameWorktreeToFeatureBranch(workflow);
 		}
 
 		this.flushPersistDebounce(workflow);
@@ -1104,8 +1174,7 @@ export class PipelineOrchestrator {
 	/**
 	 * Scan the worktree's specs/ directory for the newest feature directory
 	 * and store its name as the feature branch.  This is used to set
-	 * SPECIFY_FEATURE for subsequent steps so that the speckit scripts
-	 * locate the spec even when the git branch is still crab-studio/*.
+	 * SPECIFY_FEATURE for subsequent steps and to rename the worktree.
 	 */
 	private detectFeatureBranch(workflow: Workflow): void {
 		const specsDir = join(workflow.worktreePath as string, "specs");
@@ -1138,6 +1207,35 @@ export class PipelineOrchestrator {
 		} catch {
 			// specs/ directory might not exist yet — not fatal
 		}
+	}
+
+	/**
+	 * After detectFeatureBranch() sets workflow.featureBranch, rename the
+	 * worktree directory from its temp name (tmp-{uuid}) to match the branch.
+	 * Non-fatal: if the rename fails, the workflow continues with the old path.
+	 */
+	private renameWorktreeToFeatureBranch(workflow: Workflow): void {
+		if (!workflow.featureBranch || !workflow.worktreePath || !workflow.targetRepository) return;
+
+		// Only rename temp worktrees (avoid double-renaming)
+		const dirName = workflow.worktreePath.split(/[/\\]/).pop() ?? "";
+		if (!dirName.startsWith("tmp-")) return;
+
+		const newRelativePath = `.worktrees/${workflow.featureBranch}`;
+
+		this.engine
+			.moveWorktree(workflow.worktreePath, newRelativePath, workflow.targetRepository)
+			.then((newAbsPath) => {
+				workflow.worktreePath = newAbsPath;
+				workflow.worktreeBranch = workflow.featureBranch as string;
+				this.persistWorkflow(workflow);
+				this.callbacks.onStateChange(workflow.id);
+				console.log(`[pipeline] Renamed worktree to ${newRelativePath}`);
+			})
+			.catch((err) => {
+				const msg = err instanceof Error ? err.message : String(err);
+				console.warn(`[pipeline] Worktree rename failed (non-fatal): ${msg}`);
+			});
 	}
 
 	/** Build extra env vars to inject into CLI processes. */

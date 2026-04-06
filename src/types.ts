@@ -419,6 +419,7 @@ export type ServerMessage =
 	  }
 	| { type: "config:state"; config: AppConfig; warnings?: ConfigWarning[] }
 	| { type: "config:error"; errors: ConfigValidationError[] }
+	| { type: "log"; text: string }
 	| { type: "error"; message: string };
 
 // Output entry union for client-side output log (text lines + tool icon data)

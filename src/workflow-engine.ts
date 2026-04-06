@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { cp, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { configStore } from "./config-store";
+import { gitSpawn } from "./git-logger";
 import type { EpicAnalysisResult, Question, Workflow, WorkflowStatus } from "./types";
 import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS as transitions } from "./types";
 
@@ -18,12 +19,13 @@ export class WorkflowEngine {
 
 	async createWorkflow(specification: string, targetRepository: string): Promise<Workflow> {
 		const id = randomUUID();
-		const branchName = `crab-studio/${id.slice(0, 8)}`;
+		const shortId = id.slice(0, 8);
 		let worktreePath: string | null = null;
 
-		// Create git worktree and copy gitignored files
+		// Create git worktree in detached HEAD — speckit's specify step
+		// will create the real feature branch via git checkout -b.
 		try {
-			worktreePath = await this.createWorktree(branchName, targetRepository);
+			worktreePath = await this.createWorktree(shortId, targetRepository);
 			await this.copyGitignoredFiles(targetRepository, worktreePath);
 		} catch (err) {
 			throw new Error(
@@ -38,7 +40,7 @@ export class WorkflowEngine {
 			status: "idle",
 			targetRepository,
 			worktreePath,
-			worktreeBranch: branchName,
+			worktreeBranch: `tmp-${shortId}`,
 			featureBranch: null,
 			summary: "",
 			stepSummary: "",
@@ -152,42 +154,40 @@ export class WorkflowEngine {
 	}
 
 	async removeWorktree(worktreePath: string, targetRepo: string): Promise<void> {
-		const proc = Bun.spawn(["git", "worktree", "remove", worktreePath, "--force"], {
+		const result = await gitSpawn(["git", "worktree", "remove", worktreePath, "--force"], {
 			cwd: targetRepo,
-			stdout: "pipe",
-			stderr: "pipe",
+			extra: { worktree: worktreePath },
 		});
-
-		const code = await proc.exited;
-		if (code !== 0) {
-			const stderrStream = proc.stderr;
-			const stderr =
-				stderrStream && typeof stderrStream !== "number"
-					? await new Response(stderrStream as ReadableStream).text()
-					: "";
-			throw new Error(stderr.trim() || `git worktree remove failed with code ${code}`);
+		if (result.code !== 0) {
+			throw new Error(result.stderr || `git worktree remove failed with code ${result.code}`);
 		}
 	}
 
-	private async createWorktree(branchName: string, cwd: string): Promise<string> {
-		const worktreePath = `.worktrees/${branchName.replaceAll("/", "-")}`;
-		const proc = Bun.spawn(["git", "worktree", "add", worktreePath, "-b", branchName], {
-			cwd,
-			stdout: "pipe",
-			stderr: "pipe",
+	async moveWorktree(
+		oldPath: string,
+		newRelativePath: string,
+		targetRepo: string,
+	): Promise<string> {
+		const result = await gitSpawn(["git", "worktree", "move", oldPath, newRelativePath], {
+			cwd: targetRepo,
+			extra: { from: oldPath, to: newRelativePath },
 		});
+		if (result.code !== 0) {
+			throw new Error(result.stderr || `git worktree move failed with code ${result.code}`);
+		}
+		return resolve(targetRepo, newRelativePath);
+	}
 
-		const code = await proc.exited;
-		if (code === 0) {
+	private async createWorktree(shortId: string, cwd: string): Promise<string> {
+		const worktreePath = `.worktrees/tmp-${shortId}`;
+		const result = await gitSpawn(["git", "worktree", "add", "--detach", worktreePath], {
+			cwd,
+			extra: { target: worktreePath },
+		});
+		if (result.code === 0) {
 			return resolve(cwd, worktreePath);
 		}
-
-		const stderrStream = proc.stderr;
-		const stderr =
-			stderrStream && typeof stderrStream !== "number"
-				? await new Response(stderrStream as ReadableStream).text()
-				: "";
-		throw new Error(stderr.trim() || `git worktree add failed with code ${code}`);
+		throw new Error(result.stderr || `git worktree add failed with code ${result.code}`);
 	}
 
 	private static readonly GITIGNORED_PATHS = [

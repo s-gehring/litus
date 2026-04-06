@@ -234,6 +234,9 @@ async function runCLIStream(
 
 	// Prefer assistant event text (authoritative); fall back to delta-accumulated text
 	const accumulatedText = lastAssistantText || deltaAccumulated;
+	console.log(
+		`[epic] Stream done: assistantText=${lastAssistantText.length} chars, deltaText=${deltaAccumulated.length} chars`,
+	);
 
 	return { accumulatedText, sessionId, exitCode, timedOut, stderr: stderr.trim() };
 }
@@ -287,6 +290,12 @@ export async function analyzeEpic(
 			return parseAnalysisResult(accumulatedText);
 		} catch (err) {
 			lastError = err as Error;
+			console.error(
+				`[epic] Parse attempt ${attempt + 1}/${maxJsonRetries + 1} failed: ${lastError.message}`,
+			);
+			console.error(
+				`[epic] Accumulated text (${accumulatedText.length} chars): ${accumulatedText.slice(0, 200)}...${accumulatedText.slice(-200)}`,
+			);
 			if (attempt >= maxJsonRetries || !sessionId) break;
 
 			callbacks?.onOutput?.(`\n\n--- Retrying: ${lastError.message} ---\n\n`);

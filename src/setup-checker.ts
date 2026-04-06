@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { gitSpawn } from "./git-logger";
 import type { SetupCheckResult, SetupResult } from "./types";
 
 async function runCommand(
@@ -7,15 +8,7 @@ async function runCommand(
 	cwd?: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
 	try {
-		const proc = Bun.spawn(cmd, {
-			cwd,
-			stdout: "pipe",
-			stderr: "pipe",
-		});
-		const code = await proc.exited;
-		const stdout = await new Response(proc.stdout as ReadableStream).text();
-		const stderr = await new Response(proc.stderr as ReadableStream).text();
-		return { code, stdout: stdout.trim(), stderr: stderr.trim() };
+		return await gitSpawn(cmd, { cwd, extra: { check: "setup" } });
 	} catch {
 		return { code: 1, stdout: "", stderr: `Failed to execute: ${cmd[0]}` };
 	}
@@ -162,36 +155,20 @@ export async function checkClaudeCli(): Promise<SetupCheckResult> {
 
 const GITIGNORE_ENTRIES = ["specs/", ".worktrees", ".claude", ".specify"];
 
-export function checkGitignoreEntries(targetDir: string): SetupCheckResult[] {
-	let lines: string[];
-	try {
-		const content = readFileSync(join(targetDir, ".gitignore"), "utf-8");
-		lines = content
-			.split("\n")
-			.map((l) => l.trim())
-			.filter((l) => l && !l.startsWith("#"));
-	} catch {
-		// No .gitignore file — all entries are missing
-		return GITIGNORE_ENTRIES.map((entry) => ({
-			name: `Gitignore: ${entry}`,
-			passed: false,
-			error: `"${entry}" is not listed in .gitignore`,
-			required: false,
-		}));
-	}
-
-	return GITIGNORE_ENTRIES.map((entry) => {
-		// Check if any line matches the entry (with or without trailing slash)
-		const found = lines.some(
-			(line) => line === entry || line === entry.replace(/\/$/, "") || line === `${entry}/`,
-		);
-		return {
-			name: `Gitignore: ${entry}`,
-			passed: found,
-			error: found ? undefined : `"${entry}" is not listed in .gitignore`,
-			required: false,
-		};
-	});
+export async function checkGitignoreEntries(targetDir: string): Promise<SetupCheckResult[]> {
+	return Promise.all(
+		GITIGNORE_ENTRIES.map(async (entry) => {
+			// Use git check-ignore to respect all gitignore sources (local, global, system)
+			const result = await runCommand(["git", "check-ignore", entry], targetDir);
+			const passed = result.code === 0;
+			return {
+				name: `Gitignore: ${entry}`,
+				passed,
+				error: passed ? undefined : `"${entry}" is not listed in .gitignore`,
+				required: false,
+			};
+		}),
+	);
 }
 
 export async function runSetupChecks(targetDir: string): Promise<SetupResult> {
@@ -242,7 +219,7 @@ export async function runSetupChecks(targetDir: string): Promise<SetupResult> {
 	const passed = requiredFailures.length === 0;
 
 	// Only run optional checks if all required checks passed
-	const optionalChecks = passed ? checkGitignoreEntries(targetDir) : [];
+	const optionalChecks = passed ? await checkGitignoreEntries(targetDir) : [];
 	const optionalWarnings = optionalChecks.filter((c) => !c.passed);
 
 	return {

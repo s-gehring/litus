@@ -1,15 +1,11 @@
 import { configStore } from "./config-store";
+import { gitSpawn } from "./git-logger";
 import type { CiCheckResult, CiCycle } from "./types";
 
 export async function checkGhAuth(): Promise<void> {
-	const proc = Bun.spawn(["gh", "auth", "status"], {
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-	const code = await proc.exited;
-	if (code !== 0) {
-		const stderr = await new Response(proc.stderr as ReadableStream).text();
-		throw new Error(`gh CLI not authenticated: ${stderr.trim() || "run 'gh auth login' first"}`);
+	const result = await gitSpawn(["gh", "auth", "status"]);
+	if (result.code !== 0) {
+		throw new Error(`gh CLI not authenticated: ${result.stderr || "run 'gh auth login' first"}`);
 	}
 }
 
@@ -25,7 +21,7 @@ export function parseCiChecks(jsonOutput: string): CiCheckResult[] {
 }
 
 export function allChecksComplete(results: CiCheckResult[]): boolean {
-	return results.every((r) => r.state === "COMPLETED");
+	return results.every((r) => r.bucket !== "pending");
 }
 
 /** Returns `true` when all non-SUCCESS checks were cancelled (likely billing/usage-limit). */
@@ -40,25 +36,23 @@ export function allChecksPassed(results: CiCheckResult[]): boolean {
 }
 
 export async function pollCiChecks(prUrl: string): Promise<CiCheckResult[]> {
-	const proc = Bun.spawn(["gh", "pr", "checks", prUrl, "--json", "name,state,bucket,link"], {
-		stdout: "pipe",
-		stderr: "pipe",
+	const result = await gitSpawn(["gh", "pr", "checks", prUrl, "--json", "name,state,bucket,link"], {
+		extra: { pr: prUrl },
 	});
 
-	const code = await proc.exited;
-	const stdout = await new Response(proc.stdout as ReadableStream).text();
-	const stderr = await new Response(proc.stderr as ReadableStream).text();
-
-	if (code !== 0) {
-		const msg = stderr.trim();
+	if (result.code !== 0) {
 		// gh returns non-zero when no checks exist — treat as empty
-		if (msg.includes("no checks") || msg.includes("no commit") || stdout.trim() === "[]") {
+		if (
+			result.stderr.includes("no checks") ||
+			result.stderr.includes("no commit") ||
+			result.stdout === "[]"
+		) {
 			return [];
 		}
-		throw new Error(msg || `gh pr checks failed with code ${code}`);
+		throw new Error(result.stderr || `gh pr checks failed with code ${result.code}`);
 	}
 
-	return parseCiChecks(stdout);
+	return parseCiChecks(result.stdout);
 }
 
 export interface MonitorResult {
