@@ -1172,6 +1172,9 @@ export class PipelineOrchestrator {
 				if (w.status === "error" || w.status === "cancelled") errorIds.add(w.id);
 			}
 		}
+		// The trigger workflow just completed — ensure it's in the set even if
+		// the fire-and-forget persist hasn't flushed to disk yet.
+		completedIds.add(triggerWorkflow.id);
 
 		for (const sibling of siblings) {
 			if (!sibling.epicDependencies.includes(triggerWorkflow.id)) continue;
