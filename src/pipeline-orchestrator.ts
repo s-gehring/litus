@@ -608,6 +608,9 @@ export class PipelineOrchestrator {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId) return;
 
+		// If workflow was paused/cancelled while monitoring, ignore the result
+		if (workflow.status !== "running") return;
+
 		this.monitorAbortController = null;
 
 		if (result.passed) {
