@@ -642,10 +642,7 @@ export class PipelineOrchestrator {
 			this.discoverPrUrl(workflow)
 				.then((url) => {
 					if (!url) {
-						this.handleStepError(
-							workflow.id,
-							"No PR URL found — cannot monitor CI checks",
-						);
+						this.handleStepError(workflow.id, "No PR URL found — cannot monitor CI checks");
 						return;
 					}
 					workflow.prUrl = url;

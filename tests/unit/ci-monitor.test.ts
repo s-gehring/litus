@@ -84,9 +84,9 @@ describe("allChecksComplete", () => {
 	});
 
 	test("returns true for cancel bucket", () => {
-		expect(
-			allChecksComplete([{ name: "a", state: "COMPLETED", bucket: "cancel", link: "" }]),
-		).toBe(true);
+		expect(allChecksComplete([{ name: "a", state: "COMPLETED", bucket: "cancel", link: "" }])).toBe(
+			true,
+		);
 	});
 });
 
