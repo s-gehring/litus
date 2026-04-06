@@ -1,3 +1,4 @@
+import { marked } from "marked";
 import type { Question } from "../../types";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
@@ -9,7 +10,7 @@ export function showQuestion(question: Question): void {
 	const answerInput = $("#answer-input") as HTMLTextAreaElement;
 	const skipBtn = $("#btn-skip-question");
 
-	content.textContent = question.content;
+	content.innerHTML = marked.parse(question.content) as string;
 	confidence.textContent = "";
 
 	skipBtn.classList.remove("hidden");
