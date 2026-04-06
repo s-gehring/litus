@@ -71,7 +71,6 @@ describe("T004: survive simulated restart", () => {
 			timing: {
 				ciPollIntervalMs: 30_000,
 				ciGlobalTimeoutMs: DEFAULT_CONFIG.timing.ciGlobalTimeoutMs,
-				questionDetectionCooldownMs: DEFAULT_CONFIG.timing.questionDetectionCooldownMs,
 				activitySummaryIntervalMs: DEFAULT_CONFIG.timing.activitySummaryIntervalMs,
 				rateLimitBackoffMs: DEFAULT_CONFIG.timing.rateLimitBackoffMs,
 				maxCiLogLength: DEFAULT_CONFIG.timing.maxCiLogLength,

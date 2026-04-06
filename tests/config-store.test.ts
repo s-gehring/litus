@@ -307,7 +307,6 @@ describe("T005: min bound enforcement", () => {
 			timing: {
 				ciPollIntervalMs: 100,
 				ciGlobalTimeoutMs: DEFAULT_CONFIG.timing.ciGlobalTimeoutMs,
-				questionDetectionCooldownMs: DEFAULT_CONFIG.timing.questionDetectionCooldownMs,
 				activitySummaryIntervalMs: DEFAULT_CONFIG.timing.activitySummaryIntervalMs,
 				rateLimitBackoffMs: DEFAULT_CONFIG.timing.rateLimitBackoffMs,
 				maxCiLogLength: DEFAULT_CONFIG.timing.maxCiLogLength,

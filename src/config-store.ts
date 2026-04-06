@@ -153,7 +153,6 @@ Rules:
 	timing: {
 		ciGlobalTimeoutMs: 1_800_000,
 		ciPollIntervalMs: 15_000,
-		questionDetectionCooldownMs: 15_000,
 		activitySummaryIntervalMs: 15_000,
 		rateLimitBackoffMs: 60_000,
 		maxCiLogLength: 50_000,
@@ -219,14 +218,6 @@ export const NUMERIC_SETTING_META: NumericSettingMeta[] = [
 		label: "CI Poll Interval",
 		description: "How often to poll CI check status",
 		min: 5_000,
-		defaultValue: 15_000,
-		unit: "ms",
-	},
-	{
-		key: "timing.questionDetectionCooldownMs",
-		label: "Question Detection Cooldown",
-		description: "Minimum time between question detection attempts",
-		min: 1_000,
 		defaultValue: 15_000,
 		unit: "ms",
 	},
