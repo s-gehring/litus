@@ -141,7 +141,9 @@ async function runCLIStream(
 	const reader = (stdout as ReadableStream<Uint8Array>).getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";
-	let accumulatedText = "";
+	let deltaAccumulated = "";
+	let lastAssistantText = "";
+	let assistantSentLen = 0;
 	let sessionId: string | null = null;
 	let deltaBuffer = "";
 	let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -173,18 +175,39 @@ async function runCLIStream(
 						sessionId = event.session_id;
 					}
 					if (event.type === "assistant" && event.message?.content) {
-						flushDeltaBuffer();
+						// Discard pending deltas — assistant event has authoritative text
+						deltaBuffer = "";
+						if (deltaFlushTimer) {
+							clearTimeout(deltaFlushTimer);
+							deltaFlushTimer = null;
+						}
+
+						let currentText = "";
 						const toolCounts = new Map<string, number>();
 						for (const block of event.message.content) {
-							if (block.type === "tool_use" && block.name) {
+							if (block.type === "text" && block.text) {
+								currentText += block.text;
+							} else if (block.type === "tool_use" && block.name) {
 								toolCounts.set(block.name, (toolCounts.get(block.name) ?? 0) + 1);
 							}
 						}
+						// Each assistant event has cumulative text for the current turn.
+						// On a new turn (text shorter than what we sent), reset.
+						if (currentText.length < assistantSentLen) {
+							assistantSentLen = 0;
+						}
+						const unsent = currentText.slice(assistantSentLen);
+						if (unsent) {
+							callbacks?.onOutput?.(unsent);
+							assistantSentLen = currentText.length;
+						}
+						lastAssistantText = currentText;
+
 						if (toolCounts.size > 0) {
 							callbacks?.onTools?.(Object.fromEntries(toolCounts));
 						}
 					} else if (event.type === "content_block_delta" && event.delta?.text) {
-						accumulatedText += event.delta.text;
+						deltaAccumulated += event.delta.text;
 						deltaBuffer += event.delta.text;
 						if (deltaFlushTimer) clearTimeout(deltaFlushTimer);
 						deltaFlushTimer = setTimeout(flushDeltaBuffer, 50);
@@ -208,6 +231,12 @@ async function runCLIStream(
 		stderrStream && typeof stderrStream !== "number"
 			? await new Response(stderrStream as ReadableStream).text()
 			: "";
+
+	// Prefer assistant event text (authoritative); fall back to delta-accumulated text
+	const accumulatedText = lastAssistantText || deltaAccumulated;
+	console.log(
+		`[epic] Stream done: assistantText=${lastAssistantText.length} chars, deltaText=${deltaAccumulated.length} chars`,
+	);
 
 	return { accumulatedText, sessionId, exitCode, timedOut, stderr: stderr.trim() };
 }
@@ -261,6 +290,12 @@ export async function analyzeEpic(
 			return parseAnalysisResult(accumulatedText);
 		} catch (err) {
 			lastError = err as Error;
+			console.error(
+				`[epic] Parse attempt ${attempt + 1}/${maxJsonRetries + 1} failed: ${lastError.message}`,
+			);
+			console.error(
+				`[epic] Accumulated text (${accumulatedText.length} chars): ${accumulatedText.slice(0, 200)}...${accumulatedText.slice(-200)}`,
+			);
 			if (attempt >= maxJsonRetries || !sessionId) break;
 
 			callbacks?.onOutput?.(`\n\n--- Retrying: ${lastError.message} ---\n\n`);
