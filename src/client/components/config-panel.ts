@@ -556,27 +556,33 @@ export function createConfigPanel(send: (msg: ClientMessage) => void): HTMLEleme
 	});
 	panel.appendChild(purgeBtn);
 
-	// Purge progress overlay (hidden by default)
-	const progressOverlay = document.createElement("div");
-	progressOverlay.id = "purge-progress";
-	progressOverlay.className = "purge-progress hidden";
-	progressOverlay.innerHTML = `
-		<div class="purge-progress-title">Purging all data...</div>
-		<div class="purge-progress-bar-track">
-			<div class="purge-progress-bar-fill" id="purge-bar-fill"></div>
-		</div>
-		<div class="purge-progress-step" id="purge-step-label"></div>
-		<div class="purge-progress-log" id="purge-log"></div>
-	`;
-	panel.appendChild(progressOverlay);
-
 	return panel;
 }
 
+function ensurePurgeOverlay(): HTMLElement {
+	let overlay = document.getElementById("purge-progress");
+	if (!overlay) {
+		overlay = document.createElement("div");
+		overlay.id = "purge-progress";
+		overlay.className = "purge-progress hidden";
+		overlay.innerHTML = `
+			<div class="purge-progress-title">Purging all data...</div>
+			<div class="purge-progress-bar-track">
+				<div class="purge-progress-bar-fill" id="purge-bar-fill"></div>
+			</div>
+			<div class="purge-progress-step" id="purge-step-label"></div>
+			<div class="purge-progress-log" id="purge-log"></div>
+		`;
+		// Append to the outer config-panel container so it covers the whole panel
+		const container = document.getElementById("config-panel");
+		if (container) container.appendChild(overlay);
+	}
+	return overlay;
+}
+
 export function showPurgeProgress(): void {
-	const el = document.getElementById("purge-progress");
-	if (el) el.classList.remove("hidden");
-	// Clear previous log
+	const overlay = ensurePurgeOverlay();
+	overlay.classList.remove("hidden");
 	const log = document.getElementById("purge-log");
 	if (log) log.textContent = "";
 }
