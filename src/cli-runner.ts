@@ -114,76 +114,20 @@ export class CLIRunner {
 		this.streamOutput(entry);
 	}
 
-	sendAnswer(workflowId: string, answer: string): void {
-		const entry = this.running.get(workflowId);
-		if (!entry) return;
-
-		// Mark as stale to prevent buffered output from old reader interleaving
-		entry.stale = true;
-		entry.process.kill();
-		this.running.delete(workflowId);
-
-		const sessionId = entry.sessionId;
-		if (!sessionId) {
-			entry.callbacks.onError("No session ID available to resume conversation");
-			return;
-		}
-
-		const args = [
-			"claude",
-			"-p",
-			answer,
-			"--output-format",
-			"stream-json",
-			"--verbose",
-			"--include-partial-messages",
-			"--dangerously-skip-permissions",
-			"--resume",
-			sessionId,
-		];
-
-		let proc: ReturnType<typeof Bun.spawn>;
-		try {
-			proc = Bun.spawn(args, {
-				cwd: entry.cwd,
-				stdout: "pipe",
-				stderr: "pipe",
-				env: process.env,
-			});
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			console.error(`[cli-runner] Failed to spawn answer process: ${msg}`);
-			queueMicrotask(() => entry.callbacks.onError(msg));
-			return;
-		}
-
-		const newEntry: RunningProcess = {
-			process: proc,
-			workflowId,
-			sessionId,
-			cwd: entry.cwd,
-			callbacks: entry.callbacks,
-			stale: false,
-			deltaBuffer: "",
-			deltaFlushTimer: null,
-		};
-
-		this.running.set(workflowId, newEntry);
-		entry.callbacks.onPid?.(proc.pid);
-		this.streamOutput(newEntry);
-	}
-
 	resume(
 		workflowId: string,
 		sessionId: string,
 		cwd: string,
 		callbacks: CLICallbacks,
 		extraEnv?: Record<string, string>,
+		prompt?: string,
 	): void {
+		const defaultPrompt =
+			"You were paused and are now being resumed. Before continuing, verify that any files you created or modified in this session actually exist on disk — if a file is missing or incomplete, recreate it. Then continue where you left off.";
 		const args = [
 			"claude",
 			"-p",
-			"You were paused and are now being resumed. Before continuing, verify that any files you created or modified in this session actually exist on disk — if a file is missing or incomplete, recreate it. Then continue where you left off.",
+			prompt ?? defaultPrompt,
 			"--output-format",
 			"stream-json",
 			"--verbose",

@@ -151,7 +151,6 @@ function createFakeCliRunner() {
 			startCalls.push({ workflow, callbacks });
 		},
 		kill: mock((_id: string) => {}),
-		sendAnswer: mock((_id: string, _answer: string) => {}),
 		resume: mock((_workflow: Workflow, _callbacks: CLICallbacks) => {}),
 		killAll: mock(() => {}),
 		_startCalls: startCalls,

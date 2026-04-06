@@ -216,8 +216,36 @@ export class PipelineOrchestrator {
 			return;
 		}
 
+		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
-		this.cliRunner.sendAnswer(workflowId, answer);
+
+		// Kill any lingering CLI process before resuming
+		this.cliRunner.kill(workflowId);
+
+		const sessionId = step.sessionId;
+		if (!sessionId) {
+			this.handleStepError(workflowId, "No session ID available to resume after answer");
+			return;
+		}
+
+		const cwd = workflow.worktreePath || process.cwd();
+		const cliCallbacks: CLICallbacks = {
+			onOutput: (text) => this.handleStepOutput(workflow.id, text),
+			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
+			onComplete: () => this.handleStepComplete(workflow.id),
+			onError: (error) => this.handleStepError(workflow.id, error),
+			onSessionId: (sid) => this.handleSessionId(workflow.id, sid),
+			onPid: (pid) => this.handlePid(workflow.id, pid),
+		};
+
+		this.cliRunner.resume(
+			workflowId,
+			sessionId,
+			cwd,
+			cliCallbacks,
+			this.buildStepEnv(workflow),
+			answer,
+		);
 	}
 
 	skipQuestion(workflowId: string, questionId: string): void {
