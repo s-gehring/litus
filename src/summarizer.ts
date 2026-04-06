@@ -43,21 +43,22 @@ export class Summarizer {
 
 	private async generateSummary(text: string): Promise<string | null> {
 		try {
-			const promptTemplate = configStore.get().prompts.activitySummarization;
+			const config = configStore.get();
+			const promptTemplate = config.prompts.activitySummarization;
 			const prompt = promptTemplate.replaceAll("${text}", text);
 
-			const proc = Bun.spawn(
-				[
-					"claude",
-					"-p",
-					prompt,
-					"--model",
-					configStore.get().models.activitySummarization,
-					"--output-format",
-					"text",
-				],
-				{ stdout: "pipe", stderr: "pipe" },
-			);
+			const args = [
+				"claude",
+				"-p",
+				prompt,
+				"--model",
+				config.models.activitySummarization,
+				"--output-format",
+				"text",
+				"--effort",
+				config.efforts.activitySummarization,
+			];
+			const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
 
 			const code = await proc.exited;
 			if (code !== 0) return null;
@@ -71,21 +72,22 @@ export class Summarizer {
 
 	async generateSpecSummary(specification: string): Promise<{ summary: string; flavor: string }> {
 		try {
-			const promptTemplate = configStore.get().prompts.specSummarization;
+			const config = configStore.get();
+			const promptTemplate = config.prompts.specSummarization;
 			const prompt = promptTemplate.replaceAll("${specification}", specification);
 
-			const proc = Bun.spawn(
-				[
-					"claude",
-					"-p",
-					prompt,
-					"--model",
-					configStore.get().models.specSummarization,
-					"--output-format",
-					"text",
-				],
-				{ stdout: "pipe", stderr: "pipe" },
-			);
+			const args = [
+				"claude",
+				"-p",
+				prompt,
+				"--model",
+				config.models.specSummarization,
+				"--output-format",
+				"text",
+				"--effort",
+				config.efforts.specSummarization,
+			];
+			const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
 
 			const code = await proc.exited;
 			if (code !== 0) return { summary: "", flavor: "" };

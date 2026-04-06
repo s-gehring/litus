@@ -132,26 +132,32 @@ export async function resolveConflicts(
 	await mergeProc.exited;
 
 	// Build conflict resolution prompt and run Claude CLI
-	const promptTemplate = configStore.get().prompts.mergeConflictResolution;
+	const config = configStore.get();
+	const promptTemplate = config.prompts.mergeConflictResolution;
 	const prompt = promptTemplate.replaceAll("${specSummary}", specSummary);
+	const model = config.models.mergeConflictResolution;
+	const effort = config.efforts.mergeConflictResolution;
+	const conflictArgs = [
+		"claude",
+		"-p",
+		prompt,
+		"--output-format",
+		"stream-json",
+		"--verbose",
+		"--dangerously-skip-permissions",
+		"--effort",
+		effort,
+	];
+	if (model.trim() !== "") {
+		conflictArgs.push("--model", model);
+	}
 
 	onOutput("Dispatching Claude CLI to resolve conflicts...");
-	const claudeProc = spawn(
-		[
-			"claude",
-			"-p",
-			prompt,
-			"--output-format",
-			"stream-json",
-			"--verbose",
-			"--dangerously-skip-permissions",
-		],
-		{
-			cwd: worktreePath,
-			stdout: "pipe",
-			stderr: "pipe",
-		},
-	);
+	const claudeProc = spawn(conflictArgs, {
+		cwd: worktreePath,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
 
 	const claudeCode = await claudeProc.exited;
 	if (claudeCode !== 0) {
