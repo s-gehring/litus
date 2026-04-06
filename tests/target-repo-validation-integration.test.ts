@@ -49,11 +49,10 @@ describe("target repository validation integration (handleStart flow)", () => {
 		expect(result.error).toBe(`Target repository is not a git repository: ${nonGitDir}`);
 	});
 
-	test("empty string falls back to CWD (no error)", async () => {
+	test("empty string is rejected", async () => {
 		const result = await validateTargetRepository("");
-		expect(result.valid).toBe(true);
-		expect(result.effectivePath).toBe(process.cwd());
-		expect(result.error).toBeUndefined();
+		expect(result.valid).toBe(false);
+		expect(result.error).toContain("required");
 	});
 
 	test("valid repo path passes validation", async () => {

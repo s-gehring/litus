@@ -16,12 +16,12 @@ export class WorkflowEngine {
 		this.workflow = workflow;
 	}
 
-	async createWorkflow(specification: string, targetRepository?: string | null): Promise<Workflow> {
+	async createWorkflow(specification: string, targetRepository: string): Promise<Workflow> {
 		const id = randomUUID();
 		const branchName = `crab-studio/${id.slice(0, 8)}`;
 		let worktreePath: string | null = null;
-		const effectiveRepo = targetRepository || null;
-		const baseCwd = targetRepository || process.cwd();
+		const effectiveRepo = targetRepository;
+		const baseCwd = targetRepository;
 
 		// Create git worktree and copy gitignored files
 		try {
@@ -217,7 +217,7 @@ export class WorkflowEngine {
 /** Create multiple workflows from an epic decomposition result. */
 export async function createEpicWorkflows(
 	result: EpicAnalysisResult,
-	targetRepository: string | undefined,
+	targetRepository: string,
 	epicId?: string,
 ): Promise<{ workflows: Workflow[]; epicId: string }> {
 	if (!epicId) epicId = randomUUID();

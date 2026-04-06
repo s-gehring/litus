@@ -22,13 +22,13 @@ function createFakeEngine() {
 
 	return {
 		getWorkflow: () => workflow,
-		createWorkflow: async (spec: string) => {
+		createWorkflow: async (spec: string, targetRepository: string) => {
 			const now = new Date().toISOString();
 			workflow = {
 				id: "test-wf-id",
 				specification: spec,
 				status: "idle" as WorkflowStatus,
-				targetRepository: null,
+				targetRepository,
 				worktreePath: "/tmp/test-worktree",
 				worktreeBranch: "crab-studio/test",
 				featureBranch: null,
@@ -258,7 +258,7 @@ describe("PipelineOrchestrator", () => {
 
 	/** Start pipeline and flush microtasks so the mocked setup step auto-completes */
 	async function startAndFlush(spec: string, targetRepository?: string) {
-		const wf = await orchestrator.startPipeline(spec, targetRepository);
+		const wf = await orchestrator.startPipeline(spec, targetRepository ?? "/tmp/test-repo");
 		await new Promise((r) => setTimeout(r, 0));
 		return wf;
 	}
@@ -1290,7 +1290,7 @@ describe("PipelineOrchestrator", () => {
 				optionalWarnings: [],
 			});
 
-			await orch.startPipeline("test");
+			await orch.startPipeline("test", "/tmp/test-repo");
 			await new Promise((r) => setTimeout(r, 0));
 
 			const wf = getWf(engine);
@@ -1323,7 +1323,7 @@ describe("PipelineOrchestrator", () => {
 				],
 			});
 
-			await orch.startPipeline("test");
+			await orch.startPipeline("test", "/tmp/test-repo");
 			await new Promise((r) => setTimeout(r, 0));
 
 			const wf = getWf(engine);
@@ -1343,7 +1343,7 @@ describe("PipelineOrchestrator", () => {
 				],
 			});
 
-			await orch.startPipeline("test");
+			await orch.startPipeline("test", "/tmp/test-repo");
 			await new Promise((r) => setTimeout(r, 0));
 
 			const wf = getWf(engine);
@@ -1379,7 +1379,7 @@ describe("PipelineOrchestrator", () => {
 			};
 			const orch = new PipelineOrchestrator(localCallbacks, deps);
 
-			await orch.startPipeline("test");
+			await orch.startPipeline("test", "/tmp/test-repo");
 			await new Promise((r) => setTimeout(r, 0));
 
 			const wf = getWf(localEngine);
@@ -1397,7 +1397,7 @@ describe("PipelineOrchestrator", () => {
 				optionalWarnings: [],
 			});
 
-			await orch.startPipeline("test");
+			await orch.startPipeline("test", "/tmp/test-repo");
 			await new Promise((r) => setTimeout(r, 0));
 
 			const wf = getWf(engine);

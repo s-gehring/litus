@@ -24,8 +24,8 @@ const speckitMissingDir = join(testRoot, "speckit-missing");
 beforeAll(async () => {
 	mkdirSync(gitRepoPath, { recursive: true });
 	mkdirSync(nonGitDir, { recursive: true });
-	mkdirSync(join(speckitCompleteDir, ".claude"), { recursive: true });
-	mkdirSync(join(speckitMissingDir, ".claude"), { recursive: true });
+	mkdirSync(join(speckitCompleteDir, ".claude", "commands"), { recursive: true });
+	mkdirSync(join(speckitMissingDir, ".claude", "commands"), { recursive: true });
 
 	// Init git repo with a GitHub origin and speckit files
 	const init = Bun.spawn(["git", "init"], { cwd: gitRepoPath, stdout: "pipe", stderr: "pipe" });
@@ -35,19 +35,19 @@ beforeAll(async () => {
 		{ cwd: gitRepoPath, stdout: "pipe", stderr: "pipe" },
 	);
 	await addRemote.exited;
-	mkdirSync(join(gitRepoPath, ".claude"), { recursive: true });
+	mkdirSync(join(gitRepoPath, ".claude", "commands"), { recursive: true });
 	for (const file of SPECKIT_FILES) {
-		writeFileSync(join(gitRepoPath, ".claude", file), "# template");
+		writeFileSync(join(gitRepoPath, ".claude", "commands", file), "# template");
 	}
 
 	// Create all speckit files in complete dir
 	for (const file of SPECKIT_FILES) {
-		writeFileSync(join(speckitCompleteDir, ".claude", file), "# template");
+		writeFileSync(join(speckitCompleteDir, ".claude", "commands", file), "# template");
 	}
 
 	// Create only some speckit files in missing dir
-	writeFileSync(join(speckitMissingDir, ".claude", "speckit.clarify.md"), "# template");
-	writeFileSync(join(speckitMissingDir, ".claude", "speckit.plan.md"), "# template");
+	writeFileSync(join(speckitMissingDir, ".claude", "commands", "speckit.clarify.md"), "# template");
+	writeFileSync(join(speckitMissingDir, ".claude", "commands", "speckit.plan.md"), "# template");
 });
 
 afterAll(() => {
@@ -197,7 +197,7 @@ describe("checkSpeckitFiles", () => {
 	test("fails when all files missing", () => {
 		const result = checkSpeckitFiles(nonGitDir);
 		expect(result.passed).toBe(false);
-		expect(result.error).toContain("Missing .claude/ files");
+		expect(result.error).toContain("Missing .claude/commands/ files");
 	});
 });
 

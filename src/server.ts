@@ -181,18 +181,15 @@ async function handleStart(
 		return;
 	}
 
-	// Validate target repository if provided
-	if (targetRepository) {
-		const validation = await validateTargetRepository(targetRepository);
-		if (!validation.valid) {
-			sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
-			return;
-		}
+	const validation = await validateTargetRepository(targetRepository);
+	if (!validation.valid) {
+		sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
+		return;
 	}
 
 	try {
 		const orch = createOrchestrator();
-		const workflow = await orch.startPipeline(specification.trim(), targetRepository);
+		const workflow = await orch.startPipeline(specification.trim(), validation.effectivePath);
 		orchestrators.set(workflow.id, orch);
 
 		const state = stripInternalFields(workflow);
@@ -332,13 +329,12 @@ async function handleEpicStart(
 		return;
 	}
 
-	if (targetRepository) {
-		const validation = await validateTargetRepository(targetRepository);
-		if (!validation.valid) {
-			sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
-			return;
-		}
+	const validation = await validateTargetRepository(targetRepository);
+	if (!validation.valid) {
+		sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
+		return;
 	}
+	const repoDir = validation.effectivePath;
 
 	const epicId = randomUUID();
 	const trimmedDesc = description.trim();
@@ -360,7 +356,6 @@ async function handleEpicStart(
 		});
 
 	try {
-		const repoDir = targetRepository || process.cwd();
 		const result = await analyzeEpic(trimmedDesc, repoDir, epicAnalysisRef, undefined, {
 			onOutput: (text) => broadcast({ type: "epic:output", epicId, text }),
 			onTools: (tools) => broadcast({ type: "epic:tools", epicId, tools }),
@@ -396,7 +391,7 @@ async function handleEpicStart(
 			return;
 		}
 
-		const { workflows } = await createEpicWorkflows(result, targetRepository, epicId);
+		const { workflows } = await createEpicWorkflows(result, repoDir, epicId);
 
 		// Store the analysis duration on the first child workflow
 		if (workflows.length > 0) {

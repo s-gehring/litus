@@ -10,9 +10,12 @@ export interface TargetRepoValidation {
 export async function validateTargetRepository(
 	path: string | undefined,
 ): Promise<TargetRepoValidation> {
-	// Empty/whitespace → fall back to CWD
 	if (!path?.trim()) {
-		return { valid: true, effectivePath: process.cwd() };
+		return {
+			valid: false,
+			error: "Target repository path is required",
+			effectivePath: "",
+		};
 	}
 
 	const trimmed = path.trim();

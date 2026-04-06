@@ -87,13 +87,13 @@ function createFakeEngine() {
 
 	return {
 		getWorkflow: () => workflow,
-		createWorkflow: async (spec: string) => {
+		createWorkflow: async (spec: string, targetRepository: string) => {
 			const now = new Date().toISOString();
 			workflow = {
 				id: "test-wf-id",
 				specification: spec,
 				status: "idle" as WorkflowStatus,
-				targetRepository: null,
+				targetRepository,
 				worktreePath: "/tmp/test-worktree",
 				worktreeBranch: "crab-studio/test",
 				featureBranch: null,
@@ -288,7 +288,7 @@ describe("Merge & Sync Pipeline Routing", () => {
 	});
 
 	async function advanceToMonitorCi() {
-		await orchestrator.startPipeline("test");
+		await orchestrator.startPipeline("test", "/tmp/test-repo");
 		await new Promise((r) => setTimeout(r, 0));
 		const wf = getWf(engine);
 		wf.prUrl = "https://github.com/owner/repo/pull/42";

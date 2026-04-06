@@ -128,10 +128,10 @@ export const SPECKIT_FILES = [
 ];
 
 export function checkSpeckitFiles(targetDir: string): SetupCheckResult {
-	const claudeDir = join(targetDir, ".claude");
+	const commandsDir = join(targetDir, ".claude", "commands");
 	const missing: string[] = [];
 	for (const file of SPECKIT_FILES) {
-		const filePath = join(claudeDir, file);
+		const filePath = join(commandsDir, file);
 		try {
 			readFileSync(filePath);
 		} catch {
@@ -141,7 +141,8 @@ export function checkSpeckitFiles(targetDir: string): SetupCheckResult {
 	return {
 		name: "Speckit prompt files",
 		passed: missing.length === 0,
-		error: missing.length > 0 ? `Missing .claude/ files: ${missing.join(", ")}` : undefined,
+		error:
+			missing.length > 0 ? `Missing .claude/commands/ files: ${missing.join(", ")}` : undefined,
 		required: true,
 	};
 }

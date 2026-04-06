@@ -29,22 +29,22 @@ afterAll(() => {
 });
 
 describe("validateTargetRepository", () => {
-	test("returns valid with CWD for empty string", async () => {
+	test("rejects empty string", async () => {
 		const result = await validateTargetRepository("");
-		expect(result.valid).toBe(true);
-		expect(result.effectivePath).toBe(process.cwd());
+		expect(result.valid).toBe(false);
+		expect(result.error).toContain("required");
 	});
 
-	test("returns valid with CWD for undefined", async () => {
+	test("rejects undefined", async () => {
 		const result = await validateTargetRepository(undefined);
-		expect(result.valid).toBe(true);
-		expect(result.effectivePath).toBe(process.cwd());
+		expect(result.valid).toBe(false);
+		expect(result.error).toContain("required");
 	});
 
-	test("returns valid with CWD for whitespace-only", async () => {
+	test("rejects whitespace-only", async () => {
 		const result = await validateTargetRepository("   ");
-		expect(result.valid).toBe(true);
-		expect(result.effectivePath).toBe(process.cwd());
+		expect(result.valid).toBe(false);
+		expect(result.error).toContain("required");
 	});
 
 	test("rejects relative path", async () => {
