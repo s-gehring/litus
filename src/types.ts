@@ -62,7 +62,6 @@ export interface LimitConfig {
 export interface TimingConfig {
 	ciGlobalTimeoutMs: number;
 	ciPollIntervalMs: number;
-	questionDetectionCooldownMs: number;
 	activitySummaryIntervalMs: number;
 	rateLimitBackoffMs: number;
 	maxCiLogLength: number;

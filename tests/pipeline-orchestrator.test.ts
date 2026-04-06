@@ -129,7 +129,6 @@ function createFakeCliRunner() {
 			startCalls.push({ workflow, callbacks, extraEnv });
 		},
 		kill: mock((_id: string) => {}),
-		sendAnswer: mock((_id: string, _answer: string) => {}),
 		resume: mock(
 			(
 				_id: string,
@@ -137,6 +136,7 @@ function createFakeCliRunner() {
 				_cwd: string,
 				_callbacks: CLICallbacks,
 				_extraEnv?: Record<string, string>,
+				_prompt?: string,
 			) => {},
 		),
 		killAll: mock(() => {}),
@@ -376,7 +376,7 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.currentStepIndex).toBe(1);
 		});
 
-		test("answering question resumes step via sendAnswer", async () => {
+		test("answering question resumes step via --resume", async () => {
 			await orchestrator.startPipeline("test");
 
 			cli.getLastCallbacks().onSessionId("sess-123");
@@ -394,7 +394,12 @@ describe("PipelineOrchestrator", () => {
 
 			orchestrator.answerQuestion("test-wf-id", "q1", "Yes, use React");
 
-			expect(cli.sendAnswer).toHaveBeenCalledWith("test-wf-id", "Yes, use React");
+			expect(cli.kill).toHaveBeenCalledWith("test-wf-id");
+			expect(cli.resume).toHaveBeenCalled();
+			const resumeCall = (cli.resume.mock.calls as unknown[][])[cli.resume.mock.calls.length - 1];
+			expect(resumeCall[0]).toBe("test-wf-id");
+			expect(resumeCall[1]).toBe("sess-123");
+			expect(resumeCall[5]).toBe("Yes, use React");
 		});
 
 		test("session ID is preserved after answering question", async () => {
@@ -460,9 +465,11 @@ describe("PipelineOrchestrator", () => {
 
 			expect(wf.pendingQuestion).toEqual(q1);
 
-			// Answer → sendAnswer called
+			// Answer → resume called with answer as prompt
 			orchestrator.answerQuestion("test-wf-id", "q1", "Answer 1");
-			expect(cli.sendAnswer).toHaveBeenCalledWith("test-wf-id", "Answer 1");
+			const resumeCall = (cli.resume.mock.calls as unknown[][])[cli.resume.mock.calls.length - 1];
+			expect(resumeCall[0]).toBe("test-wf-id");
+			expect(resumeCall[5]).toBe("Answer 1");
 		});
 	});
 
@@ -715,8 +722,9 @@ describe("PipelineOrchestrator", () => {
 
 			orchestrator.skipQuestion("test-wf-id", "q-skip");
 
-			expect(cli.sendAnswer).toHaveBeenCalledWith(
-				"test-wf-id",
+			const resumeCall = (cli.resume.mock.calls as unknown[][])[cli.resume.mock.calls.length - 1];
+			expect(resumeCall[0]).toBe("test-wf-id");
+			expect(resumeCall[5]).toBe(
 				"The user has chosen not to answer this question. Continue with your best judgment.",
 			);
 		});

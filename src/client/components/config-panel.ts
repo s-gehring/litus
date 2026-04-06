@@ -52,14 +52,6 @@ const NUMERIC_SETTING_META = [
 		unit: "ms",
 	},
 	{
-		key: "timing.questionDetectionCooldownMs",
-		label: "Question Detection Cooldown",
-		description: "Minimum time between question detection attempts",
-		min: 1_000,
-		defaultValue: 15_000,
-		unit: "ms",
-	},
-	{
 		key: "timing.activitySummaryIntervalMs",
 		label: "Activity Summary Interval",
 		description: "Minimum time between activity summary generation",
