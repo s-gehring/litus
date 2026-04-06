@@ -638,10 +638,31 @@ export class PipelineOrchestrator {
 
 	private runMonitorCi(workflow: Workflow): void {
 		if (!workflow.prUrl) {
-			this.handleStepError(workflow.id, "No PR URL found — cannot monitor CI checks");
+			// Try to discover PR URL from branch
+			this.discoverPrUrl(workflow)
+				.then((url) => {
+					if (!url) {
+						this.handleStepError(
+							workflow.id,
+							"No PR URL found — cannot monitor CI checks",
+						);
+						return;
+					}
+					workflow.prUrl = url;
+					this.persistWorkflow(workflow);
+					this.startCiMonitoring(workflow);
+				})
+				.catch((err) => {
+					const msg = err instanceof Error ? err.message : String(err);
+					this.handleStepError(workflow.id, `Failed to discover PR URL: ${msg}`);
+				});
 			return;
 		}
 
+		this.startCiMonitoring(workflow);
+	}
+
+	private startCiMonitoring(workflow: Workflow): void {
 		workflow.ciCycle.monitorStartedAt =
 			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
 		this.persistWorkflow(workflow);
@@ -649,7 +670,7 @@ export class PipelineOrchestrator {
 		this.monitorAbortController = new AbortController();
 
 		startMonitoring(
-			workflow.prUrl,
+			workflow.prUrl as string,
 			workflow.ciCycle,
 			(msg) => this.handleStepOutput(workflow.id, msg),
 			this.monitorAbortController.signal,
@@ -659,6 +680,30 @@ export class PipelineOrchestrator {
 				const msg = err instanceof Error ? err.message : String(err);
 				this.handleStepError(workflow.id, `CI monitoring failed: ${msg}`);
 			});
+	}
+
+	private async discoverPrUrl(workflow: Workflow): Promise<string | null> {
+		const cwd = workflow.worktreePath ?? workflow.targetRepository;
+		if (!cwd) return null;
+
+		const branch = workflow.featureBranch ?? workflow.worktreeBranch;
+		const proc = Bun.spawn(
+			["gh", "pr", "list", "--head", branch, "--json", "url", "--limit", "1"],
+			{ cwd, stdout: "pipe", stderr: "pipe" },
+		);
+		const code = await proc.exited;
+		if (code !== 0) return null;
+
+		const stdout = await new Response(proc.stdout as ReadableStream).text();
+		try {
+			const parsed = JSON.parse(stdout.trim());
+			if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].url) {
+				return parsed[0].url;
+			}
+		} catch {
+			// ignore parse errors
+		}
+		return null;
 	}
 
 	private handleMonitorResult(workflowId: string, result: MonitorResult): void {
