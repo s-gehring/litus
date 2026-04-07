@@ -19,6 +19,7 @@ import {
 } from "./components/config-panel";
 import { createModal } from "./components/creation-modal";
 import { renderEpicTree } from "./components/epic-tree";
+import { updateFavicon } from "./components/favicon";
 import { createFolderPicker } from "./components/folder-picker";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
@@ -565,6 +566,16 @@ function returnToEpicTree(): void {
 
 function renderCards(): void {
 	renderCardStrip(cardOrder, workflows, epics, epicAggregates, expandedId, expandItem);
+
+	let needsAttention = false;
+	for (const [, entry] of workflows) {
+		const s = entry.state.status;
+		if (s === "waiting_for_input" || s === "error") {
+			needsAttention = true;
+			break;
+		}
+	}
+	updateFavicon(needsAttention);
 }
 
 function renderExpandedView(): void {
