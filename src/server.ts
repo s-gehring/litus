@@ -13,14 +13,15 @@ import { ReviewClassifier } from "./review-classifier";
 import { getMimeType, resolveStaticPath } from "./static-files";
 import { Summarizer } from "./summarizer";
 import { validateTargetRepository } from "./target-repo-validator";
-import type {
-	AppConfig,
-	ClientMessage,
-	PipelineStepName,
-	ServerMessage,
-	ToolUsage,
-	Workflow,
-	WorkflowState,
+import {
+	type AppConfig,
+	type ClientMessage,
+	type PipelineStepName,
+	type ServerMessage,
+	STEP,
+	type ToolUsage,
+	type Workflow,
+	type WorkflowState,
 } from "./types";
 import { createEpicWorkflows } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
@@ -866,7 +867,7 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 				const runningStep = workflow.steps.find((s) => s.status === "running");
 
 				// monitor-ci is direct code execution — restart polling from scratch
-				if (runningStep?.name === "monitor-ci") {
+				if (runningStep?.name === STEP.MONITOR_CI) {
 					console.log(`[startup] Restarting monitor-ci for workflow ${workflow.id}`);
 					workflow.ciCycle.monitorStartedAt = null;
 					orch.resumeMonitorCi(workflow.id);

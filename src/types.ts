@@ -345,6 +345,26 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	{ name: "sync-repo", displayName: "Syncing Repository", prompt: "" },
 ];
 
+// Typed step name constants — compile-time checked via `satisfies`
+export const STEP = {
+	SETUP: "setup",
+	SPECIFY: "specify",
+	CLARIFY: "clarify",
+	PLAN: "plan",
+	TASKS: "tasks",
+	IMPLEMENT: "implement",
+	REVIEW: "review",
+	IMPLEMENT_REVIEW: "implement-review",
+	COMMIT_PUSH_PR: "commit-push-pr",
+	MONITOR_CI: "monitor-ci",
+	FIX_CI: "fix-ci",
+	MERGE_PR: "merge-pr",
+	SYNC_REPO: "sync-repo",
+} as const satisfies Record<string, PipelineStepName>;
+
+// Delta buffer flush timeout used across CLI stream consumers
+export const DELTA_FLUSH_TIMEOUT_MS = 50;
+
 // Workflow entity (extended with pipeline fields)
 export interface Workflow {
 	id: string;
