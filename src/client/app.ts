@@ -567,7 +567,10 @@ function returnToEpicTree(): void {
 
 function syncAutoModeToggle(active: boolean): void {
 	const btn = document.getElementById("btn-auto-mode");
-	if (btn) btn.classList.toggle("active", active);
+	if (!btn) return;
+	btn.classList.toggle("active", active);
+	const icon = btn.querySelector(".toggle-icon");
+	if (icon) icon.textContent = active ? "✓" : "✕";
 }
 
 function renderCards(): void {
