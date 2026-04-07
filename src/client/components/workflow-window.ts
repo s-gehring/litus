@@ -100,7 +100,10 @@ function renderToolIcons(tools: ToolUsage[]): HTMLDivElement {
 	const row = document.createElement("div");
 	row.className = "tool-icons";
 	for (const usage of tools) {
-		const mapping = TOOL_ICONS[usage.name] ?? FALLBACK_ICON;
+		const mapping = TOOL_ICONS[usage.name] ?? {
+			icon: FALLBACK_ICON.icon,
+			label: usage.name || FALLBACK_ICON.label,
+		};
 		const wrapper = document.createElement("span");
 		wrapper.className = "tool-icon-wrapper";
 
