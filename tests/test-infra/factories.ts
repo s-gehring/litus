@@ -18,6 +18,11 @@ export function makeAppConfig(overrides?: Partial<AppConfig>): AppConfig {
 
 let epicCounter = 0;
 
+/** Reset the epic counter (call in beforeEach to get deterministic IDs) */
+export function resetEpicCounter(): void {
+	epicCounter = 0;
+}
+
 /** Create a complete PersistedEpic with sensible defaults, accepts partial overrides */
 export function makePersistedEpic(overrides?: Partial<PersistedEpic>): PersistedEpic {
 	return {

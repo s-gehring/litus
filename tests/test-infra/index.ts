@@ -13,6 +13,7 @@ export {
 	makePipelineStep,
 	makeRunningWorkflow,
 	makeWorkflowWithStatus,
+	resetEpicCounter,
 } from "./factories";
 export type { MockCliRunner } from "./mock-cli-runner";
 export { createMockCliRunner } from "./mock-cli-runner";
@@ -35,4 +36,5 @@ export {
 	createDelayedStream,
 	createReadableStream,
 } from "./streams";
+export type { TempDirOptions } from "./temp-dir";
 export { createTempRepo, withTempDir } from "./temp-dir";

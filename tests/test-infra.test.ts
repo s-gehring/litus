@@ -30,6 +30,7 @@ import {
 	makePipelineStep,
 	makeRunningWorkflow,
 	makeWorkflowWithStatus,
+	resetEpicCounter,
 	// US3 temp dir
 	withTempDir,
 } from "./test-infra";
@@ -111,6 +112,18 @@ describe("makePersistedEpic", () => {
 		});
 		expect(epic.status).toBe("error");
 		expect(epic.errorMessage).toBe("timeout");
+	});
+
+	test("resetEpicCounter produces deterministic IDs", () => {
+		resetEpicCounter();
+		const a = makePersistedEpic();
+		const b = makePersistedEpic();
+		expect(a.epicId).toBe("epic-1");
+		expect(b.epicId).toBe("epic-2");
+
+		resetEpicCounter();
+		const c = makePersistedEpic();
+		expect(c.epicId).toBe("epic-1");
 	});
 });
 
@@ -463,6 +476,13 @@ describe("createMockSpawn", () => {
 		expect(tracker.callCount("spawn")).toBe(1);
 		expect(tracker.lastCallTo("spawn")?.args[0]).toEqual(["echo", "test"]);
 	});
+
+	test("returns null streams when no lines configured", async () => {
+		const { mock } = createMockSpawn();
+		const result = mock.spawn(["test"], {});
+		expect(result.stdout).toBeNull();
+		expect(result.stderr).toBeNull();
+	});
 });
 
 // ── US3: withTempDir ─────────────────────────────────────
@@ -519,6 +539,22 @@ describe("createTempRepo", () => {
 			const output = await new Response(log.stdout).text();
 			await log.exited;
 			expect(output.trim()).toBeTruthy();
+		} finally {
+			rmSync(repoPath, { recursive: true, force: true });
+		}
+	});
+
+	test("uses deterministic author info", async () => {
+		const repoPath = await createTempRepo();
+		try {
+			const log = Bun.spawn(["git", "log", "--format=%an <%ae>"], {
+				cwd: repoPath,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			const output = await new Response(log.stdout).text();
+			await log.exited;
+			expect(output.trim()).toBe("Test Author <test@example.com>");
 		} finally {
 			rmSync(repoPath, { recursive: true, force: true });
 		}

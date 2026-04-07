@@ -18,7 +18,14 @@ export interface MockCliRunner {
 	emitPid: (pid: number) => void;
 }
 
-/** Create a mock CLI runner with call tracking and callback triggers */
+/**
+ * Create a mock CLI runner with call tracking and callback triggers.
+ *
+ * NOTE: The mock intentionally simplifies the real CLIRunner interface —
+ * `start(workflowId, prompt, callbacks)` instead of `start(workflow, callbacks, extraEnv?, model?, effort?)`.
+ * This makes tests more concise when verifying orchestration logic.
+ * Do NOT use this mock for integration-style tests that verify the exact call signature passed to CLIRunner.
+ */
 export function createMockCliRunner(): MockCliRunner {
 	const tracker = createCallTracker();
 	let lastCallbacks: CLICallbacks | null = null;

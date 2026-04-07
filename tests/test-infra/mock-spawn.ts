@@ -29,10 +29,8 @@ export function createMockSpawn(): MockSpawn {
 			tracker.calls.push({ method: "spawn", args: [args, opts] });
 			return {
 				exited: Promise.resolve(exitCode),
-				stdout:
-					stdoutLines.length > 0 ? createReadableStream(stdoutLines) : createReadableStream([]),
-				stderr:
-					stderrLines.length > 0 ? createReadableStream(stderrLines) : createReadableStream([]),
+				stdout: stdoutLines.length > 0 ? createReadableStream(stdoutLines) : null,
+				stderr: stderrLines.length > 0 ? createReadableStream(stderrLines) : null,
 			};
 		},
 	};

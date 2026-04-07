@@ -156,24 +156,22 @@ export function createMockConfigStore(): MockConfigStore {
 			warnings: ConfigWarning[];
 		} {
 			tracker.calls.push({ method: "save", args: [partial] });
-			// Deep merge nested objects to match real ConfigStore behavior
-			if (partial.models) {
-				current.models = { ...current.models, ...partial.models };
-			}
-			if (partial.efforts) {
-				current.efforts = { ...current.efforts, ...partial.efforts };
-			}
-			if (partial.prompts) {
-				current.prompts = { ...current.prompts, ...partial.prompts };
-			}
-			if (partial.limits) {
-				current.limits = { ...current.limits, ...partial.limits };
-			}
-			if (partial.timing) {
-				current.timing = { ...current.timing, ...partial.timing };
-			}
-			if (partial.autoMode !== undefined) {
-				current.autoMode = partial.autoMode;
+			// Deep merge: shallow-merge any nested plain objects, assign primitives
+			const cur = current as unknown as Record<string, unknown>;
+			for (const [key, value] of Object.entries(partial)) {
+				if (
+					value !== undefined &&
+					typeof value === "object" &&
+					value !== null &&
+					!Array.isArray(value)
+				) {
+					cur[key] = {
+						...(cur[key] as Record<string, unknown>),
+						...(value as unknown as Record<string, unknown>),
+					};
+				} else if (value !== undefined) {
+					cur[key] = value;
+				}
 			}
 			return { errors: [], warnings: [] };
 		},
