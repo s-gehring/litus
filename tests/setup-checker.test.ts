@@ -305,6 +305,34 @@ describe("checkGitignoreEntries", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
+	test(
+		"reports already-tracked warning when gitignored but tracked",
+		async () => {
+			const dir = join(testRoot, "gitignore-tracked");
+			mkdirSync(dir, { recursive: true });
+			Bun.spawnSync(["git", "init"], { cwd: dir });
+			Bun.spawnSync(["git", "config", "core.excludesFile", ""], { cwd: dir });
+			// Create and track specs/ before adding it to .gitignore
+			mkdirSync(join(dir, "specs"), { recursive: true });
+			writeFileSync(join(dir, "specs", "test.md"), "test");
+			Bun.spawnSync(["git", "add", "specs"], { cwd: dir });
+			Bun.spawnSync(["git", "commit", "-m", "add specs"], { cwd: dir });
+			writeFileSync(
+				join(dir, ".gitignore"),
+				"node_modules/\nspecs/\n.worktrees\n.claude\n.specify\n",
+			);
+
+			const results = await checkGitignoreEntries(dir);
+			const specResult = results.find((r) => r.name === "Gitignore: specs/");
+			expect(specResult?.passed).toBe(false);
+			expect(specResult?.error).toContain("already tracked");
+			expect(specResult?.error).toContain("git rm");
+
+			rmSync(dir, { recursive: true, force: true });
+		},
+		{ timeout: 15_000 },
+	);
+
 	test("reports all missing when no .gitignore", async () => {
 		const results = await checkGitignoreEntries(nonGitDir);
 		for (const r of results) {
