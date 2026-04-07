@@ -519,6 +519,18 @@ describe("withTempDir", () => {
 		}
 		expect(existsSync(dirPath)).toBe(false);
 	});
+
+	test("throwOnCleanupFailure option is accepted and cleans up normally", async () => {
+		let dirPath = "";
+		await withTempDir(
+			async (dir) => {
+				dirPath = dir;
+				await Bun.write(join(dir, "test.txt"), "hello");
+			},
+			{ throwOnCleanupFailure: true },
+		);
+		expect(existsSync(dirPath)).toBe(false);
+	});
 });
 
 // ── US3: createTempRepo ──────────────────────────────────

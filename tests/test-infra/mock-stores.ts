@@ -137,7 +137,12 @@ export interface MockConfigStore {
 	tracker: CallTracker;
 }
 
-/** Create a mock config store returning DEFAULT_CONFIG by default */
+/**
+ * Create a mock config store returning DEFAULT_CONFIG by default.
+ * Note: save() always returns empty errors/warnings — it does not replicate the real
+ * ConfigStore's validation logic. Tests that need to verify validation-rejection behavior
+ * should test against the real ConfigStore or extend this mock with configureValidationErrors().
+ */
 export function createMockConfigStore(): MockConfigStore {
 	const tracker = createCallTracker();
 	let current: AppConfig = structuredClone(DEFAULT_CONFIG);
