@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CLICallbacks } from "../src/cli-runner";
-import { DEFAULT_CONFIG } from "../src/config-store";
+import { configStore, DEFAULT_CONFIG } from "../src/config-store";
 import { type PipelineCallbacks, PipelineOrchestrator } from "../src/pipeline-orchestrator";
 import type {
 	PipelineStepName,
@@ -230,6 +230,7 @@ describe("PipelineOrchestrator", () => {
 	let store: ReturnType<typeof createFakeWorkflowStore>;
 
 	beforeEach(() => {
+		configStore.save({ autoMode: false });
 		callbacks = makeCallbacks();
 		engine = createFakeEngine();
 		cli = createFakeCliRunner();

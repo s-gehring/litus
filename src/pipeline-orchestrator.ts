@@ -900,6 +900,8 @@ export class PipelineOrchestrator {
 				? "skip"
 				: "The user has chosen not to answer this question. Continue with your best judgment.";
 			this.handleStepOutput(workflowId, `[auto-mode] Auto-answering: "${autoAnswer}"`);
+			// Set the question so answerQuestion's guard check passes
+			this.engine.setQuestion(workflowId, question);
 			this.answerQuestion(workflowId, question.id, autoAnswer);
 			return;
 		}
