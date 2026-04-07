@@ -184,4 +184,45 @@ describe("runClaude", () => {
 			expect(warnMock).not.toHaveBeenCalled();
 		});
 	});
+
+	describe("spawn failure", () => {
+		test("returns structured error when Bun.spawn throws", async () => {
+			spawnMock.mockImplementation(() => {
+				throw new Error("spawn ENOENT");
+			});
+			const result = await runClaude({ prompt: "hello" });
+			expect(result.ok).toBe(false);
+			expect(result.exitCode).toBe(-1);
+			expect(result.stdout).toBe("");
+			expect(result.stderr).toBe("spawn ENOENT");
+		});
+
+		test("logs warning on spawn failure when callerLabel is provided", async () => {
+			const warnMock = mock(() => {});
+			console.warn = warnMock as typeof console.warn;
+			spawnMock.mockImplementation(() => {
+				throw new Error("binary not found");
+			});
+			await runClaude({ prompt: "hello", callerLabel: "spawn-test" });
+			expect(warnMock).toHaveBeenCalledTimes(1);
+			const msg = (warnMock.mock.calls as string[][])[0][0];
+			expect(msg).toContain("spawn-test");
+			expect(msg).toContain("binary not found");
+		});
+	});
+
+	describe("environment sanitization", () => {
+		test("spawn options include env with CLAUDE vars stripped", async () => {
+			process.env.CLAUDE_TEST_MARKER = "should-be-stripped";
+			try {
+				await runClaude({ prompt: "hello" });
+				const opts = spawnMock.mock.calls[0][1] as Record<string, unknown>;
+				const env = opts.env as Record<string, string>;
+				expect(env).toBeDefined();
+				expect(env.CLAUDE_TEST_MARKER).toBeUndefined();
+			} finally {
+				delete process.env.CLAUDE_TEST_MARKER;
+			}
+		});
+	});
 });
