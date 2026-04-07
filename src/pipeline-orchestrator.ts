@@ -644,7 +644,10 @@ export class PipelineOrchestrator {
 
 	private checkoutMasterInWorktree(workflow: Workflow): void {
 		const cwd = requireWorktreePath(workflow);
-		this.handleStepOutput(workflow.id, "[git] fetch + checkout --detach origin/master | cwd=worktree");
+		this.handleStepOutput(
+			workflow.id,
+			"[git] fetch + checkout --detach origin/master | cwd=worktree",
+		);
 		this.checkoutMasterFn(cwd)
 			.then((result) => {
 				const wf = this.engine.getWorkflow();
