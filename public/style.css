@@ -400,6 +400,7 @@ header h1 {
 }
 
 .output-area {
+  position: relative;
   height: 400px;
   overflow: hidden;
   border-bottom: 1px solid var(--border);
@@ -493,9 +494,15 @@ header h1 {
 
 /* Question panel */
 .question-panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
   padding: 16px;
-  background: rgba(240,192,64,0.05);
-  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary, #1e1e2e);
+  border-top: 1px solid rgba(240, 192, 64, 0.3);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .question-header {
