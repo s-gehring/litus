@@ -469,7 +469,7 @@ header h1 {
 .tool-tooltip {
   display: none;
   position: absolute;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
   background: #1e1e2e;
@@ -495,7 +495,7 @@ header h1 {
 /* Question panel */
 .question-panel {
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: 0;
   right: 0;
   z-index: 10;
