@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { AuditLogger } from "../src/audit-logger";
 import type { AuditEvent } from "../src/types";
 
-const TEST_DIR = join(tmpdir(), "crab-studio-audit-integration-test");
+const TEST_DIR = join(tmpdir(), "litus-audit-integration-test");
 
 function readEvents(pipelineName: string): AuditEvent[] {
 	const filePath = join(TEST_DIR, `${pipelineName}.jsonl`);

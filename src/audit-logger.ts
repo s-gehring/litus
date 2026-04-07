@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AuditConfig, AuditEvent, AuditEventType } from "./types";
 
-const DEFAULT_AUDIT_DIR = join(homedir(), ".crab-studio", "audit");
+const DEFAULT_AUDIT_DIR = join(homedir(), ".litus", "audit");
 
 interface RunState {
 	pipelineName: string;

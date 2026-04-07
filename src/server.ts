@@ -828,7 +828,7 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 	const port = BASE_PORT + i;
 	try {
 		server = startServer(port);
-		console.log(`crab-studio running at http://localhost:${port}`);
+		console.log(`Litus running at http://localhost:${port}`);
 		break;
 	} catch (err) {
 		if (i === MAX_PORT_RETRIES - 1) throw err;

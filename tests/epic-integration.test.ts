@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import type { EpicAnalysisResult, Workflow } from "../src/types";
 import { createEpicWorkflows } from "../src/workflow-engine";
 
-// Use crab-studio repo as test target (real git repo needed for worktrees)
+// Use litus repo as test target (real git repo needed for worktrees)
 const TEST_TARGET_REPO = process.cwd();
 
 // Track all workflows created during tests for cleanup

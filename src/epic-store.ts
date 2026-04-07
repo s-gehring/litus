@@ -7,7 +7,7 @@ export class EpicStore {
 	private baseDir: string;
 
 	constructor(baseDir?: string) {
-		this.baseDir = baseDir ?? join(homedir(), ".crab-studio", "workflows");
+		this.baseDir = baseDir ?? join(homedir(), ".litus", "workflows");
 	}
 
 	private ensureDir(): void {
