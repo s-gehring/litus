@@ -17,27 +17,29 @@ import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
 import { runSetupChecks as defaultRunSetupChecks } from "./setup-checker";
 import { Summarizer } from "./summarizer";
-import type {
-	EffortLevel,
-	ModelConfig,
-	PipelineStepName,
-	Question,
-	SetupResult,
-	ToolUsage,
-	Workflow,
+import {
+	type EffortLevel,
+	type ModelConfig,
+	type PipelineStepName,
+	type Question,
+	type SetupResult,
+	STEP,
+	type ToolUsage,
+	type Workflow,
 } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
 
+// Only steps that invoke the CLI with a configurable model
 const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {
-	specify: "specify",
-	clarify: "clarify",
-	plan: "plan",
-	tasks: "tasks",
-	implement: "implement",
-	review: "review",
-	"implement-review": "implementReview",
-	"commit-push-pr": "commitPushPr",
+	[STEP.SPECIFY]: "specify",
+	[STEP.CLARIFY]: "clarify",
+	[STEP.PLAN]: "plan",
+	[STEP.TASKS]: "tasks",
+	[STEP.IMPLEMENT]: "implement",
+	[STEP.REVIEW]: "review",
+	[STEP.IMPLEMENT_REVIEW]: "implementReview",
+	[STEP.COMMIT_PUSH_PR]: "commitPushPr",
 };
 
 export interface PipelineCallbacks {
@@ -248,13 +250,13 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 
-		if (step.name === "setup") {
+		if (step.name === STEP.SETUP) {
 			// User answered the optional warnings prompt — checkout master then advance
 			this.checkoutMasterInWorktree(workflow);
 			return;
 		}
 
-		if (step.name === "monitor-ci") {
+		if (step.name === STEP.MONITOR_CI) {
 			if (answer.toLowerCase().includes("abort")) {
 				this.handleStepError(workflowId, "Workflow aborted by user after cancelled CI checks");
 			} else {
@@ -308,7 +310,7 @@ export class PipelineOrchestrator {
 		if (workflow.status !== "running") return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
-		if (step.name !== "monitor-ci") return;
+		if (step.name !== STEP.MONITOR_CI) return;
 
 		this.runMonitorCi(workflow);
 	}
@@ -382,27 +384,27 @@ export class PipelineOrchestrator {
 			workflow.reviewCycle.iteration,
 		);
 
-		if (step.name === "setup") {
+		if (step.name === STEP.SETUP) {
 			this.runSetup(workflow);
 			return;
 		}
 
-		if (step.name === "monitor-ci") {
+		if (step.name === STEP.MONITOR_CI) {
 			this.runMonitorCi(workflow);
 			return;
 		}
 
-		if (step.name === "fix-ci") {
+		if (step.name === STEP.FIX_CI) {
 			this.runFixCi(workflow);
 			return;
 		}
 
-		if (step.name === "merge-pr") {
+		if (step.name === STEP.MERGE_PR) {
 			this.runMergePr(workflow);
 			return;
 		}
 
-		if (step.name === "sync-repo") {
+		if (step.name === STEP.SYNC_REPO) {
 			this.runSyncRepo(workflow);
 			return;
 		}
@@ -459,9 +461,9 @@ export class PipelineOrchestrator {
 
 		const cwd = requireWorktreePath(workflow);
 
-		if (step.name === "setup") {
+		if (step.name === STEP.SETUP) {
 			this.runSetup(workflow);
-		} else if (step.name === "monitor-ci") {
+		} else if (step.name === STEP.MONITOR_CI) {
 			this.runMonitorCi(workflow);
 		} else if (step.sessionId) {
 			const cliCallbacks: CLICallbacks = {
@@ -566,27 +568,27 @@ export class PipelineOrchestrator {
 		);
 		this.callbacks.onStateChange(workflow.id);
 
-		if (step.name === "setup") {
+		if (step.name === STEP.SETUP) {
 			this.runSetup(workflow);
 			return;
 		}
 
-		if (step.name === "monitor-ci") {
+		if (step.name === STEP.MONITOR_CI) {
 			this.runMonitorCi(workflow);
 			return;
 		}
 
-		if (step.name === "fix-ci") {
+		if (step.name === STEP.FIX_CI) {
 			this.runFixCi(workflow);
 			return;
 		}
 
-		if (step.name === "merge-pr") {
+		if (step.name === STEP.MERGE_PR) {
 			this.runMergePr(workflow);
 			return;
 		}
 
-		if (step.name === "sync-repo") {
+		if (step.name === STEP.SYNC_REPO) {
 			this.runSyncRepo(workflow);
 			return;
 		}
@@ -811,7 +813,7 @@ export class PipelineOrchestrator {
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 
-		const fixCiIndex = workflow.steps.findIndex((s) => s.name === "fix-ci");
+		const fixCiIndex = workflow.steps.findIndex((s) => s.name === STEP.FIX_CI);
 		workflow.currentStepIndex = fixCiIndex;
 		this.startStep(workflow);
 	}
@@ -941,7 +943,7 @@ export class PipelineOrchestrator {
 		// Reset activity buffer between steps so the next step starts fresh
 		this.summarizer.resetBuffer(workflowId);
 
-		if (step.name === "commit-push-pr") {
+		if (step.name === STEP.COMMIT_PUSH_PR) {
 			const url = extractPrUrl(step.output);
 			if (url) workflow.prUrl = url;
 		}
@@ -949,7 +951,7 @@ export class PipelineOrchestrator {
 		// After specify completes, detect the feature branch and rename
 		// the worktree directory to match the feature branch name.
 		// Await rename before routing to next step so worktreePath is settled.
-		if (step.name === "specify" && workflow.worktreePath) {
+		if (step.name === STEP.SPECIFY && workflow.worktreePath) {
 			this.detectFeatureBranch(workflow);
 			if (this.shouldRenameWorktree(workflow)) {
 				this.renameWorktreeToFeatureBranch(workflow).then(() => {
@@ -970,49 +972,49 @@ export class PipelineOrchestrator {
 		const step = workflow.steps[workflow.currentStepIndex];
 
 		// After commit-push-pr completes, route to monitor-ci
-		if (step.name === "commit-push-pr") {
-			const monitorIndex = workflow.steps.findIndex((s) => s.name === "monitor-ci");
+		if (step.name === STEP.COMMIT_PUSH_PR) {
+			const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
 			workflow.currentStepIndex = monitorIndex;
 			this.startStep(workflow);
 			return;
 		}
 
 		// After monitor-ci passes, route to merge-pr
-		if (step.name === "monitor-ci") {
-			const mergePrIndex = workflow.steps.findIndex((s) => s.name === "merge-pr");
+		if (step.name === STEP.MONITOR_CI) {
+			const mergePrIndex = workflow.steps.findIndex((s) => s.name === STEP.MERGE_PR);
 			workflow.currentStepIndex = mergePrIndex;
 			this.startStep(workflow);
 			return;
 		}
 
 		// After fix-ci completes, increment attempt and loop back to monitor-ci
-		if (step.name === "fix-ci") {
+		if (step.name === STEP.FIX_CI) {
 			this.routeBackToMonitor(workflow);
 			return;
 		}
 
 		// After merge-pr succeeds, route to sync-repo
-		if (step.name === "merge-pr") {
-			const syncRepoIndex = workflow.steps.findIndex((s) => s.name === "sync-repo");
+		if (step.name === STEP.MERGE_PR) {
+			const syncRepoIndex = workflow.steps.findIndex((s) => s.name === STEP.SYNC_REPO);
 			workflow.currentStepIndex = syncRepoIndex;
 			this.startStep(workflow);
 			return;
 		}
 
 		// After sync-repo completes, finish the workflow
-		if (step.name === "sync-repo") {
+		if (step.name === STEP.SYNC_REPO) {
 			this.completeWorkflow(workflow);
 			return;
 		}
 
 		// After review completes, ALWAYS route to implement-review
-		if (step.name === "review") {
+		if (step.name === STEP.REVIEW) {
 			this.routeToImplementReview(workflow);
 			return;
 		}
 
 		// After implement-review completes, classify and decide: loop or advance
-		if (step.name === "implement-review") {
+		if (step.name === STEP.IMPLEMENT_REVIEW) {
 			this.handleImplementReviewComplete(workflow).catch((err) => {
 				const msg = err instanceof Error ? err.message : String(err);
 				console.error(`[pipeline] Implement-review completion error: ${msg}`);
@@ -1027,7 +1029,7 @@ export class PipelineOrchestrator {
 	private routeToImplementReview(workflow: Workflow): void {
 		workflow.reviewCycle.iteration++;
 
-		const implReviewIndex = workflow.steps.findIndex((s) => s.name === "implement-review");
+		const implReviewIndex = workflow.steps.findIndex((s) => s.name === STEP.IMPLEMENT_REVIEW);
 
 		// Reset implement-review step for re-use
 		const implStep = workflow.steps[implReviewIndex];
@@ -1046,7 +1048,7 @@ export class PipelineOrchestrator {
 
 	private async handleImplementReviewComplete(workflow: Workflow): Promise<void> {
 		// Classify the review step's output to decide whether to loop
-		const reviewIndex = workflow.steps.findIndex((s) => s.name === "review");
+		const reviewIndex = workflow.steps.findIndex((s) => s.name === STEP.REVIEW);
 		const reviewStep = workflow.steps[reviewIndex];
 		const severity = await this.reviewClassifier.classify(reviewStep.output);
 
@@ -1072,7 +1074,7 @@ export class PipelineOrchestrator {
 			this.persistWorkflow(workflow);
 			this.startStep(workflow);
 		} else {
-			workflow.currentStepIndex = workflow.steps.findIndex((s) => s.name === "commit-push-pr");
+			workflow.currentStepIndex = workflow.steps.findIndex((s) => s.name === STEP.COMMIT_PUSH_PR);
 			this.startStep(workflow);
 		}
 	}
@@ -1082,7 +1084,7 @@ export class PipelineOrchestrator {
 		workflow.ciCycle.monitorStartedAt = null;
 		workflow.ciCycle.failureLogs = [];
 
-		const monitorIndex = workflow.steps.findIndex((s) => s.name === "monitor-ci");
+		const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
 		const monitorStep = workflow.steps[monitorIndex];
 		monitorStep.status = "pending";
 		monitorStep.output = "";
