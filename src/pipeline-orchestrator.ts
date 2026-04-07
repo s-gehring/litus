@@ -135,7 +135,7 @@ export class PipelineOrchestrator {
 		this.checkoutMasterFn =
 			deps?.checkoutMaster ??
 			(async (cwd: string) => {
-				const result = await gitSpawn(["git", "checkout", "master"], { cwd });
+				const result = await gitSpawn(["git", "checkout", "--detach", "master"], { cwd });
 				return { code: result.code, stderr: result.stderr };
 			});
 		this.callbacks = callbacks;
@@ -641,7 +641,7 @@ export class PipelineOrchestrator {
 
 	private checkoutMasterInWorktree(workflow: Workflow): void {
 		const cwd = requireWorktreePath(workflow);
-		this.handleStepOutput(workflow.id, "[git] git checkout master | cwd=worktree");
+		this.handleStepOutput(workflow.id, "[git] git checkout --detach master | cwd=worktree");
 		this.checkoutMasterFn(cwd)
 			.then((result) => {
 				const wf = this.engine.getWorkflow();
