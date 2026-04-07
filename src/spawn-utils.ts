@@ -1,3 +1,24 @@
+import { tmpdir } from "node:os";
+import type { EffortLevel } from "./types";
+
+export interface RunClaudeOptions {
+	prompt: string;
+	model?: string;
+	effort?: EffortLevel;
+	outputFormat?: string;
+	maxTurns?: number;
+	cwd?: string;
+	verbose?: boolean;
+	callerLabel?: string;
+}
+
+export interface RunClaudeResult {
+	ok: boolean;
+	exitCode: number;
+	stdout: string;
+	stderr: string;
+}
+
 /** Build an env object with CLAUDE* vars stripped to prevent child CLI from inheriting parent session state. */
 export function cleanEnv(extra?: Record<string, string>): Record<string, string> {
 	const env: Record<string, string> = {};
@@ -31,4 +52,47 @@ export async function readStream(
 ): Promise<string> {
 	if (!stream || typeof stream === "number") return "";
 	return new Response(stream as ReadableStream).text();
+}
+
+export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeResult> {
+	const args = ["claude", "-p", options.prompt];
+
+	if (options.model?.trim()) {
+		args.push("--model", options.model.trim());
+	}
+	if (options.effort) {
+		args.push("--effort", options.effort);
+	}
+	args.push("--output-format", options.outputFormat ?? "text");
+	if (options.maxTurns !== undefined) {
+		args.push("--max-turns", String(options.maxTurns));
+	}
+	if (options.verbose) {
+		args.push("--verbose");
+	}
+
+	try {
+		const proc = Bun.spawn(args, {
+			cwd: options.cwd ?? tmpdir(),
+			stdout: "pipe",
+			stderr: "pipe",
+			env: cleanEnv(),
+		});
+
+		const exitCode = await proc.exited;
+		const stdout = await readStream(proc.stdout);
+		const stderr = await readStream(proc.stderr);
+
+		if (exitCode !== 0 && options.callerLabel) {
+			console.warn(`[${options.callerLabel}] claude exited ${exitCode}: ${stderr.slice(0, 200)}`);
+		}
+
+		return { ok: exitCode === 0, exitCode, stdout, stderr };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		if (options.callerLabel) {
+			console.warn(`[${options.callerLabel}] spawn failed: ${message.slice(0, 200)}`);
+		}
+		return { ok: false, exitCode: -1, stdout: "", stderr: message };
+	}
 }

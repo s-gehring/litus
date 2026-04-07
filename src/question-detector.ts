@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { tmpdir } from "node:os";
 import { configStore } from "./config-store";
-import { cleanEnv } from "./spawn-utils";
+import { runClaude } from "./spawn-utils";
 import type { Question } from "./types";
 
 // Positive indicators that text likely contains a question for the user
@@ -56,33 +55,18 @@ export class QuestionDetector {
 		this.pendingClassification = true;
 
 		try {
-			const promptTemplate = configStore.get().prompts.questionDetection;
+			const config = configStore.get();
+			const promptTemplate = config.prompts.questionDetection;
 			const prompt = promptTemplate.replaceAll("${text}", text);
 
-			const config = configStore.get();
-			const args = [
-				"claude",
-				"-p",
+			const { ok, stdout } = await runClaude({
 				prompt,
-				"--model",
-				config.models.questionDetection,
-				"--output-format",
-				"text",
-				"--effort",
-				config.efforts.questionDetection,
-			];
-			const proc = Bun.spawn(args, {
-				cwd: tmpdir(),
-				stdout: "pipe",
-				stderr: "pipe",
-				env: cleanEnv(),
+				model: config.models.questionDetection,
+				effort: config.efforts.questionDetection,
+				callerLabel: "question-detector",
 			});
-
-			const code = await proc.exited;
-			if (code !== 0) return false;
-
-			const result = await new Response(proc.stdout as ReadableStream).text();
-			return result.trim().toLowerCase().startsWith("yes");
+			if (!ok) return false;
+			return stdout.trim().toLowerCase().startsWith("yes");
 		} catch (err) {
 			console.warn("[question-detector] classifyWithHaiku failed:", err);
 			return false;
