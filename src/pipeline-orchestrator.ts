@@ -893,6 +893,17 @@ export class PipelineOrchestrator {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
 
+		// Auto-mode: answer immediately instead of pausing
+		if (configStore.get().autoMode) {
+			const isSetupWarning = question.id.startsWith("setup-warnings-");
+			const autoAnswer = isSetupWarning
+				? "skip"
+				: "The user has chosen not to answer this question. Continue with your best judgment.";
+			this.handleStepOutput(workflowId, `[auto-mode] Auto-answering: "${autoAnswer}"`);
+			this.answerQuestion(workflowId, question.id, autoAnswer);
+			return;
+		}
+
 		if (this.currentAuditRunId) {
 			const stepName = workflow.steps[workflow.currentStepIndex]?.name ?? null;
 			this.auditLogger.logQuery(this.currentAuditRunId, question.content, stepName);

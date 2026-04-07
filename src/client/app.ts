@@ -19,6 +19,7 @@ import {
 } from "./components/config-panel";
 import { createModal } from "./components/creation-modal";
 import { renderEpicTree } from "./components/epic-tree";
+import { updateFavicon } from "./components/favicon";
 import { createFolderPicker } from "./components/folder-picker";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
@@ -490,6 +491,7 @@ function handleMessage(msg: ServerMessage): void {
 			if (msg.config.timing?.maxClientOutputLines) {
 				maxOutputLines = msg.config.timing.maxClientOutputLines;
 			}
+			syncAutoModeToggle(msg.config.autoMode);
 			break;
 		}
 
@@ -563,8 +565,26 @@ function returnToEpicTree(): void {
 	renderExpandedView();
 }
 
+function syncAutoModeToggle(active: boolean): void {
+	const btn = document.getElementById("btn-auto-mode");
+	if (!btn) return;
+	btn.classList.toggle("active", active);
+	const icon = btn.querySelector(".toggle-icon");
+	if (icon) icon.textContent = active ? "✓" : "✕";
+}
+
 function renderCards(): void {
 	renderCardStrip(cardOrder, workflows, epics, epicAggregates, expandedId, expandItem);
+
+	let needsAttention = false;
+	for (const [, entry] of workflows) {
+		const s = entry.state.status;
+		if (s === "waiting_for_input" || s === "error") {
+			needsAttention = true;
+			break;
+		}
+	}
+	updateFavicon(needsAttention);
 }
 
 function renderExpandedView(): void {
@@ -1041,6 +1061,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	const btnNewEpic = document.getElementById("btn-new-epic");
 	if (btnNewEpic) btnNewEpic.addEventListener("click", openEpicModal);
+
+	// Auto-mode toggle
+	const btnAutoMode = document.getElementById("btn-auto-mode");
+	if (btnAutoMode) {
+		btnAutoMode.addEventListener("click", () => {
+			const isActive = btnAutoMode.classList.contains("active");
+			send({ type: "config:save", config: { autoMode: !isActive } });
+		});
+	}
 
 	// Question panel
 	btnSubmitAnswer.addEventListener("click", () => {

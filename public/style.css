@@ -1506,4 +1506,10 @@ body::-webkit-scrollbar-track {
   color: var(--accent-blue);
 }
 
+.btn-toggle.active {
+  border-color: var(--accent-blue);
+  background: rgba(74, 158, 255, 0.15);
+  color: var(--accent-blue);
+}
+
 .hidden { display: none !important; }

@@ -108,6 +108,7 @@ function makeAppConfig(): AppConfig {
 			maxClientOutputLines: 500,
 			epicTimeoutMs: 300000,
 		},
+		autoMode: false,
 	};
 }
 
@@ -958,9 +959,9 @@ describe("Config types", () => {
 		expect(Object.keys(config)).toHaveLength(7);
 	});
 
-	test("AppConfig shape (5 sub-objects)", () => {
+	test("AppConfig shape (6 fields)", () => {
 		const config: AppConfig = makeAppConfig();
-		expect(Object.keys(config)).toHaveLength(5);
+		expect(Object.keys(config)).toHaveLength(6);
 		expect(Object.keys(config.models)).toHaveLength(15);
 	});
 
