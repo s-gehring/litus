@@ -491,6 +491,7 @@ function handleMessage(msg: ServerMessage): void {
 			if (msg.config.timing?.maxClientOutputLines) {
 				maxOutputLines = msg.config.timing.maxClientOutputLines;
 			}
+			syncAutoModeToggle(msg.config.autoMode);
 			break;
 		}
 
@@ -562,6 +563,11 @@ function returnToEpicTree(): void {
 	selectedChildId = null;
 	selectedStepIndex = null;
 	renderExpandedView();
+}
+
+function syncAutoModeToggle(active: boolean): void {
+	const btn = document.getElementById("btn-auto-mode");
+	if (btn) btn.classList.toggle("active", active);
 }
 
 function renderCards(): void {
@@ -1052,6 +1058,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	const btnNewEpic = document.getElementById("btn-new-epic");
 	if (btnNewEpic) btnNewEpic.addEventListener("click", openEpicModal);
+
+	// Auto-mode toggle
+	const btnAutoMode = document.getElementById("btn-auto-mode");
+	if (btnAutoMode) {
+		btnAutoMode.addEventListener("click", () => {
+			const isActive = btnAutoMode.classList.contains("active");
+			send({ type: "config:save", config: { autoMode: !isActive } });
+		});
+	}
 
 	// Question panel
 	btnSubmitAnswer.addEventListener("click", () => {
