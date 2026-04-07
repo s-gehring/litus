@@ -1,4 +1,3 @@
-import { marked } from "marked";
 import type {
 	ClientMessage,
 	EpicAggregatedState,
@@ -41,6 +40,7 @@ import {
 	updateWorkflowStatus,
 } from "./components/workflow-window";
 import { computeEpicAggregatedState } from "./epic-aggregation";
+import { renderMarkdown } from "./render-markdown";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -643,7 +643,7 @@ function renderExpandedView(): void {
 			const outputLog = $("#output-log");
 			const notesEl = document.createElement("div");
 			notesEl.className = "user-input epic-analysis-notes infeasible-notes-fullheight";
-			notesEl.innerHTML = marked.parse(epic.infeasibleNotes) as string;
+			notesEl.innerHTML = renderMarkdown(epic.infeasibleNotes);
 			outputLog.appendChild(notesEl);
 		} else if (epic.outputLines.length > 0) {
 			renderOutputEntries(epic.outputLines);
@@ -736,7 +736,7 @@ function renderEpicAnalysisNotes(epicData: EpicClientState): void {
 	const container = document.createElement("div");
 	container.id = "epic-analysis-notes";
 	container.className = "epic-analysis-notes user-input";
-	container.innerHTML = marked.parse(content) as string;
+	container.innerHTML = renderMarkdown(content);
 
 	// Insert after user-input
 	const userInput = document.getElementById("user-input");
