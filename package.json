@@ -3,7 +3,10 @@
 	"version": "0.1.0",
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.10",
-		"@types/bun": "^1.2.0"
+		"@happy-dom/global-registrator": "^20.8.9",
+		"@types/bun": "^1.2.0",
+		"@types/dompurify": "^3.2.0",
+		"happy-dom": "^20.8.9"
 	},
 	"scripts": {
 		"dev": "bun run build:client && bun run --watch src/server.ts",
@@ -16,6 +19,7 @@
 	},
 	"type": "module",
 	"dependencies": {
+		"dompurify": "^3.3.3",
 		"marked": "^17.0.6"
 	}
 }
