@@ -315,6 +315,16 @@ function handleConfigSave(ws: ServerWebSocket<WsData>, partial: Partial<AppConfi
 		...(warnings.length > 0 ? { warnings } : {}),
 	};
 	broadcast(msg);
+
+	// Auto-mode just turned on: drain all pending questions
+	if (partial.autoMode === true) {
+		for (const [, orch] of orchestrators) {
+			const wf = orch.getEngine().getWorkflow();
+			if (wf?.pendingQuestion && wf.status === "waiting_for_input") {
+				orch.skipQuestion(wf.id, wf.pendingQuestion.id);
+			}
+		}
+	}
 }
 
 function handleConfigReset(_ws: ServerWebSocket<WsData>, key?: string) {
