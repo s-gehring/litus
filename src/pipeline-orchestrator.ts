@@ -229,6 +229,12 @@ export class PipelineOrchestrator {
 
 		this.engine.clearQuestion(workflowId);
 		const step = workflow.steps[workflow.currentStepIndex];
+
+		// Append the user's answer to step output so it is visible and persisted
+		const answerLine = `[Human] ${answer}`;
+		step.output += `${answerLine}\n`;
+		this.callbacks.onOutput(workflowId, answerLine);
+
 		step.status = "running";
 		workflow.updatedAt = new Date().toISOString();
 
