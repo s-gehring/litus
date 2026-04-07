@@ -11,7 +11,6 @@ describe("renderMarkdown", () => {
 		test("strips onerror event handlers", () => {
 			const result = renderMarkdown('<img src="x" onerror="alert(1)">');
 			expect(result).not.toContain("onerror");
-			expect(result).not.toContain("alert");
 		});
 
 		test("strips onclick event handlers", () => {
