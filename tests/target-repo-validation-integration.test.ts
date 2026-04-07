@@ -9,7 +9,7 @@ import { validateTargetRepository } from "../src/target-repo-validator";
  * Tests the contract from contracts/websocket.md: error messages must match exactly.
  */
 
-const testRoot = join(tmpdir(), `crab-studio-integ-${Date.now()}`);
+const testRoot = join(tmpdir(), `litus-integ-${Date.now()}`);
 const gitRepoPath = join(testRoot, "valid-repo");
 const nonGitDir = join(testRoot, "not-a-repo");
 

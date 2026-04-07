@@ -276,7 +276,7 @@ export class ConfigStore {
 	private savedConfig: Partial<AppConfig> | null = null;
 
 	constructor(configPath?: string) {
-		this.configPath = configPath ?? join(homedir(), ".crab-studio", "config.json");
+		this.configPath = configPath ?? join(homedir(), ".litus", "config.json");
 		this.load();
 	}
 

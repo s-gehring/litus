@@ -9,7 +9,7 @@ export class WorkflowStore {
 	private writeLocks: Map<string, Promise<void>> = new Map();
 
 	constructor(baseDir?: string) {
-		this.baseDir = baseDir ?? join(homedir(), ".crab-studio", "workflows");
+		this.baseDir = baseDir ?? join(homedir(), ".litus", "workflows");
 	}
 
 	private ensureDir(): void {

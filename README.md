@@ -1,4 +1,4 @@
-# crab-studio
+# Litus
 
 A web-based orchestrator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI agents. Submit a task specification, watch the agent work in real time, and answer its questions -- all from a browser.
 

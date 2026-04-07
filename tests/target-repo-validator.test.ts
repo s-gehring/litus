@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { validateTargetRepository } from "../src/target-repo-validator";
 
 // Create temp directories for testing
-const testRoot = join(tmpdir(), `crab-studio-test-${Date.now()}`);
+const testRoot = join(tmpdir(), `litus-test-${Date.now()}`);
 const gitRepoPath = join(testRoot, "valid-repo");
 const nonGitDir = join(testRoot, "not-a-repo");
 const filePath = join(testRoot, "a-file.txt");

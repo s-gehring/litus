@@ -58,7 +58,7 @@ interface RunningProcess {
 	deltaFlushTimer: ReturnType<typeof setTimeout> | null;
 }
 
-const EVENTS_DIR = join(homedir(), ".crab-studio", "audit");
+const EVENTS_DIR = join(homedir(), ".litus", "audit");
 const EVENTS_FILE = join(EVENTS_DIR, "events.jsonl");
 
 export class CLIRunner {

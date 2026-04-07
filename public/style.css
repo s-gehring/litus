@@ -46,6 +46,12 @@ header h1 {
   color: var(--accent);
 }
 
+.header-logo {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
 .status-dot {
   width: 10px;
   height: 10px;

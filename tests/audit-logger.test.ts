@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { AuditLogger } from "../src/audit-logger";
 import type { AuditEvent } from "../src/types";
 
-const TEST_AUDIT_DIR = join(homedir(), ".crab-studio", "audit-test");
+const TEST_AUDIT_DIR = join(homedir(), ".litus", "audit-test");
 
 function readEvents(pipelineName: string): AuditEvent[] {
 	const filePath = join(TEST_AUDIT_DIR, `${pipelineName}.jsonl`);
@@ -109,9 +109,9 @@ describe("logCommit", () => {
 
 // T021 — US4: default audit directory path
 describe("default audit directory", () => {
-	it("resolves to $HOME/.crab-studio/audit by default", () => {
+	it("resolves to $HOME/.litus/audit by default", () => {
 		const logger = new AuditLogger();
-		const expectedDefault = join(homedir(), ".crab-studio", "audit");
+		const expectedDefault = join(homedir(), ".litus", "audit");
 		expect(logger.auditDir).toBe(expectedDefault);
 	});
 });
@@ -119,7 +119,7 @@ describe("default audit directory", () => {
 // T022 — US4: custom auditDir config
 describe("custom auditDir config", () => {
 	it("respects AuditConfig.auditDir override and writes to the specified directory", () => {
-		const customDir = join(homedir(), ".crab-studio", "audit-test-custom");
+		const customDir = join(homedir(), ".litus", "audit-test-custom");
 		const logger = new AuditLogger({ auditDir: customDir });
 		expect(logger.auditDir).toBe(customDir);
 
@@ -131,7 +131,7 @@ describe("custom auditDir config", () => {
 		expect(content.split("\n")).toHaveLength(2);
 
 		// Verify default dir was NOT used
-		const defaultFile = join(homedir(), ".crab-studio", "audit", "custom-dir-test.jsonl");
+		const defaultFile = join(homedir(), ".litus", "audit", "custom-dir-test.jsonl");
 		expect(() => readFileSync(defaultFile)).toThrow();
 
 		rmSync(customDir, { recursive: true, force: true });
@@ -155,14 +155,14 @@ describe("file naming", () => {
 describe("pipeline name sanitization", () => {
 	it("replaces path separators in pipeline name for filesystem safety", () => {
 		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
-		const runId = logger.startRun("crab-studio/test", "main");
+		const runId = logger.startRun("litus/test", "main");
 		logger.endRun(runId);
 
-		const filePath = join(TEST_AUDIT_DIR, "crab-studio--test.jsonl");
+		const filePath = join(TEST_AUDIT_DIR, "litus--test.jsonl");
 		const content = readFileSync(filePath, "utf-8").trim();
 		const events: AuditEvent[] = content.split("\n").map((line) => JSON.parse(line));
 		expect(events).toHaveLength(2);
-		expect(events[0].pipelineName).toBe("crab-studio/test");
+		expect(events[0].pipelineName).toBe("litus/test");
 	});
 });
 
