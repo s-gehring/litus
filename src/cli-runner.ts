@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { cleanEnv } from "./spawn-utils";
 import type { EffortLevel, ToolUsage, Workflow } from "./types";
 
 export function isProcessAlive(pid: number): boolean {
@@ -97,7 +98,7 @@ export class CLIRunner {
 			args.push("--effort", effort);
 		}
 
-		const env = extraEnv ? { ...process.env, ...extraEnv } : process.env;
+		const env = cleanEnv(extraEnv);
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
@@ -153,7 +154,7 @@ export class CLIRunner {
 			sessionId,
 		];
 
-		const env = extraEnv ? { ...process.env, ...extraEnv } : process.env;
+		const env = cleanEnv(extraEnv);
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {

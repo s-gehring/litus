@@ -1,5 +1,6 @@
 import { configStore } from "./config-store";
 import { buildGraph, detectCycles } from "./dependency-resolver";
+import { cleanEnv } from "./spawn-utils";
 import type { EpicAnalysisResult, ToolUsage } from "./types";
 
 export function buildDecompositionPrompt(epicDescription: string): string {
@@ -120,7 +121,7 @@ async function runCLIStream(
 		cwd,
 		stdout: "pipe",
 		stderr: "pipe",
-		env: process.env,
+		env: cleanEnv(),
 	});
 
 	if (onKillRef) {

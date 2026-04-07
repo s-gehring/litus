@@ -1,4 +1,6 @@
+import { tmpdir } from "node:os";
 import { configStore } from "./config-store";
+import { cleanEnv } from "./spawn-utils";
 import type { ReviewSeverity } from "./types";
 
 const VALID_SEVERITIES: ReviewSeverity[] = ["critical", "major", "minor", "trivial", "nit"];
@@ -20,7 +22,12 @@ export class ReviewClassifier {
 			"--effort",
 			config.efforts.reviewClassification,
 		];
-		const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+		const proc = Bun.spawn(args, {
+			cwd: tmpdir(),
+			stdout: "pipe",
+			stderr: "pipe",
+			env: cleanEnv(),
+		});
 
 		const code = await proc.exited;
 		if (code !== 0) return "major";
