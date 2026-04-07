@@ -492,14 +492,13 @@ header h1 {
   display: block;
 }
 
-/* Question panel */
+/* Question panel — covers the output log entirely when visible */
 .question-panel {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  inset: 0;
   z-index: 10;
   padding: 16px;
+  overflow-y: auto;
   background: var(--bg-secondary, #1e1e2e);
   border-top: 1px solid rgba(240, 192, 64, 0.3);
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
