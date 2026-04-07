@@ -386,7 +386,7 @@ export type ServerMessage =
 	| { type: "workflow:list"; workflows: WorkflowState[] }
 	| { type: "workflow:created"; workflow: WorkflowState }
 	| { type: "workflow:output"; workflowId: string; text: string }
-	| { type: "workflow:tools"; workflowId: string; tools: Record<string, number> }
+	| { type: "workflow:tools"; workflowId: string; tools: ToolUsage[] }
 	| { type: "workflow:question"; workflowId: string; question: Question }
 	| {
 			type: "workflow:step-change";
@@ -399,7 +399,7 @@ export type ServerMessage =
 	| { type: "epic:list"; epics: PersistedEpic[] }
 	| { type: "epic:created"; epicId: string; description: string }
 	| { type: "epic:output"; epicId: string; text: string }
-	| { type: "epic:tools"; epicId: string; tools: Record<string, number> }
+	| { type: "epic:tools"; epicId: string; tools: ToolUsage[] }
 	| { type: "epic:summary"; epicId: string; summary: string }
 	| {
 			type: "epic:result";
@@ -424,10 +424,16 @@ export type ServerMessage =
 	| { type: "log"; text: string }
 	| { type: "error"; message: string };
 
+// Individual tool usage from CLI stream event
+export interface ToolUsage {
+	name: string;
+	input?: Record<string, unknown>;
+}
+
 // Output entry union for client-side output log (text lines + tool icon data)
 export type OutputEntry =
 	| { kind: "text"; text: string; type?: "normal" | "error" | "system" }
-	| { kind: "tools"; tools: Record<string, number> };
+	| { kind: "tools"; tools: ToolUsage[] };
 
 // Client-side per-workflow state (not persisted, not sent over WebSocket)
 export interface WorkflowClientState {

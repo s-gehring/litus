@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { EffortLevel, Workflow } from "./types";
+import type { EffortLevel, ToolUsage, Workflow } from "./types";
 
 export function isProcessAlive(pid: number): boolean {
 	try {
@@ -24,7 +24,14 @@ export function killProcess(pid: number): void {
 interface CLIStreamEvent {
 	type: string;
 	session_id?: string;
-	message?: { content?: Array<{ type: string; text?: string; name?: string }> };
+	message?: {
+		content?: Array<{
+			type: string;
+			text?: string;
+			name?: string;
+			input?: Record<string, unknown>;
+		}>;
+	};
 	delta?: { text?: string };
 	result?: unknown;
 	[key: string]: unknown;
@@ -32,7 +39,7 @@ interface CLIStreamEvent {
 
 export interface CLICallbacks {
 	onOutput: (text: string) => void;
-	onTools: (tools: Record<string, number>) => void;
+	onTools: (tools: ToolUsage[]) => void;
 	onComplete: () => void;
 	onError: (error: string) => void;
 	onSessionId: (sessionId: string) => void;
@@ -288,16 +295,16 @@ export class CLIRunner {
 		// Handle different event types from stream-json format
 		if (event.type === "assistant" && event.message?.content) {
 			this.flushDeltaBuffer(entry);
-			const toolCounts = new Map<string, number>();
+			const toolUsages: ToolUsage[] = [];
 			for (const block of event.message.content) {
 				if (block.type === "text" && block.text) {
 					entry.callbacks.onOutput(block.text);
 				} else if (block.type === "tool_use" && block.name) {
-					toolCounts.set(block.name, (toolCounts.get(block.name) ?? 0) + 1);
+					toolUsages.push({ name: block.name, input: block.input });
 				}
 			}
-			if (toolCounts.size > 0) {
-				entry.callbacks.onTools(Object.fromEntries(toolCounts));
+			if (toolUsages.length > 0) {
+				entry.callbacks.onTools(toolUsages);
 			}
 		} else if (event.type === "content_block_delta" && event.delta?.text) {
 			// Batch delta fragments to reduce DOM element count (CR3-010)

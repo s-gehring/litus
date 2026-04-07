@@ -18,6 +18,7 @@ import type {
 	ClientMessage,
 	PipelineStepName,
 	ServerMessage,
+	ToolUsage,
 	Workflow,
 	WorkflowState,
 } from "./types";
@@ -61,7 +62,7 @@ function createCallbacks() {
 		onOutput: (workflowId: string, text: string) => {
 			broadcast({ type: "workflow:output", workflowId, text });
 		},
-		onTools: (workflowId: string, tools: Record<string, number>) => {
+		onTools: (workflowId: string, tools: ToolUsage[]) => {
 			broadcast({ type: "workflow:tools", workflowId, tools });
 		},
 		onComplete: (workflowId: string) => {

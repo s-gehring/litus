@@ -449,6 +449,11 @@ header h1 {
   vertical-align: middle;
 }
 
+.tool-icon-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
 .tool-icon {
   display: inline-flex;
   align-items: center;
@@ -458,6 +463,32 @@ header h1 {
   background: rgba(74, 158, 255, 0.1);
   cursor: default;
   white-space: nowrap;
+}
+
+.tool-tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border: 1px solid rgba(74, 158, 255, 0.3);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: pre;
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.tool-icon-wrapper:hover .tool-tooltip {
+  display: block;
 }
 
 /* Question panel */

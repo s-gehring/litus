@@ -318,7 +318,7 @@ describe("PipelineOrchestrator", () => {
 			await startAndFlush("test");
 			const wf = getWf(engine);
 
-			const toolData = { Bash: 3, Read: 1 };
+			const toolData = [{ name: "Bash", input: { command: "ls" } }, { name: "Read" }];
 			cli.getLastCallbacks().onTools(toolData);
 
 			expect(callbacks.onTools).toHaveBeenCalledWith(wf.id, toolData);

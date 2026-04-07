@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import type { CLICallbacks } from "../src/cli-runner";
 import { CLIRunner } from "../src/cli-runner";
-import type { Workflow } from "../src/types";
+import type { ToolUsage, Workflow } from "../src/types";
 
 const originalSpawn = Bun.spawn;
 
@@ -223,7 +223,7 @@ describe("CLIRunner", () => {
 
 		test("emits text content from assistant messages", async () => {
 			const outputs: string[] = [];
-			const toolCalls: Record<string, number>[] = [];
+			const toolCalls: ToolUsage[][] = [];
 			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
 
 			const streamContent = [
@@ -268,11 +268,11 @@ describe("CLIRunner", () => {
 			await completePromise;
 			expect(outputs).toContain("I'll create the file now");
 			expect(toolCalls).toHaveLength(1);
-			expect(toolCalls[0]).toEqual({ write_file: 1 });
+			expect(toolCalls[0]).toEqual([{ name: "write_file", input: undefined }]);
 		});
 
-		test("groups tool_use blocks by name with counts", async () => {
-			const toolCalls: Record<string, number>[] = [];
+		test("passes individual tool usages with input", async () => {
+			const toolCalls: ToolUsage[][] = [];
 			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
 
 			const streamContent = [
@@ -280,11 +280,8 @@ describe("CLIRunner", () => {
 					type: "assistant",
 					message: {
 						content: [
-							{ type: "tool_use", name: "Bash" },
-							{ type: "tool_use", name: "Bash" },
-							{ type: "tool_use", name: "Bash" },
-							{ type: "tool_use", name: "Read" },
-							{ type: "tool_use", name: "Read" },
+							{ type: "tool_use", name: "Bash", input: { command: "ls" } },
+							{ type: "tool_use", name: "Read", input: { file_path: "/tmp/foo.ts" } },
 							{ type: "tool_use", name: "Write" },
 						],
 					},
@@ -319,7 +316,11 @@ describe("CLIRunner", () => {
 
 			await completePromise;
 			expect(toolCalls).toHaveLength(1);
-			expect(toolCalls[0]).toEqual({ Bash: 3, Read: 2, Write: 1 });
+			expect(toolCalls[0]).toEqual([
+				{ name: "Bash", input: { command: "ls" } },
+				{ name: "Read", input: { file_path: "/tmp/foo.ts" } },
+				{ name: "Write", input: undefined },
+			]);
 		});
 
 		test("calls onComplete on successful exit", async () => {

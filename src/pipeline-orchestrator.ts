@@ -23,6 +23,7 @@ import type {
 	PipelineStepName,
 	Question,
 	SetupResult,
+	ToolUsage,
 	Workflow,
 } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
@@ -48,7 +49,7 @@ export interface PipelineCallbacks {
 		reviewIteration: number,
 	) => void;
 	onOutput: (workflowId: string, text: string) => void;
-	onTools: (workflowId: string, tools: Record<string, number>) => void;
+	onTools: (workflowId: string, tools: ToolUsage[]) => void;
 	onComplete: (workflowId: string) => void;
 	onError: (workflowId: string, error: string) => void;
 	onStateChange: (workflowId: string) => void;

@@ -1,5 +1,5 @@
 import { marked } from "marked";
-import type { EpicStatus, OutputEntry, WorkflowState } from "../../types";
+import type { EpicStatus, OutputEntry, ToolUsage, WorkflowState } from "../../types";
 
 marked.setOptions({ async: false, breaks: true });
 
@@ -84,21 +84,46 @@ export function appendOutput(text: string, type: "normal" | "error" | "system" =
 	log.scrollTop = log.scrollHeight;
 }
 
-function renderToolIcons(tools: Record<string, number>): HTMLDivElement {
+function formatToolInput(input: Record<string, unknown>): string {
+	const lines: string[] = [];
+	for (const [key, value] of Object.entries(input)) {
+		if (value === undefined || value === null) continue;
+		let display = typeof value === "string" ? value : JSON.stringify(value);
+		// Truncate long values
+		if (display.length > 120) display = `${display.slice(0, 117)}...`;
+		lines.push(`${key}: ${display}`);
+	}
+	return lines.join("\n");
+}
+
+function renderToolIcons(tools: ToolUsage[]): HTMLDivElement {
 	const row = document.createElement("div");
 	row.className = "tool-icons";
-	for (const [name, count] of Object.entries(tools)) {
-		const mapping = TOOL_ICONS[name] ?? FALLBACK_ICON;
+	for (const usage of tools) {
+		const mapping = TOOL_ICONS[usage.name] ?? FALLBACK_ICON;
+		const wrapper = document.createElement("span");
+		wrapper.className = "tool-icon-wrapper";
+
 		const badge = document.createElement("span");
 		badge.className = "tool-icon";
-		badge.textContent = count > 1 ? `${mapping.icon}${count}` : mapping.icon;
-		badge.title = count > 1 ? `${mapping.label} x${count}` : mapping.label;
-		row.appendChild(badge);
+		badge.textContent = mapping.icon;
+
+		const tooltip = document.createElement("div");
+		tooltip.className = "tool-tooltip";
+		let tooltipText = mapping.label;
+		if (usage.input && Object.keys(usage.input).length > 0) {
+			tooltipText += `\n${formatToolInput(usage.input)}`;
+		}
+		tooltip.textContent = tooltipText;
+
+		wrapper.appendChild(badge);
+		wrapper.appendChild(tooltip);
+		row.appendChild(wrapper);
 	}
 	return row;
 }
 
-export function appendToolIcons(tools: Record<string, number>): void {
+export function appendToolIcons(tools: ToolUsage[]): void {
 	const log = $("#output-log");
 	// Attach to the last .output-line, or create a minimal one if none exists
 	let lastLine = log.querySelector(".output-line:last-of-type") as HTMLElement | null;
