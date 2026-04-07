@@ -1,4 +1,5 @@
 import type { CLICallbacks } from "../../src/cli-runner";
+import type { ToolUsage } from "../../src/types";
 import { type CallTracker, createCallTracker } from "./call-tracker";
 
 export interface MockCliRunner {
@@ -10,9 +11,11 @@ export interface MockCliRunner {
 	};
 	tracker: CallTracker;
 	emitOutput: (text: string) => void;
+	emitTools: (tools: ToolUsage[]) => void;
 	emitComplete: () => void;
 	emitError: (error: string) => void;
 	emitSessionId: (id: string) => void;
+	emitPid: (pid: number) => void;
 }
 
 /** Create a mock CLI runner with call tracking and callback triggers */
@@ -49,6 +52,9 @@ export function createMockCliRunner(): MockCliRunner {
 		emitOutput(text: string): void {
 			lastCallbacks?.onOutput(text);
 		},
+		emitTools(tools: ToolUsage[]): void {
+			lastCallbacks?.onTools(tools);
+		},
 		emitComplete(): void {
 			lastCallbacks?.onComplete();
 		},
@@ -57,6 +63,9 @@ export function createMockCliRunner(): MockCliRunner {
 		},
 		emitSessionId(id: string): void {
 			lastCallbacks?.onSessionId(id);
+		},
+		emitPid(pid: number): void {
+			lastCallbacks?.onPid?.(pid);
 		},
 	};
 }

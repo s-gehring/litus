@@ -156,7 +156,25 @@ export function createMockConfigStore(): MockConfigStore {
 			warnings: ConfigWarning[];
 		} {
 			tracker.calls.push({ method: "save", args: [partial] });
-			current = { ...current, ...partial } as AppConfig;
+			// Deep merge nested objects to match real ConfigStore behavior
+			if (partial.models) {
+				current.models = { ...current.models, ...partial.models };
+			}
+			if (partial.efforts) {
+				current.efforts = { ...current.efforts, ...partial.efforts };
+			}
+			if (partial.prompts) {
+				current.prompts = { ...current.prompts, ...partial.prompts };
+			}
+			if (partial.limits) {
+				current.limits = { ...current.limits, ...partial.limits };
+			}
+			if (partial.timing) {
+				current.timing = { ...current.timing, ...partial.timing };
+			}
+			if (partial.autoMode !== undefined) {
+				current.autoMode = partial.autoMode;
+			}
 			return { errors: [], warnings: [] };
 		},
 		reset(key?: string): void {

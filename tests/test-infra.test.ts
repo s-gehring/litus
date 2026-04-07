@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { CLICallbacks } from "../src/cli-runner";
 import { DEFAULT_CONFIG } from "../src/config-store";
@@ -287,6 +287,47 @@ describe("createMockCliRunner", () => {
 		expect(errors).toEqual(["oops"]);
 		expect(sessionId).toBe("sess-123");
 	});
+
+	test("emitTools triggers onTools callback", () => {
+		const { mock, emitTools } = createMockCliRunner();
+		const receivedTools: Array<{ name: string }> = [];
+
+		const cb: CLICallbacks = {
+			onOutput: () => {},
+			onTools: (tools) => receivedTools.push(...tools),
+			onComplete: () => {},
+			onError: () => {},
+			onSessionId: () => {},
+		};
+
+		mock.start("wf-1", "test", cb);
+		emitTools([{ name: "Read" }, { name: "Write", input: { path: "/tmp" } }]);
+
+		expect(receivedTools).toHaveLength(2);
+		expect(receivedTools[0].name).toBe("Read");
+		expect(receivedTools[1].name).toBe("Write");
+	});
+
+	test("emitPid triggers onPid callback", () => {
+		const { mock, emitPid } = createMockCliRunner();
+		let receivedPid = 0;
+
+		const cb: CLICallbacks = {
+			onOutput: () => {},
+			onTools: () => {},
+			onComplete: () => {},
+			onError: () => {},
+			onSessionId: () => {},
+			onPid: (pid) => {
+				receivedPid = pid;
+			},
+		};
+
+		mock.start("wf-1", "test", cb);
+		emitPid(12345);
+
+		expect(receivedPid).toBe(12345);
+	});
 });
 
 // ── US2: createMockWorkflowStore ─────────────────────────
@@ -367,6 +408,17 @@ describe("createMockConfigStore", () => {
 		expect(tracker.callCount("get")).toBe(3);
 		expect(tracker.callCount("save")).toBe(1);
 		expect(tracker.callCount("reset")).toBe(1);
+	});
+
+	test("save deep-merges nested objects", () => {
+		const { mock } = createMockConfigStore();
+
+		mock.save({ limits: { reviewCycleMaxIterations: 99 } } as Partial<typeof DEFAULT_CONFIG>);
+
+		const updated = mock.get();
+		expect(updated.limits.reviewCycleMaxIterations).toBe(99);
+		// Other limit fields should be preserved (not wiped by shallow merge)
+		expect(Object.keys(updated.limits).length).toBeGreaterThan(1);
 	});
 });
 
@@ -468,8 +520,6 @@ describe("createTempRepo", () => {
 			await log.exited;
 			expect(output.trim()).toBeTruthy();
 		} finally {
-			// Cleanup
-			const { rmSync } = await import("node:fs");
 			rmSync(repoPath, { recursive: true, force: true });
 		}
 	});
