@@ -492,16 +492,15 @@ header h1 {
   display: block;
 }
 
-/* Question panel — covers the output log entirely when visible */
+/* Question panel — overlaps the output area from below */
 .question-panel {
-  position: absolute;
-  inset: 0;
+  position: relative;
   z-index: 10;
+  margin-top: -400px;
   padding: 16px;
-  overflow-y: auto;
   background: var(--bg-secondary, #1e1e2e);
-  border-top: 1px solid rgba(240, 192, 64, 0.3);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
+  border-bottom: 1px solid rgba(240, 192, 64, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .question-header {
@@ -757,6 +756,7 @@ body::-webkit-scrollbar-track {
   }
 
   .question-panel {
+    margin-top: -300px;
     padding: 12px;
   }
 }
