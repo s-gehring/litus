@@ -159,11 +159,23 @@ export async function checkGitignoreEntries(targetDir: string): Promise<SetupChe
 	return Promise.all(
 		GITIGNORE_ENTRIES.map(async (entry) => {
 			const result = await runCommand(["git", "check-ignore", entry], targetDir);
-			const passed = result.code === 0;
+			if (result.code === 0) {
+				return { name: `Gitignore: ${entry}`, passed: true, required: false };
+			}
+			// Pattern not effective — check if it exists but is overridden by tracked files
+			const noIndex = await runCommand(["git", "check-ignore", "--no-index", entry], targetDir);
+			if (noIndex.code === 0) {
+				return {
+					name: `Gitignore: ${entry}`,
+					passed: false,
+					error: `"${entry}" is gitignored but already tracked — run "git rm -r --cached ${entry}" to untrack it`,
+					required: false,
+				};
+			}
 			return {
 				name: `Gitignore: ${entry}`,
-				passed,
-				error: passed ? undefined : `"${entry}" is not listed in .gitignore`,
+				passed: false,
+				error: `"${entry}" is not listed in .gitignore`,
 				required: false,
 			};
 		}),

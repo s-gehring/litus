@@ -1,4 +1,6 @@
+import { tmpdir } from "node:os";
 import { configStore } from "./config-store";
+import { cleanEnv } from "./spawn-utils";
 
 export class Summarizer {
 	private charCount: Map<string, number> = new Map();
@@ -78,7 +80,12 @@ export class Summarizer {
 				"--effort",
 				config.efforts.activitySummarization,
 			];
-			const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+			const proc = Bun.spawn(args, {
+				cwd: tmpdir(),
+				stdout: "pipe",
+				stderr: "pipe",
+				env: cleanEnv(),
+			});
 
 			const code = await proc.exited;
 			if (code !== 0) return null;
@@ -107,7 +114,12 @@ export class Summarizer {
 				"--effort",
 				config.efforts.specSummarization,
 			];
-			const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+			const proc = Bun.spawn(args, {
+				cwd: tmpdir(),
+				stdout: "pipe",
+				stderr: "pipe",
+				env: cleanEnv(),
+			});
 
 			const code = await proc.exited;
 			if (code !== 0) return { summary: "", flavor: "" };

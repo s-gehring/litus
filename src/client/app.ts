@@ -748,9 +748,11 @@ function selectStep(index: number): void {
 		index === wf.currentStepIndex &&
 		(wf.status === "running" || wf.status === "waiting_for_input")
 	) {
-		// Show live accumulated output
+		// Show live accumulated output, fall back to persisted step.output after restart
 		if (entry.outputLines.length > 0) {
 			renderOutputEntries(entry.outputLines);
+		} else if (step.output) {
+			appendOutput(step.output);
 		}
 	} else if (step.output || step.error) {
 		// Show stored step output

@@ -400,6 +400,7 @@ header h1 {
 }
 
 .output-area {
+  position: relative;
   height: 400px;
   overflow: hidden;
   border-bottom: 1px solid var(--border);
@@ -449,6 +450,11 @@ header h1 {
   vertical-align: middle;
 }
 
+.tool-icon-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
 .tool-icon {
   display: inline-flex;
   align-items: center;
@@ -460,11 +466,41 @@ header h1 {
   white-space: nowrap;
 }
 
-/* Question panel */
+.tool-tooltip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border: 1px solid rgba(74, 158, 255, 0.3);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: pre;
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.tool-icon-wrapper:hover .tool-tooltip {
+  display: block;
+}
+
+/* Question panel — overlaps the output area from below */
 .question-panel {
+  position: relative;
+  z-index: 10;
+  margin-top: -400px;
   padding: 16px;
-  background: rgba(240,192,64,0.05);
-  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary, #1e1e2e);
+  border-bottom: 1px solid rgba(240, 192, 64, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .question-header {
@@ -720,6 +756,7 @@ body::-webkit-scrollbar-track {
   }
 
   .question-panel {
+    margin-top: -300px;
     padding: 12px;
   }
 }

@@ -23,6 +23,7 @@ import type {
 	PipelineStepName,
 	Question,
 	SetupResult,
+	ToolUsage,
 	Workflow,
 } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
@@ -48,7 +49,7 @@ export interface PipelineCallbacks {
 		reviewIteration: number,
 	) => void;
 	onOutput: (workflowId: string, text: string) => void;
-	onTools: (workflowId: string, tools: Record<string, number>) => void;
+	onTools: (workflowId: string, tools: ToolUsage[]) => void;
 	onComplete: (workflowId: string) => void;
 	onError: (workflowId: string, error: string) => void;
 	onStateChange: (workflowId: string) => void;
@@ -134,7 +135,10 @@ export class PipelineOrchestrator {
 		this.checkoutMasterFn =
 			deps?.checkoutMaster ??
 			(async (cwd: string) => {
-				const result = await gitSpawn(["git", "checkout", "master"], { cwd });
+				await gitSpawn(["git", "fetch", "origin", "master"], { cwd });
+				const result = await gitSpawn(["git", "checkout", "--detach", "origin/master"], {
+					cwd,
+				});
 				return { code: result.code, stderr: result.stderr };
 			});
 		this.callbacks = callbacks;
@@ -225,6 +229,12 @@ export class PipelineOrchestrator {
 
 		this.engine.clearQuestion(workflowId);
 		const step = workflow.steps[workflow.currentStepIndex];
+
+		// Append the user's answer to step output so it is visible and persisted
+		const answerLine = `[Human] ${answer}`;
+		step.output += `${answerLine}\n`;
+		this.callbacks.onOutput(workflowId, answerLine);
+
 		step.status = "running";
 		workflow.updatedAt = new Date().toISOString();
 
@@ -640,7 +650,10 @@ export class PipelineOrchestrator {
 
 	private checkoutMasterInWorktree(workflow: Workflow): void {
 		const cwd = requireWorktreePath(workflow);
-		this.handleStepOutput(workflow.id, "[git] git checkout master | cwd=worktree");
+		this.handleStepOutput(
+			workflow.id,
+			"[git] fetch + checkout --detach origin/master | cwd=worktree",
+		);
 		this.checkoutMasterFn(cwd)
 			.then((result) => {
 				const wf = this.engine.getWorkflow();

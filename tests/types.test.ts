@@ -619,7 +619,7 @@ describe("ServerMessage variants", () => {
 				},
 			},
 			{ type: "workflow:output", workflowId: "w-1", text: "hello" },
-			{ type: "workflow:tools", workflowId: "w-1", tools: { Read: 5 } },
+			{ type: "workflow:tools", workflowId: "w-1", tools: [{ name: "Read" }] },
 			{
 				type: "workflow:question",
 				workflowId: "w-1",
@@ -644,7 +644,7 @@ describe("ServerMessage variants", () => {
 			{ type: "epic:list", epics: [] },
 			{ type: "epic:created", epicId: "e-1", description: "Build app" },
 			{ type: "epic:output", epicId: "e-1", text: "Analyzing..." },
-			{ type: "epic:tools", epicId: "e-1", tools: { Write: 2 } },
+			{ type: "epic:tools", epicId: "e-1", tools: [{ name: "Write" }] },
 			{ type: "epic:summary", epicId: "e-1", summary: "3 specs" },
 			{
 				type: "epic:result",
@@ -782,7 +782,7 @@ describe("OutputEntry discriminated union", () => {
 	});
 
 	test("tools variant", () => {
-		const entry: OutputEntry = { kind: "tools", tools: { Read: 3, Write: 1 } };
+		const entry: OutputEntry = { kind: "tools", tools: [{ name: "Read" }, { name: "Write" }] };
 		expect(entry.kind).toBe("tools");
 	});
 });
@@ -1135,7 +1135,7 @@ describe("WorkflowClientState shape", () => {
 			},
 			outputLines: [
 				{ kind: "text", text: "hello" },
-				{ kind: "tools", tools: { Read: 1 } },
+				{ kind: "tools", tools: [{ name: "Read" }] },
 			],
 			isExpanded: true,
 		};

@@ -53,9 +53,12 @@ describe("OutputEntry accumulation", () => {
 		const entries: OutputEntry[] = [];
 
 		entries.push({ kind: "text", text: "Hello world" });
-		entries.push({ kind: "tools", tools: { Bash: 3, Read: 1 } });
+		entries.push({
+			kind: "tools",
+			tools: [{ name: "Bash" }, { name: "Bash" }, { name: "Bash" }, { name: "Read" }],
+		});
 		entries.push({ kind: "text", text: "More output" });
-		entries.push({ kind: "tools", tools: { Write: 1 } });
+		entries.push({ kind: "tools", tools: [{ name: "Write" }] });
 
 		expect(entries).toHaveLength(4);
 		expect(entries[0].kind).toBe("text");
@@ -64,7 +67,7 @@ describe("OutputEntry accumulation", () => {
 		expect(entries[3].kind).toBe("tools");
 
 		if (entries[1].kind === "tools") {
-			expect(entries[1].tools).toEqual({ Bash: 3, Read: 1 });
+			expect(entries[1].tools).toHaveLength(4);
 		}
 	});
 
@@ -83,8 +86,8 @@ describe("OutputEntry accumulation", () => {
 	test("tools entry with consecutive tools accumulates without text", () => {
 		const entries: OutputEntry[] = [];
 
-		entries.push({ kind: "tools", tools: { Bash: 1 } });
-		entries.push({ kind: "tools", tools: { Read: 2, Grep: 1 } });
+		entries.push({ kind: "tools", tools: [{ name: "Bash" }] });
+		entries.push({ kind: "tools", tools: [{ name: "Read" }, { name: "Read" }, { name: "Grep" }] });
 
 		expect(entries).toHaveLength(2);
 		// Both are tools entries — client rendering handles attachment to last output line

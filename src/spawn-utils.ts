@@ -1,3 +1,15 @@
+/** Build an env object with CLAUDE* vars stripped to prevent child CLI from inheriting parent session state. */
+export function cleanEnv(extra?: Record<string, string>): Record<string, string> {
+	const env: Record<string, string> = {};
+	for (const [k, v] of Object.entries(process.env)) {
+		if (v !== undefined && !k.startsWith("CLAUDE")) {
+			env[k] = v;
+		}
+	}
+	if (extra) Object.assign(env, extra);
+	return env;
+}
+
 export interface SpawnLike {
 	spawn: (
 		args: string[],

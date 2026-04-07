@@ -1,6 +1,7 @@
 import { configStore } from "./config-store";
 import { buildGraph, detectCycles } from "./dependency-resolver";
-import type { EpicAnalysisResult } from "./types";
+import { cleanEnv } from "./spawn-utils";
+import type { EpicAnalysisResult, ToolUsage } from "./types";
 
 export function buildDecompositionPrompt(epicDescription: string): string {
 	const template = configStore.get().prompts.epicDecomposition;
@@ -98,7 +99,7 @@ export interface EpicAnalysisProcess {
 
 export interface EpicAnalysisCallbacks {
 	onOutput?: (text: string) => void;
-	onTools?: (tools: Record<string, number>) => void;
+	onTools?: (tools: ToolUsage[]) => void;
 }
 
 interface StreamResult {
@@ -120,7 +121,7 @@ async function runCLIStream(
 		cwd,
 		stdout: "pipe",
 		stderr: "pipe",
-		env: process.env,
+		env: cleanEnv(),
 	});
 
 	if (onKillRef) {
@@ -183,12 +184,15 @@ async function runCLIStream(
 						}
 
 						let currentText = "";
-						const toolCounts = new Map<string, number>();
+						const toolUsages: ToolUsage[] = [];
 						for (const block of event.message.content) {
 							if (block.type === "text" && block.text) {
 								currentText += block.text;
 							} else if (block.type === "tool_use" && block.name) {
-								toolCounts.set(block.name, (toolCounts.get(block.name) ?? 0) + 1);
+								toolUsages.push({
+									name: block.name,
+									input: block.input as Record<string, unknown> | undefined,
+								});
 							}
 						}
 						// Each assistant event has cumulative text for the current turn.
@@ -203,8 +207,8 @@ async function runCLIStream(
 						}
 						lastAssistantText = currentText;
 
-						if (toolCounts.size > 0) {
-							callbacks?.onTools?.(Object.fromEntries(toolCounts));
+						if (toolUsages.length > 0) {
+							callbacks?.onTools?.(toolUsages);
 						}
 					} else if (event.type === "content_block_delta" && event.delta?.text) {
 						deltaAccumulated += event.delta.text;

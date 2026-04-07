@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
 import { configStore } from "./config-store";
+import { cleanEnv } from "./spawn-utils";
 import type { Question } from "./types";
 
 // Positive indicators that text likely contains a question for the user
@@ -69,7 +71,12 @@ export class QuestionDetector {
 				"--effort",
 				config.efforts.questionDetection,
 			];
-			const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+			const proc = Bun.spawn(args, {
+				cwd: tmpdir(),
+				stdout: "pipe",
+				stderr: "pipe",
+				env: cleanEnv(),
+			});
 
 			const code = await proc.exited;
 			if (code !== 0) return false;
