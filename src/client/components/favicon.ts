@@ -29,9 +29,9 @@ export function updateFavicon(needsAttention: boolean): void {
 		ctx.drawImage(img, 0, 0, size, size);
 
 		if (needsAttention) {
-			const dotR = 11;
+			const dotR = 14;
 			const cx = size - dotR - 1;
-			const cy = dotR + 1;
+			const cy = size - dotR - 1;
 			ctx.beginPath();
 			ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
 			ctx.fillStyle = "#e94560";
