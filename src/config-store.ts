@@ -144,6 +144,7 @@ Rules:
 - If parts are infeasible, set \`infeasibleNotes\` to explain why
 - If the ENTIRE epic is infeasible, \`specs\` can be an empty array with \`infeasibleNotes\` explaining why`,
 	},
+	autoMode: false,
 	limits: {
 		reviewCycleMaxIterations: 16,
 		ciFixMaxAttempts: 3,
@@ -288,6 +289,7 @@ export class ConfigStore {
 			prompts: { ...DEFAULT_CONFIG.prompts, ...(saved.prompts ?? {}) },
 			limits: { ...DEFAULT_CONFIG.limits, ...(saved.limits ?? {}) },
 			timing: { ...DEFAULT_CONFIG.timing, ...(saved.timing ?? {}) },
+			autoMode: saved.autoMode ?? DEFAULT_CONFIG.autoMode,
 		};
 	}
 
@@ -316,6 +318,9 @@ export class ConfigStore {
 		}
 		if (partial.timing) {
 			current.timing = { ...(current.timing ?? {}), ...partial.timing };
+		}
+		if (partial.autoMode !== undefined) {
+			current.autoMode = partial.autoMode;
 		}
 		this.savedConfig = current;
 

@@ -75,6 +75,7 @@ export interface AppConfig {
 	prompts: PromptConfig;
 	limits: LimitConfig;
 	timing: TimingConfig;
+	autoMode: boolean;
 }
 
 export interface PromptVariableInfo {

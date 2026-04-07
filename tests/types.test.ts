@@ -108,6 +108,7 @@ function makeAppConfig(): AppConfig {
 			maxClientOutputLines: 500,
 			epicTimeoutMs: 300000,
 		},
+		autoMode: false,
 	};
 }
 
