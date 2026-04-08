@@ -1,6 +1,5 @@
 import type { PipelineStepStatus, WorkflowState } from "../../types";
-
-const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
+import { $ } from "../dom";
 
 const STATUS_CLASS: Record<PipelineStepStatus, string> = {
 	pending: "step-pending",

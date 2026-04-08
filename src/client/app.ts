@@ -39,9 +39,8 @@ import {
 	updateUserInput,
 	updateWorkflowStatus,
 } from "./components/workflow-window";
+import { $ } from "./dom";
 import { renderMarkdown } from "./render-markdown";
-
-const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
 const stateManager = new ClientStateManager();
 

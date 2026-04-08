@@ -4,14 +4,13 @@ import type {
 	WorkflowClientState,
 	WorkflowState,
 } from "../../types";
+import { $ } from "../dom";
 import {
 	EPIC_AGG_STATUS_CLASSES,
 	EPIC_CARD_PREFIX,
 	STATUS_CLASSES,
 	STATUS_LABELS,
 } from "./status-maps";
-
-const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
 // Store reference for dependency name resolution
 let allWorkflowsRef: ReadonlyMap<string, WorkflowClientState> | null = null;

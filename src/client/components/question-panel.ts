@@ -1,7 +1,6 @@
 import type { Question } from "../../types";
+import { $ } from "../dom";
 import { renderMarkdown } from "../render-markdown";
-
-const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
 export function showQuestion(question: Question): void {
 	const panel = $("#question-panel");
