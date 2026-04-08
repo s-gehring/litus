@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/s-gehring/litus/actions"><img src="https://github.com/s-gehring/litus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/runtime-Bun%201.2.12+-f472b6" alt="Bun">
+  <img src="https://img.shields.io/badge/runtime-Bun%20v1.3.11+-a04817c" alt="Bun">
   <img src="https://img.shields.io/badge/lang-TypeScript-3178c6" alt="TypeScript">
   <img src="https://img.shields.io/badge/framework-none-lightgrey" alt="No framework">
 </p>
@@ -88,7 +88,7 @@ merge — so you can focus on the parts that actually need a human brain.
 
 | Tool                                                                                                                | Why                                                                                                     |
 |---------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
-| [Bun](https://bun.sh) >= 1.2.12                                                                                     | Runtime. Fast, TypeScript-native, no transpilation ceremony.                                            |
+| [Bun](https://bun.sh) >= 1.3.11                                                                                     | Runtime. Fast, TypeScript-native, no transpilation ceremony.                                            |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code)                                                       | The CLI agent that does the actual work. Must be installed and authenticated.                           |
 | [GitHub CLI (`gh`)](https://cli.github.com/)                                                                        | PR creation, CI monitoring, merge operations. Must be authenticated.                                    |
 | [Speckit](https://github.com/github/spec-kit) ([MIT License](https://github.com/github/spec-kit/blob/main/LICENSE)) | Claude Code slash commands for the specify → implement pipeline. Must be installed in your target repo. |
@@ -192,7 +192,7 @@ Litus as the control tower and Claude Code as the plane.
 GitHub's official CLI. Litus uses it for PR creation, CI status polling, failure log retrieval, and squash-merge
 operations. You'll need it installed and authenticated (`gh auth login`).
 
-### [Speckit](https://github.com/example/speckit)
+### [Speckit](https://github.com/github/spec-kit)
 
 A set of Claude Code [skills](https://docs.anthropic.com/en/docs/claude-code/skills) that power the
 specify → implement pipeline. These live in your target repository's `.claude/skills/` directory and give the agent
