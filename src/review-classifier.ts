@@ -16,6 +16,7 @@ export class ReviewClassifier {
 				model: config.models.reviewClassification,
 				effort: config.efforts.reviewClassification,
 				callerLabel: "review-classifier",
+				timeoutMs: 30_000,
 			});
 			if (!ok) return "major";
 

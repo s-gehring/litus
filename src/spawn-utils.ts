@@ -10,6 +10,7 @@ export interface RunClaudeOptions {
 	cwd?: string;
 	verbose?: boolean;
 	callerLabel?: string;
+	timeoutMs?: number;
 }
 
 export interface RunClaudeResult {
@@ -80,7 +81,24 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 			windowsHide: true,
 		});
 
+		let timedOut = false;
+		let timeoutId: ReturnType<typeof setTimeout> | undefined;
+		if (options.timeoutMs) {
+			timeoutId = setTimeout(() => {
+				timedOut = true;
+				proc.kill();
+			}, options.timeoutMs);
+		}
+
 		const exitCode = await proc.exited;
+		if (timeoutId) clearTimeout(timeoutId);
+
+		if (timedOut) {
+			const label = options.callerLabel ?? "runClaude";
+			console.warn(`[${label}] timed out after ${options.timeoutMs}ms`);
+			return { ok: false, exitCode: -1, stdout: "", stderr: "timeout" };
+		}
+
 		const stdout = await readStream(proc.stdout);
 		const stderr = await readStream(proc.stderr);
 

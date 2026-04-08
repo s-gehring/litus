@@ -73,6 +73,7 @@ export class Summarizer {
 				model: config.models.activitySummarization,
 				effort: config.efforts.activitySummarization,
 				callerLabel: "summarizer:activity",
+				timeoutMs: 30_000,
 			});
 			if (!ok) return null;
 			return stdout.trim() || null;
@@ -92,6 +93,7 @@ export class Summarizer {
 				model: config.models.specSummarization,
 				effort: config.efforts.specSummarization,
 				callerLabel: "summarizer:spec",
+				timeoutMs: 30_000,
 			});
 			if (!ok) return { summary: "", flavor: "" };
 

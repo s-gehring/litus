@@ -64,6 +64,7 @@ export class QuestionDetector {
 				model: config.models.questionDetection,
 				effort: config.efforts.questionDetection,
 				callerLabel: "question-detector",
+				timeoutMs: 30_000,
 			});
 			if (!ok) return false;
 			return stdout.trim().toLowerCase().startsWith("yes");
