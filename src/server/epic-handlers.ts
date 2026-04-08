@@ -1,10 +1,31 @@
 import { randomUUID } from "node:crypto";
 import { analyzeEpic } from "../epic-analyzer";
 import { toErrorMessage } from "../errors";
-import type { ClientMessage } from "../types";
+import type { ClientMessage, PersistedEpic } from "../types";
 import { createEpicWorkflows } from "../workflow-engine";
 import type { MessageHandler } from "./handler-types";
 import { validateRepo, validateTextInput } from "./handler-types";
+
+function buildEpicData(
+	fields: Pick<PersistedEpic, "epicId" | "description" | "status" | "title" | "workflowIds"> & {
+		analysisStartedAt: number;
+		infeasibleNotes: string | null;
+		summary: string | null;
+	},
+): PersistedEpic {
+	return {
+		epicId: fields.epicId,
+		description: fields.description,
+		status: fields.status,
+		title: fields.title,
+		workflowIds: fields.workflowIds,
+		startedAt: new Date(fields.analysisStartedAt).toISOString(),
+		completedAt: new Date().toISOString(),
+		errorMessage: null,
+		infeasibleNotes: fields.infeasibleNotes,
+		analysisSummary: fields.summary,
+	};
+}
 
 export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 	const msg = data as ClientMessage & { type: "epic:start" };
@@ -52,18 +73,16 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			console.log(
 				`[epic] Infeasible (${epicId.slice(0, 8)}): ${result.infeasibleNotes.slice(0, 80)}`,
 			);
-			const epicData = {
+			const epicData = buildEpicData({
 				epicId,
 				description: trimmedDesc,
-				status: "infeasible" as const,
+				status: "infeasible",
 				title: result.title,
 				workflowIds: [],
-				startedAt: new Date(analysisStartedAt).toISOString(),
-				completedAt: new Date().toISOString(),
-				errorMessage: null,
+				analysisStartedAt,
 				infeasibleNotes: result.infeasibleNotes,
-				analysisSummary: result.summary,
-			};
+				summary: result.summary,
+			});
 			await deps.sharedEpicStore.save(epicData);
 			deps.broadcast({
 				type: "epic:infeasible",
@@ -100,18 +119,16 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			}
 		}
 
-		const epicData = {
+		const epicData = buildEpicData({
 			epicId,
 			description: trimmedDesc,
-			status: "completed" as const,
+			status: "completed",
 			title: result.title,
 			workflowIds,
-			startedAt: new Date(analysisStartedAt).toISOString(),
-			completedAt: new Date().toISOString(),
-			errorMessage: null,
+			analysisStartedAt,
 			infeasibleNotes: result.infeasibleNotes,
-			analysisSummary: result.summary,
-		};
+			summary: result.summary,
+		});
 		await deps.sharedEpicStore.save(epicData);
 
 		deps.broadcast({
