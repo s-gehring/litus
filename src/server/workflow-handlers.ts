@@ -11,6 +11,10 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 		deps.sendTo(ws, { type: "error", message: "Specification must be non-empty" });
 		return;
 	}
+	if (specification.length > 100_000) {
+		deps.sendTo(ws, { type: "error", message: "Specification exceeds maximum length (100 KB)" });
+		return;
+	}
 
 	const validation = await validateTargetRepository(targetRepository);
 	if (!validation.valid) {
@@ -37,6 +41,10 @@ export const handleAnswer: MessageHandler = withOrchestrator((ws, data, deps, or
 
 	if (!answer.trim()) {
 		deps.sendTo(ws, { type: "error", message: "Answer must be non-empty" });
+		return;
+	}
+	if (answer.length > 100_000) {
+		deps.sendTo(ws, { type: "error", message: "Answer exceeds maximum length (100 KB)" });
 		return;
 	}
 

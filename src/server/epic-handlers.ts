@@ -13,6 +13,10 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 		deps.sendTo(ws, { type: "error", message: "Epic description must be at least 10 characters" });
 		return;
 	}
+	if (description.length > 100_000) {
+		deps.sendTo(ws, { type: "error", message: "Epic description exceeds maximum length (100 KB)" });
+		return;
+	}
 
 	const validation = await validateTargetRepository(targetRepository);
 	if (!validation.valid) {
