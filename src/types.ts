@@ -483,6 +483,27 @@ export interface EpicClientState extends PersistedEpic {
 	outputLines: OutputEntry[];
 }
 
+// Pipeline orchestrator callbacks
+export interface PipelineCallbacks {
+	onStepChange: (
+		workflowId: string,
+		previousStep: PipelineStepName | null,
+		currentStep: PipelineStepName,
+		currentStepIndex: number,
+		reviewIteration: number,
+	) => void;
+	onOutput: (workflowId: string, text: string) => void;
+	onTools: (workflowId: string, tools: ToolUsage[]) => void;
+	onComplete: (workflowId: string) => void;
+	onError: (workflowId: string, error: string) => void;
+	onStateChange: (workflowId: string) => void;
+	onEpicDependencyUpdate?: (
+		dependentWorkflowId: string,
+		status: EpicDependencyStatus,
+		blockingWorkflows: string[],
+	) => void;
+}
+
 // Client → Server messages
 export type ClientMessage =
 	| { type: "workflow:start"; specification: string; targetRepository?: string }

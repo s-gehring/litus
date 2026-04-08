@@ -20,15 +20,16 @@ import { Summarizer } from "./summarizer";
 import {
 	type EffortLevel,
 	type ModelConfig,
-	type PipelineStepName,
+	type PipelineCallbacks,
 	type Question,
 	type SetupResult,
 	STEP,
-	type ToolUsage,
 	type Workflow,
 } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
+
+export type { PipelineCallbacks } from "./types";
 
 // Only steps that invoke the CLI with a configurable model
 const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {
@@ -41,26 +42,6 @@ const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {
 	[STEP.IMPLEMENT_REVIEW]: "implementReview",
 	[STEP.COMMIT_PUSH_PR]: "commitPushPr",
 };
-
-export interface PipelineCallbacks {
-	onStepChange: (
-		workflowId: string,
-		previousStep: PipelineStepName | null,
-		currentStep: PipelineStepName,
-		currentStepIndex: number,
-		reviewIteration: number,
-	) => void;
-	onOutput: (workflowId: string, text: string) => void;
-	onTools: (workflowId: string, tools: ToolUsage[]) => void;
-	onComplete: (workflowId: string) => void;
-	onError: (workflowId: string, error: string) => void;
-	onStateChange: (workflowId: string) => void;
-	onEpicDependencyUpdate?: (
-		dependentWorkflowId: string,
-		status: import("./types").EpicDependencyStatus,
-		blockingWorkflows: string[],
-	) => void;
-}
 
 export interface PipelineDeps {
 	engine?: WorkflowEngine;
