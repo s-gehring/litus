@@ -14,13 +14,13 @@ import {
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
 // Store reference for dependency name resolution
-let allWorkflowsRef: Map<string, WorkflowClientState> | null = null;
+let allWorkflowsRef: ReadonlyMap<string, WorkflowClientState> | null = null;
 
 export function renderCardStrip(
-	cardOrder: string[],
-	workflows: Map<string, WorkflowClientState>,
-	epics: Map<string, EpicClientState>,
-	epicAggregates: Map<string, EpicAggregatedState>,
+	cardOrder: readonly string[],
+	workflows: ReadonlyMap<string, WorkflowClientState>,
+	epics: ReadonlyMap<string, EpicClientState>,
+	epicAggregates: ReadonlyMap<string, EpicAggregatedState>,
 	expandedId: string | null,
 	onCardClick: (id: string) => void,
 ): void {
