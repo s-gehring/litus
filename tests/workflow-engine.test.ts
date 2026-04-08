@@ -236,13 +236,13 @@ describe("WorkflowEngine", () => {
 
 		test("specify step prompt includes specification text", async () => {
 			const w = await engine.createWorkflow("Build a login page", "/tmp/test-repo");
-			expect(w.steps[1].prompt).toBe("/speckit.specify Build a login page");
+			expect(w.steps[1].prompt).toBe("/speckit-specify Build a login page");
 		});
 
 		test("non-specify steps have bare prompts", async () => {
 			const w = await engine.createWorkflow("test", "/tmp/test-repo");
-			expect(w.steps[2].prompt).toBe("/speckit.clarify");
-			expect(w.steps[3].prompt).toBe("/speckit.plan");
+			expect(w.steps[2].prompt).toBe("/speckit-clarify");
+			expect(w.steps[3].prompt).toBe("/speckit-plan");
 		});
 
 		test("currentStepIndex starts at 0", async () => {

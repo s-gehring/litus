@@ -1,25 +1,39 @@
 {
-	"name": "litus",
-	"version": "0.1.0",
-	"devDependencies": {
-		"@biomejs/biome": "^2.4.10",
-		"@happy-dom/global-registrator": "^20.8.9",
-		"@types/bun": "^1.2.0",
-		"@types/dompurify": "^3.2.0",
-		"happy-dom": "^20.8.9"
-	},
-	"scripts": {
-		"dev": "bun run build:client && bun run --watch src/server.ts",
-		"start": "bun run src/server.ts",
-		"build:client": "bun run src/build.ts",
-		"test": "bun test",
-		"lint": "bunx biome lint .",
-		"format": "bunx biome format .",
-		"format:check": "bunx biome format --check ."
-	},
-	"type": "module",
-	"dependencies": {
-		"dompurify": "^3.3.3",
-		"marked": "^17.0.6"
-	}
+  "name": "litus",
+  "version": "1.0.0",
+  "description": "A web-based orchestrator for Claude Code agents",
+  "author": "Simon Gehring",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/s-gehring/litus.git"
+  },
+  "keywords": [
+    "claude-code",
+    "ai-agent",
+    "orchestrator",
+    "pipeline",
+    "bun",
+    "typescript"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.10",
+    "@happy-dom/global-registrator": "^20.8.9",
+    "@types/bun": "^1.3.11",
+    "happy-dom": "^20.8.9"
+  },
+  "scripts": {
+    "dev": "bun run build:client && bun run --watch src/server.ts",
+    "start": "bun run src/server.ts",
+    "build:client": "bun run src/build.ts",
+    "test": "bun test",
+    "lint": "bunx biome lint .",
+    "format": "bunx biome format .",
+    "format:check": "bunx biome format --check ."
+  },
+  "type": "module",
+  "dependencies": {
+    "dompurify": "^3.3.3",
+    "marked": "^18.0.0"
+  }
 }

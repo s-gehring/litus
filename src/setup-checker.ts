@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { gitSpawn } from "./git-logger";
 import type { SetupCheckResult, SetupResult } from "./types";
@@ -110,32 +110,88 @@ export async function checkGhAuth(targetDir: string): Promise<SetupCheckResult> 
 	};
 }
 
-export const SPECKIT_FILES = [
-	"speckit.clarify.md",
-	"speckit.implement.md",
-	"speckit.plan.md",
-	"speckit.specify.md",
-	"speckit.tasks.md",
-	"speckit.review.md",
-	"speckit.implementreview.md",
+/** Speckit prompt names to check (without path prefix). */
+export const SPECKIT_NAMES = [
+	"clarify",
+	"implement",
+	"plan",
+	"specify",
+	"tasks",
+	"review",
+	"implementreview",
 ];
 
-export function checkSpeckitFiles(targetDir: string): SetupCheckResult {
-	const commandsDir = join(targetDir, ".claude", "commands");
-	const missing: string[] = [];
-	for (const file of SPECKIT_FILES) {
-		const filePath = join(commandsDir, file);
-		try {
-			readFileSync(filePath);
-		} catch {
-			missing.push(file);
+/** Names of prompts bundled with the app that get auto-installed as skills when missing. */
+export const BUNDLED_SPECKIT_NAMES = ["review", "implementreview"];
+
+function skillDir(skillsDir: string, name: string): string {
+	return join(skillsDir, `speckit-${name}`);
+}
+
+function skillExists(skillsDir: string, name: string): boolean {
+	return existsSync(join(skillDir(skillsDir, name), "SKILL.md"));
+}
+
+const BUNDLED_DIR = join(import.meta.dir, "bundled-skills");
+
+function installBundledSkills(skillsDir: string): string[] {
+	const installed: string[] = [];
+	for (const name of BUNDLED_SPECKIT_NAMES) {
+		if (!skillExists(skillsDir, name)) {
+			const target = skillDir(skillsDir, name);
+			mkdirSync(target, { recursive: true });
+			cpSync(join(BUNDLED_DIR, `speckit-${name}`), target, { recursive: true });
+			installed.push(name);
 		}
 	}
+	return installed;
+}
+
+/** Detect legacy speckit.*.md command files in .claude/commands/ */
+function findLegacySpeckitCommands(targetDir: string): string[] {
+	const commandsDir = join(targetDir, ".claude", "commands");
+	if (!existsSync(commandsDir)) return [];
+	try {
+		return readdirSync(commandsDir).filter((f) => /^speckit\..*\.md$/.test(f));
+	} catch {
+		return [];
+	}
+}
+
+export function checkSpeckitFiles(targetDir: string): SetupCheckResult {
+	const skillsDir = join(targetDir, ".claude", "skills");
+
+	// Detect legacy command format
+	const legacyFiles = findLegacySpeckitCommands(targetDir);
+	if (legacyFiles.length > 0) {
+		return {
+			name: "Speckit prompt files",
+			passed: false,
+			error: `Found legacy speckit commands (${legacyFiles.join(", ")}). Update speckit and reinitialize the project to use the new skills format (.claude/skills/speckit-<name>/SKILL.md)`,
+			required: true,
+		};
+	}
+
+	// Auto-install bundled skills if missing
+	const installed = installBundledSkills(skillsDir);
+
+	const missing: string[] = [];
+	for (const name of SPECKIT_NAMES) {
+		if (!skillExists(skillsDir, name)) {
+			missing.push(name);
+		}
+	}
+
+	const info =
+		installed.length > 0 ? `Auto-installed bundled skills: ${installed.join(", ")}. ` : "";
+
 	return {
 		name: "Speckit prompt files",
 		passed: missing.length === 0,
 		error:
-			missing.length > 0 ? `Missing .claude/commands/ files: ${missing.join(", ")}` : undefined,
+			missing.length > 0
+				? `${info}Missing speckit skills (.claude/skills/): ${missing.join(", ")}`
+				: undefined,
 		required: true,
 	};
 }

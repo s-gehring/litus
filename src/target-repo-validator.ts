@@ -1,11 +1,21 @@
 import { stat } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, normalize } from "node:path";
 import { gitSpawn } from "./git-logger";
 
 export interface TargetRepoValidation {
 	valid: boolean;
 	error?: string;
 	effectivePath: string;
+}
+
+/** Expand ~ to home directory and normalize separators. */
+export function normalizePath(raw: string): string {
+	let p = raw.trim();
+	if (p === "~" || p.startsWith("~/") || p.startsWith("~\\")) {
+		p = homedir() + p.slice(1);
+	}
+	return normalize(p);
 }
 
 export async function validateTargetRepository(
@@ -19,7 +29,7 @@ export async function validateTargetRepository(
 		};
 	}
 
-	const trimmed = path.trim();
+	const trimmed = normalizePath(path);
 
 	// Must be absolute
 	if (!isAbsolute(trimmed)) {

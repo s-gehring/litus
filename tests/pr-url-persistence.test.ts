@@ -24,7 +24,7 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
 				name: "specify",
 				displayName: "Specifying",
 				status: "completed",
-				prompt: "/speckit.specify test",
+				prompt: "/speckit-specify test",
 				sessionId: null,
 				output: "",
 				error: null,

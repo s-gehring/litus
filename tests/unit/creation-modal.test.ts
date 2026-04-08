@@ -38,8 +38,9 @@ describe("creation-modal component contract", () => {
 	});
 
 	test("implements click-outside-to-close on overlay", () => {
-		expect(modalSource).toContain("overlay.addEventListener");
-		expect(modalSource).toContain("e.stopPropagation()");
+		expect(modalSource).toContain("mousedown");
+		expect(modalSource).toContain("mouseup");
+		expect(modalSource).toContain("mousedownOnOverlay");
 	});
 
 	test("enforces only one modal at a time", () => {

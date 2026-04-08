@@ -12,7 +12,7 @@ import {
 	checkIsGitRepo,
 	checkSpeckitFiles,
 	runSetupChecks,
-	SPECKIT_FILES,
+	SPECKIT_NAMES,
 } from "../src/setup-checker";
 
 const testRoot = join(tmpdir(), `crab-setup-test-${Date.now()}`);
@@ -20,12 +20,12 @@ const gitRepoPath = join(testRoot, "valid-repo");
 const nonGitDir = join(testRoot, "not-a-repo");
 const speckitCompleteDir = join(testRoot, "speckit-complete");
 const speckitMissingDir = join(testRoot, "speckit-missing");
+const speckitLegacyDir = join(testRoot, "speckit-legacy");
 
 beforeAll(async () => {
 	mkdirSync(gitRepoPath, { recursive: true });
 	mkdirSync(nonGitDir, { recursive: true });
-	mkdirSync(join(speckitCompleteDir, ".claude", "commands"), { recursive: true });
-	mkdirSync(join(speckitMissingDir, ".claude", "commands"), { recursive: true });
+	mkdirSync(join(speckitLegacyDir, ".claude", "commands"), { recursive: true });
 
 	// Init git repo with a GitHub origin and speckit files
 	const init = Bun.spawn(["git", "init"], { cwd: gitRepoPath, stdout: "pipe", stderr: "pipe" });
@@ -42,19 +42,40 @@ beforeAll(async () => {
 		{ cwd: gitRepoPath, stdout: "pipe", stderr: "pipe" },
 	);
 	await addRemote.exited;
-	mkdirSync(join(gitRepoPath, ".claude", "commands"), { recursive: true });
-	for (const file of SPECKIT_FILES) {
-		writeFileSync(join(gitRepoPath, ".claude", "commands", file), "# template");
+	// Create all speckit skills in git repo
+	for (const name of SPECKIT_NAMES) {
+		mkdirSync(join(gitRepoPath, ".claude", "skills", `speckit-${name}`), { recursive: true });
+		writeFileSync(
+			join(gitRepoPath, ".claude", "skills", `speckit-${name}`, "SKILL.md"),
+			"# template",
+		);
 	}
 
-	// Create all speckit files in complete dir
-	for (const file of SPECKIT_FILES) {
-		writeFileSync(join(speckitCompleteDir, ".claude", "commands", file), "# template");
+	// Create all speckit skills in complete dir
+	for (const name of SPECKIT_NAMES) {
+		mkdirSync(join(speckitCompleteDir, ".claude", "skills", `speckit-${name}`), {
+			recursive: true,
+		});
+		writeFileSync(
+			join(speckitCompleteDir, ".claude", "skills", `speckit-${name}`, "SKILL.md"),
+			"# template",
+		);
 	}
 
-	// Create only some speckit files in missing dir
-	writeFileSync(join(speckitMissingDir, ".claude", "commands", "speckit.clarify.md"), "# template");
-	writeFileSync(join(speckitMissingDir, ".claude", "commands", "speckit.plan.md"), "# template");
+	// Create only some speckit skills in missing dir
+	for (const name of ["clarify", "plan"]) {
+		mkdirSync(join(speckitMissingDir, ".claude", "skills", `speckit-${name}`), {
+			recursive: true,
+		});
+		writeFileSync(
+			join(speckitMissingDir, ".claude", "skills", `speckit-${name}`, "SKILL.md"),
+			"# template",
+		);
+	}
+
+	// Create legacy command files for legacy detection test
+	writeFileSync(join(speckitLegacyDir, ".claude", "commands", "speckit.clarify.md"), "# template");
+	writeFileSync(join(speckitLegacyDir, ".claude", "commands", "speckit.plan.md"), "# template");
 });
 
 afterAll(() => {
@@ -185,26 +206,43 @@ describe("checkGhAuth", () => {
 
 // T011: checkSpeckitFiles
 describe("checkSpeckitFiles", () => {
-	test("passes when all files present", () => {
+	test("passes when all skills present", () => {
 		const result = checkSpeckitFiles(speckitCompleteDir);
 		expect(result.passed).toBe(true);
 		expect(result.required).toBe(true);
 		expect(result.error).toBeUndefined();
 	});
 
-	test("fails with missing files listed", () => {
+	test("fails with missing skills listed", () => {
 		const result = checkSpeckitFiles(speckitMissingDir);
 		expect(result.passed).toBe(false);
 		expect(result.required).toBe(true);
-		expect(result.error).toContain("speckit.implement.md");
-		expect(result.error).toContain("speckit.specify.md");
-		expect(result.error).toContain("speckit.tasks.md");
+		// review + implementreview get auto-installed, so only these remain missing
+		expect(result.error).toContain("implement");
+		expect(result.error).toContain("specify");
+		expect(result.error).toContain("tasks");
 	});
 
-	test("fails when all files missing", () => {
+	test("fails when all skills missing (bundled ones get auto-installed)", () => {
 		const result = checkSpeckitFiles(nonGitDir);
 		expect(result.passed).toBe(false);
-		expect(result.error).toContain("Missing .claude/commands/ files");
+		expect(result.error).toContain("Missing speckit skills");
+		expect(result.error).toContain("Auto-installed bundled skills");
+		// Only native speckit prompts remain missing
+		expect(result.error).toContain("clarify");
+		expect(result.error).toContain("implement");
+		expect(result.error).toContain("plan");
+		expect(result.error).toContain("specify");
+		expect(result.error).toContain("tasks");
+	});
+
+	test("fails when legacy command format is detected", () => {
+		const result = checkSpeckitFiles(speckitLegacyDir);
+		expect(result.passed).toBe(false);
+		expect(result.required).toBe(true);
+		expect(result.error).toContain("legacy speckit commands");
+		expect(result.error).toContain("speckit.clarify.md");
+		expect(result.error).toContain("Update speckit");
 	});
 });
 
