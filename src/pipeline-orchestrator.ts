@@ -252,8 +252,7 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		this.assistantTextBuffer = "";
-		this.questionDetector.reset();
+		this.resetStepState();
 
 		// Kill any lingering CLI process before resuming
 		this.stepRunner.killProcess(workflowId);
@@ -306,8 +305,7 @@ export class PipelineOrchestrator {
 			this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
 		this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
 
-		this.assistantTextBuffer = "";
-		this.questionDetector.reset();
+		this.resetStepState();
 
 		this.stepRunner.resumeStep(
 			workflowId,
@@ -335,8 +333,7 @@ export class PipelineOrchestrator {
 
 		this.engine.transition(workflowId, "running");
 		this.callbacks.onStateChange(workflowId);
-		this.assistantTextBuffer = "";
-		this.questionDetector.reset();
+		this.resetStepState();
 
 		this.persistWorkflow(workflow);
 		this.callbacks.onStepChange(
@@ -414,8 +411,7 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 
-		this.assistantTextBuffer = "";
-		this.questionDetector.reset();
+		this.resetStepState();
 
 		const cwd = requireWorktreePath(workflow);
 
@@ -455,8 +451,7 @@ export class PipelineOrchestrator {
 		this.stepRunner.killProcess(workflowId);
 		this.ciMonitor.abort();
 		this.summarizer.cleanup(workflowId);
-		this.questionDetector.reset();
-		this.assistantTextBuffer = "";
+		this.resetStepState();
 		this.engine.clearQuestion(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
@@ -492,8 +487,7 @@ export class PipelineOrchestrator {
 		this.stepRunner.resetStep(step);
 		workflow.updatedAt = new Date().toISOString();
 
-		this.assistantTextBuffer = "";
-		this.questionDetector.reset();
+		this.resetStepState();
 
 		this.persistWorkflow(workflow);
 
@@ -1275,6 +1269,12 @@ export class PipelineOrchestrator {
 		this.store.save(workflow).catch((err) => {
 			console.error(`[pipeline] Failed to persist workflow: ${err}`);
 		});
+	}
+
+	/** Reset assistant text buffer and question detector state between steps. */
+	private resetStepState(): void {
+		this.assistantTextBuffer = "";
+		this.questionDetector.reset();
 	}
 
 	private persistDebounced(workflow: Workflow): void {
