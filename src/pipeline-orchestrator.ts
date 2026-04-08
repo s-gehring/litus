@@ -24,6 +24,7 @@ import {
 	type EffortLevel,
 	type ModelConfig,
 	type PipelineCallbacks,
+	type PipelineStepName,
 	type Question,
 	type SetupResult,
 	STEP,
@@ -906,53 +907,55 @@ export class PipelineOrchestrator {
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 
-		const decision = computeRoute(workflow);
+		try {
+			const decision = computeRoute(workflow);
 
-		switch (decision.action) {
-			case "route-to-monitor-ci": {
-				const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
-				workflow.currentStepIndex = monitorIndex;
-				this.startStep(workflow);
-				return;
+			switch (decision.action) {
+				case "route-to-monitor-ci": {
+					workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.MONITOR_CI);
+					this.startStep(workflow);
+					return;
+				}
+				case "route-to-merge-pr": {
+					workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.MERGE_PR);
+					this.startStep(workflow);
+					return;
+				}
+				case "route-back-to-monitor":
+					this.routeBackToMonitor(workflow);
+					return;
+				case "route-to-sync-repo": {
+					workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.SYNC_REPO);
+					this.startStep(workflow);
+					return;
+				}
+				case "complete":
+					this.completeWorkflow(workflow);
+					return;
+				case "route-to-implement-review":
+					this.routeToImplementReview(workflow);
+					return;
+				case "handle-implement-review-complete":
+					this.handleImplementReviewComplete(workflow).catch((err) => {
+						const msg = err instanceof Error ? err.message : String(err);
+						console.error(`[pipeline] Implement-review completion error: ${msg}`);
+						this.handleStepError(workflow.id, msg);
+					});
+					return;
+				case "advance-to-next":
+					this.advanceToNextStep(workflow);
+					return;
 			}
-			case "route-to-merge-pr": {
-				const mergePrIndex = workflow.steps.findIndex((s) => s.name === STEP.MERGE_PR);
-				workflow.currentStepIndex = mergePrIndex;
-				this.startStep(workflow);
-				return;
-			}
-			case "route-back-to-monitor":
-				this.routeBackToMonitor(workflow);
-				return;
-			case "route-to-sync-repo": {
-				const syncRepoIndex = workflow.steps.findIndex((s) => s.name === STEP.SYNC_REPO);
-				workflow.currentStepIndex = syncRepoIndex;
-				this.startStep(workflow);
-				return;
-			}
-			case "complete":
-				this.completeWorkflow(workflow);
-				return;
-			case "route-to-implement-review":
-				this.routeToImplementReview(workflow);
-				return;
-			case "handle-implement-review-complete":
-				this.handleImplementReviewComplete(workflow).catch((err) => {
-					const msg = err instanceof Error ? err.message : String(err);
-					console.error(`[pipeline] Implement-review completion error: ${msg}`);
-					this.handleStepError(workflow.id, msg);
-				});
-				return;
-			case "advance-to-next":
-				this.advanceToNextStep(workflow);
-				return;
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			this.handleStepError(workflow.id, `Routing failed: ${msg}`);
 		}
 	}
 
 	private routeToImplementReview(workflow: Workflow): void {
 		workflow.reviewCycle.iteration++;
 
-		const implReviewIndex = workflow.steps.findIndex((s) => s.name === STEP.IMPLEMENT_REVIEW);
+		const implReviewIndex = this.requireStepIndex(workflow, STEP.IMPLEMENT_REVIEW);
 
 		// Reset implement-review step for re-use
 		const implStep = workflow.steps[implReviewIndex];
@@ -965,7 +968,7 @@ export class PipelineOrchestrator {
 
 	private async handleImplementReviewComplete(workflow: Workflow): Promise<void> {
 		// Classify the review step's output to decide whether to loop
-		const reviewIndex = workflow.steps.findIndex((s) => s.name === STEP.REVIEW);
+		const reviewIndex = this.requireStepIndex(workflow, STEP.REVIEW);
 		const reviewStep = workflow.steps[reviewIndex];
 		const severity = await this.reviewClassifier.classify(reviewStep.output);
 
@@ -983,7 +986,7 @@ export class PipelineOrchestrator {
 			this.persistWorkflow(workflow);
 			this.startStep(workflow);
 		} else {
-			workflow.currentStepIndex = workflow.steps.findIndex((s) => s.name === STEP.COMMIT_PUSH_PR);
+			workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.COMMIT_PUSH_PR);
 			this.startStep(workflow);
 		}
 	}
@@ -993,7 +996,7 @@ export class PipelineOrchestrator {
 		workflow.ciCycle.monitorStartedAt = null;
 		workflow.ciCycle.failureLogs = [];
 
-		const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
+		const monitorIndex = this.requireStepIndex(workflow, STEP.MONITOR_CI);
 		const monitorStep = workflow.steps[monitorIndex];
 		this.stepRunner.resetStep(monitorStep, "pending");
 
@@ -1333,6 +1336,14 @@ export class PipelineOrchestrator {
 			onPid: (wfId, pid) => this.handlePid(wfId, pid),
 			onTools: (tools) => this.callbacks.onTools(workflowId, tools),
 		});
+	}
+
+	private requireStepIndex(workflow: Workflow, stepName: PipelineStepName): number {
+		const index = workflow.steps.findIndex((s) => s.name === stepName);
+		if (index < 0) {
+			throw new Error(`Step "${stepName}" not found in workflow ${workflow.id}`);
+		}
+		return index;
 	}
 
 	private getWorkflowOrThrow(workflowId: string): Workflow {
