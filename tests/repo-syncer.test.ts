@@ -128,7 +128,7 @@ describe("repo-syncer", () => {
 
 		expect(result.pulled).toBe(false);
 		expect(result.worktreeRemoved).toBe(true);
-		expect(result.warning).toContain("Pull failed");
+		expect(result.warning).toContain("diverged from origin/master");
 	});
 
 	// T025: worktree removal failure warns but workflow still completes
