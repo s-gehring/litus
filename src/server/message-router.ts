@@ -9,6 +9,12 @@ export class MessageRouter {
 	}
 
 	dispatch(ws: ServerWebSocket<WsData>, raw: string | Buffer, deps: HandlerDeps): void {
+		const size = typeof raw === "string" ? raw.length : raw.byteLength;
+		if (size > 1_000_000) {
+			deps.sendTo(ws, { type: "error", message: "Message too large (max 1 MB)" });
+			return;
+		}
+
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(String(raw));
