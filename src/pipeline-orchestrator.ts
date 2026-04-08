@@ -394,7 +394,7 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		this.engine.transition(workflowId, "paused");
-		this.flushPersistDebounce(workflow);
+		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 	}
@@ -467,7 +467,7 @@ export class PipelineOrchestrator {
 		this.tryTransition(workflowId, "cancelled");
 
 		step.pid = null;
-		this.flushPersistDebounce(workflow);
+		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 
@@ -736,7 +736,7 @@ export class PipelineOrchestrator {
 		step.completedAt = new Date().toISOString();
 		step.pid = null;
 		workflow.updatedAt = new Date().toISOString();
-		this.flushPersistDebounce(workflow);
+		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);
 
 		const fixCiIndex = workflow.steps.findIndex((s) => s.name === STEP.FIX_CI);
@@ -843,7 +843,7 @@ export class PipelineOrchestrator {
 		this.engine.setQuestion(workflowId, question);
 		this.tryTransition(workflowId, "waiting_for_input");
 
-		this.flushPersistDebounce(workflow);
+		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 	}
@@ -884,7 +884,7 @@ export class PipelineOrchestrator {
 
 	/** Persist and route to the appropriate next step after completion. */
 	private routeAfterStep(workflow: Workflow): void {
-		this.flushPersistDebounce(workflow);
+		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);
 
 		try {
@@ -1234,7 +1234,7 @@ export class PipelineOrchestrator {
 
 		this.tryTransition(workflowId, "error");
 
-		this.flushPersistDebounce(workflow);
+		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);
 		this.callbacks.onError(workflowId, error);
 		this.callbacks.onStateChange(workflowId);
@@ -1287,11 +1287,10 @@ export class PipelineOrchestrator {
 		}, 3000);
 	}
 
-	private flushPersistDebounce(workflow: Workflow): void {
+	private flushPersistDebounce(): void {
 		if (this.persistDebounceTimer) {
 			clearTimeout(this.persistDebounceTimer);
 			this.persistDebounceTimer = null;
-			this.persistWorkflow(workflow);
 		}
 	}
 
