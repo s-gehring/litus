@@ -31,7 +31,7 @@ export async function mergePr(
 	const spawn =
 		runner?.spawn ??
 		((args: string[], opts?: Record<string, unknown>) =>
-			Bun.spawn(args, opts as Parameters<typeof Bun.spawn>[1]));
+			Bun.spawn(args, { ...opts, windowsHide: true } as Parameters<typeof Bun.spawn>[1]));
 
 	const prNumber = extractPrNumber(prUrl);
 	const repo = extractRepoFromUrl(prUrl);
@@ -185,7 +185,7 @@ export async function resolveConflicts(
 	const spawn =
 		runner?.spawn ??
 		((args: string[], opts?: Record<string, unknown>) =>
-			Bun.spawn(args, opts as Parameters<typeof Bun.spawn>[1]));
+			Bun.spawn(args, { ...opts, windowsHide: true } as Parameters<typeof Bun.spawn>[1]));
 
 	// Fetch and merge master
 	onOutput(`[git] git fetch origin master | cwd=${worktreePath}`);

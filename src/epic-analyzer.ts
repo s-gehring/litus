@@ -122,6 +122,7 @@ async function runCLIStream(
 		stdout: "pipe",
 		stderr: "pipe",
 		env: cleanEnv(),
+		windowsHide: true,
 	});
 
 	if (onKillRef) {

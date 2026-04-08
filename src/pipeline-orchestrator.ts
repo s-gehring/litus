@@ -400,6 +400,7 @@ export class PipelineOrchestrator {
 		}
 
 		if (step.name === STEP.MERGE_PR) {
+			workflow.mergeCycle.attempt = 0;
 			this.runMergePr(workflow);
 			return;
 		}
@@ -1136,7 +1137,7 @@ export class PipelineOrchestrator {
 			if (workflow.mergeCycle.attempt >= workflow.mergeCycle.maxAttempts) {
 				this.handleStepError(
 					workflowId,
-					`Merge conflicts persist after ${workflow.mergeCycle.attempt} resolution attempts`,
+					`Merge conflicts persist after ${workflow.mergeCycle.attempt} resolution attempts. Resolve the conflict manually or retry with ${workflow.mergeCycle.maxAttempts} more attempts.`,
 				);
 				return;
 			}

@@ -63,6 +63,7 @@ export async function gitSpawn(
 		cwd,
 		stdout: "pipe",
 		stderr: "pipe",
+		windowsHide: true,
 	});
 
 	const code = await proc.exited;

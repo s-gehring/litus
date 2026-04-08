@@ -77,6 +77,7 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 			stdout: "pipe",
 			stderr: "pipe",
 			env: cleanEnv(),
+			windowsHide: true,
 		});
 
 		const exitCode = await proc.exited;
