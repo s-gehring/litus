@@ -1,3 +1,5 @@
+import { readStream } from "./spawn-utils";
+
 type GitLogCallback = (msg: string) => void;
 
 interface GitSpawnResult {
@@ -39,11 +41,6 @@ function formatResult(cmd: string[], result: GitSpawnResult): string {
 	const err = result.stderr.trim() || result.stdout.trim();
 	const summary = err ? ` → ${err.split("\n")[0].slice(0, 120)}` : "";
 	return `[git] ${verb} ${sub}: failed (exit ${result.code})${summary}`;
-}
-
-async function readStream(stream: ReadableStream | null): Promise<string> {
-	if (!stream) return "";
-	return new Response(stream).text();
 }
 
 /**

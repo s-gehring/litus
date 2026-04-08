@@ -1,25 +1,44 @@
 import { randomUUID } from "node:crypto";
 import { analyzeEpic } from "../epic-analyzer";
-import { validateTargetRepository } from "../target-repo-validator";
-import type { ClientMessage } from "../types";
+import { toErrorMessage } from "../errors";
+import type { ClientMessage, PersistedEpic } from "../types";
 import { createEpicWorkflows } from "../workflow-engine";
 import type { MessageHandler } from "./handler-types";
+import { validateRepo, validateTextInput } from "./handler-types";
+
+function buildEpicData(
+	fields: Pick<PersistedEpic, "epicId" | "description" | "status" | "title" | "workflowIds"> & {
+		analysisStartedAt: number;
+		infeasibleNotes: string | null;
+		summary: string | null;
+	},
+): PersistedEpic {
+	return {
+		epicId: fields.epicId,
+		description: fields.description,
+		status: fields.status,
+		title: fields.title,
+		workflowIds: fields.workflowIds,
+		startedAt: new Date(fields.analysisStartedAt).toISOString(),
+		completedAt: new Date().toISOString(),
+		errorMessage: null,
+		infeasibleNotes: fields.infeasibleNotes,
+		analysisSummary: fields.summary,
+	};
+}
 
 export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 	const msg = data as ClientMessage & { type: "epic:start" };
 	const { description, targetRepository, autoStart } = msg;
 
-	if (!description || description.trim().length < 10) {
-		deps.sendTo(ws, { type: "error", message: "Epic description must be at least 10 characters" });
+	const inputError = validateTextInput(description, "Epic description", 10);
+	if (inputError) {
+		deps.sendTo(ws, { type: "error", message: inputError });
 		return;
 	}
 
-	const validation = await validateTargetRepository(targetRepository);
-	if (!validation.valid) {
-		deps.sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
-		return;
-	}
-	const repoDir = validation.effectivePath;
+	const repoDir = await validateRepo(targetRepository, ws, deps);
+	if (!repoDir) return;
 
 	const epicId = randomUUID();
 	const trimmedDesc = description.trim();
@@ -54,18 +73,16 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			console.log(
 				`[epic] Infeasible (${epicId.slice(0, 8)}): ${result.infeasibleNotes.slice(0, 80)}`,
 			);
-			const epicData = {
+			const epicData = buildEpicData({
 				epicId,
 				description: trimmedDesc,
-				status: "infeasible" as const,
+				status: "infeasible",
 				title: result.title,
 				workflowIds: [],
-				startedAt: new Date(analysisStartedAt).toISOString(),
-				completedAt: new Date().toISOString(),
-				errorMessage: null,
+				analysisStartedAt,
 				infeasibleNotes: result.infeasibleNotes,
-				analysisSummary: result.summary,
-			};
+				summary: result.summary,
+			});
 			await deps.sharedEpicStore.save(epicData);
 			deps.broadcast({
 				type: "epic:infeasible",
@@ -102,18 +119,16 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			}
 		}
 
-		const epicData = {
+		const epicData = buildEpicData({
 			epicId,
 			description: trimmedDesc,
-			status: "completed" as const,
+			status: "completed",
 			title: result.title,
 			workflowIds,
-			startedAt: new Date(analysisStartedAt).toISOString(),
-			completedAt: new Date().toISOString(),
-			errorMessage: null,
+			analysisStartedAt,
 			infeasibleNotes: result.infeasibleNotes,
-			analysisSummary: result.summary,
-		};
+			summary: result.summary,
+		});
 		await deps.sharedEpicStore.save(epicData);
 
 		deps.broadcast({
@@ -125,7 +140,7 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			summary: result.summary,
 		});
 	} catch (err) {
-		const message = err instanceof Error ? err.message : "Epic analysis failed";
+		const message = toErrorMessage(err);
 		console.error(`[epic] Analysis failed (${epicId.slice(0, 8)}): ${message}`);
 		if (err instanceof Error && err.stack) {
 			console.error(`[epic] Stack trace: ${err.stack}`);

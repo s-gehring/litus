@@ -1,32 +1,30 @@
-import { validateTargetRepository } from "../target-repo-validator";
+import { toErrorMessage } from "../errors";
 import type { ClientMessage } from "../types";
 import type { MessageHandler } from "./handler-types";
-import { withOrchestrator } from "./handler-types";
+import { validateRepo, validateTextInput, withOrchestrator } from "./handler-types";
 
 export const handleStart: MessageHandler = async (ws, data, deps) => {
 	const msg = data as ClientMessage & { type: "workflow:start" };
 	const { specification, targetRepository } = msg;
 
-	if (!specification.trim()) {
-		deps.sendTo(ws, { type: "error", message: "Specification must be non-empty" });
+	const inputError = validateTextInput(specification, "Specification");
+	if (inputError) {
+		deps.sendTo(ws, { type: "error", message: inputError });
 		return;
 	}
 
-	const validation = await validateTargetRepository(targetRepository);
-	if (!validation.valid) {
-		deps.sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
-		return;
-	}
+	const repoPath = await validateRepo(targetRepository, ws, deps);
+	if (!repoPath) return;
 
 	try {
 		const orch = deps.createOrchestrator();
-		const workflow = await orch.startPipeline(specification.trim(), validation.effectivePath);
+		const workflow = await orch.startPipeline(specification.trim(), repoPath);
 		deps.orchestrators.set(workflow.id, orch);
 
 		const state = deps.stripInternalFields(workflow);
 		deps.broadcast({ type: "workflow:created", workflow: state });
 	} catch (err) {
-		const message = err instanceof Error ? err.message : "Failed to start workflow";
+		const message = toErrorMessage(err);
 		deps.sendTo(ws, { type: "error", message });
 	}
 };
@@ -35,8 +33,9 @@ export const handleAnswer: MessageHandler = withOrchestrator((ws, data, deps, or
 	const msg = data as ClientMessage & { type: "workflow:answer" };
 	const { workflowId, questionId, answer } = msg;
 
-	if (!answer.trim()) {
-		deps.sendTo(ws, { type: "error", message: "Answer must be non-empty" });
+	const inputError = validateTextInput(answer, "Answer");
+	if (inputError) {
+		deps.sendTo(ws, { type: "error", message: inputError });
 		return;
 	}
 

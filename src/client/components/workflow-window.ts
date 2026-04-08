@@ -1,7 +1,6 @@
 import type { EpicStatus, OutputEntry, ToolUsage, WorkflowState } from "../../types";
+import { $ } from "../dom";
 import { renderMarkdown } from "../render-markdown";
-
-const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
 export const TOOL_ICONS: Record<string, { icon: string; label: string }> = {
 	Agent: { icon: "🤖", label: "Agent" },

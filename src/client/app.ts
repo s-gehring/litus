@@ -39,9 +39,8 @@ import {
 	updateUserInput,
 	updateWorkflowStatus,
 } from "./components/workflow-window";
+import { $ } from "./dom";
 import { renderMarkdown } from "./render-markdown";
-
-const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
 const stateManager = new ClientStateManager();
 
@@ -879,6 +878,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		const entry = stateManager.getWorkflows().get(workflowId);
 		if (!entry?.state.pendingQuestion) return;
 
+		btnSubmitAnswer.disabled = true;
+		btnSkip.disabled = true;
 		send({
 			type: "workflow:answer",
 			workflowId,
@@ -894,6 +895,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		const entry = stateManager.getWorkflows().get(workflowId);
 		if (!entry?.state.pendingQuestion) return;
 
+		btnSubmitAnswer.disabled = true;
+		btnSkip.disabled = true;
 		send({
 			type: "workflow:skip",
 			workflowId,

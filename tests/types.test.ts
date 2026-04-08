@@ -107,6 +107,7 @@ function makeAppConfig(): AppConfig {
 			maxCiLogLength: 10000,
 			maxClientOutputLines: 500,
 			epicTimeoutMs: 300000,
+			cliIdleTimeoutMs: 600000,
 		},
 		autoMode: false,
 	};
@@ -955,8 +956,9 @@ describe("Config types", () => {
 			maxCiLogLength: 10000,
 			maxClientOutputLines: 500,
 			epicTimeoutMs: 300000,
+			cliIdleTimeoutMs: 600000,
 		};
-		expect(Object.keys(config)).toHaveLength(7);
+		expect(Object.keys(config)).toHaveLength(8);
 	});
 
 	test("AppConfig shape (6 fields)", () => {

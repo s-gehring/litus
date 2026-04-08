@@ -76,6 +76,7 @@ describe("T004: survive simulated restart", () => {
 				maxCiLogLength: DEFAULT_CONFIG.timing.maxCiLogLength,
 				maxClientOutputLines: DEFAULT_CONFIG.timing.maxClientOutputLines,
 				epicTimeoutMs: DEFAULT_CONFIG.timing.epicTimeoutMs,
+				cliIdleTimeoutMs: DEFAULT_CONFIG.timing.cliIdleTimeoutMs,
 			},
 		});
 

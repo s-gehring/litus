@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { cp, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { configStore } from "./config-store";
+import { toErrorMessage } from "./errors";
 import { gitSpawn } from "./git-logger";
 import type { EpicAnalysisResult, Question, Workflow, WorkflowStatus } from "./types";
 import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS as transitions } from "./types";
@@ -28,9 +29,7 @@ export class WorkflowEngine {
 			worktreePath = await this.createWorktree(shortId, targetRepository);
 			await this.copyGitignoredFiles(targetRepository, worktreePath);
 		} catch (err) {
-			throw new Error(
-				`Failed to create git worktree: ${err instanceof Error ? err.message : String(err)}`,
-			);
+			throw new Error(`Failed to create git worktree: ${toErrorMessage(err)}`);
 		}
 
 		const now = new Date().toISOString();

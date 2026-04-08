@@ -1,4 +1,5 @@
 import type { EpicAggregatedState, WorkflowState } from "../../types";
+import { createTimerElement } from "../dom";
 import { STATUS_CLASSES, STATUS_LABELS } from "./status-maps";
 import { formatTimer } from "./workflow-cards";
 
@@ -204,12 +205,14 @@ export function renderTreeNode(
 		}
 
 		if (hasTimer) {
-			const timerEl = document.createElement("span");
-			timerEl.className = "card-timer tree-node-timer";
-			timerEl.dataset.activeWorkMs = String(workflow.activeWorkMs);
-			timerEl.dataset.activeWorkStartedAt = workflow.activeWorkStartedAt || "";
-			timerEl.textContent = formatTimer(workflow.activeWorkMs, workflow.activeWorkStartedAt);
-			infoRow.appendChild(timerEl);
+			infoRow.appendChild(
+				createTimerElement(
+					workflow.activeWorkMs,
+					workflow.activeWorkStartedAt,
+					formatTimer,
+					"tree-node-timer",
+				),
+			);
 		}
 
 		el.appendChild(infoRow);

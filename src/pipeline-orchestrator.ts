@@ -9,6 +9,7 @@ import { CLIRunner } from "./cli-runner";
 import { CLIStepRunner } from "./cli-step-runner";
 import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
+import { toErrorMessage } from "./errors";
 import { gitSpawn } from "./git-logger";
 import {
 	mergePr as defaultMergePr,
@@ -24,10 +25,12 @@ import {
 	type EffortLevel,
 	type ModelConfig,
 	type PipelineCallbacks,
+	type PipelineStepName,
 	type Question,
 	type SetupResult,
 	STEP,
 	type Workflow,
+	type WorkflowStatus,
 } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
@@ -229,12 +232,7 @@ export class PipelineOrchestrator {
 		step.status = "running";
 		workflow.updatedAt = new Date().toISOString();
 
-		try {
-			this.engine.transition(workflowId, "running");
-		} catch (e) {
-			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-		}
+		this.tryTransition(workflowId, "running");
 
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
@@ -254,8 +252,7 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		this.assistantTextBuffer = "";
-		this.questionDetector.reset();
+		this.resetStepState();
 
 		// Kill any lingering CLI process before resuming
 		this.stepRunner.killProcess(workflowId);
@@ -308,8 +305,7 @@ export class PipelineOrchestrator {
 			this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
 		this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
 
-		this.assistantTextBuffer = "";
-		this.questionDetector.reset();
+		this.resetStepState();
 
 		this.stepRunner.resumeStep(
 			workflowId,
@@ -337,8 +333,7 @@ export class PipelineOrchestrator {
 
 		this.engine.transition(workflowId, "running");
 		this.callbacks.onStateChange(workflowId);
-		this.assistantTextBuffer = "";
-		this.questionDetector.reset();
+		this.resetStepState();
 
 		this.persistWorkflow(workflow);
 		this.callbacks.onStepChange(
@@ -387,8 +382,8 @@ export class PipelineOrchestrator {
 	}
 
 	pause(workflowId: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow || workflow.status !== "running") return;
 
 		this.stepRunner.killProcess(workflowId);
 		this.ciMonitor.abort();
@@ -399,17 +394,14 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		this.engine.transition(workflowId, "paused");
-		if (this.persistDebounceTimer) {
-			clearTimeout(this.persistDebounceTimer);
-			this.persistDebounceTimer = null;
-		}
+		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 	}
 
 	resume(workflowId: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId || workflow.status !== "paused") return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow || workflow.status !== "paused") return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "running";
@@ -419,8 +411,7 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 
-		this.assistantTextBuffer = "";
-		this.questionDetector.reset();
+		this.resetStepState();
 
 		const cwd = requireWorktreePath(workflow);
 
@@ -460,8 +451,7 @@ export class PipelineOrchestrator {
 		this.stepRunner.killProcess(workflowId);
 		this.ciMonitor.abort();
 		this.summarizer.cleanup(workflowId);
-		this.questionDetector.reset();
-		this.assistantTextBuffer = "";
+		this.resetStepState();
 		this.engine.clearQuestion(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
@@ -474,14 +464,10 @@ export class PipelineOrchestrator {
 			step.error = "Cancelled by user";
 		}
 
-		try {
-			this.engine.transition(workflowId, "cancelled");
-		} catch (e) {
-			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-		}
+		this.tryTransition(workflowId, "cancelled");
 
 		step.pid = null;
+		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 
@@ -501,8 +487,7 @@ export class PipelineOrchestrator {
 		this.stepRunner.resetStep(step);
 		workflow.updatedAt = new Date().toISOString();
 
-		this.assistantTextBuffer = "";
-		this.questionDetector.reset();
+		this.resetStepState();
 
 		this.persistWorkflow(workflow);
 
@@ -557,8 +542,8 @@ export class PipelineOrchestrator {
 
 		this.runSetupChecksFn(targetDir)
 			.then((result) => {
-				const wf = this.engine.getWorkflow();
-				if (!wf || wf.id !== workflow.id) return;
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf) return;
 
 				// Log all check results as output
 				for (const check of result.checks) {
@@ -592,8 +577,7 @@ export class PipelineOrchestrator {
 				this.checkoutMasterInWorktree(wf);
 			})
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				this.handleStepError(workflow.id, `Setup checks failed: ${msg}`);
+				this.handleStepError(workflow.id, `Setup checks failed: ${toErrorMessage(err)}`);
 			});
 	}
 
@@ -605,8 +589,8 @@ export class PipelineOrchestrator {
 		);
 		this.checkoutMasterFn(cwd)
 			.then((result) => {
-				const wf = this.engine.getWorkflow();
-				if (!wf || wf.id !== workflow.id) return;
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf) return;
 
 				if (result.code !== 0) {
 					const errMsg = result.stderr || `exit code ${result.code}`;
@@ -617,8 +601,10 @@ export class PipelineOrchestrator {
 				this.advanceAfterStep(wf.id);
 			})
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				this.handleStepError(workflow.id, `Failed to checkout master in worktree: ${msg}`);
+				this.handleStepError(
+					workflow.id,
+					`Failed to checkout master in worktree: ${toErrorMessage(err)}`,
+				);
 			});
 	}
 
@@ -637,8 +623,7 @@ export class PipelineOrchestrator {
 					this.startCiMonitoring(workflow);
 				})
 				.catch((err) => {
-					const msg = err instanceof Error ? err.message : String(err);
-					this.handleStepError(workflow.id, `Failed to discover PR URL: ${msg}`);
+					this.handleStepError(workflow.id, `Failed to discover PR URL: ${toErrorMessage(err)}`);
 				});
 			return;
 		}
@@ -655,8 +640,7 @@ export class PipelineOrchestrator {
 			.startMonitoring(workflow, (msg) => this.handleStepOutput(workflow.id, msg))
 			.then((result) => this.handleMonitorResult(workflow.id, result))
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				this.handleStepError(workflow.id, `CI monitoring failed: ${msg}`);
+				this.handleStepError(workflow.id, `CI monitoring failed: ${toErrorMessage(err)}`);
 			});
 	}
 
@@ -683,8 +667,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleMonitorResult(workflowId: string, result: MonitorResult): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		// If workflow was paused/cancelled while monitoring, ignore the result
 		if (workflow.status !== "running") return;
@@ -739,8 +723,10 @@ export class PipelineOrchestrator {
 				this.runStep(workflow, prompt, cwd, config.models.ciFix, config.efforts.ciFix);
 			})
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				this.handleStepError(workflow.id, `Failed to gather CI failure logs: ${msg}`);
+				this.handleStepError(
+					workflow.id,
+					`Failed to gather CI failure logs: ${toErrorMessage(err)}`,
+				);
 			});
 	}
 
@@ -781,8 +767,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleStepOutput(workflowId: string, text: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.output += `${text}\n`;
@@ -805,8 +791,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleStepComplete(workflowId: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		const candidate = this.questionDetector.detect(this.assistantTextBuffer);
 		if (candidate) {
@@ -829,8 +815,8 @@ export class PipelineOrchestrator {
 	}
 
 	private pauseForQuestion(workflowId: string, question: Question): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow || workflow.status !== "running") return;
 
 		// Auto-mode: answer immediately instead of pausing
 		if (configStore.get().autoMode) {
@@ -855,12 +841,7 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		this.engine.setQuestion(workflowId, question);
-		try {
-			this.engine.transition(workflowId, "waiting_for_input");
-		} catch (e) {
-			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-		}
+		this.tryTransition(workflowId, "waiting_for_input");
 
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
@@ -868,8 +849,8 @@ export class PipelineOrchestrator {
 	}
 
 	private advanceAfterStep(workflowId: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "completed";
@@ -906,53 +887,54 @@ export class PipelineOrchestrator {
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 
-		const decision = computeRoute(workflow);
+		try {
+			const decision = computeRoute(workflow);
 
-		switch (decision.action) {
-			case "route-to-monitor-ci": {
-				const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
-				workflow.currentStepIndex = monitorIndex;
-				this.startStep(workflow);
-				return;
+			switch (decision.action) {
+				case "route-to-monitor-ci": {
+					workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.MONITOR_CI);
+					this.startStep(workflow);
+					return;
+				}
+				case "route-to-merge-pr": {
+					workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.MERGE_PR);
+					this.startStep(workflow);
+					return;
+				}
+				case "route-back-to-monitor":
+					this.routeBackToMonitor(workflow);
+					return;
+				case "route-to-sync-repo": {
+					workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.SYNC_REPO);
+					this.startStep(workflow);
+					return;
+				}
+				case "complete":
+					this.completeWorkflow(workflow);
+					return;
+				case "route-to-implement-review":
+					this.routeToImplementReview(workflow);
+					return;
+				case "handle-implement-review-complete":
+					this.handleImplementReviewComplete(workflow).catch((err) => {
+						const msg = toErrorMessage(err);
+						console.error(`[pipeline] Implement-review completion error: ${msg}`);
+						this.handleStepError(workflow.id, msg);
+					});
+					return;
+				case "advance-to-next":
+					this.advanceToNextStep(workflow);
+					return;
 			}
-			case "route-to-merge-pr": {
-				const mergePrIndex = workflow.steps.findIndex((s) => s.name === STEP.MERGE_PR);
-				workflow.currentStepIndex = mergePrIndex;
-				this.startStep(workflow);
-				return;
-			}
-			case "route-back-to-monitor":
-				this.routeBackToMonitor(workflow);
-				return;
-			case "route-to-sync-repo": {
-				const syncRepoIndex = workflow.steps.findIndex((s) => s.name === STEP.SYNC_REPO);
-				workflow.currentStepIndex = syncRepoIndex;
-				this.startStep(workflow);
-				return;
-			}
-			case "complete":
-				this.completeWorkflow(workflow);
-				return;
-			case "route-to-implement-review":
-				this.routeToImplementReview(workflow);
-				return;
-			case "handle-implement-review-complete":
-				this.handleImplementReviewComplete(workflow).catch((err) => {
-					const msg = err instanceof Error ? err.message : String(err);
-					console.error(`[pipeline] Implement-review completion error: ${msg}`);
-					this.handleStepError(workflow.id, msg);
-				});
-				return;
-			case "advance-to-next":
-				this.advanceToNextStep(workflow);
-				return;
+		} catch (err) {
+			this.handleStepError(workflow.id, `Routing failed: ${toErrorMessage(err)}`);
 		}
 	}
 
 	private routeToImplementReview(workflow: Workflow): void {
 		workflow.reviewCycle.iteration++;
 
-		const implReviewIndex = workflow.steps.findIndex((s) => s.name === STEP.IMPLEMENT_REVIEW);
+		const implReviewIndex = this.requireStepIndex(workflow, STEP.IMPLEMENT_REVIEW);
 
 		// Reset implement-review step for re-use
 		const implStep = workflow.steps[implReviewIndex];
@@ -965,7 +947,7 @@ export class PipelineOrchestrator {
 
 	private async handleImplementReviewComplete(workflow: Workflow): Promise<void> {
 		// Classify the review step's output to decide whether to loop
-		const reviewIndex = workflow.steps.findIndex((s) => s.name === STEP.REVIEW);
+		const reviewIndex = this.requireStepIndex(workflow, STEP.REVIEW);
 		const reviewStep = workflow.steps[reviewIndex];
 		const severity = await this.reviewClassifier.classify(reviewStep.output);
 
@@ -983,7 +965,7 @@ export class PipelineOrchestrator {
 			this.persistWorkflow(workflow);
 			this.startStep(workflow);
 		} else {
-			workflow.currentStepIndex = workflow.steps.findIndex((s) => s.name === STEP.COMMIT_PUSH_PR);
+			workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.COMMIT_PUSH_PR);
 			this.startStep(workflow);
 		}
 	}
@@ -993,7 +975,7 @@ export class PipelineOrchestrator {
 		workflow.ciCycle.monitorStartedAt = null;
 		workflow.ciCycle.failureLogs = [];
 
-		const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
+		const monitorIndex = this.requireStepIndex(workflow, STEP.MONITOR_CI);
 		const monitorStep = workflow.steps[monitorIndex];
 		this.stepRunner.resetStep(monitorStep, "pending");
 
@@ -1019,14 +1001,13 @@ export class PipelineOrchestrator {
 		this.mergePrFn(workflow.prUrl, cwd, (msg) => this.handleStepOutput(workflow.id, msg))
 			.then((result) => this.handleMergeResult(workflow.id, result))
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				this.handleStepError(workflow.id, `PR merge failed: ${msg}`);
+				this.handleStepError(workflow.id, `PR merge failed: ${toErrorMessage(err)}`);
 			});
 	}
 
 	private handleMergeResult(workflowId: string, result: import("./types").MergeResult): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		if (result.merged || result.alreadyMerged) {
 			// Success — advance to sync-repo
@@ -1054,8 +1035,7 @@ export class PipelineOrchestrator {
 					this.routeBackToMonitor(workflow);
 				})
 				.catch((err) => {
-					const msg = err instanceof Error ? err.message : String(err);
-					this.handleStepError(workflowId, `Conflict resolution failed: ${msg}`);
+					this.handleStepError(workflowId, `Conflict resolution failed: ${toErrorMessage(err)}`);
 				});
 			return;
 		}
@@ -1081,8 +1061,8 @@ export class PipelineOrchestrator {
 				this.advanceAfterStep(workflow.id);
 			})
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
 				// Even on error, sync-repo completes (PR is already merged)
+				const msg = toErrorMessage(err);
 				this.handleStepOutput(workflow.id, `Warning: sync failed: ${msg}`);
 				this.advanceAfterStep(workflow.id);
 			});
@@ -1096,12 +1076,7 @@ export class PipelineOrchestrator {
 			});
 			this.currentAuditRunId = null;
 		}
-		try {
-			this.engine.transition(workflow.id, "completed");
-		} catch (e) {
-			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-		}
+		this.tryTransition(workflow.id, "completed");
 		this.stepRunner.killProcess(workflow.id);
 		this.summarizer.cleanup(workflow.id);
 		this.persistWorkflow(workflow);
@@ -1216,8 +1191,7 @@ export class PipelineOrchestrator {
 			this.callbacks.onStateChange(workflow.id);
 			console.log(`[pipeline] Renamed worktree to ${newRelativePath}`);
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			console.warn(`[pipeline] Worktree rename failed (non-fatal): ${msg}`);
+			console.warn(`[pipeline] Worktree rename failed (non-fatal): ${toErrorMessage(err)}`);
 		}
 	}
 
@@ -1242,8 +1216,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleStepError(workflowId: string, error: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		this.summarizer.cleanup(workflowId);
 
@@ -1258,12 +1232,7 @@ export class PipelineOrchestrator {
 		step.pid = null;
 		workflow.updatedAt = new Date().toISOString();
 
-		try {
-			this.engine.transition(workflowId, "error");
-		} catch (e) {
-			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-		}
+		this.tryTransition(workflowId, "error");
 
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
@@ -1279,8 +1248,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handlePid(workflowId: string, pid: number): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.pid = pid;
@@ -1288,8 +1257,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleSessionId(workflowId: string, sessionId: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.sessionId = sessionId;
@@ -1300,6 +1269,12 @@ export class PipelineOrchestrator {
 		this.store.save(workflow).catch((err) => {
 			console.error(`[pipeline] Failed to persist workflow: ${err}`);
 		});
+	}
+
+	/** Reset assistant text buffer and question detector state between steps. */
+	private resetStepState(): void {
+		this.assistantTextBuffer = "";
+		this.questionDetector.reset();
 	}
 
 	private persistDebounced(workflow: Workflow): void {
@@ -1335,9 +1310,34 @@ export class PipelineOrchestrator {
 		});
 	}
 
-	private getWorkflowOrThrow(workflowId: string): Workflow {
+	private requireStepIndex(workflow: Workflow, stepName: PipelineStepName): number {
+		const index = workflow.steps.findIndex((s) => s.name === stepName);
+		if (index < 0) {
+			throw new Error(`Step "${stepName}" not found in workflow ${workflow.id}`);
+		}
+		return index;
+	}
+
+	/** Attempt a status transition, silently ignoring "Invalid transition" errors. */
+	private tryTransition(workflowId: string, status: WorkflowStatus): void {
+		try {
+			this.engine.transition(workflowId, status);
+		} catch (e) {
+			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
+			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
+		}
+	}
+
+	/** Get the active workflow if it matches the given ID, or null. */
+	private getActiveWorkflow(workflowId: string): Workflow | null {
 		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) {
+		if (!workflow || workflow.id !== workflowId) return null;
+		return workflow;
+	}
+
+	private getWorkflowOrThrow(workflowId: string): Workflow {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) {
 			throw new Error(`Workflow ${workflowId} not found`);
 		}
 		return workflow;

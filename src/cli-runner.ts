@@ -1,7 +1,9 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { cleanEnv } from "./spawn-utils";
+import { configStore } from "./config-store";
+import { toErrorMessage } from "./errors";
+import { cleanEnv, readStream } from "./spawn-utils";
 import { DELTA_FLUSH_TIMEOUT_MS, type EffortLevel, type ToolUsage, type Workflow } from "./types";
 
 export function isProcessAlive(pid: number): boolean {
@@ -56,6 +58,7 @@ interface RunningProcess {
 	stale: boolean;
 	deltaBuffer: string;
 	deltaFlushTimer: ReturnType<typeof setTimeout> | null;
+	idleTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const EVENTS_DIR = join(homedir(), ".litus", "audit");
@@ -102,6 +105,7 @@ export class CLIRunner {
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
+			console.info(`Starting workflow specification for workflow ${workflow.id}.`);
 			proc = Bun.spawn(args, {
 				cwd,
 				stdout: "pipe",
@@ -110,7 +114,7 @@ export class CLIRunner {
 				windowsHide: true,
 			});
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
+			const msg = toErrorMessage(err);
 			console.error(`[cli-runner] Failed to spawn process: ${msg}`);
 			queueMicrotask(() => callbacks.onError(msg));
 			return;
@@ -125,6 +129,7 @@ export class CLIRunner {
 			stale: false,
 			deltaBuffer: "",
 			deltaFlushTimer: null,
+			idleTimer: null,
 		};
 
 		this.running.set(workflow.id, entry);
@@ -142,10 +147,11 @@ export class CLIRunner {
 	): void {
 		const defaultPrompt =
 			"You were paused and are now being resumed. Before continuing, verify that any files you created or modified in this session actually exist on disk — if a file is missing or incomplete, recreate it. Then continue where you left off.";
+		const usedPrompt = prompt ?? defaultPrompt;
 		const args = [
 			"claude",
 			"-p",
-			prompt ?? defaultPrompt,
+			usedPrompt,
 			"--output-format",
 			"stream-json",
 			"--verbose",
@@ -159,6 +165,7 @@ export class CLIRunner {
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
+			console.info(`Resuming ${sessionId} with prompt "${usedPrompt.slice(0, 30)}..."`);
 			proc = Bun.spawn(args, {
 				cwd,
 				stdout: "pipe",
@@ -167,7 +174,7 @@ export class CLIRunner {
 				windowsHide: true,
 			});
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
+			const msg = toErrorMessage(err);
 			console.error(`[cli-runner] Failed to spawn resume process: ${msg}`);
 			queueMicrotask(() => callbacks.onError(msg));
 			return;
@@ -182,6 +189,7 @@ export class CLIRunner {
 			stale: false,
 			deltaBuffer: "",
 			deltaFlushTimer: null,
+			idleTimer: null,
 		};
 
 		this.running.set(workflowId, entry);
@@ -194,6 +202,7 @@ export class CLIRunner {
 		if (entry) {
 			entry.stale = true;
 			if (entry.deltaFlushTimer) clearTimeout(entry.deltaFlushTimer);
+			if (entry.idleTimer) clearTimeout(entry.idleTimer);
 			entry.process.kill();
 			this.running.delete(workflowId);
 		}
@@ -206,6 +215,20 @@ export class CLIRunner {
 		this.running.clear();
 	}
 
+	private resetIdleTimer(entry: RunningProcess): void {
+		if (entry.idleTimer) clearTimeout(entry.idleTimer);
+		const timeoutMs = configStore.get().timing.cliIdleTimeoutMs;
+		if (timeoutMs <= 0) return;
+		entry.idleTimer = setTimeout(() => {
+			if (entry.stale) return;
+			console.error(
+				`[cli-runner] Idle timeout (${timeoutMs}ms) for workflow ${entry.workflowId} — killing process`,
+			);
+			entry.stale = true;
+			entry.process.kill();
+		}, timeoutMs);
+	}
+
 	private async streamOutput(entry: RunningProcess): Promise<void> {
 		const { process: proc, callbacks, workflowId } = entry;
 		const stdout = proc.stdout;
@@ -214,11 +237,14 @@ export class CLIRunner {
 		const decoder = new TextDecoder();
 		let buffer = "";
 
+		this.resetIdleTimer(entry);
+
 		try {
 			while (true) {
 				const { done, value } = await reader.read();
 				if (done) break;
 
+				this.resetIdleTimer(entry);
 				buffer += decoder.decode(value, { stream: true });
 				const lines = buffer.split("\n");
 				buffer = lines.pop() || "";
@@ -248,6 +274,11 @@ export class CLIRunner {
 			// Stream read error
 		}
 
+		if (entry.idleTimer) {
+			clearTimeout(entry.idleTimer);
+			entry.idleTimer = null;
+		}
+
 		// Flush any remaining batched delta text
 		this.flushDeltaBuffer(entry);
 
@@ -256,15 +287,14 @@ export class CLIRunner {
 
 		// Only handle completion if this is still the active process
 		if (currentEntry && currentEntry.process === proc) {
+			const timedOut = entry.stale && entry.idleTimer === null;
 			this.running.delete(workflowId);
-			if (exitCode === 0) {
+			if (timedOut) {
+				callbacks.onError("CLI process killed — no output received within idle timeout");
+			} else if (exitCode === 0) {
 				callbacks.onComplete();
 			} else {
-				const stderrStream = proc.stderr;
-				const stderr =
-					stderrStream && typeof stderrStream !== "number"
-						? await new Response(stderrStream as ReadableStream).text()
-						: "";
+				const stderr = await readStream(proc.stderr);
 				callbacks.onError(stderr.trim() || `CLI process exited with code ${exitCode}`);
 			}
 		}

@@ -1,10 +1,13 @@
-import { existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { AsyncLock } from "./async-lock";
+import { atomicWrite } from "./atomic-write";
 import type { PersistedEpic } from "./types";
 
 export class EpicStore {
 	private baseDir: string;
+	private writeLock = new AsyncLock();
 
 	constructor(baseDir?: string) {
 		this.baseDir = baseDir ?? join(homedir(), ".litus", "workflows");
@@ -42,18 +45,16 @@ export class EpicStore {
 	}
 
 	async save(epic: PersistedEpic): Promise<void> {
-		this.ensureDir();
-		const all = await this.loadAll();
-		const idx = all.findIndex((e) => e.epicId === epic.epicId);
-		if (idx >= 0) {
-			all[idx] = epic;
-		} else {
-			all.push(epic);
-		}
-		const filePath = this.filePath();
-		const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-		const tmpPath = `${filePath}.${suffix}.tmp`;
-		await Bun.write(tmpPath, JSON.stringify(all, null, 2));
-		renameSync(tmpPath, filePath);
+		await this.writeLock.run(async () => {
+			this.ensureDir();
+			const all = await this.loadAll();
+			const idx = all.findIndex((e) => e.epicId === epic.epicId);
+			if (idx >= 0) {
+				all[idx] = epic;
+			} else {
+				all.push(epic);
+			}
+			await atomicWrite(this.filePath(), JSON.stringify(all, null, 2));
+		});
 	}
 }

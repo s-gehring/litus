@@ -1,4 +1,5 @@
 import { tmpdir } from "node:os";
+import { toErrorMessage } from "./errors";
 import type { EffortLevel } from "./types";
 
 export interface RunClaudeOptions {
@@ -41,6 +42,15 @@ export interface SpawnLike {
 		stdout: ReadableStream | null;
 		stderr: ReadableStream | null;
 	};
+}
+
+/** Create the default Bun.spawn wrapper used when no test runner is injected. */
+export function defaultSpawn(): SpawnLike["spawn"] {
+	return ((args: string[], opts?: Record<string, unknown>) =>
+		Bun.spawn(args, {
+			...opts,
+			windowsHide: true,
+		} as Parameters<typeof Bun.spawn>[1])) as SpawnLike["spawn"];
 }
 
 /**
@@ -108,7 +118,7 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 
 		return { ok: exitCode === 0, exitCode, stdout, stderr };
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
+		const message = toErrorMessage(err);
 		if (options.callerLabel) {
 			console.warn(`[${options.callerLabel}] spawn failed: ${message.slice(0, 200)}`);
 		}

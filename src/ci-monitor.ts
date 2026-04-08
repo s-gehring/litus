@@ -1,4 +1,5 @@
 import { configStore } from "./config-store";
+import { toErrorMessage } from "./errors";
 import { gitSpawn } from "./git-logger";
 import type { CiCheckResult, CiCycle } from "./types";
 
@@ -120,7 +121,7 @@ export async function startMonitoring(
 				return { passed: false, timedOut: false, results };
 			}
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
+			const msg = toErrorMessage(err);
 			if (msg.includes("rate limit")) {
 				const backoff = configStore.get().timing.rateLimitBackoffMs;
 				onOutput(`[poll ${pollCount}/${maxPolls}] Rate limited — waiting ${backoff / 1000}s`);

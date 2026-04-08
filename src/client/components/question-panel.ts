@@ -1,7 +1,6 @@
 import type { Question } from "../../types";
+import { $ } from "../dom";
 import { renderMarkdown } from "../render-markdown";
-
-const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
 export function showQuestion(question: Question): void {
 	const panel = $("#question-panel");
@@ -15,6 +14,11 @@ export function showQuestion(question: Question): void {
 
 	skipBtn.classList.remove("hidden");
 	skipBtn.textContent = "Skip";
+
+	// Re-enable buttons (may have been disabled after previous submission)
+	const submitBtn = $("#btn-submit-answer") as HTMLButtonElement;
+	submitBtn.disabled = false;
+	(skipBtn as HTMLButtonElement).disabled = false;
 
 	answerInput.value = "";
 	panel.classList.remove("hidden");

@@ -159,6 +159,7 @@ Rules:
 		maxCiLogLength: 50_000,
 		maxClientOutputLines: 5_000,
 		epicTimeoutMs: 900_000,
+		cliIdleTimeoutMs: 600_000,
 	},
 };
 
@@ -270,6 +271,14 @@ export const NUMERIC_SETTING_META: NumericSettingMeta[] = [
 		defaultValue: 900_000,
 		unit: "ms",
 	},
+	{
+		key: "timing.cliIdleTimeoutMs",
+		label: "CLI Idle Timeout",
+		description: "Kill CLI process if no output received within this period (0 to disable)",
+		min: 0,
+		defaultValue: 600_000,
+		unit: "ms",
+	},
 ];
 
 export class ConfigStore {
@@ -304,20 +313,12 @@ export class ConfigStore {
 
 		// Merge partial into saved config
 		const current = this.savedConfig ?? {};
-		if (partial.models) {
-			current.models = { ...(current.models ?? {}), ...partial.models };
-		}
-		if (partial.efforts) {
-			current.efforts = { ...(current.efforts ?? {}), ...partial.efforts };
-		}
-		if (partial.prompts) {
-			current.prompts = { ...(current.prompts ?? {}), ...partial.prompts };
-		}
-		if (partial.limits) {
-			current.limits = { ...(current.limits ?? {}), ...partial.limits };
-		}
-		if (partial.timing) {
-			current.timing = { ...(current.timing ?? {}), ...partial.timing };
+		const obj = current as Record<string, Record<string, unknown> | undefined>;
+		const src = partial as Record<string, Record<string, unknown> | undefined>;
+		for (const key of ["models", "efforts", "prompts", "limits", "timing"]) {
+			if (src[key]) {
+				obj[key] = { ...(obj[key] ?? {}), ...src[key] };
+			}
 		}
 		if (partial.autoMode !== undefined) {
 			current.autoMode = partial.autoMode;

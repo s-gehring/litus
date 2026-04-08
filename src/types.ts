@@ -67,6 +67,7 @@ export interface TimingConfig {
 	maxCiLogLength: number;
 	maxClientOutputLines: number;
 	epicTimeoutMs: number;
+	cliIdleTimeoutMs: number;
 }
 
 export interface AppConfig {

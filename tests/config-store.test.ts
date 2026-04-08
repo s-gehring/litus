@@ -312,6 +312,7 @@ describe("T005: min bound enforcement", () => {
 				maxCiLogLength: DEFAULT_CONFIG.timing.maxCiLogLength,
 				maxClientOutputLines: DEFAULT_CONFIG.timing.maxClientOutputLines,
 				epicTimeoutMs: DEFAULT_CONFIG.timing.epicTimeoutMs,
+				cliIdleTimeoutMs: DEFAULT_CONFIG.timing.cliIdleTimeoutMs,
 			},
 		});
 

@@ -159,7 +159,7 @@ describe("workflow-handlers", () => {
 			);
 
 			const msgs = sentMessages.get(mockWs) ?? [];
-			expect(msgs.some((m) => m.type === "error" && m.message === "Failed to start workflow")).toBe(
+			expect(msgs.some((m) => m.type === "error" && m.message === "something went wrong")).toBe(
 				true,
 			);
 		});
