@@ -48,7 +48,7 @@ export async function syncRepo(
 			onOutput("Pull successful");
 		} else {
 			const stderr = await readStream(pullProc.stderr);
-			warning = `Pull failed: ${stderr.trim() || `exit code ${pullCode}`}`;
+			warning = friendlyPullWarning(stderr.trim(), pullCode);
 			onOutput(warning);
 		}
 	}
@@ -69,4 +69,11 @@ export async function syncRepo(
 	}
 
 	return { pulled, skipped, worktreeRemoved, warning };
+}
+
+function friendlyPullWarning(stderr: string, exitCode: number): string {
+	if (stderr.includes("Not possible to fast-forward")) {
+		return "Local branch has diverged from origin/master — skipping pull (you may need to rebase or merge manually)";
+	}
+	return `Pull failed (exit code ${exitCode}): ${stderr || "unknown error"}`;
 }
