@@ -179,6 +179,24 @@ export function updateFlavor(flavor: string): void {
 	el.textContent = flavor;
 }
 
+function createBranchInfoItem(label: string, value: string): HTMLSpanElement {
+	const item = document.createElement("span");
+	item.className = "branch-info-item";
+
+	const labelEl = document.createElement("span");
+	labelEl.className = "branch-info-label";
+	labelEl.textContent = label;
+
+	const valueEl = document.createElement("span");
+	valueEl.className = "branch-info-value";
+	valueEl.textContent = value;
+
+	item.appendChild(labelEl);
+	item.append(" ");
+	item.appendChild(valueEl);
+	return item;
+}
+
 export function updateBranchInfo(workflow: WorkflowState | null): void {
 	const el = $("#branch-info");
 	if (!el) return;
@@ -192,24 +210,21 @@ export function updateBranchInfo(workflow: WorkflowState | null): void {
 	const branch = workflow.featureBranch ?? workflow.worktreeBranch;
 	const worktree = workflow.worktreePath;
 
-	const parts: string[] = [];
+	el.innerHTML = "";
+
 	if (branch) {
-		parts.push(
-			`<span class="branch-info-item"><span class="branch-info-label">Branch:</span> <span class="branch-info-value">${branch}</span></span>`,
-		);
+		const item = createBranchInfoItem("Branch:", branch);
+		el.appendChild(item);
 	}
 	if (worktree) {
-		parts.push(
-			`<span class="branch-info-item"><span class="branch-info-label">Worktree:</span> <span class="branch-info-value">${worktree}</span></span>`,
-		);
+		const item = createBranchInfoItem("Worktree:", worktree);
+		el.appendChild(item);
 	}
 
-	if (parts.length > 0) {
-		el.innerHTML = parts.join("");
+	if (el.childElementCount > 0) {
 		el.classList.remove("hidden");
 	} else {
 		el.classList.add("hidden");
-		el.innerHTML = "";
 	}
 }
 

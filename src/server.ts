@@ -27,7 +27,14 @@ import {
 } from "./server/workflow-handlers";
 import { getMimeType, resolveStaticPath } from "./static-files";
 import { Summarizer } from "./summarizer";
-import type { PipelineStepName, ServerMessage, ToolUsage, Workflow, WorkflowState } from "./types";
+import {
+	type PipelineStepName,
+	type ServerMessage,
+	STEP,
+	type ToolUsage,
+	type Workflow,
+	type WorkflowState,
+} from "./types";
 import { WorkflowStore } from "./workflow-store";
 
 const BASE_PORT = parseInt(process.env.PORT || "3000", 10);
@@ -337,7 +344,8 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 			if (workflow.status === "running") {
 				const runningStep = workflow.steps.find((s) => s.status === "running");
 
-				if (runningStep?.name === "monitor-ci") {
+				// monitor-ci is direct code execution — restart polling from scratch
+				if (runningStep?.name === STEP.MONITOR_CI) {
 					console.log(`[startup] Restarting monitor-ci for workflow ${workflow.id}`);
 					workflow.ciCycle.monitorStartedAt = null;
 					orch.resumeMonitorCi(workflow.id);

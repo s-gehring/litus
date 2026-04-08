@@ -1,6 +1,5 @@
-import { tmpdir } from "node:os";
 import { configStore } from "./config-store";
-import { cleanEnv } from "./spawn-utils";
+import { runClaude } from "./spawn-utils";
 
 export class Summarizer {
 	private charCount: Map<string, number> = new Map();
@@ -69,29 +68,14 @@ export class Summarizer {
 			const promptTemplate = config.prompts.activitySummarization;
 			const prompt = promptTemplate.replaceAll("${text}", text);
 
-			const args = [
-				"claude",
-				"-p",
+			const { ok, stdout } = await runClaude({
 				prompt,
-				"--model",
-				config.models.activitySummarization,
-				"--output-format",
-				"text",
-				"--effort",
-				config.efforts.activitySummarization,
-			];
-			const proc = Bun.spawn(args, {
-				cwd: tmpdir(),
-				stdout: "pipe",
-				stderr: "pipe",
-				env: cleanEnv(),
+				model: config.models.activitySummarization,
+				effort: config.efforts.activitySummarization,
+				callerLabel: "summarizer:activity",
 			});
-
-			const code = await proc.exited;
-			if (code !== 0) return null;
-
-			const result = await new Response(proc.stdout as ReadableStream).text();
-			return result.trim() || null;
+			if (!ok) return null;
+			return stdout.trim() || null;
 		} catch {
 			return null;
 		}
@@ -103,29 +87,15 @@ export class Summarizer {
 			const promptTemplate = config.prompts.specSummarization;
 			const prompt = promptTemplate.replaceAll("${specification}", specification);
 
-			const args = [
-				"claude",
-				"-p",
+			const { ok, stdout } = await runClaude({
 				prompt,
-				"--model",
-				config.models.specSummarization,
-				"--output-format",
-				"text",
-				"--effort",
-				config.efforts.specSummarization,
-			];
-			const proc = Bun.spawn(args, {
-				cwd: tmpdir(),
-				stdout: "pipe",
-				stderr: "pipe",
-				env: cleanEnv(),
+				model: config.models.specSummarization,
+				effort: config.efforts.specSummarization,
+				callerLabel: "summarizer:spec",
 			});
+			if (!ok) return { summary: "", flavor: "" };
 
-			const code = await proc.exited;
-			if (code !== 0) return { summary: "", flavor: "" };
-
-			const result = await new Response(proc.stdout as ReadableStream).text();
-			const cleaned = result
+			const cleaned = stdout
 				.trim()
 				.replace(/^```(?:json)?\s*\n?/i, "")
 				.replace(/\n?```\s*$/, "");

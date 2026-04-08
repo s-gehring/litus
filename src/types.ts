@@ -345,6 +345,26 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	{ name: "sync-repo", displayName: "Syncing Repository", prompt: "" },
 ];
 
+// Typed step name constants — compile-time checked via `satisfies`
+export const STEP = {
+	SETUP: "setup",
+	SPECIFY: "specify",
+	CLARIFY: "clarify",
+	PLAN: "plan",
+	TASKS: "tasks",
+	IMPLEMENT: "implement",
+	REVIEW: "review",
+	IMPLEMENT_REVIEW: "implement-review",
+	COMMIT_PUSH_PR: "commit-push-pr",
+	MONITOR_CI: "monitor-ci",
+	FIX_CI: "fix-ci",
+	MERGE_PR: "merge-pr",
+	SYNC_REPO: "sync-repo",
+} as const satisfies Record<string, PipelineStepName>;
+
+// Delta buffer flush timeout used across CLI stream consumers
+export const DELTA_FLUSH_TIMEOUT_MS = 50;
+
 // Workflow entity (extended with pipeline fields)
 export interface Workflow {
 	id: string;
@@ -440,7 +460,6 @@ export type OutputEntry =
 export interface WorkflowClientState {
 	state: WorkflowState;
 	outputLines: OutputEntry[];
-	isExpanded: boolean;
 }
 
 // Client-side epic analysis state
@@ -462,6 +481,25 @@ export interface PersistedEpic {
 export interface EpicClientState extends PersistedEpic {
 	outputLines: OutputEntry[];
 }
+
+// ── State change types ──────────────────────────────────
+
+export type StateChangeScope =
+	| { entity: "workflow"; id: string }
+	| { entity: "epic"; id: string }
+	| { entity: "config"; key?: string }
+	| { entity: "global" }
+	| { entity: "output"; id: string }
+	| { entity: "none" };
+
+export type StateChangeAction = "added" | "updated" | "removed" | "cleared" | "appended";
+
+export interface StateChange {
+	scope: StateChangeScope;
+	action: StateChangeAction;
+}
+
+export type StateChangeListener = (change: StateChange, msg: ServerMessage) => void;
 
 // Client → Server messages
 export type ClientMessage =

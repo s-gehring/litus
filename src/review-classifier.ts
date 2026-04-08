@@ -1,6 +1,5 @@
-import { tmpdir } from "node:os";
 import { configStore } from "./config-store";
-import { cleanEnv } from "./spawn-utils";
+import { runClaude } from "./spawn-utils";
 import type { ReviewSeverity } from "./types";
 
 const VALID_SEVERITIES: ReviewSeverity[] = ["critical", "major", "minor", "trivial", "nit"];
@@ -8,33 +7,19 @@ const VALID_SEVERITIES: ReviewSeverity[] = ["critical", "major", "minor", "trivi
 export class ReviewClassifier {
 	async classify(reviewOutput: string): Promise<ReviewSeverity> {
 		try {
-			const promptTemplate = configStore.get().prompts.reviewClassification;
+			const config = configStore.get();
+			const promptTemplate = config.prompts.reviewClassification;
 			const prompt = promptTemplate.replaceAll("${reviewOutput}", reviewOutput);
 
-			const config = configStore.get();
-			const args = [
-				"claude",
-				"-p",
+			const { ok, stdout } = await runClaude({
 				prompt,
-				"--model",
-				config.models.reviewClassification,
-				"--output-format",
-				"text",
-				"--effort",
-				config.efforts.reviewClassification,
-			];
-			const proc = Bun.spawn(args, {
-				cwd: tmpdir(),
-				stdout: "pipe",
-				stderr: "pipe",
-				env: cleanEnv(),
+				model: config.models.reviewClassification,
+				effort: config.efforts.reviewClassification,
+				callerLabel: "review-classifier",
 			});
+			if (!ok) return "major";
 
-			const code = await proc.exited;
-			if (code !== 0) return "major";
-
-			const text = await new Response(proc.stdout as ReadableStream).text();
-			const severity = text.trim().toLowerCase() as ReviewSeverity;
+			const severity = stdout.trim().toLowerCase() as ReviewSeverity;
 			if (VALID_SEVERITIES.includes(severity)) {
 				return severity;
 			}
