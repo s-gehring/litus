@@ -926,6 +926,363 @@ describe("listener notification", () => {
 	});
 });
 
+// T001: Edge case — messages targeting non-existent workflow IDs
+describe("edge cases: non-existent workflow IDs", () => {
+	test("workflow:state with non-existent ID creates the workflow", () => {
+		const mgr = createManager();
+		const change = mgr.handleMessage({
+			type: "workflow:state",
+			workflow: makeWorkflowState({ id: "ghost" }),
+		});
+		// It creates the workflow (addOrUpdateWorkflow), so it returns updated
+		expect(mgr.getWorkflows().has("ghost")).toBe(true);
+		expect(change.scope).toEqual({ entity: "workflow", id: "ghost" });
+	});
+
+	test("workflow:question for non-existent workflow returns none", () => {
+		const mgr = createManager();
+		const change = mgr.handleMessage({
+			type: "workflow:question",
+			workflowId: "ghost",
+			question: { id: "q-1", content: "?", detectedAt: new Date().toISOString() },
+		});
+		expect(change.scope).toEqual({ entity: "none" });
+	});
+
+	test("workflow:step-change for non-existent workflow returns none", () => {
+		const mgr = createManager();
+		const change = mgr.handleMessage({
+			type: "workflow:step-change",
+			workflowId: "ghost",
+			previousStep: null,
+			currentStep: "implement",
+			currentStepIndex: 0,
+			reviewIteration: 1,
+		});
+		expect(change.scope).toEqual({ entity: "none" });
+	});
+
+	test("epic:dependency-update for non-existent workflow returns none", () => {
+		const mgr = createManager();
+		const change = mgr.handleMessage({
+			type: "epic:dependency-update",
+			workflowId: "ghost",
+			epicDependencyStatus: "waiting",
+			blockingWorkflows: [],
+		});
+		expect(change.scope).toEqual({ entity: "none" });
+	});
+});
+
+// T002: Edge case — workflow:output with empty lines and maxOutputLines boundary
+describe("edge cases: output trimming boundaries", () => {
+	test("workflow:output with empty string appends empty text entry", () => {
+		const mgr = createManager();
+		mgr.handleMessage({
+			type: "workflow:created",
+			workflow: makeWorkflowState({ id: "wf-1" }),
+		});
+
+		mgr.handleMessage({ type: "workflow:output", workflowId: "wf-1", text: "" });
+
+		const entry = mgr.getWorkflows().get("wf-1");
+		expect(entry?.outputLines).toHaveLength(1);
+		expect((entry?.outputLines[0] as { text: string }).text).toBe("");
+	});
+
+	test("output at exactly maxOutputLines does not trim", () => {
+		const mgr = createManager();
+		mgr.handleMessage({
+			type: "config:state",
+			config: makeAppConfig({
+				timing: {
+					ciGlobalTimeoutMs: 0,
+					ciPollIntervalMs: 0,
+					activitySummaryIntervalMs: 0,
+					rateLimitBackoffMs: 0,
+					maxCiLogLength: 0,
+					maxClientOutputLines: 5,
+					epicTimeoutMs: 0,
+				},
+			}),
+		});
+		mgr.handleMessage({
+			type: "workflow:created",
+			workflow: makeWorkflowState({ id: "wf-1" }),
+		});
+
+		for (let i = 0; i < 5; i++) {
+			mgr.handleMessage({ type: "workflow:output", workflowId: "wf-1", text: `line ${i}` });
+		}
+
+		const entry = mgr.getWorkflows().get("wf-1");
+		expect(entry?.outputLines).toHaveLength(5);
+		expect((entry?.outputLines[0] as { text: string }).text).toBe("line 0");
+	});
+
+	test("output at maxOutputLines + 1 trims oldest entry", () => {
+		const mgr = createManager();
+		mgr.handleMessage({
+			type: "config:state",
+			config: makeAppConfig({
+				timing: {
+					ciGlobalTimeoutMs: 0,
+					ciPollIntervalMs: 0,
+					activitySummaryIntervalMs: 0,
+					rateLimitBackoffMs: 0,
+					maxCiLogLength: 0,
+					maxClientOutputLines: 5,
+					epicTimeoutMs: 0,
+				},
+			}),
+		});
+		mgr.handleMessage({
+			type: "workflow:created",
+			workflow: makeWorkflowState({ id: "wf-1" }),
+		});
+
+		for (let i = 0; i < 6; i++) {
+			mgr.handleMessage({ type: "workflow:output", workflowId: "wf-1", text: `line ${i}` });
+		}
+
+		const entry = mgr.getWorkflows().get("wf-1");
+		expect(entry?.outputLines).toHaveLength(5);
+		expect((entry?.outputLines[0] as { text: string }).text).toBe("line 1");
+		expect((entry?.outputLines[4] as { text: string }).text).toBe("line 5");
+	});
+});
+
+// T003: Edge case — workflow:step-change on workflow with no steps, workflow:list with duplicate IDs
+describe("edge cases: step-change and duplicate IDs", () => {
+	test("workflow:step-change on workflow with no steps resets output", () => {
+		const mgr = createManager();
+		mgr.handleMessage({
+			type: "workflow:created",
+			workflow: makeWorkflowState({ id: "wf-1" }),
+		});
+
+		const change = mgr.handleMessage({
+			type: "workflow:step-change",
+			workflowId: "wf-1",
+			previousStep: null,
+			currentStep: "plan",
+			currentStepIndex: 0,
+			reviewIteration: 1,
+		});
+
+		const entry = mgr.getWorkflows().get("wf-1");
+		expect(entry?.outputLines).toHaveLength(1);
+		expect((entry?.outputLines[0] as { text: string }).text).toContain("Step: plan");
+		expect(change.action).toBe("updated");
+	});
+
+	test("workflow:list with duplicate IDs keeps last occurrence", () => {
+		const mgr = createManager();
+		const wf1a = makeWorkflowState({ id: "wf-1", status: "idle" });
+		const wf1b = makeWorkflowState({ id: "wf-1", status: "running" });
+
+		mgr.handleMessage({ type: "workflow:list", workflows: [wf1a, wf1b] });
+
+		// addOrUpdateWorkflow updates in place, so last write wins
+		expect(mgr.getWorkflows().size).toBe(1);
+		expect(mgr.getWorkflows().get("wf-1")?.state.status).toBe("running");
+	});
+});
+
+// T004: rebuildCardOrder sort order correctness
+describe("rebuildCardOrder sort order", () => {
+	test("sorts workflows by createdAt ascending", () => {
+		const mgr = createManager();
+		mgr.handleMessage({
+			type: "workflow:list",
+			workflows: [
+				makeWorkflowState({ id: "wf-c", createdAt: "2026-01-03T00:00:00Z" }),
+				makeWorkflowState({ id: "wf-a", createdAt: "2026-01-01T00:00:00Z" }),
+				makeWorkflowState({ id: "wf-b", createdAt: "2026-01-02T00:00:00Z" }),
+			],
+		});
+
+		expect(mgr.getCardOrder()).toEqual(["wf-a", "wf-b", "wf-c"]);
+	});
+
+	test("identical sort dates produce stable order", () => {
+		const mgr = createManager();
+		const sameDate = "2026-01-01T00:00:00Z";
+		mgr.handleMessage({
+			type: "workflow:list",
+			workflows: [
+				makeWorkflowState({ id: "wf-x", createdAt: sameDate }),
+				makeWorkflowState({ id: "wf-y", createdAt: sameDate }),
+				makeWorkflowState({ id: "wf-z", createdAt: sameDate }),
+			],
+		});
+
+		const order = mgr.getCardOrder();
+		expect(order).toHaveLength(3);
+		// All three should be present regardless of order
+		expect(order).toContain("wf-x");
+		expect(order).toContain("wf-y");
+		expect(order).toContain("wf-z");
+	});
+
+	test("epic cards sorted by aggregate startDate among standalone workflows", () => {
+		const mgr = createManager();
+		mgr.handleMessage({
+			type: "workflow:list",
+			workflows: [
+				makeWorkflowState({ id: "standalone", createdAt: "2026-01-02T00:00:00Z" }),
+				makeWorkflowState({
+					id: "child-1",
+					epicId: "epic-1",
+					epicTitle: "E1",
+					createdAt: "2026-01-01T00:00:00Z",
+				}),
+				makeWorkflowState({
+					id: "child-2",
+					epicId: "epic-1",
+					epicTitle: "E1",
+					createdAt: "2026-01-03T00:00:00Z",
+				}),
+			],
+		});
+
+		const order = mgr.getCardOrder();
+		// Epic aggregate startDate = min(child createdAt) = 2026-01-01
+		// Standalone = 2026-01-02
+		expect(order).toEqual(["epic:epic-1", "standalone"]);
+	});
+});
+
+// T005: rebuildEpicAggregates computing correct aggregated state
+describe("rebuildEpicAggregates", () => {
+	test("computes progress from child workflow statuses", () => {
+		const mgr = createManager();
+		mgr.handleMessage({
+			type: "workflow:list",
+			workflows: [
+				makeWorkflowState({ id: "c-1", epicId: "e-1", epicTitle: "Epic", status: "completed" }),
+				makeWorkflowState({ id: "c-2", epicId: "e-1", epicTitle: "Epic", status: "completed" }),
+				makeWorkflowState({ id: "c-3", epicId: "e-1", epicTitle: "Epic", status: "running" }),
+			],
+		});
+
+		const agg = mgr.getEpicAggregates().get("e-1");
+		expect(agg?.progress.completed).toBe(2);
+		expect(agg?.progress.total).toBe(3);
+		expect(agg?.status).toBe("running");
+	});
+
+	test("aggregates activeWorkMs across children", () => {
+		const mgr = createManager();
+		mgr.handleMessage({
+			type: "workflow:list",
+			workflows: [
+				makeWorkflowState({ id: "c-1", epicId: "e-1", epicTitle: "Epic", activeWorkMs: 1000 }),
+				makeWorkflowState({ id: "c-2", epicId: "e-1", epicTitle: "Epic", activeWorkMs: 2000 }),
+			],
+		});
+
+		const agg = mgr.getEpicAggregates().get("e-1");
+		expect(agg?.activeWorkMs).toBeGreaterThanOrEqual(3000);
+	});
+
+	test("returns null aggregate for epic with no title on any child", () => {
+		const mgr = createManager();
+		mgr.handleMessage({
+			type: "workflow:list",
+			workflows: [makeWorkflowState({ id: "c-1", epicId: "e-1", epicTitle: null })],
+		});
+
+		expect(mgr.getEpicAggregates().has("e-1")).toBe(false);
+	});
+});
+
+// T006: Aggregate sequence test
+describe("aggregate sequence: create → output → step-change → state", () => {
+	test("final state reflects all mutations in order", () => {
+		const mgr = createManager();
+
+		// 1. Create workflow
+		mgr.handleMessage({
+			type: "workflow:created",
+			workflow: makeWorkflowState({ id: "wf-seq", status: "idle" }),
+		});
+		expect(mgr.getWorkflows().get("wf-seq")?.state.status).toBe("idle");
+
+		// 2. Add output
+		mgr.handleMessage({ type: "workflow:output", workflowId: "wf-seq", text: "Starting..." });
+		expect(mgr.getWorkflows().get("wf-seq")?.outputLines).toHaveLength(1);
+
+		// 3. Step change (resets output)
+		mgr.handleMessage({
+			type: "workflow:step-change",
+			workflowId: "wf-seq",
+			previousStep: null,
+			currentStep: "implement",
+			currentStepIndex: 2,
+			reviewIteration: 1,
+		});
+		expect(mgr.getWorkflows().get("wf-seq")?.state.currentStepIndex).toBe(2);
+		expect(mgr.getWorkflows().get("wf-seq")?.outputLines).toHaveLength(1); // step marker only
+
+		// 4. Update state to running
+		mgr.handleMessage({
+			type: "workflow:state",
+			workflow: makeWorkflowState({ id: "wf-seq", status: "running" }),
+		});
+		expect(mgr.getWorkflows().get("wf-seq")?.state.status).toBe("running");
+
+		// 5. Add more output after step change
+		mgr.handleMessage({ type: "workflow:output", workflowId: "wf-seq", text: "Working..." });
+		expect(mgr.getWorkflows().get("wf-seq")?.outputLines).toHaveLength(2); // step marker + new output
+	});
+});
+
+// T007: purge:complete clears all maps and resets selection
+describe("purge:complete edge cases", () => {
+	test("purge with epic aggregates clears everything", () => {
+		const mgr = createManager();
+
+		// Populate workflows, epics, and epic aggregates
+		mgr.handleMessage({
+			type: "workflow:created",
+			workflow: makeWorkflowState({
+				id: "child-1",
+				epicId: "e-1",
+				epicTitle: "Epic",
+				status: "running",
+			}),
+		});
+		mgr.handleMessage({ type: "epic:created", epicId: "e-1", description: "test" });
+		mgr.expandItem("epic:e-1");
+		mgr.selectChild("child-1");
+		mgr.selectStep(3);
+
+		expect(mgr.getEpicAggregates().size).toBeGreaterThan(0);
+		expect(mgr.getSelectedChildId()).toBe("child-1");
+		expect(mgr.getSelectedStepIndex()).toBe(3);
+
+		const change = mgr.handleMessage({ type: "purge:complete", warnings: [] });
+
+		expect(mgr.getWorkflows().size).toBe(0);
+		expect(mgr.getEpics().size).toBe(0);
+		expect(mgr.getEpicAggregates().size).toBe(0);
+		expect(mgr.getCardOrder()).toHaveLength(0);
+		expect(mgr.getExpandedId()).toBeNull();
+		expect(mgr.getExpandedEpicId()).toBeNull();
+		expect(mgr.getSelectedChildId()).toBeNull();
+		expect(mgr.getSelectedStepIndex()).toBeNull();
+		expect(change.action).toBe("cleared");
+	});
+
+	test("purge on already-empty state is safe", () => {
+		const mgr = createManager();
+		const change = mgr.handleMessage({ type: "purge:complete", warnings: [] });
+		expect(change.action).toBe("cleared");
+		expect(mgr.getWorkflows().size).toBe(0);
+	});
+});
+
 // T028: getLastTargetRepo
 describe("getLastTargetRepo", () => {
 	test("returns empty string when no workflows exist", () => {

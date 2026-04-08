@@ -1,6 +1,11 @@
 let currentState: boolean | null = null;
 let logoImg: HTMLImageElement | null = null;
 
+export function resetFaviconState(): void {
+	currentState = null;
+	logoImg = null;
+}
+
 function ensureLogoLoaded(): Promise<HTMLImageElement> {
 	if (logoImg) return Promise.resolve(logoImg);
 	return new Promise((resolve, reject) => {
