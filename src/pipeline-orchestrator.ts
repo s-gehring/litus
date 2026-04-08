@@ -400,6 +400,7 @@ export class PipelineOrchestrator {
 		}
 
 		if (step.name === STEP.MERGE_PR) {
+			workflow.mergeCycle.attempt = 0;
 			this.runMergePr(workflow);
 			return;
 		}
