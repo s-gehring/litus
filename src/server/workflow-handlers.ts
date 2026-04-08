@@ -1,3 +1,4 @@
+import { toErrorMessage } from "../errors";
 import { validateTargetRepository } from "../target-repo-validator";
 import type { ClientMessage } from "../types";
 import type { MessageHandler } from "./handler-types";
@@ -30,7 +31,7 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 		const state = deps.stripInternalFields(workflow);
 		deps.broadcast({ type: "workflow:created", workflow: state });
 	} catch (err) {
-		const message = err instanceof Error ? err.message : "Failed to start workflow";
+		const message = toErrorMessage(err);
 		deps.sendTo(ws, { type: "error", message });
 	}
 };

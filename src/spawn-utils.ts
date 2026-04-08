@@ -1,4 +1,5 @@
 import { tmpdir } from "node:os";
+import { toErrorMessage } from "./errors";
 import type { EffortLevel } from "./types";
 
 export interface RunClaudeOptions {
@@ -108,7 +109,7 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 
 		return { ok: exitCode === 0, exitCode, stdout, stderr };
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
+		const message = toErrorMessage(err);
 		if (options.callerLabel) {
 			console.warn(`[${options.callerLabel}] spawn failed: ${message.slice(0, 200)}`);
 		}

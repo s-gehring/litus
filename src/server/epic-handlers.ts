@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { analyzeEpic } from "../epic-analyzer";
+import { toErrorMessage } from "../errors";
 import { validateTargetRepository } from "../target-repo-validator";
 import type { ClientMessage } from "../types";
 import { createEpicWorkflows } from "../workflow-engine";
@@ -129,7 +130,7 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			summary: result.summary,
 		});
 	} catch (err) {
-		const message = err instanceof Error ? err.message : "Epic analysis failed";
+		const message = toErrorMessage(err);
 		console.error(`[epic] Analysis failed (${epicId.slice(0, 8)}): ${message}`);
 		if (err instanceof Error && err.stack) {
 			console.error(`[epic] Stack trace: ${err.stack}`);

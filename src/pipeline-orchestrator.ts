@@ -9,6 +9,7 @@ import { CLIRunner } from "./cli-runner";
 import { CLIStepRunner } from "./cli-step-runner";
 import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
+import { toErrorMessage } from "./errors";
 import { gitSpawn } from "./git-logger";
 import {
 	mergePr as defaultMergePr,
@@ -591,8 +592,7 @@ export class PipelineOrchestrator {
 				this.checkoutMasterInWorktree(wf);
 			})
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				this.handleStepError(workflow.id, `Setup checks failed: ${msg}`);
+				this.handleStepError(workflow.id, `Setup checks failed: ${toErrorMessage(err)}`);
 			});
 	}
 
@@ -616,8 +616,10 @@ export class PipelineOrchestrator {
 				this.advanceAfterStep(wf.id);
 			})
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				this.handleStepError(workflow.id, `Failed to checkout master in worktree: ${msg}`);
+				this.handleStepError(
+					workflow.id,
+					`Failed to checkout master in worktree: ${toErrorMessage(err)}`,
+				);
 			});
 	}
 
@@ -636,8 +638,7 @@ export class PipelineOrchestrator {
 					this.startCiMonitoring(workflow);
 				})
 				.catch((err) => {
-					const msg = err instanceof Error ? err.message : String(err);
-					this.handleStepError(workflow.id, `Failed to discover PR URL: ${msg}`);
+					this.handleStepError(workflow.id, `Failed to discover PR URL: ${toErrorMessage(err)}`);
 				});
 			return;
 		}
@@ -654,8 +655,7 @@ export class PipelineOrchestrator {
 			.startMonitoring(workflow, (msg) => this.handleStepOutput(workflow.id, msg))
 			.then((result) => this.handleMonitorResult(workflow.id, result))
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				this.handleStepError(workflow.id, `CI monitoring failed: ${msg}`);
+				this.handleStepError(workflow.id, `CI monitoring failed: ${toErrorMessage(err)}`);
 			});
 	}
 
@@ -738,8 +738,10 @@ export class PipelineOrchestrator {
 				this.runStep(workflow, prompt, cwd, config.models.ciFix, config.efforts.ciFix);
 			})
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				this.handleStepError(workflow.id, `Failed to gather CI failure logs: ${msg}`);
+				this.handleStepError(
+					workflow.id,
+					`Failed to gather CI failure logs: ${toErrorMessage(err)}`,
+				);
 			});
 	}
 
@@ -935,7 +937,7 @@ export class PipelineOrchestrator {
 					return;
 				case "handle-implement-review-complete":
 					this.handleImplementReviewComplete(workflow).catch((err) => {
-						const msg = err instanceof Error ? err.message : String(err);
+						const msg = toErrorMessage(err);
 						console.error(`[pipeline] Implement-review completion error: ${msg}`);
 						this.handleStepError(workflow.id, msg);
 					});
@@ -945,8 +947,7 @@ export class PipelineOrchestrator {
 					return;
 			}
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			this.handleStepError(workflow.id, `Routing failed: ${msg}`);
+			this.handleStepError(workflow.id, `Routing failed: ${toErrorMessage(err)}`);
 		}
 	}
 
@@ -1020,8 +1021,7 @@ export class PipelineOrchestrator {
 		this.mergePrFn(workflow.prUrl, cwd, (msg) => this.handleStepOutput(workflow.id, msg))
 			.then((result) => this.handleMergeResult(workflow.id, result))
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				this.handleStepError(workflow.id, `PR merge failed: ${msg}`);
+				this.handleStepError(workflow.id, `PR merge failed: ${toErrorMessage(err)}`);
 			});
 	}
 
@@ -1055,8 +1055,7 @@ export class PipelineOrchestrator {
 					this.routeBackToMonitor(workflow);
 				})
 				.catch((err) => {
-					const msg = err instanceof Error ? err.message : String(err);
-					this.handleStepError(workflowId, `Conflict resolution failed: ${msg}`);
+					this.handleStepError(workflowId, `Conflict resolution failed: ${toErrorMessage(err)}`);
 				});
 			return;
 		}
@@ -1082,8 +1081,8 @@ export class PipelineOrchestrator {
 				this.advanceAfterStep(workflow.id);
 			})
 			.catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
 				// Even on error, sync-repo completes (PR is already merged)
+				const msg = toErrorMessage(err);
 				this.handleStepOutput(workflow.id, `Warning: sync failed: ${msg}`);
 				this.advanceAfterStep(workflow.id);
 			});
@@ -1217,8 +1216,7 @@ export class PipelineOrchestrator {
 			this.callbacks.onStateChange(workflow.id);
 			console.log(`[pipeline] Renamed worktree to ${newRelativePath}`);
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			console.warn(`[pipeline] Worktree rename failed (non-fatal): ${msg}`);
+			console.warn(`[pipeline] Worktree rename failed (non-fatal): ${toErrorMessage(err)}`);
 		}
 	}
 

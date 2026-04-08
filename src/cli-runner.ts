@@ -2,7 +2,8 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { configStore } from "./config-store";
-import { cleanEnv } from "./spawn-utils";
+import { toErrorMessage } from "./errors";
+import { cleanEnv, readStream } from "./spawn-utils";
 import { DELTA_FLUSH_TIMEOUT_MS, type EffortLevel, type ToolUsage, type Workflow } from "./types";
 
 export function isProcessAlive(pid: number): boolean {
@@ -113,7 +114,7 @@ export class CLIRunner {
 				windowsHide: true,
 			});
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
+			const msg = toErrorMessage(err);
 			console.error(`[cli-runner] Failed to spawn process: ${msg}`);
 			queueMicrotask(() => callbacks.onError(msg));
 			return;
@@ -173,7 +174,7 @@ export class CLIRunner {
 				windowsHide: true,
 			});
 		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
+			const msg = toErrorMessage(err);
 			console.error(`[cli-runner] Failed to spawn resume process: ${msg}`);
 			queueMicrotask(() => callbacks.onError(msg));
 			return;
@@ -293,11 +294,7 @@ export class CLIRunner {
 			} else if (exitCode === 0) {
 				callbacks.onComplete();
 			} else {
-				const stderrStream = proc.stderr;
-				const stderr =
-					stderrStream && typeof stderrStream !== "number"
-						? await new Response(stderrStream as ReadableStream).text()
-						: "";
+				const stderr = await readStream(proc.stderr);
 				callbacks.onError(stderr.trim() || `CLI process exited with code ${exitCode}`);
 			}
 		}
