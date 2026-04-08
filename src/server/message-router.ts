@@ -36,6 +36,7 @@ export class MessageRouter {
 			const result = handler(ws, parsed as Parameters<MessageHandler>[1], deps);
 			if (result instanceof Promise) {
 				result.catch((err) => {
+					console.error("[ws] Async message handling error:", err);
 					const text = err instanceof Error ? err.message : "Internal error";
 					deps.sendTo(ws, { type: "error", message: text });
 				});

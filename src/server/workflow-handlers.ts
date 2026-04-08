@@ -18,12 +18,17 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 		return;
 	}
 
-	const orch = deps.createOrchestrator();
-	const workflow = await orch.startPipeline(specification.trim(), validation.effectivePath);
-	deps.orchestrators.set(workflow.id, orch);
+	try {
+		const orch = deps.createOrchestrator();
+		const workflow = await orch.startPipeline(specification.trim(), validation.effectivePath);
+		deps.orchestrators.set(workflow.id, orch);
 
-	const state = deps.stripInternalFields(workflow);
-	deps.broadcast({ type: "workflow:created", workflow: state });
+		const state = deps.stripInternalFields(workflow);
+		deps.broadcast({ type: "workflow:created", workflow: state });
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "Failed to start workflow";
+		deps.sendTo(ws, { type: "error", message });
+	}
 };
 
 export const handleAnswer: MessageHandler = withOrchestrator((ws, data, deps, orch) => {

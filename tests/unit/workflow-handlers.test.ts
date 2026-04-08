@@ -132,6 +132,68 @@ describe("workflow-handlers", () => {
 			).toBe(true);
 		});
 
+		test("sends descriptive error when startPipeline throws a non-Error", async () => {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleStart>[0];
+
+			const mockOrch = {
+				startPipeline: async () => {
+					throw "something went wrong";
+				},
+			} as unknown as PipelineOrchestrator;
+
+			const { deps, sentMessages } = createMockHandlerDeps({
+				createOrchestrator: () => mockOrch,
+			});
+
+			mockValidationResult = { valid: true, effectivePath: "/mock/repo" };
+
+			await handleStart(
+				mockWs,
+				{
+					type: "workflow:start",
+					specification: "Build a feature",
+					targetRepository: "/mock/repo",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(mockWs) ?? [];
+			expect(msgs.some((m) => m.type === "error" && m.message === "Failed to start workflow")).toBe(
+				true,
+			);
+		});
+
+		test("sends Error.message when startPipeline throws an Error", async () => {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleStart>[0];
+
+			const mockOrch = {
+				startPipeline: async () => {
+					throw new Error("Disk full");
+				},
+			} as unknown as PipelineOrchestrator;
+
+			const { deps, sentMessages } = createMockHandlerDeps({
+				createOrchestrator: () => mockOrch,
+			});
+
+			mockValidationResult = { valid: true, effectivePath: "/mock/repo" };
+
+			await handleStart(
+				mockWs,
+				{
+					type: "workflow:start",
+					specification: "Build a feature",
+					targetRepository: "/mock/repo",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(mockWs) ?? [];
+			expect(msgs.some((m) => m.type === "error" && m.message === "Disk full")).toBe(true);
+		});
+
 		test("rejects invalid target repository", async () => {
 			const { mock: ws } = createMockWebSocket();
 			const mockWs = ws as unknown as Parameters<typeof handleStart>[0];
@@ -151,6 +213,25 @@ describe("workflow-handlers", () => {
 
 			const msgs = sentMessages.get(mockWs) ?? [];
 			expect(msgs.some((m) => m.type === "error" && m.message === "Not a git repo")).toBe(true);
+		});
+	});
+
+	describe("withOrchestrator (missing workflowId)", () => {
+		test("sends error when workflowId is missing from message", () => {
+			const { ws, deps, sentMessages } = setup();
+
+			handleAnswer(
+				ws,
+				{
+					type: "workflow:answer",
+					questionId: "q1",
+					answer: "yes",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(msgs.some((m) => m.type === "error" && m.message === "Missing workflowId")).toBe(true);
 		});
 	});
 
