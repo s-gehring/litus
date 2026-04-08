@@ -30,6 +30,7 @@ import {
 	type SetupResult,
 	STEP,
 	type Workflow,
+	type WorkflowStatus,
 } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
@@ -231,12 +232,7 @@ export class PipelineOrchestrator {
 		step.status = "running";
 		workflow.updatedAt = new Date().toISOString();
 
-		try {
-			this.engine.transition(workflowId, "running");
-		} catch (e) {
-			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-		}
+		this.tryTransition(workflowId, "running");
 
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
@@ -473,12 +469,7 @@ export class PipelineOrchestrator {
 			step.error = "Cancelled by user";
 		}
 
-		try {
-			this.engine.transition(workflowId, "cancelled");
-		} catch (e) {
-			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-		}
+		this.tryTransition(workflowId, "cancelled");
 
 		step.pid = null;
 		this.flushPersistDebounce(workflow);
@@ -856,12 +847,7 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		this.engine.setQuestion(workflowId, question);
-		try {
-			this.engine.transition(workflowId, "waiting_for_input");
-		} catch (e) {
-			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-		}
+		this.tryTransition(workflowId, "waiting_for_input");
 
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
@@ -1096,12 +1082,7 @@ export class PipelineOrchestrator {
 			});
 			this.currentAuditRunId = null;
 		}
-		try {
-			this.engine.transition(workflow.id, "completed");
-		} catch (e) {
-			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-		}
+		this.tryTransition(workflow.id, "completed");
 		this.stepRunner.killProcess(workflow.id);
 		this.summarizer.cleanup(workflow.id);
 		this.persistWorkflow(workflow);
@@ -1257,12 +1238,7 @@ export class PipelineOrchestrator {
 		step.pid = null;
 		workflow.updatedAt = new Date().toISOString();
 
-		try {
-			this.engine.transition(workflowId, "error");
-		} catch (e) {
-			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
-		}
+		this.tryTransition(workflowId, "error");
 
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
@@ -1340,6 +1316,16 @@ export class PipelineOrchestrator {
 			throw new Error(`Step "${stepName}" not found in workflow ${workflow.id}`);
 		}
 		return index;
+	}
+
+	/** Attempt a status transition, silently ignoring "Invalid transition" errors. */
+	private tryTransition(workflowId: string, status: WorkflowStatus): void {
+		try {
+			this.engine.transition(workflowId, status);
+		} catch (e) {
+			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
+			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
+		}
 	}
 
 	private getWorkflowOrThrow(workflowId: string): Workflow {
