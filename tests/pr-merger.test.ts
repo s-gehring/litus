@@ -210,11 +210,90 @@ describe("pr-merger", () => {
 				},
 			});
 
-			expect(calls.length).toBe(3);
+			expect(calls.length).toBe(5);
 			expect(calls[0]).toEqual(["git", "fetch", "origin", "master"]);
 			expect(calls[1]).toEqual(["git", "merge", "origin/master"]);
 			expect(calls[2][0]).toBe("claude");
 			expect(calls[2]).toContain("-p");
+			// Safety net: ensureCommittedAndPushed checks status then pushes
+			expect(calls[3]).toEqual(["git", "status", "--porcelain"]);
+			expect(calls[4]).toEqual(["git", "push"]);
+		});
+
+		test("amends merge-conflict commit when uncommitted changes remain", async () => {
+			const calls: string[][] = [];
+			let callIndex = 0;
+			await resolveConflicts("/tmp/worktree", "feature summary", () => {}, {
+				spawn: (args: string[]) => {
+					calls.push(args);
+					callIndex++;
+					const idx = callIndex;
+					return {
+						exited: Promise.resolve(0),
+						stdout: new ReadableStream({
+							start(c) {
+								// git status --porcelain returns dirty
+								if (idx === 4) c.enqueue(new TextEncoder().encode(" M file.ts\n"));
+								// git log returns merge-conflict commit message
+								if (idx === 5)
+									c.enqueue(
+										new TextEncoder().encode("chore: resolve merge conflicts with master\n"),
+									);
+								c.close();
+							},
+						}),
+						stderr: new ReadableStream({
+							start(c) {
+								c.close();
+							},
+						}),
+					};
+				},
+			});
+
+			// fetch, merge, claude, status, log, add, amend, push
+			expect(calls.length).toBe(8);
+			expect(calls[5]).toEqual(["git", "add", "."]);
+			expect(calls[6]).toEqual(["git", "commit", "--amend", "--no-edit"]);
+			expect(calls[7]).toEqual(["git", "push"]);
+		});
+
+		test("creates new commit when last commit is not merge-conflict commit", async () => {
+			const calls: string[][] = [];
+			let callIndex = 0;
+			await resolveConflicts("/tmp/worktree", "feature summary", () => {}, {
+				spawn: (args: string[]) => {
+					calls.push(args);
+					callIndex++;
+					const idx = callIndex;
+					return {
+						exited: Promise.resolve(0),
+						stdout: new ReadableStream({
+							start(c) {
+								if (idx === 4) c.enqueue(new TextEncoder().encode(" M file.ts\n"));
+								if (idx === 5) c.enqueue(new TextEncoder().encode("feat: some other commit\n"));
+								c.close();
+							},
+						}),
+						stderr: new ReadableStream({
+							start(c) {
+								c.close();
+							},
+						}),
+					};
+				},
+			});
+
+			// fetch, merge, claude, status, log, add, commit, push
+			expect(calls.length).toBe(8);
+			expect(calls[5]).toEqual(["git", "add", "."]);
+			expect(calls[6]).toEqual([
+				"git",
+				"commit",
+				"-m",
+				"chore: resolve merge conflicts with master",
+			]);
+			expect(calls[7]).toEqual(["git", "push"]);
 		});
 
 		test("throws when Claude CLI exits with non-zero code", async () => {
