@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { AsyncLock } from "./async-lock";
 import { atomicWrite } from "./atomic-write";
 import type { Workflow, WorkflowIndexEntry } from "./types";
 
 export class WorkflowStore {
 	private baseDir: string;
-	private indexLock: Promise<void> = Promise.resolve();
+	private indexLock = new AsyncLock();
 	private writeLocks: Map<string, Promise<void>> = new Map();
 
 	constructor(baseDir?: string) {
@@ -152,7 +153,7 @@ export class WorkflowStore {
 	}
 
 	private async updateIndex(workflow: Workflow): Promise<void> {
-		await this.withIndexLock(async () => {
+		await this.indexLock.run(async () => {
 			let index: WorkflowIndexEntry[];
 			try {
 				const content = await Bun.file(this.indexPath()).text();
@@ -180,18 +181,6 @@ export class WorkflowStore {
 
 			await atomicWrite(this.indexPath(), JSON.stringify(index, null, 2));
 		});
-	}
-
-	private async withIndexLock<T>(fn: () => Promise<T>): Promise<T> {
-		const prev = this.indexLock;
-		const { promise, resolve } = Promise.withResolvers<void>();
-		this.indexLock = promise;
-		try {
-			await prev;
-			return await fn();
-		} finally {
-			resolve();
-		}
 	}
 
 	private async rebuildIndex(): Promise<WorkflowIndexEntry[]> {

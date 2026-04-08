@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { AsyncLock } from "./async-lock";
 import { atomicWrite } from "./atomic-write";
 import type { PersistedEpic } from "./types";
 
 export class EpicStore {
 	private baseDir: string;
-	private writeLock: Promise<void> = Promise.resolve();
+	private writeLock = new AsyncLock();
 
 	constructor(baseDir?: string) {
 		this.baseDir = baseDir ?? join(homedir(), ".litus", "workflows");
@@ -44,7 +45,7 @@ export class EpicStore {
 	}
 
 	async save(epic: PersistedEpic): Promise<void> {
-		await this.withWriteLock(async () => {
+		await this.writeLock.run(async () => {
 			this.ensureDir();
 			const all = await this.loadAll();
 			const idx = all.findIndex((e) => e.epicId === epic.epicId);
@@ -55,17 +56,5 @@ export class EpicStore {
 			}
 			await atomicWrite(this.filePath(), JSON.stringify(all, null, 2));
 		});
-	}
-
-	private async withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
-		const prev = this.writeLock;
-		const { promise, resolve } = Promise.withResolvers<void>();
-		this.writeLock = promise;
-		try {
-			await prev;
-			return await fn();
-		} finally {
-			resolve();
-		}
 	}
 }
