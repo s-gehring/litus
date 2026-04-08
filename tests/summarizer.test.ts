@@ -52,8 +52,9 @@ function mockSpawnWithDeferred(text: string) {
 }
 
 // Flush microtask queue to let fire-and-forget promises resolve
+// (runClaude adds extra async layers: readStream for stdout + stderr)
 async function flushAsync() {
-	for (let i = 0; i < 10; i++) {
+	for (let i = 0; i < 30; i++) {
 		await Promise.resolve();
 	}
 }

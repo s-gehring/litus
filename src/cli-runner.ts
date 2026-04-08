@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { cleanEnv } from "./spawn-utils";
-import type { EffortLevel, ToolUsage, Workflow } from "./types";
+import { DELTA_FLUSH_TIMEOUT_MS, type EffortLevel, type ToolUsage, type Workflow } from "./types";
 
 export function isProcessAlive(pid: number): boolean {
 	try {
@@ -311,7 +311,10 @@ export class CLIRunner {
 			// Batch delta fragments to reduce DOM element count (CR3-010)
 			entry.deltaBuffer += event.delta.text;
 			if (entry.deltaFlushTimer) clearTimeout(entry.deltaFlushTimer);
-			entry.deltaFlushTimer = setTimeout(() => this.flushDeltaBuffer(entry), 50);
+			entry.deltaFlushTimer = setTimeout(
+				() => this.flushDeltaBuffer(entry),
+				DELTA_FLUSH_TIMEOUT_MS,
+			);
 		} else if (event.type === "result" && event.result !== undefined) {
 			this.flushDeltaBuffer(entry);
 			// Final result message
