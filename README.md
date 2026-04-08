@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>A web-based orchestrator for Claude Code agents.</strong><br>
-  Because babysitting an AI agent in a terminal is <em>so</em> 2024.
+  Welcome to <em>vibe code hell</em>.
 </p>
 
 <p align="center">
@@ -22,36 +22,40 @@
 
 ---
 
-Submit a feature spec, watch a Claude Code agent work through it step-by-step in your browser, answer its questions when it gets stuck, and end up with a merged PR. Litus handles the entire lifecycle — from specification to CI green to squash-merge — so you can focus on the parts that actually need a human brain.
+Submit a feature spec, watch a Claude Code agent work through it step-by-step in your browser, answer its questions when
+it gets stuck, and end up with a merged PR. Litus handles the entire lifecycle — from specification to CI green to
+merge — so you can focus on the parts that actually need a human brain.
 
 ## Features
 
-- **13-step pipeline** — Specify, clarify, plan, implement, review, create PR, monitor CI, fix failures, merge. All automated, all observable.
-- **Real-time streaming** — Agent output streams to the browser via WebSocket. You see what the agent sees, as it happens.
-- **Question detection** — When the agent needs input, Litus catches it (regex + Haiku classification) and surfaces it in the UI. You answer, it resumes.
-- **Epic decomposition** — Got a big feature? Submit it as an epic. Litus breaks it into specs with dependency tracking and runs them in the right order.
+- **13-step pipeline** — Specify, clarify, plan, implement, review, create PR, monitor CI, fix failures, merge. All
+  automated, all observable.
+- **Real-time streaming** — Agent output streams to the browser via WebSocket. You see what the agent sees, as it
+  happens.
+- **Question detection** — When the agent needs input, Litus catches it (regex + Haiku classification) and surfaces it
+  in the UI. You answer, it resumes.
+- **Epic decomposition** — Got a big feature? Submit it as an epic. Litus breaks it into specs with dependency tracking
+  and runs them in the right order.
 - **Git worktree isolation** — Every workflow runs in its own worktree. Your main branch stays pristine. You're welcome.
-- **CI monitoring & auto-fix** — Watches GitHub Actions, pulls failure logs, and lets the agent fix what it broke. Configurable retry limits.
-- **Pause, resume, abort** — Full lifecycle control. Session IDs are preserved, so the agent picks up right where it left off.
+- **CI monitoring & auto-fix** — Watches GitHub Actions, pulls failure logs, and lets the agent fix what it broke.
+  Configurable retry limits.
+- **Pause, resume, abort** — Full lifecycle control. Session IDs are preserved, so the agent picks up right where it
+  left off.
 - **Configurable everything** — Models, effort levels, prompts, retry limits, timeouts. Per-step. From the UI.
-- **Periodic summaries** — Short progress summaries generated every 15 seconds via the CLI so you don't have to read the full output stream.
+- **Periodic summaries** — Short progress summaries generated every 15 seconds via the CLI so you don't have to read the
+  full output stream.
 - **Audit logging** — Every question, answer, commit, and pipeline event is logged to JSONL.
 
 ## Screenshots
 
-> [!NOTE]
-> Screenshots are placeholders — replace with actual captures after running the app.
-
 |                                                            |                                                           |
 |------------------------------------------------------------|-----------------------------------------------------------|
-| ![Welcome screen](docs/screenshots/welcome.png)            | ![New specification modal](docs/screenshots/new-spec.png) |
-| Welcome screen                                             | Creating a new specification                              |
+| ![Epic tree view](docs/screenshots/epic-tree.png)          | ![New specification modal](docs/screenshots/new-spec.png) |
+| Epic decomposition with dependencies                       | Creating a new specification                              |
 | ![Pipeline running](docs/screenshots/pipeline-running.png) | ![Question panel](docs/screenshots/question-panel.png)    |
 | Pipeline in progress with live output                      | Agent asking a question                                   |
-| ![Epic tree view](docs/screenshots/epic-tree.png)          | ![Configuration panel](docs/screenshots/config-panel.png) |
-| Epic decomposition with dependencies                       | Configuration panel                                       |
 
-## How it works
+## How to use
 
 1. You enter a feature spec in the browser and hit **Start**
 2. Litus creates a git worktree and spawns `claude -p <spec> --output-format stream-json`
@@ -64,7 +68,7 @@ Submit a feature spec, watch a Claude Code agent work through it step-by-step in
 
 | Step           | Actor          | What happens                                              |
 |----------------|----------------|-----------------------------------------------------------|
-| **Setup**      | Litus          | Validates repo, git, GitHub CLI, auth, speckit commands   |
+| **Setup**      | Litus          | Validates repo, git, GitHub CLI, auth, speckit skills     |
 | **Specify**    | Claude         | Formalizes your description into a structured spec        |
 | **Clarify**    | Claude + Human | Resolves ambiguities in the spec                          |
 | **Plan**       | Claude         | Creates a technical design                                |
@@ -140,7 +144,8 @@ For features too large for a single workflow, Litus supports **epics**:
 
 1. Click **New Epic** and describe the feature at a high level
 2. Litus decomposes it into individual specs with dependency tracking
-3. Specs execute in dependency order and as parallel as possible — downstream workflows wait for their blockers to complete
+3. Specs execute in dependency order and as parallel as possible — downstream workflows wait for their blockers to
+   complete
 4. The epic tree view shows the full dependency graph and per-spec status
 
 ## Data storage
@@ -160,16 +165,16 @@ All data lives under `~/.litus/`:
 
 ## Tech stack
 
-| Layer | Technology |
-|-------|-----------|
-| Runtime | [Bun](https://bun.sh) |
-| Server | `Bun.serve()` — built-in HTTP + WebSocket, no framework |
-| Agent | [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) via `Bun.spawn` — no API key needed beyond what the CLI uses |
-| Frontend | Vanilla TypeScript — no React, no Vue, no regrets |
-| Markdown | [marked](https://github.com/markedjs/marked) + [DOMPurify](https://github.com/cure53/DOMPurify) |
-| Linting | [Biome](https://biomejs.dev) |
-| Testing | Bun test runner + [happy-dom](https://github.com/nicedayfor/happy-dom) |
-| CI | GitHub Actions |
+| Layer    | Technology                                                                                                                     |
+|----------|--------------------------------------------------------------------------------------------------------------------------------|
+| Runtime  | [Bun](https://bun.sh)                                                                                                          |
+| Server   | `Bun.serve()` — built-in HTTP + WebSocket, no framework                                                                        |
+| Agent    | [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) via `Bun.spawn` — no API key needed beyond what the CLI uses |
+| Frontend | Vanilla TypeScript — no React, no Vue, no regrets                                                                              |
+| Markdown | [marked](https://github.com/markedjs/marked) + [DOMPurify](https://github.com/cure53/DOMPurify)                                |
+| Linting  | [Biome](https://biomejs.dev)                                                                                                   |
+| Testing  | Bun test runner + [happy-dom](https://github.com/nicedayfor/happy-dom)                                                         |
+| CI       | GitHub Actions                                                                                                                 |
 
 ## Related tools
 
@@ -177,15 +182,21 @@ Litus orchestrates a few external tools. Here's what they do and where to find t
 
 ### [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
 
-Anthropic's CLI for Claude. This is the actual agent that reads your code, writes implementations, and creates PRs. Litus spawns it as a child process and communicates via `--output-format stream-json`. **All AI interactions go through the CLI** — Litus has zero direct API calls, so there's no extra API cost beyond your normal Claude Code usage. Think of Litus as the control tower and Claude Code as the plane.
+Anthropic's CLI for Claude. This is the actual agent that reads your code, writes implementations, and creates PRs.
+Litus spawns it as a child process and communicates via `--output-format stream-json`. **All AI interactions go through
+the CLI** — Litus has zero direct API calls, so there's no extra API cost beyond your normal Claude Code usage. Think of
+Litus as the control tower and Claude Code as the plane.
 
 ### [GitHub CLI (`gh`)](https://cli.github.com/)
 
-GitHub's official CLI. Litus uses it for PR creation, CI status polling, failure log retrieval, and squash-merge operations. You'll need it installed and authenticated (`gh auth login`).
+GitHub's official CLI. Litus uses it for PR creation, CI status polling, failure log retrieval, and squash-merge
+operations. You'll need it installed and authenticated (`gh auth login`).
 
 ### [Speckit](https://github.com/example/speckit)
 
-A set of Claude Code [slash commands](https://docs.anthropic.com/en/docs/claude-code/slash-commands) that power the specify → implement pipeline. These live in your target repository's `.claude/commands/` directory and give the agent structured prompts for each pipeline step. Without speckit, Litus doesn't know what to tell the agent to do.
+A set of Claude Code [skills](https://docs.anthropic.com/en/docs/claude-code/skills) that power the
+specify → implement pipeline. These live in your target repository's `.claude/skills/` directory and give the agent
+structured prompts for each pipeline step. Without speckit, Litus doesn't know what to tell the agent to do.
 
 ## Contributing
 
@@ -196,7 +207,8 @@ A set of Claude Code [slash commands](https://docs.anthropic.com/en/docs/claude-
 5. Run `bunx biome ci .` and `bun test` before pushing
 6. Open a PR against `master`
 
-Linting is enforced by Biome. CI will reject anything that doesn't pass `biome ci`, type checking, and tests. Don't fight it.
+Linting is enforced by Biome. CI will reject anything that doesn't pass `biome ci`, type checking, and tests. Don't
+fight it.
 
 ## License
 
