@@ -27,6 +27,7 @@ import {
 } from "./server/workflow-handlers";
 import { getMimeType, resolveStaticPath } from "./static-files";
 import { Summarizer } from "./summarizer";
+import { normalizePath } from "./target-repo-validator";
 import {
 	type PipelineStepName,
 	type ServerMessage,
@@ -278,7 +279,7 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 				if (!parent) {
 					return Response.json({ error: "parent parameter required" }, { status: 400 });
 				}
-				const folders = await listSubdirectories(parent);
+				const folders = await listSubdirectories(normalizePath(parent));
 				return Response.json({ folders });
 			}
 
