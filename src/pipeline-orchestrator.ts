@@ -400,10 +400,7 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		this.engine.transition(workflowId, "paused");
-		if (this.persistDebounceTimer) {
-			clearTimeout(this.persistDebounceTimer);
-			this.persistDebounceTimer = null;
-		}
+		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 	}
@@ -483,6 +480,7 @@ export class PipelineOrchestrator {
 		}
 
 		step.pid = null;
+		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 
