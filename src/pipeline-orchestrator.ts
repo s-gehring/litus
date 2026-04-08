@@ -16,6 +16,7 @@ import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
 import { runSetupChecks as defaultRunSetupChecks } from "./setup-checker";
+import { routeAfterStep as computeRoute, shouldLoopReview } from "./step-router";
 import { Summarizer } from "./summarizer";
 import {
 	type EffortLevel,
@@ -950,61 +951,47 @@ export class PipelineOrchestrator {
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 
-		const step = workflow.steps[workflow.currentStepIndex];
+		const decision = computeRoute(workflow);
 
-		// After commit-push-pr completes, route to monitor-ci
-		if (step.name === STEP.COMMIT_PUSH_PR) {
-			const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
-			workflow.currentStepIndex = monitorIndex;
-			this.startStep(workflow);
-			return;
+		switch (decision.action) {
+			case "route-to-monitor-ci": {
+				const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
+				workflow.currentStepIndex = monitorIndex;
+				this.startStep(workflow);
+				return;
+			}
+			case "route-to-merge-pr": {
+				const mergePrIndex = workflow.steps.findIndex((s) => s.name === STEP.MERGE_PR);
+				workflow.currentStepIndex = mergePrIndex;
+				this.startStep(workflow);
+				return;
+			}
+			case "route-back-to-monitor":
+				this.routeBackToMonitor(workflow);
+				return;
+			case "route-to-sync-repo": {
+				const syncRepoIndex = workflow.steps.findIndex((s) => s.name === STEP.SYNC_REPO);
+				workflow.currentStepIndex = syncRepoIndex;
+				this.startStep(workflow);
+				return;
+			}
+			case "complete":
+				this.completeWorkflow(workflow);
+				return;
+			case "route-to-implement-review":
+				this.routeToImplementReview(workflow);
+				return;
+			case "handle-implement-review-complete":
+				this.handleImplementReviewComplete(workflow).catch((err) => {
+					const msg = err instanceof Error ? err.message : String(err);
+					console.error(`[pipeline] Implement-review completion error: ${msg}`);
+					this.handleStepError(workflow.id, msg);
+				});
+				return;
+			case "advance-to-next":
+				this.advanceToNextStep(workflow);
+				return;
 		}
-
-		// After monitor-ci passes, route to merge-pr
-		if (step.name === STEP.MONITOR_CI) {
-			const mergePrIndex = workflow.steps.findIndex((s) => s.name === STEP.MERGE_PR);
-			workflow.currentStepIndex = mergePrIndex;
-			this.startStep(workflow);
-			return;
-		}
-
-		// After fix-ci completes, increment attempt and loop back to monitor-ci
-		if (step.name === STEP.FIX_CI) {
-			this.routeBackToMonitor(workflow);
-			return;
-		}
-
-		// After merge-pr succeeds, route to sync-repo
-		if (step.name === STEP.MERGE_PR) {
-			const syncRepoIndex = workflow.steps.findIndex((s) => s.name === STEP.SYNC_REPO);
-			workflow.currentStepIndex = syncRepoIndex;
-			this.startStep(workflow);
-			return;
-		}
-
-		// After sync-repo completes, finish the workflow
-		if (step.name === STEP.SYNC_REPO) {
-			this.completeWorkflow(workflow);
-			return;
-		}
-
-		// After review completes, ALWAYS route to implement-review
-		if (step.name === STEP.REVIEW) {
-			this.routeToImplementReview(workflow);
-			return;
-		}
-
-		// After implement-review completes, classify and decide: loop or advance
-		if (step.name === STEP.IMPLEMENT_REVIEW) {
-			this.handleImplementReviewComplete(workflow).catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				console.error(`[pipeline] Implement-review completion error: ${msg}`);
-				this.handleStepError(workflow.id, msg);
-			});
-			return;
-		}
-
-		this.advanceToNextStep(workflow);
 	}
 
 	private routeToImplementReview(workflow: Workflow): void {
@@ -1036,11 +1023,9 @@ export class PipelineOrchestrator {
 		workflow.reviewCycle.lastSeverity = severity;
 		workflow.updatedAt = new Date().toISOString();
 
-		const shouldLoop =
-			(severity === "critical" || severity === "major") &&
-			workflow.reviewCycle.iteration < workflow.reviewCycle.maxIterations;
-
-		if (shouldLoop) {
+		if (
+			shouldLoopReview(severity, workflow.reviewCycle.iteration, workflow.reviewCycle.maxIterations)
+		) {
 			// Reset review step and loop back
 			const step = workflow.steps[reviewIndex];
 			step.status = "pending";
