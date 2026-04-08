@@ -107,6 +107,7 @@ export class CLIRunner {
 				stdout: "pipe",
 				stderr: "pipe",
 				env,
+				windowsHide: true,
 			});
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
@@ -163,6 +164,7 @@ export class CLIRunner {
 				stdout: "pipe",
 				stderr: "pipe",
 				env,
+				windowsHide: true,
 			});
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);

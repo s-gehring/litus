@@ -13,7 +13,7 @@ export async function syncRepo(
 	const spawn =
 		runner?.spawn ??
 		((args: string[], opts?: Record<string, unknown>) =>
-			Bun.spawn(args, opts as Parameters<typeof Bun.spawn>[1]));
+			Bun.spawn(args, { ...opts, windowsHide: true } as Parameters<typeof Bun.spawn>[1]));
 
 	let pulled = false;
 	let skipped = false;
