@@ -16,6 +16,11 @@ export function showQuestion(question: Question): void {
 	skipBtn.classList.remove("hidden");
 	skipBtn.textContent = "Skip";
 
+	// Re-enable buttons (may have been disabled after previous submission)
+	const submitBtn = $("#btn-submit-answer") as HTMLButtonElement;
+	submitBtn.disabled = false;
+	(skipBtn as HTMLButtonElement).disabled = false;
+
 	answerInput.value = "";
 	panel.classList.remove("hidden");
 	answerInput.focus();

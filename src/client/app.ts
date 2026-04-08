@@ -879,6 +879,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		const entry = stateManager.getWorkflows().get(workflowId);
 		if (!entry?.state.pendingQuestion) return;
 
+		btnSubmitAnswer.disabled = true;
+		btnSkip.disabled = true;
 		send({
 			type: "workflow:answer",
 			workflowId,
@@ -894,6 +896,8 @@ document.addEventListener("DOMContentLoaded", () => {
 		const entry = stateManager.getWorkflows().get(workflowId);
 		if (!entry?.state.pendingQuestion) return;
 
+		btnSubmitAnswer.disabled = true;
+		btnSkip.disabled = true;
 		send({
 			type: "workflow:skip",
 			workflowId,
