@@ -1,6 +1,6 @@
 import type { ServerWebSocket } from "bun";
 import { AuditLogger } from "./audit-logger";
-import { CLIRunner, isProcessAlive, killProcess } from "./cli-runner";
+import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import type { EpicAnalysisProcess } from "./epic-analyzer";
@@ -327,6 +327,21 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 	}
 }
 
+// Kill all child CLI processes on exit so they don't outlive the server.
+// This covers graceful shutdown, Ctrl+C, and SIGTERM.
+function cleanupChildren() {
+	sharedCliRunner.killAll();
+}
+process.on("exit", cleanupChildren);
+process.on("SIGINT", () => {
+	cleanupChildren();
+	process.exit(0);
+});
+process.on("SIGTERM", () => {
+	cleanupChildren();
+	process.exit(0);
+});
+
 // Restore persisted workflows on startup
 (async () => {
 	try {
@@ -341,14 +356,11 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 			const orch = createOrchestrator();
 			orch.getEngine().setWorkflow(workflow);
 
-			// Clean up stale PIDs on waiting_for_input workflows
+			// Clear stale PIDs — child processes from the previous instance
+			// were killed by the exit handler (or died with the parent).
 			if (workflow.status === "waiting_for_input") {
 				const waitingStep = workflow.steps.find((s) => s.status === "waiting_for_input");
-				if (waitingStep?.pid && isProcessAlive(waitingStep.pid)) {
-					console.log(
-						`[startup] Killing stale process PID=${waitingStep.pid} for paused workflow ${workflow.id}`,
-					);
-					killProcess(waitingStep.pid);
+				if (waitingStep?.pid) {
 					waitingStep.pid = null;
 					await sharedStore.save(workflow);
 				}
@@ -359,13 +371,7 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 
 			if (workflow.status === "running") {
 				const runningStep = workflow.steps.find((s) => s.status === "running");
-
-				// Kill orphaned CLI process from before the restart
-				if (runningStep?.pid && isProcessAlive(runningStep.pid)) {
-					console.log(
-						`[startup] Killing stale process PID=${runningStep.pid} for workflow ${workflow.id}`,
-					);
-					killProcess(runningStep.pid);
+				if (runningStep?.pid) {
 					runningStep.pid = null;
 				}
 
