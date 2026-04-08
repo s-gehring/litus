@@ -28,70 +28,52 @@ merge — so you can focus on the parts that actually need a human brain.
 
 ## Features
 
-- **13-step pipeline** — Specify, clarify, plan, implement, review, create PR, monitor CI, fix failures, merge. All
-  automated, all observable.
-- **Real-time streaming** — Agent output streams to the browser via WebSocket. You see what the agent sees, as it
-  happens.
-- **Question detection** — When the agent needs input, Litus catches it (regex + Haiku classification) and surfaces it
-  in the UI. You answer, it resumes.
-- **Epic decomposition** — Got a big feature? Submit it as an epic. Litus breaks it into specs with dependency tracking
-  and runs them in the right order.
-- **Git worktree isolation** — Every workflow runs in its own worktree. Your main branch stays pristine. You're welcome.
-- **CI monitoring & auto-fix** — Watches GitHub Actions, pulls failure logs, and lets the agent fix what it broke.
-  Configurable retry limits.
-- **Pause, resume, abort** — Full lifecycle control. Session IDs are preserved, so the agent picks up right where it
-  left off.
-- **Configurable everything** — Models, effort levels, prompts, retry limits, timeouts. Per-step. From the UI.
-- **Periodic summaries** — Short progress summaries generated every 15 seconds via the CLI so you don't have to read the
-  full output stream.
-- **Audit logging** — Every question, answer, commit, and pipeline event is logged to JSONL.
+- **Fully automated pipeline** — Describe a feature, hit start. Litus takes it from spec to merged PR without manual
+  intervention — specification, planning, implementation, code review, PR creation, CI monitoring, and merge all happen
+  automatically.
+- **Epic decomposition** — Got a feature too big for a single pass? Submit it as an epic. Litus breaks it into
+  individual specs with dependency tracking and runs them in the right order, parallelizing where possible.
+- **Human-in-the-loop when needed** — When the agent hits ambiguity, Litus detects the question and surfaces it in the
+  UI. You answer, it resumes. Everything else runs hands-off.
+- **CI-aware** — Litus monitors GitHub Actions after PR creation. If CI fails, the agent reads the failure logs and
+  fixes the issue — no copy-pasting error output into a chat window.
+- **Git worktree isolation** — Every workflow runs in its own worktree. Your main branch stays clean, and multiple
+  workflows can run in parallel without conflicts.
+- **Observable and configurable** — Real-time agent output streaming, periodic progress summaries, and per-step
+  configuration for models, effort levels, prompts, and retry limits.
+- **Max plan justifier** — Finally a reason to upgrade to the Claude Max plan. Your unlimited-feeling usage won't feel
+  so unlimited after a few epics.
 
-## Screenshots
-
-|                                                            |                                                           |
-|------------------------------------------------------------|-----------------------------------------------------------|
-| ![Epic tree view](docs/screenshots/epic-tree.png)          | ![New specification modal](docs/screenshots/new-spec.png) |
-| Epic decomposition with dependencies                       | Creating a new specification                              |
-| ![Pipeline running](docs/screenshots/pipeline-running.png) | ![Question panel](docs/screenshots/question-panel.png)    |
-| Pipeline in progress with live output                      | Agent asking a question                                   |
-
-## How to use
-
-1. You enter a feature spec in the browser and hit **Start**
-2. Litus creates a git worktree and spawns `claude -p <spec> --output-format stream-json`
-3. The agent works through the pipeline: specify → clarify → plan → implement → review → PR → CI → merge
-4. When the agent asks a question, it's surfaced in the UI — you answer, the session resumes
-5. When CI fails, the agent reads the logs and tries to fix it (up to your configured limit)
-6. When everything's green, Litus squash-merges the PR and cleans up
-
-### The pipeline
-
-| Step           | Actor          | What happens                                              |
-|----------------|----------------|-----------------------------------------------------------|
-| **Setup**      | Litus          | Validates repo, git, GitHub CLI, auth, speckit skills     |
-| **Specify**    | Claude         | Formalizes your description into a structured spec        |
-| **Clarify**    | Claude + Human | Resolves ambiguities in the spec                          |
-| **Plan**       | Claude         | Creates a technical design                                |
-| **Tasks**      | Claude         | Generates a task checklist                                |
-| **Implement**  | Claude         | Writes the code                                           |
-| **Review**     | Claude         | Self-critiques the implementation                         |
-| **Fix Review** | Claude         | Addresses review findings (loops if critical/major)       |
-| **Create PR**  | Claude         | Commits, pushes, opens a GitHub PR                        |
-| **Monitor CI** | Litus          | Polls GitHub Actions with exponential backoff             |
-| **Fix CI**     | Claude + Litus | Reads failure logs, attempts fixes (configurable retries) |
-| **Merge PR**   | Litus          | Squash-merges the PR                                      |
-| **Sync Repo**  | Litus          | Pulls changes and cleans up the worktree                  |
-
-## Getting started
-
-### Prerequisites
+## Prerequisites
 
 | Tool                                                                                                                | Why                                                                                                     |
 |---------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
 | [Bun](https://bun.sh) >= 1.3.11                                                                                     | Runtime. Fast, TypeScript-native, no transpilation ceremony.                                            |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code)                                                       | The CLI agent that does the actual work. Must be installed and authenticated.                           |
-| [GitHub CLI (`gh`)](https://cli.github.com/)                                                                        | PR creation, CI monitoring, merge operations. Must be authenticated.                                    |
+| [GitHub CLI (`gh`)](https://cli.github.com/)                                                                        | PR creation, CI monitoring, merge operations. Must be authenticated with permission to merge PRs without reviews. |
 | [Speckit](https://github.com/github/spec-kit) ([MIT License](https://github.com/github/spec-kit/blob/main/LICENSE)) | Claude Code slash commands for the specify → implement pipeline. Must be installed in your target repo. |
+
+### Prepare Target Repository
+
+Litus runs Claude Code agents against a **target repository** — the repo where you want code changes to happen. Before
+starting your first workflow, make sure the target repo is set up:
+
+1. **Initialize speckit** — Litus relies on [speckit](https://github.com/github/spec-kit) skills being present in the
+   target repo. Install speckit into your target repository's `.claude/skills/` directory by following
+   [speckit's setup instructions](https://github.com/github/spec-kit#getting-started).
+2. **Authenticate `gh`** — Run `gh auth login` and make sure the CLI has access to the target repo. Litus uses `gh` for
+   PR creation, CI polling, and merge.
+3. **Authenticate Claude Code** — Run `claude` once in the target repo to ensure the CLI is authenticated and working.
+4. **Verify git access** — Litus creates worktrees inside the target repo. Make sure you have push access and the repo
+   is cloned (not a shallow clone).
+
+## How to Use
+
+> [!CAUTION]
+> Litus runs Claude Code with `--dangerously-skip-permissions`, meaning the agent can read, write, and delete files
+> without asking. It also creates PRs and merges them to your main branch automatically. This can introduce bugs into
+> production systems or cause data loss. **Only run Litus in sandboxed environments or against repositories where you
+> are comfortable with autonomous, unsupervised changes.**
 
 ### Install and run
 
@@ -115,15 +97,55 @@ For production (client must be pre-built):
 bun run start
 ```
 
-### Quality checks
+### Using Litus
 
-```bash
-bun test                       # Run tests
-bun run tsc --noEmit           # Type check
-bunx biome ci .                # Lint & format (CI mode)
-bunx biome check --write .     # Auto-fix lint & format
-bun audit                      # Dependency vulnerability scan
-```
+1. You enter a feature spec in the browser and hit **Start**
+2. Litus creates a git worktree and spawns `claude -p <spec> --output-format stream-json`
+3. The agent works through the pipeline: specify → clarify → plan → implement → review → PR → CI → merge
+4. When the agent asks a question, it's surfaced in the UI — you answer, the session resumes
+5. When CI fails, the agent reads the logs and tries to fix it (up to your configured limit)
+6. When everything's green, Litus squash-merges the PR and cleans up
+
+## Screenshots
+
+|                                                            |                                                           |
+|------------------------------------------------------------|-----------------------------------------------------------|
+| ![Epic tree view](docs/screenshots/epic-tree.png)          | ![New specification modal](docs/screenshots/new-spec.png) |
+| Epic decomposition with dependencies                       | Creating a new specification                              |
+| ![Pipeline running](docs/screenshots/pipeline-running.png) | ![Question panel](docs/screenshots/question-panel.png)    |
+| Pipeline in progress with live output                      | Agent asking a question                                   |
+
+## How It Works
+
+Litus orchestrates a 13-step pipeline. Each step is either handled by Litus itself or delegated to a Claude Code agent.
+
+### The Pipeline
+
+| Step           | Actor          | What happens                                              |
+|----------------|----------------|-----------------------------------------------------------|
+| **Setup**      | Litus          | Validates repo, git, GitHub CLI, auth, speckit skills     |
+| **Specify**    | Claude         | Formalizes your description into a structured spec        |
+| **Clarify**    | Claude + Human | Resolves ambiguities in the spec                          |
+| **Plan**       | Claude         | Creates a technical design                                |
+| **Tasks**      | Claude         | Generates a task checklist                                |
+| **Implement**  | Claude         | Writes the code                                           |
+| **Review**     | Claude         | Self-critiques the implementation                         |
+| **Fix Review** | Claude         | Addresses review findings (loops if critical/major)       |
+| **Create PR**  | Claude         | Commits, pushes, opens a GitHub PR                        |
+| **Monitor CI** | Litus          | Polls GitHub Actions with exponential backoff             |
+| **Fix CI**     | Claude + Litus | Reads failure logs, attempts fixes (configurable retries) |
+| **Merge PR**   | Litus          | Squash-merges the PR                                      |
+| **Sync Repo**  | Litus          | Pulls changes and cleans up the worktree                  |
+
+### Epics
+
+For features too large for a single workflow, Litus supports **epics**:
+
+1. Click **New Epic** and describe the feature at a high level
+2. Litus decomposes it into individual specs with dependency tracking
+3. Specs execute in dependency order and as parallel as possible — downstream workflows wait for their blockers to
+   complete
+4. The epic tree view shows the full dependency graph and per-spec status
 
 ## Configuration
 
@@ -138,17 +160,7 @@ Click the gear icon in the header to open the config panel. Everything is config
 
 Config is persisted to `~/.litus/config.json`.
 
-## Epics
-
-For features too large for a single workflow, Litus supports **epics**:
-
-1. Click **New Epic** and describe the feature at a high level
-2. Litus decomposes it into individual specs with dependency tracking
-3. Specs execute in dependency order and as parallel as possible — downstream workflows wait for their blockers to
-   complete
-4. The epic tree view shows the full dependency graph and per-spec status
-
-## Data storage
+## Data Storage
 
 All data lives under `~/.litus/`:
 
@@ -163,7 +175,7 @@ All data lives under `~/.litus/`:
     events.jsonl               # Audit log
 ```
 
-## Tech stack
+## Tech Stack
 
 | Layer    | Technology                                                                                                                     |
 |----------|--------------------------------------------------------------------------------------------------------------------------------|
@@ -173,10 +185,10 @@ All data lives under `~/.litus/`:
 | Frontend | Vanilla TypeScript — no React, no Vue, no regrets                                                                              |
 | Markdown | [marked](https://github.com/markedjs/marked) + [DOMPurify](https://github.com/cure53/DOMPurify)                                |
 | Linting  | [Biome](https://biomejs.dev)                                                                                                   |
-| Testing  | Bun test runner + [happy-dom](https://github.com/nicedayfor/happy-dom)                                                         |
+| Testing  | Bun test runner + [happy-dom](https://github.com/capricorn86/happy-dom)                                                         |
 | CI       | GitHub Actions                                                                                                                 |
 
-## Related tools
+## Related Tools
 
 Litus orchestrates a few external tools. Here's what they do and where to find them:
 
@@ -198,7 +210,25 @@ A set of Claude Code [skills](https://docs.anthropic.com/en/docs/claude-code/ski
 specify → implement pipeline. These live in your target repository's `.claude/skills/` directory and give the agent
 structured prompts for each pipeline step. Without speckit, Litus doesn't know what to tell the agent to do.
 
-## Contributing
+## Development
+
+### Running locally
+
+```bash
+bun run dev    # Build client + start server with --watch
+```
+
+### Quality checks
+
+```bash
+bun test                       # Run tests
+bun run tsc --noEmit           # Type check
+bunx biome ci .                # Lint & format (CI mode)
+bunx biome check --write .     # Auto-fix lint & format
+bun audit                      # Dependency vulnerability scan
+```
+
+### Contributing
 
 1. Fork the repo
 2. Create a feature branch (`feat/your-thing`)
@@ -212,7 +242,7 @@ fight it.
 
 ## License
 
-This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+This project is licensed under the [GNU Affero General Public License v3.0](LICENSE.md).
 
 This project utilizes AI products to generate code. The outputs of these tools are not covered by the AGPL license.
 The authors of this software do not claim any ownership rights
