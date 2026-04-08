@@ -44,6 +44,15 @@ export interface SpawnLike {
 	};
 }
 
+/** Create the default Bun.spawn wrapper used when no test runner is injected. */
+export function defaultSpawn(): SpawnLike["spawn"] {
+	return ((args: string[], opts?: Record<string, unknown>) =>
+		Bun.spawn(args, {
+			...opts,
+			windowsHide: true,
+		} as Parameters<typeof Bun.spawn>[1])) as SpawnLike["spawn"];
+}
+
 /**
  * Reads a stream to string. Accepts `number` because Bun.spawn may return
  * a file descriptor (number) when stdio is set to "inherit" or a fd index;

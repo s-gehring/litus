@@ -1,5 +1,6 @@
 import { configStore } from "./config-store";
 import { gitSpawn } from "./git-logger";
+import { extractRepoFromUrl } from "./pr-merger";
 import type { CiCheckResult, CiFailureLog } from "./types";
 
 const RUN_ID_REGEX = /\/runs\/(\d+)\//;
@@ -45,17 +46,11 @@ export async function fetchFailureLogs(
 	};
 }
 
-function extractRepoFromPrUrl(prUrl: string): string {
-	// https://github.com/owner/repo/pull/123
-	const match = prUrl.match(/github\.com\/([^/]+\/[^/]+)\//);
-	return match ? match[1] : "";
-}
-
 export async function gatherAllFailureLogs(
 	prUrl: string,
 	failedChecks: CiCheckResult[],
 ): Promise<CiFailureLog[]> {
-	const repo = extractRepoFromPrUrl(prUrl);
+	const repo = extractRepoFromUrl(prUrl);
 	if (!repo) {
 		throw new Error(`Could not extract repository from PR URL: ${prUrl}`);
 	}

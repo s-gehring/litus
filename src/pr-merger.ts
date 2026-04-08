@@ -1,5 +1,5 @@
 import { configStore } from "./config-store";
-import { readStream, type SpawnLike } from "./spawn-utils";
+import { defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
 import type { MergeResult } from "./types";
 
 const PR_NUMBER_REGEX = /\/pull\/(\d+)$/;
@@ -28,10 +28,7 @@ export async function mergePr(
 	onOutput: (msg: string) => void,
 	runner?: SpawnLike,
 ): Promise<MergeResult> {
-	const spawn =
-		runner?.spawn ??
-		((args: string[], opts?: Record<string, unknown>) =>
-			Bun.spawn(args, { ...opts, windowsHide: true } as Parameters<typeof Bun.spawn>[1]));
+	const spawn = runner?.spawn ?? defaultSpawn();
 
 	const prNumber = extractPrNumber(prUrl);
 	const repo = extractRepoFromUrl(prUrl);
@@ -182,10 +179,7 @@ export async function resolveConflicts(
 	onOutput: (msg: string) => void,
 	runner?: SpawnLike,
 ): Promise<void> {
-	const spawn =
-		runner?.spawn ??
-		((args: string[], opts?: Record<string, unknown>) =>
-			Bun.spawn(args, { ...opts, windowsHide: true } as Parameters<typeof Bun.spawn>[1]));
+	const spawn = runner?.spawn ?? defaultSpawn();
 
 	// Fetch and merge master
 	onOutput(`[git] git fetch origin master | cwd=${worktreePath}`);

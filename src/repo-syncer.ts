@@ -1,5 +1,5 @@
 import { toErrorMessage } from "./errors";
-import { readStream, type SpawnLike } from "./spawn-utils";
+import { defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
 import type { SyncResult } from "./types";
 import type { WorkflowEngine } from "./workflow-engine";
 
@@ -11,10 +11,7 @@ export async function syncRepo(
 	onOutput: (msg: string) => void,
 	runner?: SpawnLike,
 ): Promise<SyncResult> {
-	const spawn =
-		runner?.spawn ??
-		((args: string[], opts?: Record<string, unknown>) =>
-			Bun.spawn(args, { ...opts, windowsHide: true } as Parameters<typeof Bun.spawn>[1]));
+	const spawn = runner?.spawn ?? defaultSpawn();
 
 	let pulled = false;
 	let skipped = false;
