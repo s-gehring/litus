@@ -56,6 +56,7 @@ interface RunningProcess {
 	cwd: string;
 	callbacks: CLICallbacks;
 	stale: boolean;
+	timedOut: boolean;
 	deltaBuffer: string;
 	deltaFlushTimer: ReturnType<typeof setTimeout> | null;
 	idleTimer: ReturnType<typeof setTimeout> | null;
@@ -127,6 +128,7 @@ export class CLIRunner {
 			cwd,
 			callbacks,
 			stale: false,
+			timedOut: false,
 			deltaBuffer: "",
 			deltaFlushTimer: null,
 			idleTimer: null,
@@ -187,6 +189,7 @@ export class CLIRunner {
 			cwd,
 			callbacks,
 			stale: false,
+			timedOut: false,
 			deltaBuffer: "",
 			deltaFlushTimer: null,
 			idleTimer: null,
@@ -210,6 +213,9 @@ export class CLIRunner {
 
 	killAll(): void {
 		for (const entry of this.running.values()) {
+			entry.stale = true;
+			if (entry.deltaFlushTimer) clearTimeout(entry.deltaFlushTimer);
+			if (entry.idleTimer) clearTimeout(entry.idleTimer);
 			entry.process.kill();
 		}
 		this.running.clear();
@@ -225,6 +231,7 @@ export class CLIRunner {
 				`[cli-runner] Idle timeout (${timeoutMs}ms) for workflow ${entry.workflowId} — killing process`,
 			);
 			entry.stale = true;
+			entry.timedOut = true;
 			entry.process.kill();
 		}, timeoutMs);
 	}
@@ -287,7 +294,7 @@ export class CLIRunner {
 
 		// Only handle completion if this is still the active process
 		if (currentEntry && currentEntry.process === proc) {
-			const timedOut = entry.stale && entry.idleTimer === null;
+			const timedOut = entry.timedOut;
 			this.running.delete(workflowId);
 			if (timedOut) {
 				callbacks.onError("CLI process killed — no output received within idle timeout");
