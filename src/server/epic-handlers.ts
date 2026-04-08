@@ -1,30 +1,23 @@
 import { randomUUID } from "node:crypto";
 import { analyzeEpic } from "../epic-analyzer";
 import { toErrorMessage } from "../errors";
-import { validateTargetRepository } from "../target-repo-validator";
 import type { ClientMessage } from "../types";
 import { createEpicWorkflows } from "../workflow-engine";
 import type { MessageHandler } from "./handler-types";
+import { validateRepo, validateTextInput } from "./handler-types";
 
 export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 	const msg = data as ClientMessage & { type: "epic:start" };
 	const { description, targetRepository, autoStart } = msg;
 
-	if (!description || description.trim().length < 10) {
-		deps.sendTo(ws, { type: "error", message: "Epic description must be at least 10 characters" });
-		return;
-	}
-	if (description.length > 100_000) {
-		deps.sendTo(ws, { type: "error", message: "Epic description exceeds maximum length (100 KB)" });
+	const inputError = validateTextInput(description, "Epic description", 10);
+	if (inputError) {
+		deps.sendTo(ws, { type: "error", message: inputError });
 		return;
 	}
 
-	const validation = await validateTargetRepository(targetRepository);
-	if (!validation.valid) {
-		deps.sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
-		return;
-	}
-	const repoDir = validation.effectivePath;
+	const repoDir = await validateRepo(targetRepository, ws, deps);
+	if (!repoDir) return;
 
 	const epicId = randomUUID();
 	const trimmedDesc = description.trim();
