@@ -257,7 +257,7 @@ describe("createMockCliRunner", () => {
 	test("start/resume/kill are tracked", () => {
 		const { mock, tracker } = createMockCliRunner();
 		const cb = makeCallbacks();
-		mock.start("wf-1", "/speckit.specify foo", cb);
+		mock.start("wf-1", "/speckit-specify foo", cb);
 		mock.resume("wf-1", "yes", cb);
 		mock.kill("wf-1");
 		mock.killAll();

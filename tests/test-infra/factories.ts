@@ -46,7 +46,7 @@ export function makePipelineStep(overrides?: Partial<PipelineStep>): PipelineSte
 		name: "implement",
 		displayName: "Implementing",
 		status: "pending",
-		prompt: "/speckit.implement",
+		prompt: "/speckit-implement",
 		sessionId: null,
 		output: "",
 		error: null,
