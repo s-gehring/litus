@@ -31,7 +31,7 @@ describe("modal creation flow — spec modal", () => {
 	});
 
 	test("spec modal pre-fills target repo from last workflow", () => {
-		expect(appSource).toContain("repoPicker.setValue(getLastTargetRepo())");
+		expect(appSource).toContain("repoPicker.setValue(stateManager.getLastTargetRepo())");
 	});
 
 	test("spec modal does not use innerHTML for labels", () => {
@@ -86,12 +86,8 @@ describe("header button wiring", () => {
 });
 
 describe("getLastTargetRepo logic", () => {
-	test("function exists and returns a string", () => {
-		expect(appSource).toContain("function getLastTargetRepo(): string");
-	});
-
-	test("returns empty string when no workflows have targetRepository", () => {
-		expect(appSource).toContain('latest?.repo ?? ""');
+	test("delegates to stateManager.getLastTargetRepo()", () => {
+		expect(appSource).toContain("stateManager.getLastTargetRepo()");
 	});
 });
 
