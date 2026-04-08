@@ -43,7 +43,7 @@ describe("Multi-workflow lifecycle", () => {
 			createdAt: "2026-01-01T00:00:00Z",
 		});
 		wfA.steps[0].status = "running";
-		workflows.set("wf-a", { state: wfA, outputLines: [], isExpanded: false });
+		workflows.set("wf-a", { state: wfA, outputLines: [] });
 		workflowOrder.push("wf-a");
 		expandedWorkflowId = "wf-a";
 
@@ -56,7 +56,7 @@ describe("Multi-workflow lifecycle", () => {
 			createdAt: "2026-01-01T00:01:00Z",
 		});
 		wfB.steps[0].status = "running";
-		workflows.set("wf-b", { state: wfB, outputLines: [], isExpanded: false });
+		workflows.set("wf-b", { state: wfB, outputLines: [] });
 		workflowOrder.push("wf-b");
 
 		// Verify both are tracked
@@ -112,7 +112,7 @@ describe("Multi-workflow lifecycle", () => {
 			activeWorkStartedAt: new Date().toISOString(),
 			createdAt: "2026-01-01T00:02:00Z",
 		});
-		workflows.set("wf-c", { state: wfC, outputLines: [], isExpanded: false });
+		workflows.set("wf-c", { state: wfC, outputLines: [] });
 		workflowOrder.push("wf-c");
 
 		// Input area should still be functional (not blocking)

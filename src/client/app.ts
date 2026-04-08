@@ -2,11 +2,11 @@ import type {
 	ClientMessage,
 	EpicAggregatedState,
 	EpicClientState,
-	OutputEntry,
 	ServerMessage,
 	WorkflowClientState,
 	WorkflowState,
 } from "../types";
+import { ClientStateManager } from "./client-state-manager";
 import {
 	createConfigPanel,
 	hideConfigPanel,
@@ -39,83 +39,14 @@ import {
 	updateUserInput,
 	updateWorkflowStatus,
 } from "./components/workflow-window";
-import { computeEpicAggregatedState } from "./epic-aggregation";
 import { renderMarkdown } from "./render-markdown";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
-let maxOutputLines = 5000;
+const stateManager = new ClientStateManager();
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-// Multi-workflow client state
-const workflows = new Map<string, WorkflowClientState>();
-const epics = new Map<string, EpicClientState>();
-const cardOrder: string[] = [];
-let expandedId: string | null = null;
-let selectedStepIndex: number | null = null;
-
-// Epic tree state
-let expandedEpicId: string | null = null;
-let selectedChildId: string | null = null;
-const epicAggregates = new Map<string, EpicAggregatedState>();
-
-function rebuildEpicAggregates(): void {
-	epicAggregates.clear();
-
-	// Group workflows by epicId
-	const epicGroups = new Map<string, WorkflowState[]>();
-	for (const [, entry] of workflows) {
-		const wf = entry.state;
-		if (wf.epicId) {
-			if (!epicGroups.has(wf.epicId)) epicGroups.set(wf.epicId, []);
-			epicGroups.get(wf.epicId)?.push(wf);
-		}
-	}
-
-	for (const [epicId, children] of epicGroups) {
-		const agg = computeEpicAggregatedState(children);
-		if (agg) epicAggregates.set(epicId, agg);
-	}
-}
-
-function rebuildCardOrder(): void {
-	cardOrder.length = 0;
-	const seenEpics = new Set<string>();
-
-	// Collect all items with their sort keys
-	const items: { key: string; sortDate: string }[] = [];
-
-	for (const [, entry] of workflows) {
-		const wf = entry.state;
-		if (wf.epicId) {
-			if (!seenEpics.has(wf.epicId)) {
-				seenEpics.add(wf.epicId);
-				const agg = epicAggregates.get(wf.epicId);
-				items.push({
-					key: `${EPIC_CARD_PREFIX}${wf.epicId}`,
-					sortDate: agg?.startDate ?? wf.createdAt,
-				});
-			}
-		} else {
-			items.push({ key: wf.id, sortDate: wf.createdAt });
-		}
-	}
-
-	// Also include epic analysis cards without children (analyzing, error, infeasible)
-	for (const [epicId, epic] of epics) {
-		if (!seenEpics.has(epicId) && epic.workflowIds.length === 0) {
-			items.push({ key: epicId, sortDate: epic.startedAt });
-		}
-	}
-
-	// Sort by date ascending
-	items.sort((a, b) => a.sortDate.localeCompare(b.sortDate));
-	for (const item of items) {
-		cardOrder.push(item.key);
-	}
-}
 
 function getWsUrl(): string {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -175,39 +106,35 @@ function send(msg: ClientMessage): void {
 	}
 }
 
-function addOrUpdateWorkflow(wfState: WorkflowState): void {
-	const existing = workflows.get(wfState.id);
-	if (existing) {
-		existing.state = wfState;
-	} else {
-		workflows.set(wfState.id, {
-			state: wfState,
-			outputLines: [],
-			isExpanded: false,
-		});
-		if (!cardOrder.includes(wfState.id)) {
-			cardOrder.push(wfState.id);
+function handleMessage(msg: ServerMessage): void {
+	// Capture pre-mutation state needed for view-side decisions
+	const expandedId = stateManager.getExpandedId();
+	const expandedEpicId = stateManager.getExpandedEpicId();
+	const selectedStepIndex = stateManager.getSelectedStepIndex();
+	const workflows = stateManager.getWorkflows();
+	const epics = stateManager.getEpics();
+
+	// Pre-mutation snapshots for step-change
+	let wasWatchingRunning = false;
+	if (msg.type === "workflow:step-change") {
+		const entry = workflows.get(msg.workflowId);
+		if (entry) {
+			wasWatchingRunning = selectedStepIndex === entry.state.currentStepIndex;
 		}
 	}
-}
 
-function handleMessage(msg: ServerMessage): void {
+	// Mutate state and get change descriptor
+	const change = stateManager.handleMessage(msg);
+
+	// View-layer rendering based on message type and change
 	switch (msg.type) {
 		case "workflow:list": {
-			// Initial sync: populate all workflows
-			workflows.clear();
-			for (const wf of msg.workflows) {
-				addOrUpdateWorkflow(wf);
-			}
-			rebuildEpicAggregates();
-			rebuildCardOrder();
 			renderCards();
-			// If there's exactly one non-epic workflow, auto-expand it
 			const standaloneWorkflows = msg.workflows.filter((w) => !w.epicId);
-			if (standaloneWorkflows.length === 1 && epicAggregates.size === 0) {
+			if (standaloneWorkflows.length === 1 && stateManager.getEpicAggregates().size === 0) {
 				expandItem(standaloneWorkflows[0].id);
-			} else if (epicAggregates.size === 1 && standaloneWorkflows.length === 0) {
-				const epicId = [...epicAggregates.keys()][0];
+			} else if (stateManager.getEpicAggregates().size === 1 && standaloneWorkflows.length === 0) {
+				const epicId = [...stateManager.getEpicAggregates().keys()][0];
 				expandItem(`${EPIC_CARD_PREFIX}${epicId}`);
 			} else {
 				renderExpandedView();
@@ -216,19 +143,10 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "workflow:created": {
-			addOrUpdateWorkflow(msg.workflow);
-			if (msg.workflow.epicId) {
-				rebuildEpicAggregates();
-				rebuildCardOrder();
-			} else if (!cardOrder.includes(msg.workflow.id)) {
-				cardOrder.push(msg.workflow.id);
-			}
 			renderCards();
-			// Don't auto-expand child workflows while viewing the epic analysis
 			if (!epics.has(expandedId ?? "") && !msg.workflow.epicId) {
 				expandItem(msg.workflow.id);
 			}
-			// If viewing the epic's tree, re-render it
 			if (expandedEpicId && msg.workflow.epicId === expandedEpicId) {
 				renderExpandedView();
 			}
@@ -237,16 +155,10 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "workflow:state": {
 			if (!msg.workflow) break;
-			addOrUpdateWorkflow(msg.workflow);
-			// Recompute epic aggregate if child changed
-			if (msg.workflow.epicId) {
-				rebuildEpicAggregates();
-			}
 			renderCards();
 			if (expandedId === msg.workflow.id) {
 				renderExpandedView();
 			}
-			// If the epic tree is displayed and this is a child, re-render tree
 			if (expandedEpicId && msg.workflow.epicId === expandedEpicId) {
 				renderExpandedView();
 			}
@@ -254,63 +166,50 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "workflow:output": {
+			if (change.scope.entity === "none") break;
 			const entry = workflows.get(msg.workflowId);
-			if (entry) {
-				const outputEntry: OutputEntry = { kind: "text", text: msg.text };
-				entry.outputLines.push(outputEntry);
-				if (entry.outputLines.length > maxOutputLines) {
-					entry.outputLines.splice(0, entry.outputLines.length - maxOutputLines);
-				}
-				if (expandedId === msg.workflowId && selectedStepIndex === entry.state.currentStepIndex) {
-					appendOutput(msg.text);
-				}
+			if (
+				entry &&
+				expandedId === msg.workflowId &&
+				selectedStepIndex === entry.state.currentStepIndex
+			) {
+				appendOutput(msg.text);
 			}
 			break;
 		}
 
 		case "workflow:tools": {
+			if (change.scope.entity === "none") break;
 			const entry = workflows.get(msg.workflowId);
-			if (entry) {
-				const outputEntry: OutputEntry = { kind: "tools", tools: msg.tools };
-				entry.outputLines.push(outputEntry);
-				if (entry.outputLines.length > maxOutputLines) {
-					entry.outputLines.splice(0, entry.outputLines.length - maxOutputLines);
-				}
-				if (expandedId === msg.workflowId && selectedStepIndex === entry.state.currentStepIndex) {
-					appendToolIcons(msg.tools);
-				}
+			if (
+				entry &&
+				expandedId === msg.workflowId &&
+				selectedStepIndex === entry.state.currentStepIndex
+			) {
+				appendToolIcons(msg.tools);
 			}
 			break;
 		}
 
 		case "workflow:question": {
-			const entry = workflows.get(msg.workflowId);
-			if (entry) {
-				entry.state.pendingQuestion = msg.question;
-				renderCards();
-				if (expandedId === msg.workflowId) {
-					showQuestion(msg.question);
-				}
+			if (change.scope.entity === "none") break;
+			renderCards();
+			if (expandedId === msg.workflowId) {
+				showQuestion(msg.question);
 			}
 			break;
 		}
 
 		case "workflow:step-change": {
-			const entry = workflows.get(msg.workflowId);
-			if (entry) {
-				const wasWatchingRunning = selectedStepIndex === entry.state.currentStepIndex;
-				entry.state.currentStepIndex = msg.currentStepIndex;
-				entry.state.reviewCycle.iteration = msg.reviewIteration;
-				const stepText = `── Step: ${msg.currentStep} ──`;
-				entry.outputLines = [{ kind: "text", text: stepText, type: "system" }];
-				renderCards();
-				if (expandedId === msg.workflowId) {
-					// If user was watching the running step, auto-select the new running step
-					if (wasWatchingRunning) {
-						selectStep(msg.currentStepIndex);
-					} else {
-						// Re-render pipeline to update step statuses
-						renderPipelineSteps(entry.state, selectedStepIndex, selectStep);
+			if (change.scope.entity === "none") break;
+			renderCards();
+			if (expandedId === msg.workflowId) {
+				if (wasWatchingRunning) {
+					selectStep(msg.currentStepIndex);
+				} else {
+					const entry = workflows.get(msg.workflowId);
+					if (entry) {
+						renderPipelineSteps(entry.state, stateManager.getSelectedStepIndex(), selectStep);
 					}
 				}
 			}
@@ -318,144 +217,78 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "epic:list": {
-			for (const pe of msg.epics) {
-				if (!epics.has(pe.epicId)) {
-					epics.set(pe.epicId, { ...pe, outputLines: [] });
-					// Infeasible/error epics without children need their own card
-					if (pe.workflowIds.length === 0 && !cardOrder.includes(pe.epicId)) {
-						cardOrder.push(pe.epicId);
-					}
-				}
-			}
-			rebuildEpicAggregates();
-			rebuildCardOrder();
 			renderCards();
 			renderExpandedView();
 			break;
 		}
 
 		case "epic:created": {
-			epics.set(msg.epicId, {
-				epicId: msg.epicId,
-				description: msg.description,
-				status: "analyzing",
-				title: null,
-				outputLines: [],
-				workflowIds: [],
-				startedAt: new Date().toISOString(),
-				completedAt: null,
-				errorMessage: null,
-				infeasibleNotes: null,
-				analysisSummary: null,
-			});
-			cardOrder.push(msg.epicId);
 			renderCards();
 			expandItem(msg.epicId);
 			break;
 		}
 
 		case "epic:summary": {
-			const epic = epics.get(msg.epicId);
-			if (epic) {
-				epic.title = msg.summary;
-				renderCards();
-				if (expandedId === msg.epicId) {
-					updateSummary(msg.summary);
-				}
+			if (change.scope.entity === "none") break;
+			renderCards();
+			if (expandedId === msg.epicId) {
+				updateSummary(msg.summary);
 			}
 			break;
 		}
 
 		case "epic:output": {
-			const epic = epics.get(msg.epicId);
-			if (epic) {
-				epic.outputLines.push({ kind: "text", text: msg.text });
-				if (epic.outputLines.length > maxOutputLines) {
-					epic.outputLines.splice(0, epic.outputLines.length - maxOutputLines);
-				}
-				if (expandedId === msg.epicId) {
-					appendOutput(msg.text);
-				}
+			if (change.scope.entity === "none") break;
+			if (expandedId === msg.epicId) {
+				appendOutput(msg.text);
 			}
 			break;
 		}
 
 		case "epic:tools": {
-			const epic = epics.get(msg.epicId);
-			if (epic) {
-				epic.outputLines.push({ kind: "tools", tools: msg.tools });
-				if (epic.outputLines.length > maxOutputLines) {
-					epic.outputLines.splice(0, epic.outputLines.length - maxOutputLines);
-				}
-				if (expandedId === msg.epicId) {
-					appendToolIcons(msg.tools);
-				}
+			if (change.scope.entity === "none") break;
+			if (expandedId === msg.epicId) {
+				appendToolIcons(msg.tools);
 			}
 			break;
 		}
 
 		case "epic:result": {
-			const epic = epics.get(msg.epicId);
-			if (epic) {
-				epic.status = "completed";
-				epic.completedAt = new Date().toISOString();
-				epic.title = msg.title;
-				epic.workflowIds = msg.workflowIds;
-				epic.analysisSummary = msg.summary;
-				// Rebuild aggregates and card order to transition from analysis card to epic card
-				rebuildEpicAggregates();
-				rebuildCardOrder();
-				renderCards();
-				// Auto-expand the epic tree
-				if (expandedId === msg.epicId) {
-					expandItem(`${EPIC_CARD_PREFIX}${msg.epicId}`);
-				}
+			if (change.scope.entity === "none") break;
+			renderCards();
+			if (expandedId === msg.epicId) {
+				expandItem(`${EPIC_CARD_PREFIX}${msg.epicId}`);
 			}
 			break;
 		}
 
 		case "epic:infeasible": {
-			const epic = epics.get(msg.epicId);
-			if (epic) {
-				epic.status = "infeasible";
-				epic.completedAt = new Date().toISOString();
-				epic.title = msg.title;
-				epic.infeasibleNotes = msg.infeasibleNotes;
-				renderCards();
-				if (expandedId === msg.epicId) {
-					renderExpandedView();
-				}
+			if (change.scope.entity === "none") break;
+			renderCards();
+			if (expandedId === msg.epicId) {
+				renderExpandedView();
 			}
 			break;
 		}
 
 		case "epic:error": {
-			const epic = epics.get(msg.epicId);
-			if (epic) {
-				epic.status = "error";
-				epic.completedAt = new Date().toISOString();
-				epic.errorMessage = msg.message;
-				epic.outputLines.push({ kind: "text", text: `Error: ${msg.message}`, type: "error" });
-				renderCards();
-				if (expandedId === msg.epicId) {
-					appendOutput(`Error: ${msg.message}`, "error");
-				}
+			if (change.scope.entity === "none") break;
+			renderCards();
+			if (expandedId === msg.epicId) {
+				appendOutput(`Error: ${msg.message}`, "error");
 			}
 			break;
 		}
 
 		case "epic:dependency-update": {
+			if (change.scope.entity === "none") break;
+			renderCards();
+			if (expandedId === msg.workflowId) {
+				renderExpandedView();
+			}
 			const entry = workflows.get(msg.workflowId);
-			if (entry) {
-				entry.state.epicDependencyStatus = msg.epicDependencyStatus;
-				renderCards();
-				if (expandedId === msg.workflowId) {
-					renderExpandedView();
-				}
-				// Re-render epic tree if this child's epic is displayed
-				if (expandedEpicId && entry.state.epicId === expandedEpicId) {
-					renderExpandedView();
-				}
+			if (expandedEpicId && entry?.state.epicId === expandedEpicId) {
+				renderExpandedView();
 			}
 			break;
 		}
@@ -469,15 +302,6 @@ function handleMessage(msg: ServerMessage): void {
 		case "purge:complete": {
 			hidePurgeProgress();
 			hideConfigPanel();
-			// Clear all client state
-			workflows.clear();
-			epics.clear();
-			epicAggregates.clear();
-			cardOrder.length = 0;
-			expandedId = null;
-			expandedEpicId = null;
-			selectedChildId = null;
-			selectedStepIndex = null;
 			renderCards();
 			renderExpandedView();
 			if (msg.warnings.length > 0) {
@@ -488,15 +312,11 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "config:state": {
 			updateConfigPanel(msg.config, msg.warnings);
-			if (msg.config.timing?.maxClientOutputLines) {
-				maxOutputLines = msg.config.timing.maxClientOutputLines;
-			}
 			syncAutoModeToggle(msg.config.autoMode);
 			break;
 		}
 
 		case "config:error": {
-			// Show first error as output
 			if (msg.errors.length > 0) {
 				appendOutput(`Config error: ${msg.errors[0].path} — ${msg.errors[0].message}`, "error");
 			}
@@ -516,52 +336,22 @@ function handleMessage(msg: ServerMessage): void {
 }
 
 function expandItem(id: string): void {
-	// Check if it's an epic card (epic:{epicId})
-	if (id.startsWith(EPIC_CARD_PREFIX)) {
-		const epicId = id.slice(EPIC_CARD_PREFIX.length);
-		if (expandedEpicId === epicId && !selectedChildId) {
-			// Toggle collapse
-			expandedEpicId = null;
-			expandedId = null;
-			selectedStepIndex = null;
-		} else {
-			expandedEpicId = epicId;
-			selectedChildId = null;
-			expandedId = id;
-			selectedStepIndex = null;
-		}
-	} else {
-		// Regular workflow or epic analysis
-		if (expandedId === id) {
-			expandedId = null;
-			expandedEpicId = null;
-			selectedChildId = null;
-			selectedStepIndex = null;
-		} else {
-			expandedId = id;
-			expandedEpicId = null;
-			selectedChildId = null;
-			selectedStepIndex = null;
-		}
-	}
+	stateManager.expandItem(id);
 	renderCards();
 	renderExpandedView();
 }
 
 function selectChild(workflowId: string): void {
-	if (selectedChildId === workflowId) {
-		// Deselect: go back to tree
-		selectedChildId = null;
-	} else {
-		selectedChildId = workflowId;
-	}
-	selectedStepIndex = null;
+	stateManager.selectChild(workflowId);
 	renderExpandedView();
 }
 
 function returnToEpicTree(): void {
-	selectedChildId = null;
-	selectedStepIndex = null;
+	// selectChild toggles off when called with the currently selected child
+	const currentChild = stateManager.getSelectedChildId();
+	if (currentChild) {
+		stateManager.selectChild(currentChild);
+	}
 	renderExpandedView();
 }
 
@@ -574,6 +364,12 @@ function syncAutoModeToggle(active: boolean): void {
 }
 
 function renderCards(): void {
+	const workflows = stateManager.getWorkflows();
+	const epics = stateManager.getEpics();
+	const epicAggregates = stateManager.getEpicAggregates();
+	const cardOrder = stateManager.getCardOrder();
+	const expandedId = stateManager.getExpandedId();
+
 	renderCardStrip(cardOrder, workflows, epics, epicAggregates, expandedId, expandItem);
 
 	let needsAttention = false;
@@ -588,6 +384,13 @@ function renderCards(): void {
 }
 
 function renderExpandedView(): void {
+	const expandedId = stateManager.getExpandedId();
+	const expandedEpicId = stateManager.getExpandedEpicId();
+	const selectedChildId = stateManager.getSelectedChildId();
+	const workflows = stateManager.getWorkflows();
+	const epics = stateManager.getEpics();
+	const epicAggregates = stateManager.getEpicAggregates();
+
 	const detailArea = $("#detail-area");
 	const welcomeArea = $("#welcome-area");
 	const treeContainer = document.getElementById("epic-tree-panel");
@@ -681,6 +484,9 @@ function renderExpandedView(): void {
 }
 
 function renderEpicTreeView(agg: EpicAggregatedState): void {
+	const workflows = stateManager.getWorkflows();
+	const epics = stateManager.getEpics();
+
 	// Update status area for epic
 	const statusBadge = $("#workflow-status");
 	statusBadge.textContent = agg.status;
@@ -706,8 +512,8 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 	}
 
 	// Make output area fill available space for epic tree
-	const outputArea = $("#output-area");
-	outputArea.classList.add("epic-tree-fullsize");
+	const outputAreaEl = $("#output-area");
+	outputAreaEl.classList.add("epic-tree-fullsize");
 
 	// Build workflow map from child IDs
 	const childWorkflows = new Map<string, WorkflowState>();
@@ -746,18 +552,21 @@ function renderEpicAnalysisNotes(epicData: EpicClientState): void {
 }
 
 function renderChildDetailView(childId: string, epicAgg: EpicAggregatedState): void {
-	const entry = workflows.get(childId);
+	const entry = stateManager.getWorkflows().get(childId);
 	if (!entry) return;
 
 	renderWorkflowDetail(entry, epicAgg);
 }
 
 function selectStep(index: number): void {
+	stateManager.selectStep(index);
+
+	const selectedChildId = stateManager.getSelectedChildId();
+	const expandedId = stateManager.getExpandedId();
 	const workflowId = selectedChildId ?? expandedId;
-	const entry = workflowId ? workflows.get(workflowId) : null;
+	const entry = workflowId ? stateManager.getWorkflows().get(workflowId) : null;
 	if (!entry) return;
 
-	selectedStepIndex = index;
 	const wf = entry.state;
 	const step = wf.steps[index];
 	if (!step) return;
@@ -783,7 +592,7 @@ function selectStep(index: number): void {
 	}
 
 	// Re-render pipeline steps to update selected state
-	renderPipelineSteps(wf, selectedStepIndex, selectStep);
+	renderPipelineSteps(wf, stateManager.getSelectedStepIndex(), selectStep);
 }
 
 function autoSelectStep(wf: WorkflowState): void {
@@ -804,6 +613,7 @@ function autoSelectStep(wf: WorkflowState): void {
 
 function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggregatedState): void {
 	const wf = entry.state;
+	const selectedStepIndex = stateManager.getSelectedStepIndex();
 
 	// Render status, pipeline, summary
 	updateWorkflowStatus(wf);
@@ -902,20 +712,6 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	}
 }
 
-function getLastTargetRepo(): string {
-	// Find the most recently created workflow with a targetRepository
-	let latest: { repo: string; date: string } | null = null;
-	for (const [, entry] of workflows) {
-		const repo = entry.state.targetRepository;
-		if (repo) {
-			if (!latest || entry.state.createdAt > latest.date) {
-				latest = { repo, date: entry.state.createdAt };
-			}
-		}
-	}
-	return latest?.repo ?? "";
-}
-
 function openSpecModal(): void {
 	const content = document.createElement("div");
 
@@ -925,7 +721,7 @@ function openSpecModal(): void {
 	repoLabel.textContent = "Target Repository";
 	repoField.appendChild(repoLabel);
 	const repoPicker = createFolderPicker("~/git");
-	repoPicker.setValue(getLastTargetRepo());
+	repoPicker.setValue(stateManager.getLastTargetRepo());
 	repoField.appendChild(repoPicker.element);
 
 	const specField = document.createElement("div");
@@ -992,7 +788,7 @@ function openEpicModal(): void {
 	repoLabel.textContent = "Target Repository";
 	repoField.appendChild(repoLabel);
 	const repoPicker = createFolderPicker("~/git");
-	repoPicker.setValue(getLastTargetRepo());
+	repoPicker.setValue(stateManager.getLastTargetRepo());
 	repoField.appendChild(repoPicker.element);
 
 	const descField = document.createElement("div");
@@ -1074,10 +870,10 @@ document.addEventListener("DOMContentLoaded", () => {
 	// Question panel
 	btnSubmitAnswer.addEventListener("click", () => {
 		const answer = getAnswer();
-		const workflowId = selectedChildId ?? expandedId;
+		const workflowId = stateManager.getSelectedChildId() ?? stateManager.getExpandedId();
 		if (!answer || !workflowId) return;
 
-		const entry = workflows.get(workflowId);
+		const entry = stateManager.getWorkflows().get(workflowId);
 		if (!entry?.state.pendingQuestion) return;
 
 		send({
@@ -1089,10 +885,10 @@ document.addEventListener("DOMContentLoaded", () => {
 	});
 
 	btnSkip.addEventListener("click", () => {
-		const workflowId = selectedChildId ?? expandedId;
+		const workflowId = stateManager.getSelectedChildId() ?? stateManager.getExpandedId();
 		if (!workflowId) return;
 
-		const entry = workflows.get(workflowId);
+		const entry = stateManager.getWorkflows().get(workflowId);
 		if (!entry?.state.pendingQuestion) return;
 
 		send({

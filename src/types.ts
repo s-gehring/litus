@@ -460,7 +460,6 @@ export type OutputEntry =
 export interface WorkflowClientState {
 	state: WorkflowState;
 	outputLines: OutputEntry[];
-	isExpanded: boolean;
 }
 
 // Client-side epic analysis state
@@ -482,6 +481,25 @@ export interface PersistedEpic {
 export interface EpicClientState extends PersistedEpic {
 	outputLines: OutputEntry[];
 }
+
+// ── State change types ──────────────────────────────────
+
+export type StateChangeScope =
+	| { entity: "workflow"; id: string }
+	| { entity: "epic"; id: string }
+	| { entity: "config"; key?: string }
+	| { entity: "global" }
+	| { entity: "output"; id: string }
+	| { entity: "none" };
+
+export type StateChangeAction = "added" | "updated" | "removed" | "cleared" | "appended";
+
+export interface StateChange {
+	scope: StateChangeScope;
+	action: StateChangeAction;
+}
+
+export type StateChangeListener = (change: StateChange, msg: ServerMessage) => void;
 
 // Client → Server messages
 export type ClientMessage =
