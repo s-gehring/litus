@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/s-gehring/crab-studio/actions"><img src="https://github.com/s-gehring/crab-studio/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/s-gehring/litus/actions"><img src="https://github.com/s-gehring/litus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/runtime-Bun%201.2.12+-f472b6" alt="Bun">
   <img src="https://img.shields.io/badge/lang-TypeScript-3178c6" alt="TypeScript">
   <img src="https://img.shields.io/badge/framework-none-lightgrey" alt="No framework">
@@ -82,19 +82,19 @@ Submit a feature spec, watch a Claude Code agent work through it step-by-step in
 
 ### Prerequisites
 
-| Tool | Why |
-|------|-----|
-| [Bun](https://bun.sh) >= 1.2.12 | Runtime. Fast, TypeScript-native, no transpilation ceremony. |
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | The CLI agent that does the actual work. Must be installed and authenticated. |
-| [GitHub CLI (`gh`)](https://cli.github.com/) | PR creation, CI monitoring, merge operations. Must be authenticated. |
-| [Speckit](https://github.com/example/speckit) | Claude Code slash commands for the specify → implement pipeline. Must be installed in your target repo. |
+| Tool                                                                                                                | Why                                                                                                     |
+|---------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| [Bun](https://bun.sh) >= 1.2.12                                                                                     | Runtime. Fast, TypeScript-native, no transpilation ceremony.                                            |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code)                                                       | The CLI agent that does the actual work. Must be installed and authenticated.                           |
+| [GitHub CLI (`gh`)](https://cli.github.com/)                                                                        | PR creation, CI monitoring, merge operations. Must be authenticated.                                    |
+| [Speckit](https://github.com/github/spec-kit) ([MIT License](https://github.com/github/spec-kit/blob/main/LICENSE)) | Claude Code slash commands for the specify → implement pipeline. Must be installed in your target repo. |
 
 ### Install and run
 
 ```bash
 # Clone
-git clone https://github.com/s-gehring/crab-studio.git
-cd crab-studio
+git clone https://github.com/s-gehring/litus.git
+cd litus
 
 # Install dependencies
 bun install
@@ -140,33 +140,10 @@ For features too large for a single workflow, Litus supports **epics**:
 
 1. Click **New Epic** and describe the feature at a high level
 2. Litus decomposes it into individual specs with dependency tracking
-3. Specs execute in dependency order — downstream workflows wait for their blockers to complete
+3. Specs execute in dependency order and as parallel as possible — downstream workflows wait for their blockers to complete
 4. The epic tree view shows the full dependency graph and per-spec status
 
-Dependencies are transitively reduced (if A → B → C, the redundant A → C edge is removed) so the execution graph stays clean.
-
-## Project structure
-
-```
-src/
-  server.ts                    # HTTP/WebSocket server entry
-  pipeline-orchestrator.ts     # 13-step pipeline state machine
-  workflow-engine.ts           # Workflow lifecycle + worktree management
-  cli-runner.ts                # Claude Code CLI process spawning & stream parsing
-  types.ts                     # Shared type definitions
-  client/
-    app.ts                     # WebSocket client, state management
-    components/                # UI components (vanilla TS, no framework)
-public/
-  index.html                   # SPA shell
-  style.css                    # Dark theme
-tests/
-  unit/                        # Unit tests
-  integration/                 # Integration tests
-  test-infra/                  # Mocks, factories, helpers
-```
-
-### Data storage
+## Data storage
 
 All data lives under `~/.litus/`:
 
