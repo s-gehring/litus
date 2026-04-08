@@ -69,23 +69,20 @@ export class AuditLogger {
 	}
 
 	logQuery(runId: string, content: string, stepName: string | null): void {
-		this.writeEvent(runId, {
-			eventType: "query",
-			content,
-			stepName,
-			commitHash: null,
-			metadata: null,
-		});
+		this.logSimple(runId, "query", content, stepName);
 	}
 
 	logAnswer(runId: string, content: string, stepName: string | null): void {
-		this.writeEvent(runId, {
-			eventType: "answer",
-			content,
-			stepName,
-			commitHash: null,
-			metadata: null,
-		});
+		this.logSimple(runId, "answer", content, stepName);
+	}
+
+	private logSimple(
+		runId: string,
+		eventType: AuditEventType,
+		content: string,
+		stepName: string | null,
+	): void {
+		this.writeEvent(runId, { eventType, content, stepName, commitHash: null, metadata: null });
 	}
 
 	// Note: logCommit is not yet wired into the pipeline — requires commit detection in CLI output (deferred)
