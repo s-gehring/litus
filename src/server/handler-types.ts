@@ -73,7 +73,7 @@ export function validateTextInput(value: string, label: string, minLength = 1): 
 			: `${label} must be non-empty`;
 	}
 	if (value.length > MAX_INPUT_LENGTH) {
-		return `${label} exceeds maximum length (100 KB)`;
+		return `${label} exceeds maximum length (${MAX_INPUT_LENGTH.toLocaleString()} characters)`;
 	}
 	return null;
 }
