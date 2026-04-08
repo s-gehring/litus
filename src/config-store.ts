@@ -159,6 +159,7 @@ Rules:
 		maxCiLogLength: 50_000,
 		maxClientOutputLines: 5_000,
 		epicTimeoutMs: 900_000,
+		cliIdleTimeoutMs: 600_000,
 	},
 };
 
@@ -268,6 +269,14 @@ export const NUMERIC_SETTING_META: NumericSettingMeta[] = [
 		description: "Maximum time to wait for epic decomposition analysis",
 		min: 60_000,
 		defaultValue: 900_000,
+		unit: "ms",
+	},
+	{
+		key: "timing.cliIdleTimeoutMs",
+		label: "CLI Idle Timeout",
+		description: "Kill CLI process if no output received within this period (0 to disable)",
+		min: 0,
+		defaultValue: 600_000,
 		unit: "ms",
 	},
 ];
