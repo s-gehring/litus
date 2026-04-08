@@ -24,9 +24,6 @@ export class CIMonitorCoordinator {
 		workflow: Workflow,
 		onOutput: (msg: string) => void,
 	): Promise<MonitorResult> {
-		workflow.ciCycle.monitorStartedAt =
-			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
-
 		this.abortController = new AbortController();
 
 		try {

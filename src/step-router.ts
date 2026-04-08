@@ -9,9 +9,7 @@ export type RouteDecision =
 	| { action: "route-to-merge-pr" }
 	| { action: "route-to-sync-repo" }
 	| { action: "route-back-to-monitor" }
-	| { action: "advance-to-fix-ci" }
-	| { action: "handle-implement-review-complete" }
-	| { action: "handle-merge-result" };
+	| { action: "handle-implement-review-complete" };
 
 /**
  * Determine the next routing action after a step completes.
@@ -45,20 +43,6 @@ export function routeAfterStep(workflow: Workflow): RouteDecision {
 		default:
 			return { action: "advance-to-next" };
 	}
-}
-
-/**
- * Parse review output to extract a severity keyword.
- * Looks for severity keywords (case-insensitive) in the output text.
- */
-export function classifyReviewSeverity(output: string): ReviewSeverity {
-	const upper = output.toUpperCase();
-	if (upper.includes("CRITICAL")) return "critical";
-	if (upper.includes("MAJOR")) return "major";
-	if (upper.includes("MINOR")) return "minor";
-	if (upper.includes("TRIVIAL")) return "trivial";
-	if (upper.includes("NIT")) return "nit";
-	return "minor";
 }
 
 /**

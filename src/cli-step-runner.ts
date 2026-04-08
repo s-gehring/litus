@@ -28,9 +28,9 @@ export class CLIStepRunner {
 		};
 	}
 
-	resetStep(step: PipelineStep): void {
-		step.status = "running";
-		step.startedAt = new Date().toISOString();
+	resetStep(step: PipelineStep, status: "running" | "pending" = "running"): void {
+		step.status = status;
+		step.startedAt = status === "running" ? new Date().toISOString() : null;
 		step.output = "";
 		step.error = null;
 		step.sessionId = null;

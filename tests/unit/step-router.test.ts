@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-	classifyReviewSeverity,
-	type RouteDecision,
-	routeAfterStep,
-	shouldLoopReview,
-} from "../../src/step-router";
+import { type RouteDecision, routeAfterStep, shouldLoopReview } from "../../src/step-router";
 import { STEP } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 
@@ -61,35 +56,6 @@ describe("routeAfterStep", () => {
 		for (const step of [STEP.CLARIFY, STEP.PLAN, STEP.TASKS, STEP.IMPLEMENT]) {
 			expect(routeAtStep(step)).toEqual({ action: "advance-to-next" });
 		}
-	});
-});
-
-// ── classifyReviewSeverity ─────────────────────────────────
-
-describe("classifyReviewSeverity", () => {
-	test("returns 'critical' for output containing critical findings", () => {
-		const output = "CRITICAL: Security vulnerability found in authentication flow";
-		expect(classifyReviewSeverity(output)).toBe("critical");
-	});
-
-	test("returns 'major' for output containing major findings", () => {
-		const output = "MAJOR: Missing error handling in data pipeline";
-		expect(classifyReviewSeverity(output)).toBe("major");
-	});
-
-	test("returns 'minor' for output containing minor findings", () => {
-		const output = "MINOR: Variable naming could be improved";
-		expect(classifyReviewSeverity(output)).toBe("minor");
-	});
-
-	test("returns 'trivial' for output containing trivial findings", () => {
-		const output = "TRIVIAL: Whitespace formatting inconsistency";
-		expect(classifyReviewSeverity(output)).toBe("trivial");
-	});
-
-	test("returns 'nit' for output containing nit findings", () => {
-		const output = "NIT: Consider using const instead of let";
-		expect(classifyReviewSeverity(output)).toBe("nit");
 	});
 });
 

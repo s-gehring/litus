@@ -326,10 +326,7 @@ export class PipelineOrchestrator {
 		if (workflow.status !== "error") return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
-		step.status = "running";
-		step.error = null;
-		step.sessionId = null;
-		step.startedAt = new Date().toISOString();
+		this.stepRunner.resetStep(step);
 		workflow.updatedAt = new Date().toISOString();
 
 		const cwd = requireWorktreePath(workflow);
@@ -342,9 +339,6 @@ export class PipelineOrchestrator {
 		this.callbacks.onStateChange(workflowId);
 		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
-
-		// Reset step output so it starts fresh
-		step.output = "";
 
 		this.persistWorkflow(workflow);
 		this.callbacks.onStepChange(
@@ -503,12 +497,7 @@ export class PipelineOrchestrator {
 		const previousIndex = workflow.currentStepIndex - 1;
 		const previousStep = previousIndex >= 0 ? workflow.steps[previousIndex].name : null;
 
-		step.status = "running";
-		step.startedAt = new Date().toISOString();
-		step.output = "";
-		step.error = null;
-		step.sessionId = null;
-		step.pid = null;
+		this.stepRunner.resetStep(step);
 		workflow.updatedAt = new Date().toISOString();
 
 		this.assistantTextBuffer = "";
@@ -657,6 +646,8 @@ export class PipelineOrchestrator {
 	}
 
 	private startCiMonitoring(workflow: Workflow): void {
+		workflow.ciCycle.monitorStartedAt =
+			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
 		this.persistWorkflow(workflow);
 
 		this.ciMonitor
@@ -964,13 +955,7 @@ export class PipelineOrchestrator {
 
 		// Reset implement-review step for re-use
 		const implStep = workflow.steps[implReviewIndex];
-		implStep.status = "pending";
-		implStep.output = "";
-		implStep.error = null;
-		implStep.sessionId = null;
-		implStep.startedAt = null;
-		implStep.completedAt = null;
-		implStep.pid = null;
+		this.stepRunner.resetStep(implStep, "pending");
 
 		workflow.currentStepIndex = implReviewIndex;
 		this.persistWorkflow(workflow);
@@ -991,13 +976,7 @@ export class PipelineOrchestrator {
 		) {
 			// Reset review step and loop back
 			const step = workflow.steps[reviewIndex];
-			step.status = "pending";
-			step.output = "";
-			step.error = null;
-			step.sessionId = null;
-			step.startedAt = null;
-			step.completedAt = null;
-			step.pid = null;
+			this.stepRunner.resetStep(step, "pending");
 
 			workflow.currentStepIndex = reviewIndex;
 			this.persistWorkflow(workflow);
@@ -1015,13 +994,7 @@ export class PipelineOrchestrator {
 
 		const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
 		const monitorStep = workflow.steps[monitorIndex];
-		monitorStep.status = "pending";
-		monitorStep.output = "";
-		monitorStep.error = null;
-		monitorStep.sessionId = null;
-		monitorStep.startedAt = null;
-		monitorStep.completedAt = null;
-		monitorStep.pid = null;
+		this.stepRunner.resetStep(monitorStep, "pending");
 
 		workflow.currentStepIndex = monitorIndex;
 		this.persistWorkflow(workflow);

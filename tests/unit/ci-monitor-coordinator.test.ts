@@ -34,7 +34,7 @@ describe("startMonitoring", () => {
 		expect(mockStartMonitoring).toHaveBeenCalledTimes(1);
 	});
 
-	test("sets monitorStartedAt if not already set", async () => {
+	test("does not mutate monitorStartedAt (orchestrator responsibility)", async () => {
 		const mockResult: MonitorResult = { passed: true, timedOut: false, results: [] };
 		const coordinator = new CIMonitorCoordinator(mock(() => Promise.resolve(mockResult)));
 
@@ -44,21 +44,7 @@ describe("startMonitoring", () => {
 
 		await coordinator.startMonitoring(workflow, onOutput);
 
-		expect(workflow.ciCycle.monitorStartedAt).not.toBeNull();
-	});
-
-	test("preserves existing monitorStartedAt", async () => {
-		const mockResult: MonitorResult = { passed: true, timedOut: false, results: [] };
-		const coordinator = new CIMonitorCoordinator(mock(() => Promise.resolve(mockResult)));
-
-		const workflow = makeWorkflow({ prUrl: "https://github.com/org/repo/pull/1" });
-		const existingTime = "2026-01-01T00:00:00.000Z";
-		workflow.ciCycle = makeCiCycle({ monitorStartedAt: existingTime });
-		const onOutput = mock(() => {});
-
-		await coordinator.startMonitoring(workflow, onOutput);
-
-		expect(workflow.ciCycle.monitorStartedAt).toBe(existingTime);
+		expect(workflow.ciCycle.monitorStartedAt).toBeNull();
 	});
 
 	test("passes abort signal to startMonitoring function", async () => {

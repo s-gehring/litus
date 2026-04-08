@@ -159,6 +159,22 @@ describe("resetStep", () => {
 		runner.resetStep(step);
 		expect(step.completedAt).toBeNull();
 	});
+
+	test("sets status to pending when requested", () => {
+		const runner = new CLIStepRunner(makeMockCLIRunner() as CLIRunner);
+		const step = makePipelineStep({ status: "completed" });
+
+		runner.resetStep(step, "pending");
+		expect(step.status).toBe("pending");
+	});
+
+	test("sets startedAt to null when status is pending", () => {
+		const runner = new CLIStepRunner(makeMockCLIRunner() as CLIRunner);
+		const step = makePipelineStep({ startedAt: new Date().toISOString() });
+
+		runner.resetStep(step, "pending");
+		expect(step.startedAt).toBeNull();
+	});
 });
 
 // ── startStep / resumeStep / killProcess ───────────────────
