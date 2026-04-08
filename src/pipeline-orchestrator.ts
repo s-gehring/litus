@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { AuditLogger } from "./audit-logger";
 import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
+import { CIMonitorCoordinator } from "./ci-monitor-coordinator";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
 import { CLIStepRunner } from "./cli-step-runner";
@@ -89,6 +90,7 @@ export class PipelineOrchestrator {
 	private engine: WorkflowEngine;
 	private cliRunner: CLIRunner;
 	private stepRunner: CLIStepRunner;
+	private ciMonitor: CIMonitorCoordinator;
 	private questionDetector: QuestionDetector;
 	private reviewClassifier: ReviewClassifier;
 	private summarizer: Summarizer;
@@ -99,7 +101,6 @@ export class PipelineOrchestrator {
 	private currentAuditRunId: string | null = null;
 	private pipelineName: string | null = null;
 	private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-	private monitorAbortController: AbortController | null = null;
 	private mergePrFn: typeof defaultMergePr;
 	private resolveConflictsFn: typeof defaultResolveConflicts;
 	private syncRepoFn: typeof defaultSyncRepo;
@@ -110,6 +111,9 @@ export class PipelineOrchestrator {
 		this.engine = deps?.engine ?? new WorkflowEngine();
 		this.cliRunner = deps?.cliRunner ?? new CLIRunner();
 		this.stepRunner = new CLIStepRunner(this.cliRunner);
+		this.ciMonitor = new CIMonitorCoordinator(startMonitoring, (workflow) =>
+			this.discoverPrUrl(workflow),
+		);
 		this.questionDetector = deps?.questionDetector ?? new QuestionDetector();
 		this.reviewClassifier = deps?.reviewClassifier ?? new ReviewClassifier();
 		this.summarizer = deps?.summarizer ?? new Summarizer();
@@ -392,10 +396,7 @@ export class PipelineOrchestrator {
 		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
 
 		this.stepRunner.killProcess(workflowId);
-		if (this.monitorAbortController) {
-			this.monitorAbortController.abort();
-			this.monitorAbortController = null;
-		}
+		this.ciMonitor.abort();
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "paused";
@@ -462,10 +463,7 @@ export class PipelineOrchestrator {
 		}
 
 		this.stepRunner.killProcess(workflowId);
-		if (this.monitorAbortController) {
-			this.monitorAbortController.abort();
-			this.monitorAbortController = null;
-		}
+		this.ciMonitor.abort();
 		this.summarizer.cleanup(workflowId);
 		this.questionDetector.reset();
 		this.assistantTextBuffer = "";
@@ -637,7 +635,8 @@ export class PipelineOrchestrator {
 	private runMonitorCi(workflow: Workflow): void {
 		if (!workflow.prUrl) {
 			// Try to discover PR URL from branch
-			this.discoverPrUrl(workflow)
+			this.ciMonitor
+				.discoverPrUrl(workflow)
 				.then((url) => {
 					if (!url) {
 						this.handleStepError(workflow.id, "No PR URL found — cannot monitor CI checks");
@@ -658,18 +657,10 @@ export class PipelineOrchestrator {
 	}
 
 	private startCiMonitoring(workflow: Workflow): void {
-		workflow.ciCycle.monitorStartedAt =
-			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
 		this.persistWorkflow(workflow);
 
-		this.monitorAbortController = new AbortController();
-
-		startMonitoring(
-			workflow.prUrl as string,
-			workflow.ciCycle,
-			(msg) => this.handleStepOutput(workflow.id, msg),
-			this.monitorAbortController.signal,
-		)
+		this.ciMonitor
+			.startMonitoring(workflow, (msg) => this.handleStepOutput(workflow.id, msg))
 			.then((result) => this.handleMonitorResult(workflow.id, result))
 			.catch((err) => {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -705,8 +696,6 @@ export class PipelineOrchestrator {
 
 		// If workflow was paused/cancelled while monitoring, ignore the result
 		if (workflow.status !== "running") return;
-
-		this.monitorAbortController = null;
 
 		if (result.passed) {
 			this.advanceAfterStep(workflowId);
