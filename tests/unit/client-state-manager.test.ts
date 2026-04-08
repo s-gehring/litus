@@ -72,8 +72,8 @@ describe("workflow:list", () => {
 		expect(mgr.getEpicAggregates().size).toBe(1);
 		const agg = mgr.getEpicAggregates().get("epic-1");
 		expect(agg).toBeDefined();
-		expect(agg!.progress.completed).toBe(1);
-		expect(agg!.progress.total).toBe(2);
+		expect(agg?.progress.completed).toBe(1);
+		expect(agg?.progress.total).toBe(2);
 	});
 });
 
@@ -158,7 +158,7 @@ describe("workflow:state", () => {
 
 		const agg = mgr.getEpicAggregates().get("epic-1");
 		expect(agg).toBeDefined();
-		expect(agg!.status).toBe("completed");
+		expect(agg?.status).toBe("completed");
 	});
 });
 
@@ -407,8 +407,8 @@ describe("epic:list, epic:created, epic:summary, epic:output, epic:tools", () =>
 
 		const epic = mgr.getEpics().get("e-1");
 		expect(epic).toBeDefined();
-		expect(epic!.status).toBe("analyzing");
-		expect(epic!.description).toBe("Build something");
+		expect(epic?.status).toBe("analyzing");
+		expect(epic?.description).toBe("Build something");
 		expect(change.scope).toEqual({ entity: "epic", id: "e-1" });
 		expect(change.action).toBe("added");
 	});
@@ -698,6 +698,49 @@ describe("config:state, config:error, log, error, and unknown messages", () => {
 			mgr.handleMessage({ type: "workflow:output", workflowId: "wf-1", text: `line ${i}` });
 		}
 		expect(mgr.getWorkflows().get("wf-1")?.outputLines).toHaveLength(100);
+	});
+
+	test("config:state accepts maxClientOutputLines of 0", () => {
+		const mgr = createManager();
+		// First set a non-zero value
+		mgr.handleMessage({
+			type: "config:state",
+			config: makeAppConfig({
+				timing: {
+					ciGlobalTimeoutMs: 0,
+					ciPollIntervalMs: 0,
+					activitySummaryIntervalMs: 0,
+					rateLimitBackoffMs: 0,
+					maxCiLogLength: 0,
+					maxClientOutputLines: 100,
+					epicTimeoutMs: 0,
+				},
+			}),
+		});
+
+		// Now set to 0 — should be accepted, not skipped
+		mgr.handleMessage({
+			type: "config:state",
+			config: makeAppConfig({
+				timing: {
+					ciGlobalTimeoutMs: 0,
+					ciPollIntervalMs: 0,
+					activitySummaryIntervalMs: 0,
+					rateLimitBackoffMs: 0,
+					maxCiLogLength: 0,
+					maxClientOutputLines: 0,
+					epicTimeoutMs: 0,
+				},
+			}),
+		});
+
+		// With maxOutputLines=0, adding output should immediately trim to 0
+		mgr.handleMessage({
+			type: "workflow:created",
+			workflow: makeWorkflowState({ id: "wf-1" }),
+		});
+		mgr.handleMessage({ type: "workflow:output", workflowId: "wf-1", text: "line" });
+		expect(mgr.getWorkflows().get("wf-1")?.outputLines).toHaveLength(0);
 	});
 
 	test("config:error returns config scope", () => {

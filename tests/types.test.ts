@@ -1096,7 +1096,7 @@ describe("Audit types", () => {
 // ── Phase 10: Cross-cutting ─────────────────────────────────
 
 describe("WorkflowClientState shape", () => {
-	test("combines WorkflowState with outputLines and isExpanded", () => {
+	test("combines WorkflowState with outputLines", () => {
 		const clientState: WorkflowClientState = {
 			state: {
 				id: "w-1",
@@ -1138,9 +1138,7 @@ describe("WorkflowClientState shape", () => {
 				{ kind: "text", text: "hello" },
 				{ kind: "tools", tools: [{ name: "Read" }] },
 			],
-			isExpanded: true,
 		};
 		expect(clientState.outputLines).toHaveLength(2);
-		expect(clientState.isExpanded).toBe(true);
 	});
 });

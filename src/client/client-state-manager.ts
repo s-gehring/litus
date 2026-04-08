@@ -360,10 +360,8 @@ export class ClientStateManager {
 		return { scope: { entity: "global" }, action: "cleared" };
 	}
 
-	private handleConfigState(
-		msg: Extract<ServerMessage, { type: "config:state" }>,
-	): StateChange {
-		if (msg.config.timing?.maxClientOutputLines) {
+	private handleConfigState(msg: Extract<ServerMessage, { type: "config:state" }>): StateChange {
+		if (msg.config.timing?.maxClientOutputLines != null) {
 			this.maxOutputLines = msg.config.timing.maxClientOutputLines;
 		}
 		return { scope: { entity: "config" }, action: "updated" };
@@ -377,7 +375,6 @@ export class ClientStateManager {
 			this.workflows.set(wfState.id, {
 				state: wfState,
 				outputLines: [],
-				isExpanded: false,
 			});
 			if (!this.cardOrder.includes(wfState.id)) {
 				this.cardOrder.push(wfState.id);

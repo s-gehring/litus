@@ -440,7 +440,6 @@ export type OutputEntry =
 export interface WorkflowClientState {
 	state: WorkflowState;
 	outputLines: OutputEntry[];
-	isExpanded: boolean;
 }
 
 // Client-side epic analysis state
