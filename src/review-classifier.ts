@@ -7,36 +7,41 @@ const VALID_SEVERITIES: ReviewSeverity[] = ["critical", "major", "minor", "trivi
 
 export class ReviewClassifier {
 	async classify(reviewOutput: string): Promise<ReviewSeverity> {
-		const promptTemplate = configStore.get().prompts.reviewClassification;
-		const prompt = promptTemplate.replaceAll("${reviewOutput}", reviewOutput);
+		try {
+			const promptTemplate = configStore.get().prompts.reviewClassification;
+			const prompt = promptTemplate.replaceAll("${reviewOutput}", reviewOutput);
 
-		const config = configStore.get();
-		const args = [
-			"claude",
-			"-p",
-			prompt,
-			"--model",
-			config.models.reviewClassification,
-			"--output-format",
-			"text",
-			"--effort",
-			config.efforts.reviewClassification,
-		];
-		const proc = Bun.spawn(args, {
-			cwd: tmpdir(),
-			stdout: "pipe",
-			stderr: "pipe",
-			env: cleanEnv(),
-		});
+			const config = configStore.get();
+			const args = [
+				"claude",
+				"-p",
+				prompt,
+				"--model",
+				config.models.reviewClassification,
+				"--output-format",
+				"text",
+				"--effort",
+				config.efforts.reviewClassification,
+			];
+			const proc = Bun.spawn(args, {
+				cwd: tmpdir(),
+				stdout: "pipe",
+				stderr: "pipe",
+				env: cleanEnv(),
+			});
 
-		const code = await proc.exited;
-		if (code !== 0) return "major";
+			const code = await proc.exited;
+			if (code !== 0) return "major";
 
-		const text = await new Response(proc.stdout as ReadableStream).text();
-		const severity = text.trim().toLowerCase() as ReviewSeverity;
-		if (VALID_SEVERITIES.includes(severity)) {
-			return severity;
+			const text = await new Response(proc.stdout as ReadableStream).text();
+			const severity = text.trim().toLowerCase() as ReviewSeverity;
+			if (VALID_SEVERITIES.includes(severity)) {
+				return severity;
+			}
+			return "minor";
+		} catch (err) {
+			console.warn("[review-classifier] classify failed:", err);
+			return "major";
 		}
-		return "minor";
 	}
 }

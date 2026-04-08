@@ -1,7 +1,5 @@
-import { marked } from "marked";
 import type { EpicStatus, OutputEntry, ToolUsage, WorkflowState } from "../../types";
-
-marked.setOptions({ async: false, breaks: true });
+import { renderMarkdown } from "../render-markdown";
 
 const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
 
@@ -220,7 +218,7 @@ export function updateUserInput(text: string): void {
 	if (!el) return;
 
 	if (text) {
-		el.innerHTML = marked.parse(text) as string;
+		el.innerHTML = renderMarkdown(text);
 		el.classList.remove("hidden");
 	} else {
 		el.innerHTML = "";
