@@ -341,6 +341,22 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 			const orch = createOrchestrator();
 			orch.getEngine().setWorkflow(workflow);
 
+			// Clean up stale PIDs on waiting_for_input workflows
+			if (workflow.status === "waiting_for_input") {
+				const waitingStep = workflow.steps.find((s) => s.status === "waiting_for_input");
+				if (waitingStep?.pid && isProcessAlive(waitingStep.pid)) {
+					console.log(
+						`[startup] Killing stale process PID=${waitingStep.pid} for paused workflow ${workflow.id}`,
+					);
+					killProcess(waitingStep.pid);
+					waitingStep.pid = null;
+					await sharedStore.save(workflow);
+				}
+				console.log(
+					`[startup] Restored waiting_for_input workflow ${workflow.id} (question pending)`,
+				);
+			}
+
 			if (workflow.status === "running") {
 				const runningStep = workflow.steps.find((s) => s.status === "running");
 
