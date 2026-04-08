@@ -111,6 +111,7 @@ function handleMessage(msg: ServerMessage): void {
 	const expandedId = stateManager.getExpandedId();
 	const expandedEpicId = stateManager.getExpandedEpicId();
 	const selectedStepIndex = stateManager.getSelectedStepIndex();
+	const selectedChildId = stateManager.getSelectedChildId();
 	const workflows = stateManager.getWorkflows();
 	const epics = stateManager.getEpics();
 
@@ -170,7 +171,7 @@ function handleMessage(msg: ServerMessage): void {
 			const entry = workflows.get(msg.workflowId);
 			if (
 				entry &&
-				expandedId === msg.workflowId &&
+				(expandedId === msg.workflowId || selectedChildId === msg.workflowId) &&
 				selectedStepIndex === entry.state.currentStepIndex
 			) {
 				appendOutput(msg.text);
@@ -183,7 +184,7 @@ function handleMessage(msg: ServerMessage): void {
 			const entry = workflows.get(msg.workflowId);
 			if (
 				entry &&
-				expandedId === msg.workflowId &&
+				(expandedId === msg.workflowId || selectedChildId === msg.workflowId) &&
 				selectedStepIndex === entry.state.currentStepIndex
 			) {
 				appendToolIcons(msg.tools);
@@ -194,7 +195,7 @@ function handleMessage(msg: ServerMessage): void {
 		case "workflow:question": {
 			if (change.scope.entity === "none") break;
 			renderCards();
-			if (expandedId === msg.workflowId) {
+			if (expandedId === msg.workflowId || selectedChildId === msg.workflowId) {
 				showQuestion(msg.question);
 			}
 			break;
@@ -203,7 +204,7 @@ function handleMessage(msg: ServerMessage): void {
 		case "workflow:step-change": {
 			if (change.scope.entity === "none") break;
 			renderCards();
-			if (expandedId === msg.workflowId) {
+			if (expandedId === msg.workflowId || selectedChildId === msg.workflowId) {
 				if (wasWatchingRunning) {
 					selectStep(msg.currentStepIndex);
 				} else {
@@ -496,6 +497,8 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 	renderPipelineSteps(null);
 	updateSummary(`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`);
 	updateStepSummary("");
+	const stepLabel = document.getElementById("current-step-label");
+	if (stepLabel) stepLabel.classList.add("hidden");
 	updateFlavor("");
 	updateDetailActions([]);
 	hideQuestion();
