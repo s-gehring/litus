@@ -105,6 +105,77 @@ export async function mergePr(
 	};
 }
 
+const MERGE_CONFLICT_COMMIT_MSG = "chore: resolve merge conflicts with master";
+
+async function ensureCommittedAndPushed(
+	cwd: string,
+	onOutput: (msg: string) => void,
+	spawn: SpawnLike["spawn"],
+): Promise<void> {
+	// Check for uncommitted changes (staged + unstaged + untracked)
+	const statusProc = spawn(["git", "status", "--porcelain"], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	await statusProc.exited;
+	const statusOut = await readStream(statusProc.stdout);
+
+	if (statusOut.trim() !== "") {
+		onOutput("Detected uncommitted changes after Claude CLI — committing them");
+
+		// Check if last commit is already the merge-conflict commit
+		const logProc = spawn(["git", "log", "-1", "--format=%s"], {
+			cwd,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		await logProc.exited;
+		const lastMsg = (await readStream(logProc.stdout)).trim();
+
+		// Stage everything
+		const addProc = spawn(["git", "add", "."], { cwd, stdout: "pipe", stderr: "pipe" });
+		await addProc.exited;
+
+		if (lastMsg === MERGE_CONFLICT_COMMIT_MSG) {
+			onOutput("Amending existing merge-conflict commit with remaining changes");
+			const amendProc = spawn(["git", "commit", "--amend", "--no-edit"], {
+				cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			await amendProc.exited;
+		} else {
+			onOutput("Creating merge-conflict commit for uncommitted changes");
+			const commitProc = spawn(["git", "commit", "-m", MERGE_CONFLICT_COMMIT_MSG], {
+				cwd,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
+			await commitProc.exited;
+		}
+	}
+
+	// Always push to ensure remote is up-to-date
+	onOutput(`[git] git push | cwd=${cwd}`);
+	const pushProc = spawn(["git", "push"], { cwd, stdout: "pipe", stderr: "pipe" });
+	const pushCode = await pushProc.exited;
+	if (pushCode !== 0) {
+		// Force-push needed after amend
+		onOutput(`[git] git push --force-with-lease | cwd=${cwd}`);
+		const forcePushProc = spawn(["git", "push", "--force-with-lease"], {
+			cwd,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		const forceCode = await forcePushProc.exited;
+		if (forceCode !== 0) {
+			const stderr = await readStream(forcePushProc.stderr);
+			throw new Error(`Push failed: ${stderr.trim() || `exit code ${forceCode}`}`);
+		}
+	}
+}
+
 export async function resolveConflicts(
 	worktreePath: string,
 	specSummary: string,
@@ -166,6 +237,9 @@ export async function resolveConflicts(
 		const stderr = await readStream(claudeProc.stderr);
 		throw new Error(`Conflict resolution failed: ${stderr.trim() || `exit code ${claudeCode}`}`);
 	}
+
+	// Safety net: ensure all changes are committed and pushed
+	await ensureCommittedAndPushed(worktreePath, onOutput, spawn as SpawnLike["spawn"]);
 
 	onOutput("Conflict resolution complete, changes pushed");
 }
