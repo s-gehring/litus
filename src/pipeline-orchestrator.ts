@@ -385,8 +385,8 @@ export class PipelineOrchestrator {
 	}
 
 	pause(workflowId: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow || workflow.status !== "running") return;
 
 		this.stepRunner.killProcess(workflowId);
 		this.ciMonitor.abort();
@@ -403,8 +403,8 @@ export class PipelineOrchestrator {
 	}
 
 	resume(workflowId: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId || workflow.status !== "paused") return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow || workflow.status !== "paused") return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "running";
@@ -548,8 +548,8 @@ export class PipelineOrchestrator {
 
 		this.runSetupChecksFn(targetDir)
 			.then((result) => {
-				const wf = this.engine.getWorkflow();
-				if (!wf || wf.id !== workflow.id) return;
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf) return;
 
 				// Log all check results as output
 				for (const check of result.checks) {
@@ -595,8 +595,8 @@ export class PipelineOrchestrator {
 		);
 		this.checkoutMasterFn(cwd)
 			.then((result) => {
-				const wf = this.engine.getWorkflow();
-				if (!wf || wf.id !== workflow.id) return;
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf) return;
 
 				if (result.code !== 0) {
 					const errMsg = result.stderr || `exit code ${result.code}`;
@@ -673,8 +673,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleMonitorResult(workflowId: string, result: MonitorResult): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		// If workflow was paused/cancelled while monitoring, ignore the result
 		if (workflow.status !== "running") return;
@@ -773,8 +773,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleStepOutput(workflowId: string, text: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.output += `${text}\n`;
@@ -797,8 +797,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleStepComplete(workflowId: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		const candidate = this.questionDetector.detect(this.assistantTextBuffer);
 		if (candidate) {
@@ -821,8 +821,8 @@ export class PipelineOrchestrator {
 	}
 
 	private pauseForQuestion(workflowId: string, question: Question): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow || workflow.status !== "running") return;
 
 		// Auto-mode: answer immediately instead of pausing
 		if (configStore.get().autoMode) {
@@ -855,8 +855,8 @@ export class PipelineOrchestrator {
 	}
 
 	private advanceAfterStep(workflowId: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "completed";
@@ -1012,8 +1012,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleMergeResult(workflowId: string, result: import("./types").MergeResult): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		if (result.merged || result.alreadyMerged) {
 			// Success — advance to sync-repo
@@ -1222,8 +1222,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleStepError(workflowId: string, error: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		this.summarizer.cleanup(workflowId);
 
@@ -1254,8 +1254,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handlePid(workflowId: string, pid: number): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.pid = pid;
@@ -1263,8 +1263,8 @@ export class PipelineOrchestrator {
 	}
 
 	private handleSessionId(workflowId: string, sessionId: string): void {
-		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) return;
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.sessionId = sessionId;
@@ -1328,9 +1328,16 @@ export class PipelineOrchestrator {
 		}
 	}
 
-	private getWorkflowOrThrow(workflowId: string): Workflow {
+	/** Get the active workflow if it matches the given ID, or null. */
+	private getActiveWorkflow(workflowId: string): Workflow | null {
 		const workflow = this.engine.getWorkflow();
-		if (!workflow || workflow.id !== workflowId) {
+		if (!workflow || workflow.id !== workflowId) return null;
+		return workflow;
+	}
+
+	private getWorkflowOrThrow(workflowId: string): Workflow {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) {
 			throw new Error(`Workflow ${workflowId} not found`);
 		}
 		return workflow;
