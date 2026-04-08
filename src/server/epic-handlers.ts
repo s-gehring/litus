@@ -1,0 +1,142 @@
+import { randomUUID } from "node:crypto";
+import { analyzeEpic } from "../epic-analyzer";
+import { validateTargetRepository } from "../target-repo-validator";
+import type { ClientMessage } from "../types";
+import { createEpicWorkflows } from "../workflow-engine";
+import type { MessageHandler } from "./handler-types";
+
+export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "epic:start" };
+	const { description, targetRepository, autoStart } = msg;
+
+	if (!description || description.trim().length < 10) {
+		deps.sendTo(ws, { type: "error", message: "Epic description must be at least 10 characters" });
+		return;
+	}
+
+	const validation = await validateTargetRepository(targetRepository);
+	if (!validation.valid) {
+		deps.sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
+		return;
+	}
+	const repoDir = validation.effectivePath;
+
+	const epicId = randomUUID();
+	const trimmedDesc = description.trim();
+	const analysisStartedAt = Date.now();
+	console.log(`[epic] Starting analysis (${epicId.slice(0, 8)}): "${trimmedDesc.slice(0, 80)}"`);
+
+	deps.broadcast({ type: "epic:created", epicId, description: trimmedDesc });
+
+	// Generate summary async (non-blocking)
+	deps.sharedSummarizer
+		.generateSpecSummary(trimmedDesc)
+		.then(({ summary }) => {
+			if (summary) {
+				deps.broadcast({ type: "epic:summary", epicId, summary });
+			}
+		})
+		.catch((err) => {
+			console.warn(`[epic] Summary generation failed: ${err}`);
+		});
+
+	try {
+		const result = await analyzeEpic(trimmedDesc, repoDir, deps.epicAnalysisRef, undefined, {
+			onOutput: (text) => deps.broadcast({ type: "epic:output", epicId, text }),
+			onTools: (tools) => deps.broadcast({ type: "epic:tools", epicId, tools }),
+		});
+
+		const analysisMs = Date.now() - analysisStartedAt;
+		console.log(`[epic] Analysis complete (${epicId.slice(0, 8)}): ${result.specs.length} specs`);
+
+		// Handle infeasible epic (empty specs with infeasibleNotes)
+		if (result.specs.length === 0 && result.infeasibleNotes) {
+			console.log(
+				`[epic] Infeasible (${epicId.slice(0, 8)}): ${result.infeasibleNotes.slice(0, 80)}`,
+			);
+			const epicData = {
+				epicId,
+				description: trimmedDesc,
+				status: "infeasible" as const,
+				title: result.title,
+				workflowIds: [],
+				startedAt: new Date(analysisStartedAt).toISOString(),
+				completedAt: new Date().toISOString(),
+				errorMessage: null,
+				infeasibleNotes: result.infeasibleNotes,
+				analysisSummary: result.summary,
+			};
+			await deps.sharedEpicStore.save(epicData);
+			deps.broadcast({
+				type: "epic:infeasible",
+				epicId,
+				title: result.title,
+				infeasibleNotes: result.infeasibleNotes,
+			});
+			return;
+		}
+
+		const { workflows } = await createEpicWorkflows(result, repoDir, epicId);
+
+		// Store the analysis duration on the first child workflow
+		if (workflows.length > 0) {
+			workflows[0].epicAnalysisMs = analysisMs;
+		}
+
+		const workflowIds: string[] = [];
+
+		// Persist and register orchestrators for each workflow
+		for (const workflow of workflows) {
+			await deps.sharedStore.save(workflow);
+
+			const orch = deps.createOrchestrator();
+			orch.getEngine().setWorkflow(workflow);
+			deps.orchestrators.set(workflow.id, orch);
+
+			deps.broadcast({ type: "workflow:created", workflow: deps.stripInternalFields(workflow) });
+			workflowIds.push(workflow.id);
+
+			// Auto-start independent specs when autoStart is true
+			if (autoStart && workflow.epicDependencyStatus === "satisfied") {
+				orch.startPipelineFromWorkflow(workflow);
+			}
+		}
+
+		const epicData = {
+			epicId,
+			description: trimmedDesc,
+			status: "completed" as const,
+			title: result.title,
+			workflowIds,
+			startedAt: new Date(analysisStartedAt).toISOString(),
+			completedAt: new Date().toISOString(),
+			errorMessage: null,
+			infeasibleNotes: result.infeasibleNotes,
+			analysisSummary: result.summary,
+		};
+		await deps.sharedEpicStore.save(epicData);
+
+		deps.broadcast({
+			type: "epic:result",
+			epicId,
+			title: result.title,
+			specCount: result.specs.length,
+			workflowIds,
+			summary: result.summary,
+		});
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "Epic analysis failed";
+		console.error(`[epic] Analysis failed (${epicId.slice(0, 8)}): ${message}`);
+		if (err instanceof Error && err.stack) {
+			console.error(`[epic] Stack trace: ${err.stack}`);
+		}
+		deps.broadcast({ type: "epic:error", epicId, message });
+	}
+};
+
+export const handleEpicCancel: MessageHandler = (_ws, _data, deps) => {
+	if (deps.epicAnalysisRef.current) {
+		deps.epicAnalysisRef.current.kill();
+		deps.epicAnalysisRef.current = null;
+	}
+};
