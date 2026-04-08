@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { AuditLogger } from "./audit-logger";
 import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
+import { CIMonitorCoordinator } from "./ci-monitor-coordinator";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
+import { CLIStepRunner } from "./cli-step-runner";
 import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import { gitSpawn } from "./git-logger";
@@ -16,19 +18,21 @@ import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
 import { runSetupChecks as defaultRunSetupChecks } from "./setup-checker";
+import { routeAfterStep as computeRoute, shouldLoopReview } from "./step-router";
 import { Summarizer } from "./summarizer";
 import {
 	type EffortLevel,
 	type ModelConfig,
-	type PipelineStepName,
+	type PipelineCallbacks,
 	type Question,
 	type SetupResult,
 	STEP,
-	type ToolUsage,
 	type Workflow,
 } from "./types";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
+
+export type { PipelineCallbacks } from "./types";
 
 // Only steps that invoke the CLI with a configurable model
 const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {
@@ -41,26 +45,6 @@ const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {
 	[STEP.IMPLEMENT_REVIEW]: "implementReview",
 	[STEP.COMMIT_PUSH_PR]: "commitPushPr",
 };
-
-export interface PipelineCallbacks {
-	onStepChange: (
-		workflowId: string,
-		previousStep: PipelineStepName | null,
-		currentStep: PipelineStepName,
-		currentStepIndex: number,
-		reviewIteration: number,
-	) => void;
-	onOutput: (workflowId: string, text: string) => void;
-	onTools: (workflowId: string, tools: ToolUsage[]) => void;
-	onComplete: (workflowId: string) => void;
-	onError: (workflowId: string, error: string) => void;
-	onStateChange: (workflowId: string) => void;
-	onEpicDependencyUpdate?: (
-		dependentWorkflowId: string,
-		status: import("./types").EpicDependencyStatus,
-		blockingWorkflows: string[],
-	) => void;
-}
 
 export interface PipelineDeps {
 	engine?: WorkflowEngine;
@@ -105,6 +89,8 @@ export function extractPrUrl(output: string): string | null {
 export class PipelineOrchestrator {
 	private engine: WorkflowEngine;
 	private cliRunner: CLIRunner;
+	private stepRunner: CLIStepRunner;
+	private ciMonitor: CIMonitorCoordinator;
 	private questionDetector: QuestionDetector;
 	private reviewClassifier: ReviewClassifier;
 	private summarizer: Summarizer;
@@ -115,7 +101,6 @@ export class PipelineOrchestrator {
 	private currentAuditRunId: string | null = null;
 	private pipelineName: string | null = null;
 	private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-	private monitorAbortController: AbortController | null = null;
 	private mergePrFn: typeof defaultMergePr;
 	private resolveConflictsFn: typeof defaultResolveConflicts;
 	private syncRepoFn: typeof defaultSyncRepo;
@@ -125,6 +110,10 @@ export class PipelineOrchestrator {
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
 		this.cliRunner = deps?.cliRunner ?? new CLIRunner();
+		this.stepRunner = new CLIStepRunner(this.cliRunner);
+		this.ciMonitor = new CIMonitorCoordinator(startMonitoring, (workflow) =>
+			this.discoverPrUrl(workflow),
+		);
 		this.questionDetector = deps?.questionDetector ?? new QuestionDetector();
 		this.reviewClassifier = deps?.reviewClassifier ?? new ReviewClassifier();
 		this.summarizer = deps?.summarizer ?? new Summarizer();
@@ -269,7 +258,7 @@ export class PipelineOrchestrator {
 		this.questionDetector.reset();
 
 		// Kill any lingering CLI process before resuming
-		this.cliRunner.kill(workflowId);
+		this.stepRunner.killProcess(workflowId);
 
 		const sessionId = step.sessionId;
 		if (!sessionId) {
@@ -278,20 +267,11 @@ export class PipelineOrchestrator {
 		}
 
 		const cwd = requireWorktreePath(workflow);
-		const cliCallbacks: CLICallbacks = {
-			onOutput: (text) => this.handleStepOutput(workflow.id, text),
-			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
-			onComplete: () => this.handleStepComplete(workflow.id),
-			onError: (error) => this.handleStepError(workflow.id, error),
-			onSessionId: (sid) => this.handleSessionId(workflow.id, sid),
-			onPid: (pid) => this.handlePid(workflow.id, pid),
-		};
-
-		this.cliRunner.resume(
+		this.stepRunner.resumeStep(
 			workflowId,
 			sessionId,
 			cwd,
-			cliCallbacks,
+			this.buildStepCallbacks(workflowId),
 			this.buildStepEnv(workflow),
 			answer,
 		);
@@ -331,20 +311,11 @@ export class PipelineOrchestrator {
 		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
 
-		const cliCallbacks: CLICallbacks = {
-			onOutput: (text) => this.handleStepOutput(workflow.id, text),
-			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
-			onComplete: () => this.handleStepComplete(workflow.id),
-			onError: (error) => this.handleStepError(workflow.id, error),
-			onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
-			onPid: (pid) => this.handlePid(workflow.id, pid),
-		};
-
-		this.cliRunner.resume(
+		this.stepRunner.resumeStep(
 			workflowId,
 			step.sessionId,
 			cwd,
-			cliCallbacks,
+			this.buildStepCallbacks(workflowId),
 			this.buildStepEnv(workflow),
 		);
 	}
@@ -355,10 +326,7 @@ export class PipelineOrchestrator {
 		if (workflow.status !== "error") return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
-		step.status = "running";
-		step.error = null;
-		step.sessionId = null;
-		step.startedAt = new Date().toISOString();
+		this.stepRunner.resetStep(step);
 		workflow.updatedAt = new Date().toISOString();
 
 		const cwd = requireWorktreePath(workflow);
@@ -371,9 +339,6 @@ export class PipelineOrchestrator {
 		this.callbacks.onStateChange(workflowId);
 		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
-
-		// Reset step output so it starts fresh
-		step.output = "";
 
 		this.persistWorkflow(workflow);
 		this.callbacks.onStepChange(
@@ -425,11 +390,8 @@ export class PipelineOrchestrator {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
 
-		this.cliRunner.kill(workflowId);
-		if (this.monitorAbortController) {
-			this.monitorAbortController.abort();
-			this.monitorAbortController = null;
-		}
+		this.stepRunner.killProcess(workflowId);
+		this.ciMonitor.abort();
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "paused";
@@ -467,19 +429,11 @@ export class PipelineOrchestrator {
 		} else if (step.name === STEP.MONITOR_CI) {
 			this.runMonitorCi(workflow);
 		} else if (step.sessionId) {
-			const cliCallbacks: CLICallbacks = {
-				onOutput: (text) => this.handleStepOutput(workflow.id, text),
-				onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
-				onComplete: () => this.handleStepComplete(workflow.id),
-				onError: (error) => this.handleStepError(workflow.id, error),
-				onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
-				onPid: (pid) => this.handlePid(workflow.id, pid),
-			};
-			this.cliRunner.resume(
+			this.stepRunner.resumeStep(
 				workflowId,
 				step.sessionId,
 				cwd,
-				cliCallbacks,
+				this.buildStepCallbacks(workflowId),
 				this.buildStepEnv(workflow),
 			);
 		} else {
@@ -503,11 +457,8 @@ export class PipelineOrchestrator {
 			this.currentAuditRunId = null;
 		}
 
-		this.cliRunner.kill(workflowId);
-		if (this.monitorAbortController) {
-			this.monitorAbortController.abort();
-			this.monitorAbortController = null;
-		}
+		this.stepRunner.killProcess(workflowId);
+		this.ciMonitor.abort();
 		this.summarizer.cleanup(workflowId);
 		this.questionDetector.reset();
 		this.assistantTextBuffer = "";
@@ -547,12 +498,7 @@ export class PipelineOrchestrator {
 		const previousIndex = workflow.currentStepIndex - 1;
 		const previousStep = previousIndex >= 0 ? workflow.steps[previousIndex].name : null;
 
-		step.status = "running";
-		step.startedAt = new Date().toISOString();
-		step.output = "";
-		step.error = null;
-		step.sessionId = null;
-		step.pid = null;
+		this.stepRunner.resetStep(step);
 		workflow.updatedAt = new Date().toISOString();
 
 		this.assistantTextBuffer = "";
@@ -679,7 +625,8 @@ export class PipelineOrchestrator {
 	private runMonitorCi(workflow: Workflow): void {
 		if (!workflow.prUrl) {
 			// Try to discover PR URL from branch
-			this.discoverPrUrl(workflow)
+			this.ciMonitor
+				.discoverPrUrl(workflow)
 				.then((url) => {
 					if (!url) {
 						this.handleStepError(workflow.id, "No PR URL found — cannot monitor CI checks");
@@ -704,14 +651,8 @@ export class PipelineOrchestrator {
 			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
 		this.persistWorkflow(workflow);
 
-		this.monitorAbortController = new AbortController();
-
-		startMonitoring(
-			workflow.prUrl as string,
-			workflow.ciCycle,
-			(msg) => this.handleStepOutput(workflow.id, msg),
-			this.monitorAbortController.signal,
-		)
+		this.ciMonitor
+			.startMonitoring(workflow, (msg) => this.handleStepOutput(workflow.id, msg))
 			.then((result) => this.handleMonitorResult(workflow.id, result))
 			.catch((err) => {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -747,8 +688,6 @@ export class PipelineOrchestrator {
 
 		// If workflow was paused/cancelled while monitoring, ignore the result
 		if (workflow.status !== "running") return;
-
-		this.monitorAbortController = null;
 
 		if (result.passed) {
 			this.advanceAfterStep(workflowId);
@@ -832,16 +771,13 @@ export class PipelineOrchestrator {
 			worktreePath: cwd,
 		};
 
-		const cliCallbacks: CLICallbacks = {
-			onOutput: (text) => this.handleStepOutput(workflow.id, text),
-			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
-			onComplete: () => this.handleStepComplete(workflow.id),
-			onError: (error) => this.handleStepError(workflow.id, error),
-			onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
-			onPid: (pid) => this.handlePid(workflow.id, pid),
-		};
-
-		this.cliRunner.start(stepWorkflow, cliCallbacks, this.buildStepEnv(workflow), model, effort);
+		this.stepRunner.startStep(
+			stepWorkflow,
+			this.buildStepCallbacks(workflow.id),
+			this.buildStepEnv(workflow),
+			model,
+			effort,
+		);
 	}
 
 	private handleStepOutput(workflowId: string, text: string): void {
@@ -970,61 +906,47 @@ export class PipelineOrchestrator {
 		this.flushPersistDebounce(workflow);
 		this.persistWorkflow(workflow);
 
-		const step = workflow.steps[workflow.currentStepIndex];
+		const decision = computeRoute(workflow);
 
-		// After commit-push-pr completes, route to monitor-ci
-		if (step.name === STEP.COMMIT_PUSH_PR) {
-			const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
-			workflow.currentStepIndex = monitorIndex;
-			this.startStep(workflow);
-			return;
+		switch (decision.action) {
+			case "route-to-monitor-ci": {
+				const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
+				workflow.currentStepIndex = monitorIndex;
+				this.startStep(workflow);
+				return;
+			}
+			case "route-to-merge-pr": {
+				const mergePrIndex = workflow.steps.findIndex((s) => s.name === STEP.MERGE_PR);
+				workflow.currentStepIndex = mergePrIndex;
+				this.startStep(workflow);
+				return;
+			}
+			case "route-back-to-monitor":
+				this.routeBackToMonitor(workflow);
+				return;
+			case "route-to-sync-repo": {
+				const syncRepoIndex = workflow.steps.findIndex((s) => s.name === STEP.SYNC_REPO);
+				workflow.currentStepIndex = syncRepoIndex;
+				this.startStep(workflow);
+				return;
+			}
+			case "complete":
+				this.completeWorkflow(workflow);
+				return;
+			case "route-to-implement-review":
+				this.routeToImplementReview(workflow);
+				return;
+			case "handle-implement-review-complete":
+				this.handleImplementReviewComplete(workflow).catch((err) => {
+					const msg = err instanceof Error ? err.message : String(err);
+					console.error(`[pipeline] Implement-review completion error: ${msg}`);
+					this.handleStepError(workflow.id, msg);
+				});
+				return;
+			case "advance-to-next":
+				this.advanceToNextStep(workflow);
+				return;
 		}
-
-		// After monitor-ci passes, route to merge-pr
-		if (step.name === STEP.MONITOR_CI) {
-			const mergePrIndex = workflow.steps.findIndex((s) => s.name === STEP.MERGE_PR);
-			workflow.currentStepIndex = mergePrIndex;
-			this.startStep(workflow);
-			return;
-		}
-
-		// After fix-ci completes, increment attempt and loop back to monitor-ci
-		if (step.name === STEP.FIX_CI) {
-			this.routeBackToMonitor(workflow);
-			return;
-		}
-
-		// After merge-pr succeeds, route to sync-repo
-		if (step.name === STEP.MERGE_PR) {
-			const syncRepoIndex = workflow.steps.findIndex((s) => s.name === STEP.SYNC_REPO);
-			workflow.currentStepIndex = syncRepoIndex;
-			this.startStep(workflow);
-			return;
-		}
-
-		// After sync-repo completes, finish the workflow
-		if (step.name === STEP.SYNC_REPO) {
-			this.completeWorkflow(workflow);
-			return;
-		}
-
-		// After review completes, ALWAYS route to implement-review
-		if (step.name === STEP.REVIEW) {
-			this.routeToImplementReview(workflow);
-			return;
-		}
-
-		// After implement-review completes, classify and decide: loop or advance
-		if (step.name === STEP.IMPLEMENT_REVIEW) {
-			this.handleImplementReviewComplete(workflow).catch((err) => {
-				const msg = err instanceof Error ? err.message : String(err);
-				console.error(`[pipeline] Implement-review completion error: ${msg}`);
-				this.handleStepError(workflow.id, msg);
-			});
-			return;
-		}
-
-		this.advanceToNextStep(workflow);
 	}
 
 	private routeToImplementReview(workflow: Workflow): void {
@@ -1034,13 +956,7 @@ export class PipelineOrchestrator {
 
 		// Reset implement-review step for re-use
 		const implStep = workflow.steps[implReviewIndex];
-		implStep.status = "pending";
-		implStep.output = "";
-		implStep.error = null;
-		implStep.sessionId = null;
-		implStep.startedAt = null;
-		implStep.completedAt = null;
-		implStep.pid = null;
+		this.stepRunner.resetStep(implStep, "pending");
 
 		workflow.currentStepIndex = implReviewIndex;
 		this.persistWorkflow(workflow);
@@ -1056,20 +972,12 @@ export class PipelineOrchestrator {
 		workflow.reviewCycle.lastSeverity = severity;
 		workflow.updatedAt = new Date().toISOString();
 
-		const shouldLoop =
-			(severity === "critical" || severity === "major") &&
-			workflow.reviewCycle.iteration < workflow.reviewCycle.maxIterations;
-
-		if (shouldLoop) {
+		if (
+			shouldLoopReview(severity, workflow.reviewCycle.iteration, workflow.reviewCycle.maxIterations)
+		) {
 			// Reset review step and loop back
 			const step = workflow.steps[reviewIndex];
-			step.status = "pending";
-			step.output = "";
-			step.error = null;
-			step.sessionId = null;
-			step.startedAt = null;
-			step.completedAt = null;
-			step.pid = null;
+			this.stepRunner.resetStep(step, "pending");
 
 			workflow.currentStepIndex = reviewIndex;
 			this.persistWorkflow(workflow);
@@ -1087,13 +995,7 @@ export class PipelineOrchestrator {
 
 		const monitorIndex = workflow.steps.findIndex((s) => s.name === STEP.MONITOR_CI);
 		const monitorStep = workflow.steps[monitorIndex];
-		monitorStep.status = "pending";
-		monitorStep.output = "";
-		monitorStep.error = null;
-		monitorStep.sessionId = null;
-		monitorStep.startedAt = null;
-		monitorStep.completedAt = null;
-		monitorStep.pid = null;
+		this.stepRunner.resetStep(monitorStep, "pending");
 
 		workflow.currentStepIndex = monitorIndex;
 		this.persistWorkflow(workflow);
@@ -1200,7 +1102,7 @@ export class PipelineOrchestrator {
 			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
 			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
-		this.cliRunner.kill(workflow.id);
+		this.stepRunner.killProcess(workflow.id);
 		this.summarizer.cleanup(workflow.id);
 		this.persistWorkflow(workflow);
 		this.callbacks.onComplete(workflow.id);
@@ -1420,6 +1322,17 @@ export class PipelineOrchestrator {
 
 	getStore(): WorkflowStore {
 		return this.store;
+	}
+
+	private buildStepCallbacks(workflowId: string): CLICallbacks {
+		return this.stepRunner.buildCallbacks(workflowId, {
+			onOutput: (wfId, text) => this.handleStepOutput(wfId, text),
+			onComplete: (wfId) => this.handleStepComplete(wfId),
+			onError: (wfId, error) => this.handleStepError(wfId, error),
+			onSessionId: (wfId, sessionId) => this.handleSessionId(wfId, sessionId),
+			onPid: (wfId, pid) => this.handlePid(wfId, pid),
+			onTools: (tools) => this.callbacks.onTools(workflowId, tools),
+		});
 	}
 
 	private getWorkflowOrThrow(workflowId: string): Workflow {
