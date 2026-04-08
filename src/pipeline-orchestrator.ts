@@ -5,6 +5,7 @@ import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
+import { CLIStepRunner } from "./cli-step-runner";
 import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import { gitSpawn } from "./git-logger";
@@ -87,6 +88,7 @@ export function extractPrUrl(output: string): string | null {
 export class PipelineOrchestrator {
 	private engine: WorkflowEngine;
 	private cliRunner: CLIRunner;
+	private stepRunner: CLIStepRunner;
 	private questionDetector: QuestionDetector;
 	private reviewClassifier: ReviewClassifier;
 	private summarizer: Summarizer;
@@ -107,6 +109,7 @@ export class PipelineOrchestrator {
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
 		this.cliRunner = deps?.cliRunner ?? new CLIRunner();
+		this.stepRunner = new CLIStepRunner(this.cliRunner);
 		this.questionDetector = deps?.questionDetector ?? new QuestionDetector();
 		this.reviewClassifier = deps?.reviewClassifier ?? new ReviewClassifier();
 		this.summarizer = deps?.summarizer ?? new Summarizer();
@@ -251,7 +254,7 @@ export class PipelineOrchestrator {
 		this.questionDetector.reset();
 
 		// Kill any lingering CLI process before resuming
-		this.cliRunner.kill(workflowId);
+		this.stepRunner.killProcess(workflowId);
 
 		const sessionId = step.sessionId;
 		if (!sessionId) {
@@ -260,20 +263,11 @@ export class PipelineOrchestrator {
 		}
 
 		const cwd = requireWorktreePath(workflow);
-		const cliCallbacks: CLICallbacks = {
-			onOutput: (text) => this.handleStepOutput(workflow.id, text),
-			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
-			onComplete: () => this.handleStepComplete(workflow.id),
-			onError: (error) => this.handleStepError(workflow.id, error),
-			onSessionId: (sid) => this.handleSessionId(workflow.id, sid),
-			onPid: (pid) => this.handlePid(workflow.id, pid),
-		};
-
-		this.cliRunner.resume(
+		this.stepRunner.resumeStep(
 			workflowId,
 			sessionId,
 			cwd,
-			cliCallbacks,
+			this.buildStepCallbacks(workflowId),
 			this.buildStepEnv(workflow),
 			answer,
 		);
@@ -313,20 +307,11 @@ export class PipelineOrchestrator {
 		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
 
-		const cliCallbacks: CLICallbacks = {
-			onOutput: (text) => this.handleStepOutput(workflow.id, text),
-			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
-			onComplete: () => this.handleStepComplete(workflow.id),
-			onError: (error) => this.handleStepError(workflow.id, error),
-			onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
-			onPid: (pid) => this.handlePid(workflow.id, pid),
-		};
-
-		this.cliRunner.resume(
+		this.stepRunner.resumeStep(
 			workflowId,
 			step.sessionId,
 			cwd,
-			cliCallbacks,
+			this.buildStepCallbacks(workflowId),
 			this.buildStepEnv(workflow),
 		);
 	}
@@ -406,7 +391,7 @@ export class PipelineOrchestrator {
 		const workflow = this.engine.getWorkflow();
 		if (!workflow || workflow.id !== workflowId || workflow.status !== "running") return;
 
-		this.cliRunner.kill(workflowId);
+		this.stepRunner.killProcess(workflowId);
 		if (this.monitorAbortController) {
 			this.monitorAbortController.abort();
 			this.monitorAbortController = null;
@@ -448,19 +433,11 @@ export class PipelineOrchestrator {
 		} else if (step.name === STEP.MONITOR_CI) {
 			this.runMonitorCi(workflow);
 		} else if (step.sessionId) {
-			const cliCallbacks: CLICallbacks = {
-				onOutput: (text) => this.handleStepOutput(workflow.id, text),
-				onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
-				onComplete: () => this.handleStepComplete(workflow.id),
-				onError: (error) => this.handleStepError(workflow.id, error),
-				onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
-				onPid: (pid) => this.handlePid(workflow.id, pid),
-			};
-			this.cliRunner.resume(
+			this.stepRunner.resumeStep(
 				workflowId,
 				step.sessionId,
 				cwd,
-				cliCallbacks,
+				this.buildStepCallbacks(workflowId),
 				this.buildStepEnv(workflow),
 			);
 		} else {
@@ -484,7 +461,7 @@ export class PipelineOrchestrator {
 			this.currentAuditRunId = null;
 		}
 
-		this.cliRunner.kill(workflowId);
+		this.stepRunner.killProcess(workflowId);
 		if (this.monitorAbortController) {
 			this.monitorAbortController.abort();
 			this.monitorAbortController = null;
@@ -813,16 +790,13 @@ export class PipelineOrchestrator {
 			worktreePath: cwd,
 		};
 
-		const cliCallbacks: CLICallbacks = {
-			onOutput: (text) => this.handleStepOutput(workflow.id, text),
-			onTools: (tools) => this.callbacks.onTools(workflow.id, tools),
-			onComplete: () => this.handleStepComplete(workflow.id),
-			onError: (error) => this.handleStepError(workflow.id, error),
-			onSessionId: (sessionId) => this.handleSessionId(workflow.id, sessionId),
-			onPid: (pid) => this.handlePid(workflow.id, pid),
-		};
-
-		this.cliRunner.start(stepWorkflow, cliCallbacks, this.buildStepEnv(workflow), model, effort);
+		this.stepRunner.startStep(
+			stepWorkflow,
+			this.buildStepCallbacks(workflow.id),
+			this.buildStepEnv(workflow),
+			model,
+			effort,
+		);
 	}
 
 	private handleStepOutput(workflowId: string, text: string): void {
@@ -1165,7 +1139,7 @@ export class PipelineOrchestrator {
 			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
 			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
-		this.cliRunner.kill(workflow.id);
+		this.stepRunner.killProcess(workflow.id);
 		this.summarizer.cleanup(workflow.id);
 		this.persistWorkflow(workflow);
 		this.callbacks.onComplete(workflow.id);
@@ -1385,6 +1359,17 @@ export class PipelineOrchestrator {
 
 	getStore(): WorkflowStore {
 		return this.store;
+	}
+
+	private buildStepCallbacks(workflowId: string): CLICallbacks {
+		return this.stepRunner.buildCallbacks(workflowId, {
+			onOutput: (wfId, text) => this.handleStepOutput(wfId, text),
+			onComplete: (wfId) => this.handleStepComplete(wfId),
+			onError: (wfId, error) => this.handleStepError(wfId, error),
+			onSessionId: (wfId, sessionId) => this.handleSessionId(wfId, sessionId),
+			onPid: (wfId, pid) => this.handlePid(wfId, pid),
+			onTools: (tools) => this.callbacks.onTools(workflowId, tools),
+		});
 	}
 
 	private getWorkflowOrThrow(workflowId: string): Workflow {
