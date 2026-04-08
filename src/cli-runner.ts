@@ -164,7 +164,7 @@ export class CLIRunner {
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
-			console.info("Resuming "+sessionId+" with prompt \""+usedPrompt.slice(0, 30)+"...\"");
+			console.info(`Resuming ${sessionId} with prompt "${usedPrompt.slice(0, 30)}..."`);
 			proc = Bun.spawn(args, {
 				cwd,
 				stdout: "pipe",
