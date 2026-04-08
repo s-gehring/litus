@@ -39,11 +39,16 @@ export function createModal(title: string, content: HTMLElement): Modal {
 	panel.appendChild(body);
 	overlay.appendChild(panel);
 
-	// Prevent clicks inside the panel from closing
-	panel.addEventListener("click", (e) => e.stopPropagation());
-
-	// Click outside to close
-	overlay.addEventListener("click", () => hide());
+	// Close only when both mousedown and mouseup happen on the overlay
+	// (prevents closing when dragging from inside the panel to outside)
+	let mousedownOnOverlay = false;
+	overlay.addEventListener("mousedown", (e) => {
+		mousedownOnOverlay = e.target === overlay;
+	});
+	overlay.addEventListener("mouseup", (e) => {
+		if (mousedownOnOverlay && e.target === overlay) hide();
+		mousedownOnOverlay = false;
+	});
 
 	// Close button
 	closeBtn.addEventListener("click", () => hide());
