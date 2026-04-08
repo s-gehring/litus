@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { atomicWrite } from "./atomic-write";
 import type { PersistedEpic } from "./types";
 
 export class EpicStore {
@@ -52,37 +53,8 @@ export class EpicStore {
 			} else {
 				all.push(epic);
 			}
-			await this.atomicWrite(this.filePath(), JSON.stringify(all, null, 2));
+			await atomicWrite(this.filePath(), JSON.stringify(all, null, 2));
 		});
-	}
-
-	private async atomicWrite(filePath: string, data: string): Promise<void> {
-		const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-		const tmpPath = `${filePath}.${suffix}.tmp`;
-		await Bun.write(tmpPath, data);
-
-		for (let attempt = 0; ; attempt++) {
-			try {
-				renameSync(tmpPath, filePath);
-				return;
-			} catch (err) {
-				if (attempt >= 3) {
-					try {
-						unlinkSync(tmpPath);
-					} catch {
-						/* tmp cleanup */
-					}
-					await Bun.write(filePath, data);
-					return;
-				}
-				const code = (err as NodeJS.ErrnoException).code;
-				if (code === "EPERM" || code === "EACCES") {
-					await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
-					continue;
-				}
-				throw err;
-			}
-		}
 	}
 
 	private async withWriteLock<T>(fn: () => Promise<T>): Promise<T> {

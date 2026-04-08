@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readdirSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { atomicWrite } from "./atomic-write";
 import type { Workflow, WorkflowIndexEntry } from "./types";
 
 export class WorkflowStore {
@@ -24,44 +25,11 @@ export class WorkflowStore {
 		return join(this.baseDir, "index.json");
 	}
 
-	private async atomicWrite(filePath: string, data: string): Promise<void> {
-		this.ensureDir();
-		const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-		const tmpPath = `${filePath}.${suffix}.tmp`;
-		await Bun.write(tmpPath, data);
-
-		// On Windows, rename can fail with EPERM if another handle has the
-		// target file open (antivirus, concurrent read, etc.). Retry briefly.
-		for (let attempt = 0; ; attempt++) {
-			try {
-				renameSync(tmpPath, filePath);
-				return;
-			} catch (err) {
-				if (attempt >= 3) {
-					// Final fallback: direct overwrite (non-atomic but won't EPERM)
-					try {
-						unlinkSync(tmpPath);
-					} catch {
-						/* tmp cleanup */
-					}
-					await Bun.write(filePath, data);
-					return;
-				}
-				const code = (err as NodeJS.ErrnoException).code;
-				if (code === "EPERM" || code === "EACCES") {
-					await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
-					continue;
-				}
-				throw err;
-			}
-		}
-	}
-
 	async save(workflow: Workflow): Promise<void> {
 		await this.withWriteLock(workflow.id, async () => {
 			this.ensureDir();
 			const data = JSON.stringify(workflow, null, 2);
-			await this.atomicWrite(this.workflowPath(workflow.id), data);
+			await atomicWrite(this.workflowPath(workflow.id), data);
 			await this.updateIndex(workflow);
 		});
 	}
@@ -134,7 +102,7 @@ export class WorkflowStore {
 		if (validIds.length < index.length) {
 			const validSet = new Set(validIds);
 			const prunedIndex = index.filter((e) => validSet.has(e.id));
-			await this.atomicWrite(this.indexPath(), JSON.stringify(prunedIndex, null, 2));
+			await atomicWrite(this.indexPath(), JSON.stringify(prunedIndex, null, 2));
 		}
 
 		return workflows.sort(
@@ -177,7 +145,7 @@ export class WorkflowStore {
 			const index = await this.loadIndex();
 			const updated = index.filter((e) => e.id !== id);
 			this.ensureDir();
-			await this.atomicWrite(this.indexPath(), JSON.stringify(updated, null, 2));
+			await atomicWrite(this.indexPath(), JSON.stringify(updated, null, 2));
 		} catch {
 			// Index update failed — non-critical
 		}
@@ -210,7 +178,7 @@ export class WorkflowStore {
 				index.push(entry);
 			}
 
-			await this.atomicWrite(this.indexPath(), JSON.stringify(index, null, 2));
+			await atomicWrite(this.indexPath(), JSON.stringify(index, null, 2));
 		});
 	}
 
@@ -252,7 +220,7 @@ export class WorkflowStore {
 
 		if (index.length > 0) {
 			this.ensureDir();
-			await this.atomicWrite(this.indexPath(), JSON.stringify(index, null, 2));
+			await atomicWrite(this.indexPath(), JSON.stringify(index, null, 2));
 		}
 
 		return index;
