@@ -4,7 +4,7 @@ import type {
 	WorkflowClientState,
 	WorkflowState,
 } from "../../types";
-import { $ } from "../dom";
+import { $, createTimerElement } from "../dom";
 import {
 	EPIC_AGG_STATUS_CLASSES,
 	EPIC_CARD_PREFIX,
@@ -124,12 +124,7 @@ function createCompactCard(
 	}
 
 	// Timer
-	const timer = document.createElement("span");
-	timer.className = "card-timer";
-	timer.dataset.activeWorkMs = String(wf.activeWorkMs);
-	timer.dataset.activeWorkStartedAt = wf.activeWorkStartedAt || "";
-	timer.textContent = formatTimer(wf.activeWorkMs, wf.activeWorkStartedAt);
-	card.appendChild(timer);
+	card.appendChild(createTimerElement(wf.activeWorkMs, wf.activeWorkStartedAt, formatTimer));
 
 	card.addEventListener("click", () => onClick(wf.id));
 
@@ -201,12 +196,7 @@ function createAggregatedEpicCard(
 	card.appendChild(progress);
 
 	// Timer — sum of active work time across children
-	const timer = document.createElement("span");
-	timer.className = "card-timer";
-	timer.dataset.activeWorkMs = String(agg.activeWorkMs);
-	timer.dataset.activeWorkStartedAt = agg.activeWorkStartedAt || "";
-	timer.textContent = formatTimer(agg.activeWorkMs, agg.activeWorkStartedAt);
-	card.appendChild(timer);
+	card.appendChild(createTimerElement(agg.activeWorkMs, agg.activeWorkStartedAt, formatTimer));
 
 	card.addEventListener("click", () => onClick(cardId));
 
