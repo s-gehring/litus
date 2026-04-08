@@ -17,6 +17,8 @@ export {
 } from "./factories";
 export type { MockCliRunner } from "./mock-cli-runner";
 export { createMockCliRunner } from "./mock-cli-runner";
+export type { MockHandlerDeps } from "./mock-handler-deps";
+export { createMockHandlerDeps } from "./mock-handler-deps";
 export type { MockSpawn } from "./mock-spawn";
 export { createMockSpawn } from "./mock-spawn";
 export type {
