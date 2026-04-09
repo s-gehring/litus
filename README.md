@@ -104,6 +104,35 @@ A pre-built image is published to [GitHub Container Registry](https://github.com
 ```bash
 docker run -d \
   -p 3000:3000 \
+  -e ANTHROPIC_API_KEY \
+  -v litus-data:/home/litus/.litus \
+  ghcr.io/s-gehring/litus:latest
+```
+
+#### Claude Code authentication
+
+The container ships with [Claude Code CLI](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) installed globally. It needs valid credentials to call the Anthropic API.
+
+**Option A — API key (recommended for containers)**
+
+Pass your key as an environment variable:
+
+```bash
+docker run -d \
+  -e ANTHROPIC_API_KEY="sk-ant-..." \
+  -p 3000:3000 \
+  -v litus-data:/home/litus/.litus \
+  ghcr.io/s-gehring/litus:latest
+```
+
+**Option B — Mount an existing session**
+
+If you have already authenticated with `claude` on the host, bind-mount the credentials directory:
+
+```bash
+docker run -d \
+  -v ~/.claude:/home/litus/.claude \
+  -p 3000:3000 \
   -v litus-data:/home/litus/.litus \
   ghcr.io/s-gehring/litus:latest
 ```
@@ -112,6 +141,7 @@ docker run -d \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | — | API key for Claude Code CLI (required unless you mount `~/.claude`) |
 | `PORT` | `3000` | HTTP server listen port (inside the container) |
 
 #### Volumes
@@ -130,6 +160,7 @@ The entrypoint automatically creates the required subdirectories (`workflows/`, 
 mkdir -p ./litus-data
 
 docker run -d \
+  -e ANTHROPIC_API_KEY \
   -p 3000:3000 \
   -v ./litus-data:/home/litus/.litus \
   ghcr.io/s-gehring/litus:latest
