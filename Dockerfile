@@ -27,7 +27,7 @@ RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 # gosu is used by the entrypoint to drop privileges after fixing volume permissions
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git gosu \
-    && npm install -g @anthropic-ai/claude-code \
+    && npm install -g @anthropic-ai/claude-code@2.1.98 \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
 
