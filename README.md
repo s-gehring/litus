@@ -113,7 +113,6 @@ docker run -d \
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3000` | HTTP server listen port (inside the container) |
-| `ANTHROPIC_API_KEY` | — | Passed through to the Claude Code CLI for authentication. Not required if Claude Code is authenticated another way (e.g. a mounted config). |
 
 #### Volumes
 
@@ -133,7 +132,6 @@ mkdir -p ./litus-data
 docker run -d \
   -p 3000:3000 \
   -v ./litus-data:/home/litus/.litus \
-  -e ANTHROPIC_API_KEY="sk-ant-..." \
   ghcr.io/s-gehring/litus:latest
 ```
 
