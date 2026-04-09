@@ -19,7 +19,7 @@ RUN bun run build:client
 RUN rm -rf node_modules && bun install --frozen-lockfile --production
 
 # ---- Production stage ----
-FROM node:22-slim
+FROM node:22-slim@sha256:f3a68cf41a855d227d1b0ab832bed9749469ef38cf4f58182fb8c893bc462383
 
 # Bun runtime (copied from official image — single static binary)
 ARG BUN_VERSION
