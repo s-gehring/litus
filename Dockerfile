@@ -5,7 +5,7 @@ FROM oven/bun:1.3.11-slim AS build
 
 WORKDIR /app
 
-COPY package.json bun.lockb ./
+COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 COPY tsconfig.json ./
@@ -23,9 +23,10 @@ FROM node:22-slim
 COPY --from=oven/bun:1.3.11-slim /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 
-# Git is required for worktree management; Claude Code CLI is the agent runtime
+# Git is required for worktree management; Claude Code CLI is the agent runtime;
+# gosu is used by the entrypoint to drop privileges after fixing volume permissions
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
+    && apt-get install -y --no-install-recommends git gosu \
     && npm install -g @anthropic-ai/claude-code \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
@@ -47,8 +48,8 @@ COPY --from=build --chown=litus:litus /app/node_modules node_modules/
 COPY --from=build --chown=litus:litus /app/public public/
 COPY --from=build --chown=litus:litus /app/src src/
 COPY --from=build --chown=litus:litus /app/package.json .
-
-USER litus
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3000
 
@@ -57,4 +58,5 @@ VOLUME ["/home/litus/.litus"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["bun", "--eval", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["bun", "run", "start"]
