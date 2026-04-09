@@ -15,9 +15,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  BUN_VERSION: "1.3.11" # Pinned for stability; matches @types/bun in devDeps
-
 jobs:
   commits:
     if: github.event_name == 'pull_request'
@@ -57,5 +54,3 @@ jobs:
 
       - name: Quality gate
         uses: ./.github/actions/quality-gate
-        with:
-          bun-version: ${{ env.BUN_VERSION }}

@@ -1,18 +1,13 @@
 name: Quality Gate
 description: Shared quality checks — lint, type-check, build, test, audit
 
-inputs:
-  bun-version:
-    description: Bun version to install
-    required: true
-
 runs:
   using: composite
   steps:
     - name: Setup Bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
-        bun-version: ${{ inputs.bun-version }}
+        bun-version-file: .bun-version
 
     - name: Install dependencies
       run: bun install --frozen-lockfile
