@@ -97,6 +97,50 @@ For production (client must be pre-built):
 bun run start
 ```
 
+### Docker
+
+A pre-built image is published to GitHub Container Registry on every release.
+
+```bash
+docker run -d \
+  -p 3000:3000 \
+  -v litus-data:/home/litus/.litus \
+  ghcr.io/s-gehring/litus:latest
+```
+
+#### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | HTTP server listen port (inside the container) |
+| `ANTHROPIC_API_KEY` | — | Passed through to the Claude Code CLI for authentication. Not required if Claude Code is authenticated another way (e.g. a mounted config). |
+
+#### Volumes
+
+The container declares a single volume:
+
+| Path | Purpose |
+|------|---------|
+| `/home/litus/.litus` | Workflow state, epic definitions, app config, and audit logs. Mount a named volume or bind mount to persist data across container restarts. |
+
+The entrypoint automatically creates the required subdirectories (`workflows/`, `audit/`) and fixes ownership on bind mounts.
+
+#### Example with bind mount
+
+```bash
+mkdir -p ./litus-data
+
+docker run -d \
+  -p 3000:3000 \
+  -v ./litus-data:/home/litus/.litus \
+  -e ANTHROPIC_API_KEY="sk-ant-..." \
+  ghcr.io/s-gehring/litus:latest
+```
+
+> [!NOTE]
+> The container runs as a non-root user (`litus`, UID 1001). The entrypoint uses `gosu` to fix volume
+> permissions before dropping privileges — no manual `chown` needed.
+
 ### Using Litus
 
 1. You enter a feature spec in the browser and hit **Start**
