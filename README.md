@@ -99,7 +99,7 @@ bun run start
 
 ### Docker
 
-A pre-built image is published to GitHub Container Registry on every release.
+A pre-built image is published to [GitHub Container Registry](https://github.com/s-gehring/litus/pkgs/container/litus) on every release.
 
 ```bash
 docker run -d \
