@@ -43,7 +43,7 @@ jobs:
       - run: bun run build:client
 
       - name: Package tarball
-        run: tar czf litus-${{ github.ref_name }}.tar.gz src/ public/ package.json bun.lock
+        run: tar czf litus-${{ github.ref_name }}.tar.gz src/ public/ package.json bun.lock tsconfig.json
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2.6.1
