@@ -21,15 +21,14 @@ RUN rm -rf node_modules && bun install --frozen-lockfile --production
 # ---- Production stage ----
 FROM node:22-slim@sha256:f3a68cf41a855d227d1b0ab832bed9749469ef38cf4f58182fb8c893bc462383
 
-# Bun runtime (copied from official image — single static binary)
-ARG BUN_VERSION
-COPY --from=oven/bun:${BUN_VERSION}-slim /usr/local/bin/bun /usr/local/bin/bun
+# Bun runtime (copied from build stage — same image, single static binary)
+COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 
 # Git is required for worktree management; Claude Code CLI is the agent runtime;
 # gosu is used by the entrypoint to drop privileges after fixing volume permissions
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git gosu \
+    && apt-get install -y --no-install-recommends git gosu ca-certificates \
     && npm install -g @anthropic-ai/claude-code@2.1.98 \
     && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
@@ -42,8 +41,8 @@ LABEL org.opencontainers.image.title="Litus" \
 
 WORKDIR /app
 
-RUN groupadd --system --gid 1001 litus \
-    && useradd --system --uid 1001 --gid litus --create-home litus \
+RUN groupadd --gid 1001 litus \
+    && useradd --uid 1001 --gid litus --create-home litus \
     && mkdir -p /home/litus/.litus \
     && chown -R litus:litus /home/litus/.litus
 
@@ -52,8 +51,8 @@ COPY --from=build --chown=litus:litus /app/public public/
 COPY --from=build --chown=litus:litus /app/src src/
 COPY --from=build --chown=litus:litus /app/package.json .
 COPY --from=build --chown=litus:litus /app/tsconfig.json .
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/
+COPY --chown=litus:litus LICENSE.md .
 
 EXPOSE 3000
 
