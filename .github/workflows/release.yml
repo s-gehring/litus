@@ -59,10 +59,8 @@ jobs:
       contents: read
       packages: write
       id-token: write       # Cosign keyless signing (Sigstore OIDC)
-      attestations: write   # GitHub artifact attestations
     outputs:
       digest: ${{ steps.build.outputs.digest }}
-      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
