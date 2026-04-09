@@ -51,6 +51,7 @@ COPY --from=build --chown=litus:litus /app/node_modules node_modules/
 COPY --from=build --chown=litus:litus /app/public public/
 COPY --from=build --chown=litus:litus /app/src src/
 COPY --from=build --chown=litus:litus /app/package.json .
+COPY --from=build --chown=litus:litus /app/tsconfig.json .
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
