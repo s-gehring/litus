@@ -233,12 +233,12 @@ bun audit                      # Dependency vulnerability scan
 1. Fork the repo
 2. Create a feature branch (`feat/your-thing`)
 3. Make your changes — keep commits atomic and small
-4. Commit messages must start with `feat:`, `bug:`, `chore:`, or `docs:`
+4. Follow [Conventional Commits](https://www.conventionalcommits.org) for all commit messages (CI enforces this on PRs)
 5. Run `bunx biome ci .` and `bun test` before pushing
 6. Open a PR against `master`
 
-Linting is enforced by Biome. CI will reject anything that doesn't pass `biome ci`, type checking, and tests. Don't
-fight it.
+Linting is enforced by Biome. CI will reject anything that doesn't pass `biome ci`, type checking, tests, or
+conventional commit checks. Don't fight it.
 
 ## License
 
