@@ -12,6 +12,56 @@ if [ "$dir_owner" != "1001:1001" ]; then
     chown -R litus:litus "$DATA_DIR"
 fi
 
-su-exec litus mkdir -p "$DATA_DIR/workflows" "$DATA_DIR/audit"
+gosu litus mkdir -p "$DATA_DIR/workflows" "$DATA_DIR/audit"
 
-exec su-exec litus "$@"
+# ── Install tools on first boot ────────────────────────────────────
+# gh and claude are not shipped in the image for licensing reasons.
+# They are downloaded on first container start so the end-user accepts
+# the respective licenses themselves.
+
+if ! command -v gh >/dev/null 2>&1; then
+    echo "Installing GitHub CLI..."
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64)  GH_ARCH="amd64" ;;
+        aarch64) GH_ARCH="arm64" ;;
+        *)       echo "ERROR: Unsupported architecture: $ARCH"; exit 1 ;;
+    esac
+    GH_VERSION=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest \
+        | sed -n 's/.*"tag_name": "v\([^"]*\)".*/\1/p')
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${GH_ARCH}.tar.gz" \
+        | tar xz -C /tmp
+    install /tmp/gh_${GH_VERSION}_linux_${GH_ARCH}/bin/gh /usr/local/bin/gh
+    rm -rf /tmp/gh_*
+    echo "Installed gh ${GH_VERSION}"
+fi
+
+if ! command -v claude >/dev/null 2>&1; then
+    echo "Installing Claude Code CLI..."
+    npm install -g @anthropic-ai/claude-code 2>&1 | tail -1
+fi
+
+# Ensure ~/.claude.json exists so Claude Code does not print repeated warnings.
+CLAUDE_JSON="/home/litus/.claude.json"
+[ -f "$CLAUDE_JSON" ] || gosu litus sh -c "echo '{}' > $CLAUDE_JSON"
+
+# ── Auth validation ─────────────────────────────────────────────────
+CLAUDE_DIR="/home/litus/.claude"
+
+# Claude Code: need ANTHROPIC_API_KEY or a mounted ~/.claude session
+if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ ! -d "$CLAUDE_DIR" ]; then
+    echo "ERROR: No Claude Code credentials found."
+    echo "  Set ANTHROPIC_API_KEY or bind-mount ~/.claude to $CLAUDE_DIR"
+    exit 1
+fi
+
+# GitHub CLI: need GH_TOKEN (or GITHUB_TOKEN).
+# NOTE: Mounting ~/.config/gh does NOT work — most installations store the
+# token in the OS keyring, not in the config files.
+if [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ]; then
+    echo "ERROR: No GitHub CLI credentials found."
+    echo "  Set GH_TOKEN or GITHUB_TOKEN."
+    exit 1
+fi
+
+exec gosu litus "$@"
