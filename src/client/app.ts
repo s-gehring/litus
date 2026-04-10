@@ -8,11 +8,12 @@ import type {
 } from "../types";
 import { ClientStateManager } from "./client-state-manager";
 import {
+	createConfigPageHandler,
 	hidePurgeProgress,
 	showPurgeProgress,
-	updateConfigPanel,
+	updateConfigPage,
 	updatePurgeProgress,
-} from "./components/config-panel";
+} from "./components/config-page";
 import type { RouteHandler } from "./router";
 import { Router } from "./router";
 import { createModal } from "./components/creation-modal";
@@ -332,7 +333,7 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "config:state": {
-			updateConfigPanel(msg.config, msg.warnings);
+			updateConfigPage(msg.config, msg.warnings);
 			syncAutoModeToggle(msg.config.autoMode);
 			break;
 		}
@@ -952,20 +953,13 @@ document.addEventListener("DOMContentLoaded", () => {
 	if (appContent) {
 		appRouter = new Router(appContent, "/");
 		appRouter.register("/", createDashboardHandler());
-		appRouter.register("/config", {
-			mount(_container: HTMLElement) {
-				// Placeholder — will be replaced with config page in T013
-				const placeholder = document.createElement("div");
-				placeholder.id = "config-placeholder";
-				placeholder.textContent = "Configuration page (coming soon)";
-				_container.appendChild(placeholder);
-			},
-			unmount() {
-				const placeholder = document.getElementById("config-placeholder");
-				if (placeholder) placeholder.remove();
-			},
-		});
+		appRouter.register("/config", createConfigPageHandler(send));
 		appRouter.start();
+
+		// Listen for router:navigate custom events (used by config page Back link)
+		window.addEventListener("router:navigate", ((e: CustomEvent) => {
+			appRouter?.navigate(e.detail);
+		}) as EventListener);
 	}
 
 	// Gear button → router navigation
