@@ -27,7 +27,8 @@ RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 
 # Git is required for worktree management; Claude Code CLI is the agent runtime;
 # su-exec is the Alpine equivalent of gosu for privilege dropping in the entrypoint
-RUN apk add --no-cache git su-exec ca-certificates \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache git su-exec ca-certificates \
     && npm install -g @anthropic-ai/claude-code@2.1.98 \
     && npm cache clean --force \
     && rm -rf /root/.npm /tmp/* \
