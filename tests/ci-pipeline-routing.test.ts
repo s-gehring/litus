@@ -55,7 +55,7 @@ function createFakeEngine() {
 				specification: spec,
 				status: "idle" as WorkflowStatus,
 				targetRepository,
-				worktreePath: "/tmp/test-worktree",
+				worktreePath: null,
 				worktreeBranch: "tmp-test0001",
 				featureBranch: null,
 				summary: "",
@@ -139,6 +139,12 @@ function createFakeEngine() {
 				workflow.updatedAt = new Date().toISOString();
 			}
 		},
+		createWorktree: async (_shortId: string, _cwd: string) => {
+			if (workflow) workflow.worktreePath = "/tmp/test-worktree";
+			return "/tmp/test-worktree";
+		},
+		copyGitignoredFiles: async (_src: string, _dest: string) => {},
+		removeWorktree: async (_worktreePath: string, _targetRepo: string) => {},
 		moveWorktree: async () => "/tmp/test-worktree",
 		_getWorkflow: () => workflow,
 	};
