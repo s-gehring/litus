@@ -1,7 +1,9 @@
-import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { gitSpawn } from "./git-logger";
 import type { SetupCheckResult, SetupResult } from "./types";
+
+const SPECKIT_VERSION = "v0.6.0";
 
 async function runCommand(
 	cmd: string[],
@@ -110,8 +112,21 @@ export async function checkGhAuth(targetDir: string): Promise<SetupCheckResult> 
 	};
 }
 
-/** Speckit prompt names to check (without path prefix). */
-export const SPECKIT_NAMES = [
+export async function checkUvInstalled(): Promise<SetupCheckResult> {
+	const result = await runCommand(["uv", "--version"]);
+	return {
+		name: "uv installed",
+		passed: result.code === 0,
+		error:
+			result.code !== 0
+				? "uv is not installed or not on PATH. Install it from https://docs.astral.sh/uv/"
+				: undefined,
+		required: true,
+	};
+}
+
+/** Speckit prompt names that the full init produces. */
+const SPECKIT_NAMES = [
 	"clarify",
 	"implement",
 	"plan",
@@ -121,24 +136,20 @@ export const SPECKIT_NAMES = [
 	"implementreview",
 ];
 
-/** Names of prompts bundled with the app that get auto-installed as skills when missing. */
-export const BUNDLED_SPECKIT_NAMES = ["review", "implementreview"];
-
-function skillDir(skillsDir: string, name: string): string {
-	return join(skillsDir, `speckit-${name}`);
-}
-
-function skillExists(skillsDir: string, name: string): boolean {
-	return existsSync(join(skillDir(skillsDir, name), "SKILL.md"));
-}
+/** Names of prompts bundled with the app that get auto-installed when speckit is already present. */
+const BUNDLED_SPECKIT_NAMES = ["review", "implementreview"];
 
 const BUNDLED_DIR = join(import.meta.dir, "bundled-skills");
+
+function skillExists(skillsDir: string, name: string): boolean {
+	return existsSync(join(skillsDir, `speckit-${name}`, "SKILL.md"));
+}
 
 function installBundledSkills(skillsDir: string): string[] {
 	const installed: string[] = [];
 	for (const name of BUNDLED_SPECKIT_NAMES) {
 		if (!skillExists(skillsDir, name)) {
-			const target = skillDir(skillsDir, name);
+			const target = join(skillsDir, `speckit-${name}`);
 			mkdirSync(target, { recursive: true });
 			cpSync(join(BUNDLED_DIR, `speckit-${name}`), target, { recursive: true });
 			installed.push(name);
@@ -147,53 +158,47 @@ function installBundledSkills(skillsDir: string): string[] {
 	return installed;
 }
 
-/** Detect legacy speckit.*.md command files in .claude/commands/ */
-function findLegacySpeckitCommands(targetDir: string): string[] {
-	const commandsDir = join(targetDir, ".claude", "commands");
-	if (!existsSync(commandsDir)) return [];
-	try {
-		return readdirSync(commandsDir).filter((f) => /^speckit\..*\.md$/.test(f));
-	} catch {
-		return [];
-	}
+/** Check whether any speckit skills exist in the target directory. */
+export function hasSpeckitSkills(targetDir: string): boolean {
+	const skillsDir = join(targetDir, ".claude", "skills");
+	return SPECKIT_NAMES.some((name) => skillExists(skillsDir, name));
 }
 
-export function checkSpeckitFiles(targetDir: string): SetupCheckResult {
-	const skillsDir = join(targetDir, ".claude", "skills");
-
-	// Detect legacy command format
-	const legacyFiles = findLegacySpeckitCommands(targetDir);
-	if (legacyFiles.length > 0) {
-		return {
-			name: "Speckit prompt files",
-			passed: false,
-			error: `Found legacy speckit commands (${legacyFiles.join(", ")}). Update speckit and reinitialize the project to use the new skills format (.claude/skills/speckit-<name>/SKILL.md)`,
-			required: true,
-		};
+/**
+ * Ensure speckit skills are present in `targetDir`.
+ *
+ * - If speckit skills already exist, install only the bundled extras and return `null`.
+ * - If no speckit skills exist, run `uvx specify init` and return the process result.
+ */
+export async function ensureSpeckitSkills(targetDir: string): Promise<{
+	installed: boolean;
+	initResult: { code: number; stdout: string; stderr: string } | null;
+}> {
+	if (hasSpeckitSkills(targetDir)) {
+		const skillsDir = join(targetDir, ".claude", "skills");
+		installBundledSkills(skillsDir);
+		return { installed: true, initResult: null };
 	}
 
-	// Auto-install bundled skills if missing
-	const installed = installBundledSkills(skillsDir);
-
-	const missing: string[] = [];
-	for (const name of SPECKIT_NAMES) {
-		if (!skillExists(skillsDir, name)) {
-			missing.push(name);
-		}
-	}
-
-	const info =
-		installed.length > 0 ? `Auto-installed bundled skills: ${installed.join(", ")}. ` : "";
-
-	return {
-		name: "Speckit prompt files",
-		passed: missing.length === 0,
-		error:
-			missing.length > 0
-				? `${info}Missing speckit skills (.claude/skills/): ${missing.join(", ")}`
-				: undefined,
-		required: true,
-	};
+	const scriptType = process.platform === "win32" ? "ps" : "sh";
+	const result = await runCommand(
+		[
+			"uvx",
+			"--from",
+			`git+https://github.com/github/spec-kit.git@${SPECKIT_VERSION}`,
+			"specify",
+			"init",
+			"--here",
+			"--ai",
+			"claude",
+			"--script",
+			scriptType,
+			"--force",
+			"--no-git",
+		],
+		targetDir,
+	);
+	return { installed: result.code === 0, initResult: result };
 }
 
 export async function checkClaudeCli(): Promise<SetupCheckResult> {
@@ -240,14 +245,13 @@ export async function checkGitignoreEntries(targetDir: string): Promise<SetupChe
 
 export async function runSetupChecks(targetDir: string): Promise<SetupResult> {
 	// Run all required checks
-	const [gitInstalled, isGitRepo, ghInstalled, claudeCli] = await Promise.all([
+	const [gitInstalled, isGitRepo, ghInstalled, claudeCli, uvInstalled] = await Promise.all([
 		checkGitInstalled(),
 		checkIsGitRepo(targetDir),
 		checkGhInstalled(),
 		checkClaudeCli(),
+		checkUvInstalled(),
 	]);
-
-	const speckitFiles = checkSpeckitFiles(targetDir);
 
 	// Only run origin/auth checks if git repo check passed
 	let gitHubOrigin: SetupCheckResult;
@@ -278,7 +282,7 @@ export async function runSetupChecks(targetDir: string): Promise<SetupResult> {
 		gitHubOrigin,
 		ghInstalled,
 		ghAuth,
-		speckitFiles,
+		uvInstalled,
 		claudeCli,
 	];
 
