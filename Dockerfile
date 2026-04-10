@@ -53,6 +53,10 @@ COPY --from=build --chown=litus:litus /app/tsconfig.json .
 COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/
 COPY --chown=litus:litus LICENSE.md .
 
+USER litus
+RUN git config --global safe.directory '*'
+USER root
+
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
