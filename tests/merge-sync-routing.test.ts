@@ -292,6 +292,7 @@ describe("Merge & Sync Pipeline Routing", () => {
 				requiredFailures: [],
 				optionalWarnings: [],
 			}),
+			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 			checkoutMaster: async () => ({ code: 0, stderr: "" }),
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);

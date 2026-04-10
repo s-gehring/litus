@@ -18,7 +18,10 @@ import {
 import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
-import { runSetupChecks as defaultRunSetupChecks } from "./setup-checker";
+import {
+	ensureSpeckitSkills as defaultEnsureSpeckitSkills,
+	runSetupChecks as defaultRunSetupChecks,
+} from "./setup-checker";
 import { routeAfterStep as computeRoute, shouldLoopReview } from "./step-router";
 import { Summarizer } from "./summarizer";
 import {
@@ -63,6 +66,7 @@ export interface PipelineDeps {
 	resolveConflicts?: typeof defaultResolveConflicts;
 	syncRepo?: typeof defaultSyncRepo;
 	runSetupChecks?: (targetDir: string) => Promise<SetupResult>;
+	ensureSpeckitSkills?: typeof defaultEnsureSpeckitSkills;
 	checkoutMaster?: (cwd: string) => Promise<{ code: number; stderr: string }>;
 }
 
@@ -110,6 +114,7 @@ export class PipelineOrchestrator {
 	private resolveConflictsFn: typeof defaultResolveConflicts;
 	private syncRepoFn: typeof defaultSyncRepo;
 	private runSetupChecksFn: (targetDir: string) => Promise<SetupResult>;
+	private ensureSpeckitSkillsFn: typeof defaultEnsureSpeckitSkills;
 	private checkoutMasterFn: (cwd: string) => Promise<{ code: number; stderr: string }>;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
@@ -128,6 +133,7 @@ export class PipelineOrchestrator {
 		this.resolveConflictsFn = deps?.resolveConflicts ?? defaultResolveConflicts;
 		this.syncRepoFn = deps?.syncRepo ?? defaultSyncRepo;
 		this.runSetupChecksFn = deps?.runSetupChecks ?? defaultRunSetupChecks;
+		this.ensureSpeckitSkillsFn = deps?.ensureSpeckitSkills ?? defaultEnsureSpeckitSkills;
 		this.checkoutMasterFn =
 			deps?.checkoutMaster ??
 			(async (cwd: string) => {
@@ -654,13 +660,40 @@ export class PipelineOrchestrator {
 					return;
 				}
 				this.handleStepOutput(wf.id, "✓ Checked out latest master in worktree");
-				this.advanceAfterStep(wf.id);
+				this.initSpeckitInWorktree(wf);
 			})
 			.catch((err) => {
 				this.handleStepError(
 					workflow.id,
 					`Failed to checkout master in worktree: ${toErrorMessage(err)}`,
 				);
+			});
+	}
+
+	private initSpeckitInWorktree(workflow: Workflow): void {
+		const cwd = requireWorktreePath(workflow);
+		this.handleStepOutput(workflow.id, "[speckit] Ensuring spec-kit skills in worktree");
+
+		this.ensureSpeckitSkillsFn(cwd)
+			.then(({ installed, initResult }) => {
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf) return;
+
+				if (!installed) {
+					const errMsg = initResult?.stderr || `exit code ${initResult?.code}`;
+					this.handleStepError(wf.id, `Failed to initialize spec-kit: ${errMsg}`);
+					return;
+				}
+
+				if (initResult) {
+					this.handleStepOutput(wf.id, "✓ Spec-kit initialized via uvx");
+				} else {
+					this.handleStepOutput(wf.id, "✓ Spec-kit skills already present");
+				}
+				this.advanceAfterStep(wf.id);
+			})
+			.catch((err) => {
+				this.handleStepError(workflow.id, `Failed to initialize spec-kit: ${toErrorMessage(err)}`);
 			});
 	}
 

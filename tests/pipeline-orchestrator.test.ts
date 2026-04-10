@@ -263,6 +263,7 @@ describe("PipelineOrchestrator", () => {
 				requiredFailures: [],
 				optionalWarnings: [],
 			}),
+			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 			checkoutMaster: async () => ({ code: 0, stderr: "" }),
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
@@ -1294,6 +1295,7 @@ describe("PipelineOrchestrator", () => {
 				auditLogger: createFakeAuditLogger(),
 				workflowStore: createFakeWorkflowStore(),
 				runSetupChecks: async () => setupResult,
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 				checkoutMaster: async () => ({ code: 0, stderr: "" }),
 			};
 			const orch = new PipelineOrchestrator(localCallbacks, deps);
@@ -1401,6 +1403,7 @@ describe("PipelineOrchestrator", () => {
 				runSetupChecks: async () => {
 					throw new Error("Spawn failed");
 				},
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 				checkoutMaster: async () => ({ code: 0, stderr: "" }),
 			};
 			const orch = new PipelineOrchestrator(localCallbacks, deps);
@@ -1453,6 +1456,7 @@ describe("PipelineOrchestrator", () => {
 					requiredFailures: [],
 					optionalWarnings: [],
 				}),
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 				checkoutMaster: async (cwd: string) => {
 					checkoutCwd = cwd;
 					return { code: 0, stderr: "" };
@@ -1543,6 +1547,7 @@ describe("PipelineOrchestrator", () => {
 						optionalWarnings: [],
 					};
 				},
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 				checkoutMaster: async () => ({ code: 0, stderr: "" }),
 			};
 			const orch = new PipelineOrchestrator(localCallbacks, deps);
@@ -1582,6 +1587,7 @@ describe("PipelineOrchestrator", () => {
 					requiredFailures: [],
 					optionalWarnings: [],
 				}),
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 				checkoutMaster: async () => ({ code: 0, stderr: "" }),
 			};
 			const orch = new PipelineOrchestrator(localCallbacks, deps);
@@ -1620,6 +1626,7 @@ describe("PipelineOrchestrator", () => {
 					requiredFailures: [],
 					optionalWarnings: [],
 				}),
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 				checkoutMaster: async () => ({ code: 0, stderr: "" }),
 			};
 			const orch = new PipelineOrchestrator(localCallbacks, deps);
@@ -1656,6 +1663,7 @@ describe("PipelineOrchestrator", () => {
 						optionalWarnings: [],
 					};
 				},
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 				checkoutMaster: async () => ({ code: 0, stderr: "" }),
 			};
 			const orch = new PipelineOrchestrator(localCallbacks, deps);
