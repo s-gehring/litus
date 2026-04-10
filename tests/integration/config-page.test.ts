@@ -29,14 +29,14 @@ describe("Dashboard route handler", () => {
 		const handler = createDashboardHandler();
 
 		// Hide elements first (simulating coming from another route)
-		document.getElementById("card-strip")!.classList.add("hidden");
-		document.getElementById("welcome-area")!.classList.add("hidden");
-		document.getElementById("detail-area")!.classList.add("hidden");
+		document.getElementById("card-strip")?.classList.add("hidden");
+		document.getElementById("welcome-area")?.classList.add("hidden");
+		document.getElementById("detail-area")?.classList.add("hidden");
 
 		handler.mount(appContent);
 
-		expect(document.getElementById("card-strip")!.classList.contains("hidden")).toBe(false);
-		expect(document.getElementById("welcome-area")!.classList.contains("hidden")).toBe(false);
+		expect(document.getElementById("card-strip")?.classList.contains("hidden")).toBe(false);
+		expect(document.getElementById("welcome-area")?.classList.contains("hidden")).toBe(false);
 		// detail-area stays hidden until a workflow is expanded
 	});
 
@@ -47,9 +47,9 @@ describe("Dashboard route handler", () => {
 		handler.mount(appContent);
 		handler.unmount();
 
-		expect(document.getElementById("card-strip")!.classList.contains("hidden")).toBe(true);
-		expect(document.getElementById("welcome-area")!.classList.contains("hidden")).toBe(true);
-		expect(document.getElementById("detail-area")!.classList.contains("hidden")).toBe(true);
+		expect(document.getElementById("card-strip")?.classList.contains("hidden")).toBe(true);
+		expect(document.getElementById("welcome-area")?.classList.contains("hidden")).toBe(true);
+		expect(document.getElementById("detail-area")?.classList.contains("hidden")).toBe(true);
 	});
 });
 
@@ -70,9 +70,7 @@ describe("Config page", () => {
 	});
 
 	test("mount renders all config sections", async () => {
-		const { createConfigPageHandler } = await import(
-			"../../src/client/components/config-page"
-		);
+		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
 		const handler = createConfigPageHandler(sendSpy);
 
 		handler.mount(container);
@@ -92,39 +90,33 @@ describe("Config page", () => {
 	});
 
 	test("mount renders Reset and Purge buttons", async () => {
-		const { createConfigPageHandler } = await import(
-			"../../src/client/components/config-page"
-		);
+		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
 		const handler = createConfigPageHandler(sendSpy);
 
 		handler.mount(container);
 
 		const resetBtn = container.querySelector(".cfg-reset-all-btn");
 		expect(resetBtn).toBeTruthy();
-		expect(resetBtn!.textContent).toContain("Reset");
+		expect(resetBtn?.textContent).toContain("Reset");
 
 		const purgeBtn = container.querySelector(".cfg-purge-btn");
 		expect(purgeBtn).toBeTruthy();
-		expect(purgeBtn!.textContent).toContain("Purge");
+		expect(purgeBtn?.textContent).toContain("Purge");
 	});
 
 	test("mount renders Back link", async () => {
-		const { createConfigPageHandler } = await import(
-			"../../src/client/components/config-page"
-		);
+		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
 		const handler = createConfigPageHandler(sendSpy);
 
 		handler.mount(container);
 
 		const backLink = container.querySelector(".config-page-back");
 		expect(backLink).toBeTruthy();
-		expect(backLink!.textContent).toContain("Back");
+		expect(backLink?.textContent).toContain("Back");
 	});
 
 	test("mount sends config:get", async () => {
-		const { createConfigPageHandler } = await import(
-			"../../src/client/components/config-page"
-		);
+		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
 		const handler = createConfigPageHandler(sendSpy);
 
 		handler.mount(container);
@@ -133,9 +125,7 @@ describe("Config page", () => {
 	});
 
 	test("unmount removes config page from container", async () => {
-		const { createConfigPageHandler } = await import(
-			"../../src/client/components/config-page"
-		);
+		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
 		const handler = createConfigPageHandler(sendSpy);
 
 		handler.mount(container);

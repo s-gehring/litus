@@ -14,8 +14,6 @@ import {
 	updateConfigPage,
 	updatePurgeProgress,
 } from "./components/config-page";
-import type { RouteHandler } from "./router";
-import { Router } from "./router";
 import { createModal } from "./components/creation-modal";
 import { renderEpicTree } from "./components/epic-tree";
 import { updateFavicon } from "./components/favicon";
@@ -41,6 +39,8 @@ import {
 } from "./components/workflow-window";
 import { $ } from "./dom";
 import { renderMarkdown } from "./render-markdown";
+import type { RouteHandler } from "./router";
+import { Router } from "./router";
 
 const stateManager = new ClientStateManager();
 
