@@ -8,14 +8,13 @@ import type {
 } from "../types";
 import { ClientStateManager } from "./client-state-manager";
 import {
-	createConfigPanel,
-	hideConfigPanel,
 	hidePurgeProgress,
-	showConfigPanel,
 	showPurgeProgress,
 	updateConfigPanel,
 	updatePurgeProgress,
 } from "./components/config-panel";
+import type { RouteHandler } from "./router";
+import { Router } from "./router";
 import { createModal } from "./components/creation-modal";
 import { renderEpicTree } from "./components/epic-tree";
 import { updateFavicon } from "./components/favicon";
@@ -43,6 +42,28 @@ import { $ } from "./dom";
 import { renderMarkdown } from "./render-markdown";
 
 const stateManager = new ClientStateManager();
+
+let appRouter: Router | null = null;
+
+export function createDashboardHandler(): RouteHandler {
+	return {
+		mount(_container: HTMLElement) {
+			const cardStrip = document.getElementById("card-strip");
+			const welcomeArea = document.getElementById("welcome-area");
+			if (cardStrip) cardStrip.classList.remove("hidden");
+			if (welcomeArea) welcomeArea.classList.remove("hidden");
+			// detail-area visibility is managed by renderExpandedView
+		},
+		unmount() {
+			const cardStrip = document.getElementById("card-strip");
+			const welcomeArea = document.getElementById("welcome-area");
+			const detailArea = document.getElementById("detail-area");
+			if (cardStrip) cardStrip.classList.add("hidden");
+			if (welcomeArea) welcomeArea.classList.add("hidden");
+			if (detailArea) detailArea.classList.add("hidden");
+		},
+	};
+}
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -301,7 +322,7 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "purge:complete": {
 			hidePurgeProgress();
-			hideConfigPanel();
+			if (appRouter) appRouter.navigate("/");
 			renderCards();
 			renderExpandedView();
 			if (msg.warnings.length > 0) {
@@ -926,26 +947,37 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	});
 
-	// Config panel
-	const configPanel = createConfigPanel(send);
-	const configContainer = document.getElementById("config-panel");
-	if (configContainer) configContainer.appendChild(configPanel);
+	// Initialize router
+	const appContent = document.getElementById("app-content");
+	if (appContent) {
+		appRouter = new Router(appContent, "/");
+		appRouter.register("/", createDashboardHandler());
+		appRouter.register("/config", {
+			mount(_container: HTMLElement) {
+				// Placeholder — will be replaced with config page in T013
+				const placeholder = document.createElement("div");
+				placeholder.id = "config-placeholder";
+				placeholder.textContent = "Configuration page (coming soon)";
+				_container.appendChild(placeholder);
+			},
+			unmount() {
+				const placeholder = document.getElementById("config-placeholder");
+				if (placeholder) placeholder.remove();
+			},
+		});
+		appRouter.start();
+	}
 
-	// Config overlay (click-outside-to-close)
-	const overlay = document.createElement("div");
-	overlay.id = "config-overlay";
-	overlay.className = "config-overlay hidden";
-	overlay.addEventListener("click", () => hideConfigPanel());
-	document.body.appendChild(overlay);
-
+	// Gear button → router navigation
 	const btnConfig = document.getElementById("btn-config");
 	if (btnConfig) {
 		btnConfig.addEventListener("click", () => {
-			const panel = document.getElementById("config-panel");
-			if (panel?.classList.contains("hidden")) {
-				showConfigPanel(send);
-			} else {
-				hideConfigPanel();
+			if (appRouter) {
+				if (appRouter.currentPath === "/config") {
+					appRouter.navigate("/");
+				} else {
+					appRouter.navigate("/config");
+				}
 			}
 		});
 	}
