@@ -82,15 +82,13 @@ describe("Config page", () => {
 		const page = container.querySelector(".config-page") as HTMLElement;
 		expect(page).toBeTruthy();
 
-		// Should have Models, Limits, Timing, Prompts sections
-		const sectionHeaders = page.querySelectorAll(".cfg-section-header");
-		const headerTexts = Array.from(sectionHeaders).map((h) =>
-			h.querySelector(".cfg-section-title")?.textContent?.trim(),
-		);
-		expect(headerTexts).toContain("Models");
-		expect(headerTexts).toContain("Limits");
-		expect(headerTexts).toContain("Timing");
-		expect(headerTexts).toContain("Prompts");
+		// Should have Models, Limits, Timing, Prompts tabs
+		const tabs = page.querySelectorAll(".cfg-tab");
+		const tabTexts = Array.from(tabs).map((t) => t.textContent?.trim());
+		expect(tabTexts).toContain("Models");
+		expect(tabTexts).toContain("Limits");
+		expect(tabTexts).toContain("Timing");
+		expect(tabTexts).toContain("Prompts");
 	});
 
 	test("mount renders Reset and Purge buttons", async () => {

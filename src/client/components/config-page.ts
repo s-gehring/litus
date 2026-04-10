@@ -134,19 +134,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
 	return e;
 }
 
-function makeSectionHeader(title: string, sectionEl: HTMLElement): HTMLElement {
-	const header = el("div", "cfg-section-header");
-	const titleSpan = el("span", "cfg-section-title", title);
-	const chevron = el("span", "cfg-section-chevron", "\u25BE");
-	header.appendChild(titleSpan);
-	header.appendChild(chevron);
-	header.addEventListener("click", () => {
-		const collapsed = sectionEl.classList.toggle("cfg-section-collapsed");
-		chevron.textContent = collapsed ? "\u25B8" : "\u25BE";
-	});
-	return header;
-}
-
 function makeResetButton(dotPath: string): HTMLButtonElement {
 	const btn = el("button", "cfg-reset-btn", "\u21BA");
 	btn.title = "Reset to default";
@@ -626,45 +613,45 @@ function createConfigPage(send: (msg: ClientMessage) => void): HTMLElement {
 	warningsContainer.id = "cfg-warnings";
 	page.appendChild(warningsContainer);
 
-	// Card grid
-	const grid = el("div", "config-page-grid");
+	// Tab bar + panels
+	const tabBar = el("div", "cfg-tab-bar");
+	const panelContainer = el("div", "cfg-panel-container");
+	const panels = new Map<string, HTMLElement>();
 
-	// Models card
-	const modelsCard = el("div", "config-page-card");
-	const modelsBody = buildModelsSection();
-	const modelsHeader = makeSectionHeader("Models", modelsBody);
-	modelsCard.appendChild(modelsHeader);
-	modelsCard.appendChild(modelsBody);
-	grid.appendChild(modelsCard);
+	const tabDefs: Array<{ id: string; label: string; content: HTMLElement }> = [
+		{ id: "models", label: "Models", content: buildModelsSection() },
+		{ id: "limits", label: "Limits", content: buildNumericSection("limits") },
+		{ id: "timing", label: "Timing", content: buildNumericSection("timing") },
+		{ id: "prompts", label: "Prompts", content: buildPromptsSection() },
+	];
 
-	// Limits card
-	const limitsCard = el("div", "config-page-card");
-	const limitsBody = buildNumericSection("limits");
-	const limitsHeader = makeSectionHeader("Limits", limitsBody);
-	limitsCard.appendChild(limitsHeader);
-	limitsCard.appendChild(limitsBody);
-	grid.appendChild(limitsCard);
+	function activateTab(id: string) {
+		for (const btn of tabBar.querySelectorAll<HTMLButtonElement>(".cfg-tab")) {
+			btn.classList.toggle("cfg-tab--active", btn.dataset.tab === id);
+		}
+		for (const [panelId, panel] of panels) {
+			panel.classList.toggle("cfg-panel--active", panelId === id);
+		}
+	}
 
-	// Timing card
-	const timingCard = el("div", "config-page-card");
-	const timingBody = buildNumericSection("timing");
-	const timingHeader = makeSectionHeader("Timing", timingBody);
-	timingCard.appendChild(timingHeader);
-	timingCard.appendChild(timingBody);
-	grid.appendChild(timingCard);
+	for (const { id, label, content } of tabDefs) {
+		const tab = el("button", "cfg-tab", label);
+		tab.type = "button";
+		tab.dataset.tab = id;
+		tab.addEventListener("click", () => activateTab(id));
+		tabBar.appendChild(tab);
 
-	// Prompts card (collapsed by default)
-	const promptsCard = el("div", "config-page-card config-page-card--full");
-	const promptsBody = buildPromptsSection();
-	const promptsHeader = makeSectionHeader("Prompts", promptsBody);
-	promptsBody.classList.add("cfg-section-collapsed");
-	const chevron = promptsHeader.querySelector(".cfg-section-chevron");
-	if (chevron) chevron.textContent = "\u25B8";
-	promptsCard.appendChild(promptsHeader);
-	promptsCard.appendChild(promptsBody);
-	grid.appendChild(promptsCard);
+		const panel = el("div", id === "models" ? "cfg-panel cfg-panel--active" : "cfg-panel");
+		panel.appendChild(content);
+		panels.set(id, panel);
+		panelContainer.appendChild(panel);
+	}
 
-	page.appendChild(grid);
+	const firstTab = tabBar.querySelector<HTMLButtonElement>(".cfg-tab");
+	if (firstTab) firstTab.classList.add("cfg-tab--active");
+
+	page.appendChild(tabBar);
+	page.appendChild(panelContainer);
 
 	// Action buttons
 	const actions = el("div", "config-page-actions");

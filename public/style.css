@@ -824,66 +824,55 @@ body::-webkit-scrollbar-track {
   margin-bottom: 20px;
 }
 
-.config-page-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
+.cfg-tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border);
 }
 
-.config-page-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
+.cfg-tab {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
 }
 
-.config-page-card--full {
-  grid-column: 1 / -1;
+.cfg-tab:hover {
+  color: var(--text);
+  background: rgba(74, 158, 255, 0.05);
+}
+
+.cfg-tab--active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+}
+
+.cfg-panel {
+  display: none;
+  padding: 20px 0;
+}
+
+.cfg-panel--active {
+  display: block;
 }
 
 .config-page-actions {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 400px;
-}
-
-.cfg-section-header {
-  display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: var(--surface-2);
-  cursor: pointer;
-  user-select: none;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.cfg-section-header:hover {
-  background: rgba(74, 158, 255, 0.1);
-}
-
-.cfg-section-title {
-  flex: 1;
-}
-
-.cfg-section-chevron {
-  font-size: 0.7rem;
-  color: var(--text-dim);
+  gap: 12px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
 }
 
 .cfg-section {
-  padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.cfg-section-collapsed {
-  display: none;
 }
 
 .cfg-field-row {
@@ -978,9 +967,7 @@ body::-webkit-scrollbar-track {
 }
 
 .cfg-reset-all-btn {
-  width: 100%;
-  padding: 8px;
-  margin-top: 8px;
+  padding: 8px 20px;
   background: rgba(233, 69, 96, 0.1);
   border: 1px solid rgba(233, 69, 96, 0.3);
   border-radius: var(--radius);
@@ -995,9 +982,8 @@ body::-webkit-scrollbar-track {
 }
 
 .cfg-purge-btn {
-  width: 100%;
-  padding: 10px;
-  margin-top: 16px;
+  margin-left: auto;
+  padding: 8px 20px;
   background: rgba(220, 38, 38, 0.15);
   border: 1px solid rgba(220, 38, 38, 0.5);
   border-radius: var(--radius);
