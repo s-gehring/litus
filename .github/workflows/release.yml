@@ -16,8 +16,23 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # ── Changelog gate ──────────────────────────────────────────────────
+  changelog-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify CHANGELOG entry exists for this release
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! grep -qF "## [${VERSION}]" CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::No entry for version ${VERSION}. Add '## [${VERSION}]' section, then delete and re-push the tag."
+            exit 1
+          fi
+
   # ── Quality gate (shared with CI) ─────────────────────────────────
   quality:
+    needs: changelog-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
