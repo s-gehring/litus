@@ -10,24 +10,19 @@ import {
 	checkGitInstalled,
 	checkGitignoreEntries,
 	checkIsGitRepo,
-	checkSpeckitFiles,
+	checkUvInstalled,
 	runSetupChecks,
-	SPECKIT_NAMES,
 } from "../src/setup-checker";
 
 const testRoot = join(tmpdir(), `crab-setup-test-${Date.now()}`);
 const gitRepoPath = join(testRoot, "valid-repo");
 const nonGitDir = join(testRoot, "not-a-repo");
-const speckitCompleteDir = join(testRoot, "speckit-complete");
-const speckitMissingDir = join(testRoot, "speckit-missing");
-const speckitLegacyDir = join(testRoot, "speckit-legacy");
 
 beforeAll(async () => {
 	mkdirSync(gitRepoPath, { recursive: true });
 	mkdirSync(nonGitDir, { recursive: true });
-	mkdirSync(join(speckitLegacyDir, ".claude", "commands"), { recursive: true });
 
-	// Init git repo with a GitHub origin and speckit files
+	// Init git repo with a GitHub origin
 	const init = Bun.spawn(["git", "init"], { cwd: gitRepoPath, stdout: "pipe", stderr: "pipe" });
 	await init.exited;
 	// Disable global gitignore so tests control exactly what's ignored
@@ -42,40 +37,6 @@ beforeAll(async () => {
 		{ cwd: gitRepoPath, stdout: "pipe", stderr: "pipe" },
 	);
 	await addRemote.exited;
-	// Create all speckit skills in git repo
-	for (const name of SPECKIT_NAMES) {
-		mkdirSync(join(gitRepoPath, ".claude", "skills", `speckit-${name}`), { recursive: true });
-		writeFileSync(
-			join(gitRepoPath, ".claude", "skills", `speckit-${name}`, "SKILL.md"),
-			"# template",
-		);
-	}
-
-	// Create all speckit skills in complete dir
-	for (const name of SPECKIT_NAMES) {
-		mkdirSync(join(speckitCompleteDir, ".claude", "skills", `speckit-${name}`), {
-			recursive: true,
-		});
-		writeFileSync(
-			join(speckitCompleteDir, ".claude", "skills", `speckit-${name}`, "SKILL.md"),
-			"# template",
-		);
-	}
-
-	// Create only some speckit skills in missing dir
-	for (const name of ["clarify", "plan"]) {
-		mkdirSync(join(speckitMissingDir, ".claude", "skills", `speckit-${name}`), {
-			recursive: true,
-		});
-		writeFileSync(
-			join(speckitMissingDir, ".claude", "skills", `speckit-${name}`, "SKILL.md"),
-			"# template",
-		);
-	}
-
-	// Create legacy command files for legacy detection test
-	writeFileSync(join(speckitLegacyDir, ".claude", "commands", "speckit.clarify.md"), "# template");
-	writeFileSync(join(speckitLegacyDir, ".claude", "commands", "speckit.plan.md"), "# template");
 });
 
 afterAll(() => {
@@ -204,45 +165,15 @@ describe("checkGhAuth", () => {
 	});
 });
 
-// T011: checkSpeckitFiles
-describe("checkSpeckitFiles", () => {
-	test("passes when all skills present", () => {
-		const result = checkSpeckitFiles(speckitCompleteDir);
-		expect(result.passed).toBe(true);
+// T011: checkUvInstalled
+describe("checkUvInstalled", () => {
+	test("returns result with correct structure", async () => {
+		const result = await checkUvInstalled();
 		expect(result.required).toBe(true);
-		expect(result.error).toBeUndefined();
-	});
-
-	test("fails with missing skills listed", () => {
-		const result = checkSpeckitFiles(speckitMissingDir);
-		expect(result.passed).toBe(false);
-		expect(result.required).toBe(true);
-		// review + implementreview get auto-installed, so only these remain missing
-		expect(result.error).toContain("implement");
-		expect(result.error).toContain("specify");
-		expect(result.error).toContain("tasks");
-	});
-
-	test("fails when all skills missing (bundled ones get auto-installed)", () => {
-		const result = checkSpeckitFiles(nonGitDir);
-		expect(result.passed).toBe(false);
-		expect(result.error).toContain("Missing speckit skills");
-		expect(result.error).toContain("Auto-installed bundled skills");
-		// Only native speckit prompts remain missing
-		expect(result.error).toContain("clarify");
-		expect(result.error).toContain("implement");
-		expect(result.error).toContain("plan");
-		expect(result.error).toContain("specify");
-		expect(result.error).toContain("tasks");
-	});
-
-	test("fails when legacy command format is detected", () => {
-		const result = checkSpeckitFiles(speckitLegacyDir);
-		expect(result.passed).toBe(false);
-		expect(result.required).toBe(true);
-		expect(result.error).toContain("legacy speckit commands");
-		expect(result.error).toContain("speckit.clarify.md");
-		expect(result.error).toContain("Update speckit");
+		expect(result.name).toBe("uv installed");
+		if (!result.passed) {
+			expect(result.error).toContain("uv is not installed");
+		}
 	});
 });
 
@@ -272,7 +203,7 @@ describe("runSetupChecks", () => {
 
 	test("collects all required failures (not just first)", async () => {
 		const result = await runSetupChecks(nonGitDir);
-		// Should have multiple failures (git repo, speckit files, etc.)
+		// Should have multiple failures (git repo, uv, etc.)
 		expect(result.requiredFailures.length).toBeGreaterThanOrEqual(2);
 	});
 
@@ -287,7 +218,7 @@ describe("runSetupChecks", () => {
 
 	// T023: optional-warnings path
 	test("populates optionalWarnings when required pass but gitignore entries missing", async () => {
-		// gitRepoPath has git, github origin, speckit files — but no .gitignore
+		// gitRepoPath has git, github origin — but no .gitignore
 		const result = await runSetupChecks(gitRepoPath);
 		// gh/claude may not be installed in CI, so only assert optional behavior if required passed
 		if (result.passed) {
