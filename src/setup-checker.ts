@@ -198,6 +198,10 @@ export async function ensureSpeckitSkills(targetDir: string): Promise<{
 		],
 		targetDir,
 	);
+	if (result.code === 0) {
+		const skillsDir = join(targetDir, ".claude", "skills");
+		installBundledSkills(skillsDir);
+	}
 	return { installed: result.code === 0, initResult: result };
 }
 
