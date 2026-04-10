@@ -188,6 +188,16 @@ function parseNumericValue(raw: string): number {
 function buildModelsSection(): HTMLElement {
 	const section = el("div", "cfg-section");
 
+	const modelsLink = el("div", "cfg-subgroup-desc");
+	const a = document.createElement("a");
+	a.href =
+		"https://platform.claude.com/docs/en/about-claude/models/overview#latest-models-comparison";
+	a.target = "_blank";
+	a.rel = "noopener noreferrer";
+	a.textContent = "See available Claude API model IDs";
+	modelsLink.appendChild(a);
+	section.appendChild(modelsLink);
+
 	// Classification Models sub-group
 	const classificationHeading = el("div", "cfg-subgroup-heading", "Classification Models");
 	const classificationDesc = el(

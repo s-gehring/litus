@@ -850,6 +850,18 @@ export class PipelineOrchestrator {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 
+		const step = workflow.steps[workflow.currentStepIndex];
+
+		// Guard: CLI step completed with no output — process likely exited
+		// before actually running (e.g. Windows .cmd wrapper, spawn failure).
+		if (!step.output.trim()) {
+			this.handleStepError(
+				workflowId,
+				`CLI process exited successfully but produced no output — step "${step.name}" cannot advance without results`,
+			);
+			return;
+		}
+
 		const candidate = this.questionDetector.detect(this.assistantTextBuffer);
 		if (candidate) {
 			this.questionDetector

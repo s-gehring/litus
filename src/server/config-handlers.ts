@@ -20,8 +20,8 @@ export const handleConfigSave: MessageHandler = (ws, data, deps) => {
 	};
 	deps.broadcast(response);
 
-	// Auto-mode just turned on: drain all pending questions
-	if (msg.config.autoMode === true) {
+	// Full-auto mode: drain all pending questions
+	if (msg.config.autoMode === "full-auto") {
 		for (const [, orch] of deps.orchestrators) {
 			const wf = orch.getEngine().getWorkflow();
 			if (wf?.pendingQuestion && wf.status === "waiting_for_input") {

@@ -156,6 +156,7 @@ function createFakeCliRunner() {
 	return {
 		start: (workflow: Workflow, callbacks: CLICallbacks) => {
 			startCalls.push({ workflow, callbacks });
+			callbacks.onOutput("[test] CLI step running");
 		},
 		kill: mock((_id: string) => {}),
 		resume: mock((_workflow: Workflow, _callbacks: CLICallbacks) => {}),
@@ -565,6 +566,7 @@ describe("CI Pipeline Routing", () => {
 			wf.currentStepIndex = commitIndex;
 			wf.steps[commitIndex].status = "running";
 			wf.steps[commitIndex].startedAt = new Date().toISOString();
+			wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
 
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 10));
@@ -598,6 +600,7 @@ describe("CI Pipeline Routing", () => {
 			wf.currentStepIndex = commitIndex;
 			wf.steps[commitIndex].status = "running";
 			wf.steps[commitIndex].startedAt = new Date().toISOString();
+			wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
 
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 10));
@@ -676,6 +679,7 @@ describe("CI Pipeline Routing", () => {
 			wf.currentStepIndex = commitIndex;
 			wf.steps[commitIndex].status = "running";
 			wf.steps[commitIndex].startedAt = new Date().toISOString();
+			wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
 
 			localCli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 10));
@@ -706,6 +710,7 @@ describe("CI Pipeline Routing", () => {
 			wf.currentStepIndex = commitIndex;
 			wf.steps[commitIndex].status = "running";
 			wf.steps[commitIndex].startedAt = new Date().toISOString();
+			wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
 
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 10));

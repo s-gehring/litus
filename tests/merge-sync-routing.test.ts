@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { MonitorResult } from "../src/ci-monitor";
 import type { CLICallbacks } from "../src/cli-runner";
-import { DEFAULT_CONFIG } from "../src/config-store";
+import { configStore, DEFAULT_CONFIG } from "../src/config-store";
 import { type PipelineCallbacks, PipelineOrchestrator } from "../src/pipeline-orchestrator";
 import type {
 	MergeResult,
@@ -194,6 +194,7 @@ function createFakeCliRunner() {
 	return {
 		start: (workflow: Workflow, callbacks: CLICallbacks) => {
 			startCalls.push({ workflow, callbacks });
+			callbacks.onOutput("[test] CLI step running");
 		},
 		kill: mock((_id: string) => {}),
 		resume: mock((_workflow: Workflow, _callbacks: CLICallbacks) => {}),
@@ -239,6 +240,7 @@ describe("Merge & Sync Pipeline Routing", () => {
 	let rc: ReturnType<typeof createFakeReviewClassifier>;
 
 	beforeEach(() => {
+		configStore.save({ autoMode: "normal" });
 		callbacks = makeCallbacks();
 		engine = createFakeEngine();
 		cli = createFakeCliRunner();

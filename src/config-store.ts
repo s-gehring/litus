@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type {
 	AppConfig,
+	AutoMode,
 	ConfigValidationError,
 	ConfigWarning,
 	EffortLevel,
@@ -144,7 +145,7 @@ Rules:
 - If parts are infeasible, set \`infeasibleNotes\` to explain why
 - If the ENTIRE epic is infeasible, \`specs\` can be an empty array with \`infeasibleNotes\` explaining why`,
 	},
-	autoMode: false,
+	autoMode: "normal",
 	limits: {
 		reviewCycleMaxIterations: 16,
 		ciFixMaxAttempts: 3,
@@ -366,6 +367,10 @@ export class ConfigStore {
 			const text = readFileSync(this.configPath, "utf-8");
 			const parsed = JSON.parse(text);
 			if (typeof parsed === "object" && parsed !== null) {
+				// Migrate boolean autoMode to enum
+				if (typeof parsed.autoMode === "boolean") {
+					parsed.autoMode = parsed.autoMode ? "full-auto" : "normal";
+				}
 				this.savedConfig = parsed;
 			} else {
 				this.savedConfig = null;
@@ -399,6 +404,15 @@ export class ConfigStore {
 
 	private validate(partial: Partial<AppConfig>): ConfigValidationError[] {
 		const errors: ConfigValidationError[] = [];
+
+		const VALID_AUTO_MODES: AutoMode[] = ["manual", "normal", "full-auto"];
+		if (partial.autoMode !== undefined && !VALID_AUTO_MODES.includes(partial.autoMode)) {
+			errors.push({
+				path: "autoMode",
+				message: `Must be one of: ${VALID_AUTO_MODES.join(", ")}`,
+				value: partial.autoMode,
+			});
+		}
 
 		const OPTIONAL_MODEL_KEYS = new Set([
 			"epicDecomposition",

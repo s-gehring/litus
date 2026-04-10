@@ -75,21 +75,21 @@ describe("makeAppConfig", () => {
 		expect(config.prompts).toBeDefined();
 		expect(config.limits).toBeDefined();
 		expect(config.timing).toBeDefined();
-		expect(typeof config.autoMode).toBe("boolean");
+		expect(typeof config.autoMode).toBe("string");
 		expect(config.limits.reviewCycleMaxIterations).toBe(
 			DEFAULT_CONFIG.limits.reviewCycleMaxIterations,
 		);
 	});
 
 	test("overrides apply correctly", () => {
-		const config = makeAppConfig({ autoMode: true });
-		expect(config.autoMode).toBe(true);
+		const config = makeAppConfig({ autoMode: "full-auto" });
+		expect(config.autoMode).toBe("full-auto");
 	});
 
 	test("does not mutate DEFAULT_CONFIG", () => {
 		const config = makeAppConfig();
-		config.autoMode = true;
-		expect(DEFAULT_CONFIG.autoMode).toBe(false);
+		config.autoMode = "full-auto";
+		expect(DEFAULT_CONFIG.autoMode).toBe("normal");
 	});
 });
 
@@ -410,13 +410,13 @@ describe("createMockConfigStore", () => {
 		const { mock, tracker } = createMockConfigStore();
 
 		const config = mock.get();
-		expect(config.autoMode).toBe(false);
+		expect(config.autoMode).toBe("normal");
 
-		mock.save({ autoMode: true });
-		expect(mock.get().autoMode).toBe(true);
+		mock.save({ autoMode: "full-auto" });
+		expect(mock.get().autoMode).toBe("full-auto");
 
 		mock.reset();
-		expect(mock.get().autoMode).toBe(false);
+		expect(mock.get().autoMode).toBe("normal");
 
 		expect(tracker.callCount("get")).toBe(3);
 		expect(tracker.callCount("save")).toBe(1);

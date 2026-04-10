@@ -135,6 +135,8 @@ function createFakeCliRunner() {
 	return {
 		start: (workflow: Workflow, callbacks: CLICallbacks, extraEnv?: Record<string, string>) => {
 			startCalls.push({ workflow, callbacks, extraEnv });
+			// Emit output so the empty-output guard in handleStepComplete passes
+			callbacks.onOutput("[test] CLI step running");
 		},
 		kill: mock((_id: string) => {}),
 		resume: mock(
@@ -236,7 +238,7 @@ describe("PipelineOrchestrator", () => {
 	let store: ReturnType<typeof createFakeWorkflowStore>;
 
 	beforeEach(() => {
-		configStore.save({ autoMode: false });
+		configStore.save({ autoMode: "normal" });
 		callbacks = makeCallbacks();
 		engine = createFakeEngine();
 		cli = createFakeCliRunner();
@@ -1662,6 +1664,72 @@ describe("PipelineOrchestrator", () => {
 			await new Promise((r) => setTimeout(r, 0));
 
 			expect(capturedDir).toBe("/my/target/repo");
+		});
+	});
+
+	// T008: Pause-before-merge tests are in ci-pipeline-routing.test.ts
+	// where the CI monitor mock is available to properly route to merge-pr
+
+	// T009: pauseForQuestion auto-answer behavior
+	describe("pauseForQuestion auto-answer modes", () => {
+		test("auto-answers questions in full-auto mode", async () => {
+			configStore.save({ autoMode: "full-auto" });
+			await startAndFlush("test");
+			const wf = getWf(engine);
+
+			const question: Question = {
+				id: "q-auto",
+				content: "Pick a framework?",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			// In full-auto, the question should be auto-answered, not pending
+			expect(wf.status).not.toBe("waiting_for_input");
+		});
+
+		test("does NOT auto-answer questions in normal mode", async () => {
+			configStore.save({ autoMode: "normal" });
+			await startAndFlush("test");
+			const wf = getWf(engine);
+
+			const question: Question = {
+				id: "q-normal",
+				content: "Pick a framework?",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.status).toBe("waiting_for_input");
+			expect(wf.pendingQuestion?.id).toBe("q-normal");
+		});
+
+		test("does NOT auto-answer questions in manual mode", async () => {
+			configStore.save({ autoMode: "manual" });
+			await startAndFlush("test");
+			const wf = getWf(engine);
+
+			const question: Question = {
+				id: "q-manual",
+				content: "Pick a framework?",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.status).toBe("waiting_for_input");
+			expect(wf.pendingQuestion?.id).toBe("q-manual");
 		});
 	});
 });
