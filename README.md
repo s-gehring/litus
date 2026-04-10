@@ -105,6 +105,7 @@ A pre-built image is published to [GitHub Container Registry](https://github.com
 docker run -d \
   -p 3000:3000 \
   -e ANTHROPIC_API_KEY \
+  -e GH_TOKEN \
   -v litus-data:/home/litus/.litus \
   -v /path/to/your/repo:/home/litus/repos/my-project \
   ghcr.io/s-gehring/litus:latest
@@ -137,6 +138,7 @@ Pass your key as an environment variable:
 ```bash
 docker run -d \
   -e ANTHROPIC_API_KEY="sk-ant-..." \
+  -e GH_TOKEN="ghp_..." \
   -p 3000:3000 \
   -v litus-data:/home/litus/.litus \
   -v /path/to/your/repo:/home/litus/repos/my-project \
@@ -150,6 +152,7 @@ If you have already authenticated with `claude` on the host, bind-mount the cred
 ```bash
 docker run -d \
   -v ~/.claude:/home/litus/.claude \
+  -v ~/.config/gh:/home/litus/.config/gh:ro \
   -p 3000:3000 \
   -v litus-data:/home/litus/.litus \
   -v /path/to/your/repo:/home/litus/repos/my-project \
@@ -161,6 +164,7 @@ docker run -d \
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | — | API key for Claude Code CLI (required unless you mount `~/.claude`) |
+| `GH_TOKEN` | — | GitHub personal access token for `gh` CLI (required unless you mount `~/.config/gh`). `GITHUB_TOKEN` is also accepted. |
 | `PORT` | `3000` | HTTP server listen port (inside the container) |
 
 #### Volumes
@@ -169,6 +173,8 @@ docker run -d \
 |------|---------|
 | `/home/litus/.litus` | Workflow state, epic definitions, app config, and audit logs. Mount a named volume or bind mount to persist data across container restarts. |
 | `/home/litus/repos/<name>` | Target repository bind mounts. Mount one or more repos so the agent has something to work on. |
+| `/home/litus/.claude` | Optional. Bind-mount an existing Claude Code session directory instead of using `ANTHROPIC_API_KEY`. |
+| `/home/litus/.config/gh` | Optional. Bind-mount an existing GitHub CLI config directory instead of using `GH_TOKEN`. |
 
 The entrypoint automatically creates the required subdirectories (`workflows/`, `audit/`) and fixes ownership on bind mounts.
 
@@ -179,6 +185,7 @@ mkdir -p ./litus-data
 
 docker run -d \
   -e ANTHROPIC_API_KEY \
+  -e GH_TOKEN \
   -p 3000:3000 \
   -v ./litus-data:/home/litus/.litus \
   -v ~/projects/my-app:/home/litus/repos/my-app \
