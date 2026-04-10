@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { MonitorResult } from "../src/ci-monitor";
 import type { CLICallbacks } from "../src/cli-runner";
-import { DEFAULT_CONFIG } from "../src/config-store";
+import { configStore, DEFAULT_CONFIG } from "../src/config-store";
 import { type PipelineCallbacks, PipelineOrchestrator } from "../src/pipeline-orchestrator";
 import type { Question, ReviewSeverity, Workflow, WorkflowStatus } from "../src/types";
 import { PIPELINE_STEP_DEFINITIONS } from "../src/types";
@@ -156,6 +156,7 @@ function createFakeCliRunner() {
 	return {
 		start: (workflow: Workflow, callbacks: CLICallbacks) => {
 			startCalls.push({ workflow, callbacks });
+			callbacks.onOutput("[test] CLI step running");
 		},
 		kill: mock((_id: string) => {}),
 		resume: mock((_workflow: Workflow, _callbacks: CLICallbacks) => {}),
@@ -248,6 +249,9 @@ describe("CI Pipeline Routing", () => {
 			}),
 			checkoutMaster: async () => ({ code: 0, stderr: "" }),
 		});
+
+		// Ensure predictable auto mode (disk config may differ)
+		configStore.save({ autoMode: "normal" });
 
 		await orchestrator.startPipeline("test spec", "/tmp/test-repo");
 		// start() triggers the first step (specify) — we need to provide CLI callbacks
@@ -547,5 +551,176 @@ describe("CI Pipeline Routing", () => {
 
 		expect(wf.status).toBe("error");
 		expect(wf.steps[monitorIndex].error).toContain("timed out");
+	});
+
+	// T008: Pause-before-merge in manual mode
+	describe("pause-before-merge (manual mode)", () => {
+		test("pauses workflow when entering merge-pr step in manual mode", async () => {
+			configStore.save({ autoMode: "manual" });
+			const wf = getWf(engine);
+			wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+			// Fast-forward to monitor-ci
+			const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+			const commitIndex = monitorIndex - 1;
+			wf.currentStepIndex = commitIndex;
+			wf.steps[commitIndex].status = "running";
+			wf.steps[commitIndex].startedAt = new Date().toISOString();
+			wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 10));
+
+			// Resolve monitoring with success
+			monitorResultResolve({ passed: true, timedOut: false, results: [] });
+			await new Promise((r) => setTimeout(r, 10));
+
+			// Should pause at merge-pr in manual mode
+			const mergePrIndex = wf.steps.findIndex((s) => s.name === "merge-pr");
+			expect(wf.currentStepIndex).toBe(mergePrIndex);
+			expect(wf.status as string).toBe("paused");
+			expect(wf.steps[mergePrIndex].status as string).toBe("paused");
+
+			// Should emit contextual message with PR link (FR-012)
+			const outputCalls = (callbacks.onOutput as ReturnType<typeof mock>).mock.calls;
+			const pauseMsg = outputCalls.find(
+				(c: unknown[]) => typeof c[1] === "string" && c[1].includes("[manual mode]"),
+			);
+			expect(pauseMsg).toBeDefined();
+			expect(pauseMsg?.[1]).toContain("https://github.com/owner/repo/pull/42");
+		});
+
+		test("does NOT pause before merge in normal mode", async () => {
+			configStore.save({ autoMode: "normal" });
+			const wf = getWf(engine);
+			wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+			const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+			const commitIndex = monitorIndex - 1;
+			wf.currentStepIndex = commitIndex;
+			wf.steps[commitIndex].status = "running";
+			wf.steps[commitIndex].startedAt = new Date().toISOString();
+			wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 10));
+
+			monitorResultResolve({ passed: true, timedOut: false, results: [] });
+			await new Promise((r) => setTimeout(r, 10));
+
+			const mergePrIndex = wf.steps.findIndex((s) => s.name === "merge-pr");
+			expect(wf.currentStepIndex).toBe(mergePrIndex);
+			expect(wf.steps[mergePrIndex].status).not.toBe("paused");
+		});
+
+		test("resume after manual-mode pause dispatches to runMergePr", async () => {
+			const mockMergePr = mock(
+				async (_prUrl: string, _cwd: string, _onOutput: (msg: string) => void) => ({
+					merged: true,
+					alreadyMerged: false,
+					conflict: false,
+					error: null,
+				}),
+			);
+
+			// Create a separate orchestrator with mock mergePr
+			const localEngine = createFakeEngine();
+			const localCli = createFakeCliRunner();
+			const localCallbacks = makeCallbacks();
+			const localOrchestrator = new PipelineOrchestrator(localCallbacks, {
+				engine: localEngine as never,
+				cliRunner: localCli as never,
+				questionDetector: {
+					detect: () => null,
+					classifyWithHaiku: async () => false,
+					reset: () => {},
+				} as never,
+				reviewClassifier: classifier as never,
+				summarizer: {
+					maybeSummarize: () => {},
+					generateSpecSummary: async () => ({ summary: "", flavor: "" }),
+					resetBuffer: () => {},
+					cleanup: () => {},
+				} as never,
+				auditLogger: {
+					startRun: () => "fake-audit-id",
+					endRun: () => {},
+					logQuery: () => {},
+					logAnswer: () => {},
+					logCommit: () => {},
+				} as never,
+				workflowStore: {
+					save: async () => {},
+					load: async () => null,
+					loadAll: async () => [],
+					loadIndex: async () => [],
+					remove: async () => {},
+				} as never,
+				mergePr: mockMergePr as never,
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+			});
+
+			configStore.save({ autoMode: "manual" });
+			await localOrchestrator.startPipeline("test spec", "/tmp/test-repo");
+			await new Promise((r) => setTimeout(r, 10));
+
+			const wf = getWf(localEngine);
+			wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+			// Fast-forward to pre-monitor step and complete it
+			const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+			const commitIndex = monitorIndex - 1;
+			wf.currentStepIndex = commitIndex;
+			wf.steps[commitIndex].status = "running";
+			wf.steps[commitIndex].startedAt = new Date().toISOString();
+			wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+			localCli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 10));
+
+			monitorResultResolve({ passed: true, timedOut: false, results: [] });
+			await new Promise((r) => setTimeout(r, 10));
+
+			// Verify paused at merge-pr
+			const mergePrIndex = wf.steps.findIndex((s) => s.name === "merge-pr");
+			expect(wf.status as string).toBe("paused");
+			expect(wf.steps[mergePrIndex].status as string).toBe("paused");
+
+			// Resume — should call runMergePr which invokes mockMergePr
+			localOrchestrator.resume(wf.id);
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(mockMergePr).toHaveBeenCalledTimes(1);
+			expect(mockMergePr.mock.calls[0][0]).toBe("https://github.com/owner/repo/pull/42");
+		});
+
+		test("does NOT pause before merge in full-auto mode", async () => {
+			configStore.save({ autoMode: "full-auto" });
+			const wf = getWf(engine);
+			wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+			const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+			const commitIndex = monitorIndex - 1;
+			wf.currentStepIndex = commitIndex;
+			wf.steps[commitIndex].status = "running";
+			wf.steps[commitIndex].startedAt = new Date().toISOString();
+			wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 10));
+
+			monitorResultResolve({ passed: true, timedOut: false, results: [] });
+			await new Promise((r) => setTimeout(r, 10));
+
+			const mergePrIndex = wf.steps.findIndex((s) => s.name === "merge-pr");
+			expect(wf.currentStepIndex).toBe(mergePrIndex);
+			expect(wf.steps[mergePrIndex].status).not.toBe("paused");
+		});
 	});
 });

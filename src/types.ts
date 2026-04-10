@@ -70,13 +70,23 @@ export interface TimingConfig {
 	cliIdleTimeoutMs: number;
 }
 
+export type AutoMode = "manual" | "normal" | "full-auto";
+
+export function shouldAutoAnswer(mode: AutoMode): boolean {
+	return mode === "full-auto";
+}
+
+export function shouldPauseBeforeMerge(mode: AutoMode): boolean {
+	return mode === "manual";
+}
+
 export interface AppConfig {
 	models: ModelConfig;
 	efforts: EffortConfig;
 	prompts: PromptConfig;
 	limits: LimitConfig;
 	timing: TimingConfig;
-	autoMode: boolean;
+	autoMode: AutoMode;
 }
 
 export interface PromptVariableInfo {

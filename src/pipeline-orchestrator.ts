@@ -29,6 +29,8 @@ import {
 	type Question,
 	type SetupResult,
 	STEP,
+	shouldAutoAnswer,
+	shouldPauseBeforeMerge,
 	type Workflow,
 	type WorkflowStatus,
 } from "./types";
@@ -422,6 +424,13 @@ export class PipelineOrchestrator {
 
 		if (step.name === STEP.MONITOR_CI) {
 			this.runMonitorCi(workflow);
+		} else if (step.name === STEP.FIX_CI) {
+			this.runFixCi(workflow);
+		} else if (step.name === STEP.MERGE_PR) {
+			workflow.mergeCycle.attempt = 0;
+			this.runMergePr(workflow);
+		} else if (step.name === STEP.SYNC_REPO) {
+			this.runSyncRepo(workflow);
 		} else if (step.sessionId) {
 			this.stepRunner.resumeStep(
 				workflowId,
@@ -519,6 +528,19 @@ export class PipelineOrchestrator {
 		}
 
 		if (step.name === STEP.MERGE_PR) {
+			if (shouldPauseBeforeMerge(configStore.get().autoMode)) {
+				const prInfo = workflow.prUrl ? ` — review PR: ${workflow.prUrl}` : "";
+				this.handleStepOutput(
+					workflow.id,
+					`[manual mode] CI passed — review and merge PR, then resume${prInfo}`,
+				);
+				step.status = "paused";
+				workflow.updatedAt = new Date().toISOString();
+				this.engine.transition(workflow.id, "paused");
+				this.persistWorkflow(workflow);
+				this.callbacks.onStateChange(workflow.id);
+				return;
+			}
 			this.runMergePr(workflow);
 			return;
 		}
@@ -828,6 +850,18 @@ export class PipelineOrchestrator {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 
+		const step = workflow.steps[workflow.currentStepIndex];
+
+		// Guard: CLI step completed with no output — process likely exited
+		// before actually running (e.g. Windows .cmd wrapper, spawn failure).
+		if (!step.output.trim()) {
+			this.handleStepError(
+				workflowId,
+				`CLI process exited successfully but produced no output — step "${step.name}" cannot advance without results`,
+			);
+			return;
+		}
+
 		const candidate = this.questionDetector.detect(this.assistantTextBuffer);
 		if (candidate) {
 			this.questionDetector
@@ -852,8 +886,8 @@ export class PipelineOrchestrator {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow || workflow.status !== "running") return;
 
-		// Auto-mode: answer immediately instead of pausing
-		if (configStore.get().autoMode) {
+		// Full-auto mode: answer immediately instead of pausing
+		if (shouldAutoAnswer(configStore.get().autoMode)) {
 			const isSetupWarning = question.id.startsWith("setup-warnings-");
 			const autoAnswer = isSetupWarning
 				? "skip"

@@ -5,7 +5,7 @@ import {
 	handleConfigReset,
 	handleConfigSave,
 } from "../../src/server/config-handlers";
-import type { ClientMessage } from "../../src/types";
+import type { AppConfig, ClientMessage } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockConfigStore } from "../test-infra/mock-stores";
@@ -42,14 +42,14 @@ describe("config-handlers", () => {
 				ws,
 				{
 					type: "config:save",
-					config: { autoMode: false },
+					config: { autoMode: "normal" },
 				} as ClientMessage,
 				deps,
 			);
 
 			const saveCalls = configTracker.calls.filter((c) => c.method === "save");
 			expect(saveCalls).toHaveLength(1);
-			expect(saveCalls[0].args[0]).toEqual({ autoMode: false });
+			expect(saveCalls[0].args[0]).toEqual({ autoMode: "normal" });
 			expect(broadcastedMessages.some((m) => m.type === "config:state")).toBe(true);
 		});
 
@@ -65,7 +65,7 @@ describe("config-handlers", () => {
 				ws,
 				{
 					type: "config:save",
-					config: { autoMode: "bad" as unknown as boolean },
+					config: { autoMode: "bad" as unknown as AppConfig["autoMode"] },
 				} as ClientMessage,
 				deps,
 			);
@@ -74,7 +74,7 @@ describe("config-handlers", () => {
 			expect(msgs.some((m) => m.type === "config:error")).toBe(true);
 		});
 
-		test("drains pending questions when autoMode enabled", () => {
+		test("drains pending questions when autoMode is full-auto", () => {
 			const wf = makeWorkflow({
 				status: "waiting_for_input",
 				pendingQuestion: { id: "q1", content: "What?", detectedAt: new Date().toISOString() },
@@ -105,13 +105,77 @@ describe("config-handlers", () => {
 				mockWs,
 				{
 					type: "config:save",
-					config: { autoMode: true },
+					config: { autoMode: "full-auto" },
 				} as ClientMessage,
 				deps,
 			);
 
 			expect(skipCalls).toHaveLength(1);
 			expect(skipCalls[0]).toEqual([wf.id, "q1"]);
+		});
+
+		test("does NOT drain pending questions for manual mode", () => {
+			const wf = makeWorkflow({
+				status: "waiting_for_input",
+				pendingQuestion: { id: "q1", content: "What?", detectedAt: new Date().toISOString() },
+			});
+
+			const skipCalls: unknown[][] = [];
+			const mockOrch = {
+				getEngine() {
+					return { getWorkflow: () => wf };
+				},
+				skipQuestion(...args: unknown[]) {
+					skipCalls.push(args);
+				},
+			} as unknown as PipelineOrchestrator;
+
+			const orchestrators = new Map<string, PipelineOrchestrator>();
+			orchestrators.set(wf.id, mockOrch);
+
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleConfigSave>[0];
+			const { deps } = createMockHandlerDeps({ orchestrators });
+
+			handleConfigSave(
+				mockWs,
+				{ type: "config:save", config: { autoMode: "manual" } } as ClientMessage,
+				deps,
+			);
+
+			expect(skipCalls).toHaveLength(0);
+		});
+
+		test("does NOT drain pending questions for normal mode", () => {
+			const wf = makeWorkflow({
+				status: "waiting_for_input",
+				pendingQuestion: { id: "q1", content: "What?", detectedAt: new Date().toISOString() },
+			});
+
+			const skipCalls: unknown[][] = [];
+			const mockOrch = {
+				getEngine() {
+					return { getWorkflow: () => wf };
+				},
+				skipQuestion(...args: unknown[]) {
+					skipCalls.push(args);
+				},
+			} as unknown as PipelineOrchestrator;
+
+			const orchestrators = new Map<string, PipelineOrchestrator>();
+			orchestrators.set(wf.id, mockOrch);
+
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleConfigSave>[0];
+			const { deps } = createMockHandlerDeps({ orchestrators });
+
+			handleConfigSave(
+				mockWs,
+				{ type: "config:save", config: { autoMode: "normal" } } as ClientMessage,
+				deps,
+			);
+
+			expect(skipCalls).toHaveLength(0);
 		});
 	});
 

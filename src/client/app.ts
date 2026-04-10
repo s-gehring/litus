@@ -355,12 +355,22 @@ function returnToEpicTree(): void {
 	renderExpandedView();
 }
 
-function syncAutoModeToggle(active: boolean): void {
+const AUTO_MODE_CYCLE = ["manual", "normal", "full-auto"] as const;
+const AUTO_MODE_LABELS: Record<string, { icon: string; label: string; className: string }> = {
+	manual: { icon: "⏸", label: "Manual", className: "mode-manual" },
+	normal: { icon: "▶", label: "Normal", className: "mode-normal" },
+	"full-auto": { icon: "⏩", label: "Full Auto", className: "mode-full-auto" },
+};
+
+function syncAutoModeToggle(mode: string): void {
 	const btn = document.getElementById("btn-auto-mode");
 	if (!btn) return;
-	btn.classList.toggle("active", active);
+	const info = AUTO_MODE_LABELS[mode] ?? AUTO_MODE_LABELS.normal;
+	btn.className = `btn-header btn-toggle ${info.className}`;
 	const icon = btn.querySelector(".toggle-icon");
-	if (icon) icon.textContent = active ? "✓" : "✕";
+	if (icon) icon.textContent = info.icon;
+	const label = btn.querySelector(".toggle-label");
+	if (label) label.textContent = info.label;
 }
 
 function renderCards(): void {
@@ -860,12 +870,15 @@ document.addEventListener("DOMContentLoaded", () => {
 	const btnNewEpic = document.getElementById("btn-new-epic");
 	if (btnNewEpic) btnNewEpic.addEventListener("click", openEpicModal);
 
-	// Auto-mode toggle
+	// Auto-mode toggle (three-state cycle: manual → normal → full-auto → manual)
 	const btnAutoMode = document.getElementById("btn-auto-mode");
 	if (btnAutoMode) {
 		btnAutoMode.addEventListener("click", () => {
-			const isActive = btnAutoMode.classList.contains("active");
-			send({ type: "config:save", config: { autoMode: !isActive } });
+			const current =
+				AUTO_MODE_CYCLE.find((m) => btnAutoMode.classList.contains(`mode-${m}`)) ?? "normal";
+			const idx = AUTO_MODE_CYCLE.indexOf(current);
+			const next = AUTO_MODE_CYCLE[(idx + 1) % AUTO_MODE_CYCLE.length];
+			send({ type: "config:save", config: { autoMode: next } });
 		});
 	}
 

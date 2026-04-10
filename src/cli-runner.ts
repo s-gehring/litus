@@ -84,6 +84,20 @@ export class CLIRunner {
 			);
 			return;
 		}
+
+		// Guard: kill any lingering process for this workflow before starting a new one
+		const existing = this.running.get(workflow.id);
+		if (existing) {
+			console.warn(
+				`[cli-runner] Killing existing process (pid=${existing.process.pid}) for workflow ${workflow.id} before starting new one`,
+			);
+			existing.stale = true;
+			if (existing.deltaFlushTimer) clearTimeout(existing.deltaFlushTimer);
+			if (existing.idleTimer) clearTimeout(existing.idleTimer);
+			existing.process.kill();
+			this.running.delete(workflow.id);
+		}
+
 		const cwd = workflow.worktreePath;
 		const args = [
 			"claude",
@@ -106,7 +120,7 @@ export class CLIRunner {
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
-			console.info(`Starting workflow specification for workflow ${workflow.id}.`);
+			console.info(`[cli-runner] Starting CLI for workflow ${workflow.id} | cwd=${cwd}`);
 			proc = Bun.spawn(args, {
 				cwd,
 				stdout: "pipe",
@@ -135,6 +149,7 @@ export class CLIRunner {
 		};
 
 		this.running.set(workflow.id, entry);
+		console.info(`[cli-runner] Spawned pid=${proc.pid} for workflow ${workflow.id}`);
 		callbacks.onPid?.(proc.pid);
 		this.streamOutput(entry);
 	}
@@ -147,6 +162,19 @@ export class CLIRunner {
 		extraEnv?: Record<string, string>,
 		prompt?: string,
 	): void {
+		// Guard: kill any lingering process for this workflow
+		const existing = this.running.get(workflowId);
+		if (existing) {
+			console.warn(
+				`[cli-runner] Killing existing process (pid=${existing.process.pid}) for workflow ${workflowId} before resuming`,
+			);
+			existing.stale = true;
+			if (existing.deltaFlushTimer) clearTimeout(existing.deltaFlushTimer);
+			if (existing.idleTimer) clearTimeout(existing.idleTimer);
+			existing.process.kill();
+			this.running.delete(workflowId);
+		}
+
 		const defaultPrompt =
 			"You were paused and are now being resumed. Before continuing, verify that any files you created or modified in this session actually exist on disk — if a file is missing or incomplete, recreate it. Then continue where you left off.";
 		const usedPrompt = prompt ?? defaultPrompt;
@@ -167,7 +195,7 @@ export class CLIRunner {
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
-			console.info(`Resuming ${sessionId} with prompt "${usedPrompt.slice(0, 30)}..."`);
+			console.info(`[cli-runner] Resuming ${sessionId} for workflow ${workflowId}`);
 			proc = Bun.spawn(args, {
 				cwd,
 				stdout: "pipe",
@@ -238,11 +266,18 @@ export class CLIRunner {
 
 	private async streamOutput(entry: RunningProcess): Promise<void> {
 		const { process: proc, callbacks, workflowId } = entry;
+		const startTime = Date.now();
 		const stdout = proc.stdout;
-		if (!stdout || typeof stdout === "number") return;
+		if (!stdout || typeof stdout === "number") {
+			console.warn(
+				`[cli-runner] No stdout pipe for workflow ${workflowId} (stdout=${typeof stdout})`,
+			);
+			return;
+		}
 		const reader = (stdout as ReadableStream<Uint8Array>).getReader();
 		const decoder = new TextDecoder();
 		let buffer = "";
+		let receivedAnyData = false;
 
 		this.resetIdleTimer(entry);
 
@@ -251,6 +286,7 @@ export class CLIRunner {
 				const { done, value } = await reader.read();
 				if (done) break;
 
+				if (!receivedAnyData) receivedAnyData = true;
 				this.resetIdleTimer(entry);
 				buffer += decoder.decode(value, { stream: true });
 				const lines = buffer.split("\n");
@@ -277,8 +313,8 @@ export class CLIRunner {
 					callbacks.onOutput(buffer);
 				}
 			}
-		} catch (_err) {
-			// Stream read error
+		} catch (err) {
+			console.error(`[cli-runner] Stream read error for workflow ${workflowId}: ${err}`);
 		}
 
 		if (entry.idleTimer) {
@@ -290,6 +326,13 @@ export class CLIRunner {
 		this.flushDeltaBuffer(entry);
 
 		const exitCode = await proc.exited;
+		const elapsedMs = Date.now() - startTime;
+		// Always read stderr for diagnostics
+		const stderr = await readStream(proc.stderr);
+		console.info(
+			`[cli-runner] pid=${proc.pid} workflow=${workflowId} exited code=${exitCode} elapsed=${elapsedMs}ms receivedData=${receivedAnyData} session=${entry.sessionId ?? "none"}${stderr ? ` stderr=${stderr.slice(0, 300)}` : ""}`,
+		);
+
 		const currentEntry = this.running.get(workflowId);
 
 		// Only handle completion if this is still the active process
@@ -301,7 +344,6 @@ export class CLIRunner {
 			} else if (exitCode === 0) {
 				callbacks.onComplete();
 			} else {
-				const stderr = await readStream(proc.stderr);
 				callbacks.onError(stderr.trim() || `CLI process exited with code ${exitCode}`);
 			}
 		}
@@ -356,7 +398,10 @@ export class CLIRunner {
 			);
 		} else if (event.type === "result" && event.result !== undefined) {
 			this.flushDeltaBuffer(entry);
-			// Final result message
+			// Surface result text as output so errors like "Unknown skill" are visible
+			if (typeof event.result === "string" && event.result.trim()) {
+				entry.callbacks.onOutput(event.result);
+			}
 			if (event.session_id) {
 				entry.sessionId = event.session_id;
 			}
