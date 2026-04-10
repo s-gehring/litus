@@ -29,7 +29,7 @@ function createFakeEngine() {
 				specification: spec,
 				status: "idle" as WorkflowStatus,
 				targetRepository,
-				worktreePath: "/tmp/test-worktree",
+				worktreePath: null,
 				worktreeBranch: "tmp-test0001",
 				featureBranch: null,
 				summary: "",
@@ -113,6 +113,12 @@ function createFakeEngine() {
 				workflow.updatedAt = new Date().toISOString();
 			}
 		},
+		createWorktree: async (_shortId: string, _cwd: string) => {
+			if (workflow) workflow.worktreePath = "/tmp/test-worktree";
+			return "/tmp/test-worktree";
+		},
+		copyGitignoredFiles: async (_src: string, _dest: string) => {},
+		removeWorktree: async (_worktreePath: string, _targetRepo: string) => {},
 		moveWorktree: async () => "/tmp/test-worktree",
 		// Expose for test assertions
 		_getWorkflow: () => workflow,
@@ -1423,6 +1429,239 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.currentStepIndex).toBe(1);
 			expect(wf.steps[1].name).toBe("specify");
 			expect(wf.steps[1].status).toBe("running");
+		});
+
+		test("setup pass creates worktree before checkoutMaster", async () => {
+			let checkoutCwd: string | undefined;
+			const localEngine = createFakeEngine();
+			const localCli = createFakeCliRunner();
+			const localCallbacks = makeCallbacks();
+			// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
+			const deps: Record<string, any> = {
+				engine: localEngine,
+				cliRunner: localCli,
+				questionDetector: createFakeQuestionDetector(),
+				reviewClassifier: createFakeReviewClassifier(),
+				summarizer: createFakeSummarizer(),
+				auditLogger: createFakeAuditLogger(),
+				workflowStore: createFakeWorkflowStore(),
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				checkoutMaster: async (cwd: string) => {
+					checkoutCwd = cwd;
+					return { code: 0, stderr: "" };
+				},
+			};
+			const orch = new PipelineOrchestrator(localCallbacks, deps);
+
+			await orch.startPipeline("test", "/tmp/test-repo");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(localEngine);
+			expect(wf.worktreePath).toBe("/tmp/test-worktree");
+			expect(checkoutCwd).toBe("/tmp/test-worktree");
+		});
+
+		test("setup failure does not create worktree", async () => {
+			const { orch, engine } = makeSetupOrchestrator({
+				passed: false,
+				checks: [{ name: "Git repo", passed: false, error: "Not a git repo", required: true }],
+				requiredFailures: [
+					{ name: "Git repo", passed: false, error: "Not a git repo", required: true },
+				],
+				optionalWarnings: [],
+			});
+
+			await orch.startPipeline("test", "/tmp/test-repo");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(engine);
+			expect(wf.worktreePath).toBeNull();
+			expect(wf.status).toBe("error");
+		});
+
+		test("setup warnings creates worktree after user answers skip", async () => {
+			const { orch, engine } = makeSetupOrchestrator({
+				passed: true,
+				checks: [{ name: "Gitignore", passed: false, error: "missing entry", required: false }],
+				requiredFailures: [],
+				optionalWarnings: [
+					{ name: "Gitignore", passed: false, error: "missing entry", required: false },
+				],
+			});
+
+			await orch.startPipeline("test", "/tmp/test-repo");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(engine);
+			expect(wf.worktreePath).toBeNull();
+
+			const questionId = wf.pendingQuestion?.id ?? "";
+			orch.answerQuestion(wf.id, questionId, "skip");
+			await new Promise((r) => setTimeout(r, 0));
+
+			expect(wf.worktreePath).toBe("/tmp/test-worktree");
+			expect(wf.steps[0].status).toBe("completed");
+		});
+
+		test("retry after setup failure re-runs checks and creates worktree on pass", async () => {
+			let setupCallCount = 0;
+			const localEngine = createFakeEngine();
+			const localCli = createFakeCliRunner();
+			const localCallbacks = makeCallbacks();
+			// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
+			const deps: Record<string, any> = {
+				engine: localEngine,
+				cliRunner: localCli,
+				questionDetector: createFakeQuestionDetector(),
+				reviewClassifier: createFakeReviewClassifier(),
+				summarizer: createFakeSummarizer(),
+				auditLogger: createFakeAuditLogger(),
+				workflowStore: createFakeWorkflowStore(),
+				runSetupChecks: async (): Promise<SetupResult> => {
+					setupCallCount++;
+					if (setupCallCount === 1) {
+						return {
+							passed: false,
+							checks: [{ name: "Git repo", passed: false, error: "fail", required: true }],
+							requiredFailures: [
+								{ name: "Git repo", passed: false, error: "fail", required: true },
+							],
+							optionalWarnings: [],
+						};
+					}
+					return {
+						passed: true,
+						checks: [],
+						requiredFailures: [],
+						optionalWarnings: [],
+					};
+				},
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+			};
+			const orch = new PipelineOrchestrator(localCallbacks, deps);
+
+			await orch.startPipeline("test", "/tmp/test-repo");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(localEngine);
+			expect(wf.worktreePath).toBeNull();
+			expect(wf.status).toBe("error");
+
+			await orch.retryStep(wf.id);
+			await new Promise((r) => setTimeout(r, 0));
+
+			expect(wf.worktreePath).toBe("/tmp/test-worktree");
+			expect(wf.steps[0].status).toBe("completed");
+		});
+
+		test("createWorktree failure during setup transitions to error", async () => {
+			const localEngine = createFakeEngine();
+			localEngine.createWorktree = async () => {
+				throw new Error("git worktree add failed: already exists");
+			};
+			const localCallbacks = makeCallbacks();
+			// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
+			const deps: Record<string, any> = {
+				engine: localEngine,
+				cliRunner: createFakeCliRunner(),
+				questionDetector: createFakeQuestionDetector(),
+				reviewClassifier: createFakeReviewClassifier(),
+				summarizer: createFakeSummarizer(),
+				auditLogger: createFakeAuditLogger(),
+				workflowStore: createFakeWorkflowStore(),
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+			};
+			const orch = new PipelineOrchestrator(localCallbacks, deps);
+
+			await orch.startPipeline("test", "/tmp/test-repo");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(localEngine);
+			expect(wf.status).toBe("error");
+			expect(wf.steps[0].error).toContain("git worktree add failed");
+			expect(wf.worktreePath).toBeNull();
+		});
+
+		test("copyGitignoredFiles failure cleans up worktree and transitions to error", async () => {
+			const localEngine = createFakeEngine();
+			let removeWorktreeCalled = false;
+			localEngine.copyGitignoredFiles = async () => {
+				throw new Error("EACCES: permission denied");
+			};
+			localEngine.removeWorktree = async () => {
+				removeWorktreeCalled = true;
+			};
+			const localCallbacks = makeCallbacks();
+			// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
+			const deps: Record<string, any> = {
+				engine: localEngine,
+				cliRunner: createFakeCliRunner(),
+				questionDetector: createFakeQuestionDetector(),
+				reviewClassifier: createFakeReviewClassifier(),
+				summarizer: createFakeSummarizer(),
+				auditLogger: createFakeAuditLogger(),
+				workflowStore: createFakeWorkflowStore(),
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+			};
+			const orch = new PipelineOrchestrator(localCallbacks, deps);
+
+			await orch.startPipeline("test", "/tmp/test-repo");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const wf = getWf(localEngine);
+			expect(wf.status).toBe("error");
+			expect(wf.steps[0].error).toContain("EACCES: permission denied");
+			expect(wf.worktreePath).toBeNull();
+			expect(removeWorktreeCalled).toBe(true);
+		});
+
+		test("runSetup passes targetDir not worktreePath to checks", async () => {
+			let capturedDir: string | undefined;
+			const localEngine = createFakeEngine();
+			const localCallbacks = makeCallbacks();
+			// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
+			const deps: Record<string, any> = {
+				engine: localEngine,
+				cliRunner: createFakeCliRunner(),
+				questionDetector: createFakeQuestionDetector(),
+				reviewClassifier: createFakeReviewClassifier(),
+				summarizer: createFakeSummarizer(),
+				auditLogger: createFakeAuditLogger(),
+				workflowStore: createFakeWorkflowStore(),
+				runSetupChecks: async (dir: string) => {
+					capturedDir = dir;
+					return {
+						passed: true,
+						checks: [],
+						requiredFailures: [],
+						optionalWarnings: [],
+					};
+				},
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+			};
+			const orch = new PipelineOrchestrator(localCallbacks, deps);
+
+			await orch.startPipeline("test", "/my/target/repo");
+			await new Promise((r) => setTimeout(r, 0));
+
+			expect(capturedDir).toBe("/my/target/repo");
 		});
 	});
 });

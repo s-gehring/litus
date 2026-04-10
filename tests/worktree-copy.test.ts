@@ -19,15 +19,10 @@ describe("worktree gitignored file copy", () => {
 		BunGlobal.Bun.spawn = (_cmd: unknown, opts: { cwd?: string }) => {
 			// The worktree path is relative to cwd, compute it the same way the engine does
 			const cwd = opts?.cwd || process.cwd();
-			// We don't know the exact branch name yet, but we can create the dir on exited
 			return {
 				exited: (async () => {
-					// Find the .worktrees dir that will be created
 					const worktreesBase = join(cwd, ".worktrees");
 					await mkdir(worktreesBase, { recursive: true });
-					// We need to figure out the actual path — list after mkdir
-					// The engine uses `.worktrees/${branchName.replaceAll("/", "-")}`
-					// We'll just create a known dir and let the engine resolve it
 					return 0;
 				})(),
 				stdout: null,
@@ -53,8 +48,8 @@ describe("worktree gitignored file copy", () => {
 		await writeFile(join(sourceDir, "specs", "feature.md"), "# Feature");
 		await writeFile(join(sourceDir, "CLAUDE.md"), "# Instructions");
 
-		const w = await engine.createWorkflow("test", sourceDir);
-		const wt = w.worktreePath as string;
+		const wt = await engine.createWorktree("test01", sourceDir);
+		await engine.copyGitignoredFiles(sourceDir, wt);
 
 		expect(await readFile(join(wt, ".serena", "config.json"), "utf-8")).toBe('{"key":"value"}');
 		expect(await readFile(join(wt, ".claude", "settings.json"), "utf-8")).toBe('{"s":1}');
@@ -64,16 +59,17 @@ describe("worktree gitignored file copy", () => {
 
 	test("skips missing gitignored paths without error", async () => {
 		// Source has none of the gitignored files — should not throw
-		const w = await engine.createWorkflow("test", sourceDir);
-		expect(w.worktreePath).toBeTruthy();
+		const wt = await engine.createWorktree("test02", sourceDir);
+		await engine.copyGitignoredFiles(sourceDir, wt);
+		expect(wt).toBeTruthy();
 	});
 
 	test("copies .specify directory when present", async () => {
 		await mkdir(join(sourceDir, ".specify"), { recursive: true });
 		await writeFile(join(sourceDir, ".specify", "data.yml"), "key: val");
 
-		const w = await engine.createWorkflow("test", sourceDir);
-		const wt = w.worktreePath as string;
+		const wt = await engine.createWorktree("test03", sourceDir);
+		await engine.copyGitignoredFiles(sourceDir, wt);
 
 		expect(await readFile(join(wt, ".specify", "data.yml"), "utf-8")).toBe("key: val");
 	});
@@ -82,8 +78,8 @@ describe("worktree gitignored file copy", () => {
 		// Only CLAUDE.md exists
 		await writeFile(join(sourceDir, "CLAUDE.md"), "# Only this");
 
-		const w = await engine.createWorkflow("test", sourceDir);
-		const wt = w.worktreePath as string;
+		const wt = await engine.createWorktree("test04", sourceDir);
+		await engine.copyGitignoredFiles(sourceDir, wt);
 
 		expect(await readFile(join(wt, "CLAUDE.md"), "utf-8")).toBe("# Only this");
 		// .serena should not exist in worktree

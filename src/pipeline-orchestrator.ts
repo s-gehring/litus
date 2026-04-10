@@ -238,8 +238,8 @@ export class PipelineOrchestrator {
 		this.callbacks.onStateChange(workflowId);
 
 		if (step.name === STEP.SETUP) {
-			// User answered the optional warnings prompt — checkout master then advance
-			this.checkoutMasterInWorktree(workflow);
+			// User answered the optional warnings prompt — create worktree, checkout master then advance
+			this.createWorktreeAndCheckout(workflow);
 			return;
 		}
 
@@ -325,7 +325,6 @@ export class PipelineOrchestrator {
 		this.stepRunner.resetStep(step);
 		workflow.updatedAt = new Date().toISOString();
 
-		const cwd = requireWorktreePath(workflow);
 		const targetDir = requireTargetRepository(workflow);
 		const pipelineName =
 			this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
@@ -370,6 +369,7 @@ export class PipelineOrchestrator {
 			return;
 		}
 
+		const cwd = requireWorktreePath(workflow);
 		const config = configStore.get();
 		const configKey = STEP_CONFIG_KEY[step.name];
 		this.runStep(
@@ -413,11 +413,14 @@ export class PipelineOrchestrator {
 
 		this.resetStepState();
 
-		const cwd = requireWorktreePath(workflow);
-
 		if (step.name === STEP.SETUP) {
 			this.runSetup(workflow);
-		} else if (step.name === STEP.MONITOR_CI) {
+			return;
+		}
+
+		const cwd = requireWorktreePath(workflow);
+
+		if (step.name === STEP.MONITOR_CI) {
 			this.runMonitorCi(workflow);
 		} else if (step.sessionId) {
 			this.stepRunner.resumeStep(
@@ -573,11 +576,42 @@ export class PipelineOrchestrator {
 					return;
 				}
 
-				// All checks passed, no warnings — checkout latest master then advance
-				this.checkoutMasterInWorktree(wf);
+				// All checks passed — create worktree, then checkout latest master
+				this.createWorktreeAndCheckout(wf);
 			})
 			.catch((err) => {
 				this.handleStepError(workflow.id, `Setup checks failed: ${toErrorMessage(err)}`);
+			});
+	}
+
+	private createWorktreeAndCheckout(workflow: Workflow): void {
+		const targetDir = requireTargetRepository(workflow);
+		const shortId = workflow.worktreeBranch.replace("tmp-", "");
+
+		this.engine
+			.createWorktree(shortId, targetDir)
+			.then(async (worktreePath) => {
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf) return;
+
+				wf.worktreePath = worktreePath;
+				try {
+					await this.engine.copyGitignoredFiles(targetDir, worktreePath);
+				} catch (copyErr) {
+					// Clean up the worktree that was already created on disk
+					try {
+						await this.engine.removeWorktree(worktreePath, targetDir);
+					} catch {
+						// Best-effort cleanup
+					}
+					wf.worktreePath = null;
+					throw copyErr;
+				}
+				this.persistWorkflow(wf);
+				this.checkoutMasterInWorktree(wf);
+			})
+			.catch((err) => {
+				this.handleStepError(workflow.id, `Failed to create git worktree: ${toErrorMessage(err)}`);
 			});
 	}
 

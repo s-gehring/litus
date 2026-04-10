@@ -11,16 +11,6 @@ describe("WorkflowEngine", () => {
 
 	beforeEach(() => {
 		engine = new WorkflowEngine();
-		// Mock git worktree creation
-		BunGlobal.Bun.spawn = (..._args: unknown[]) => {
-			return {
-				exited: Promise.resolve(0),
-				stdout: null,
-				stderr: null,
-				kill: () => {},
-				pid: 1234,
-			};
-		};
 	});
 
 	// Restore after all tests
@@ -32,18 +22,23 @@ describe("WorkflowEngine", () => {
 		expect(engine.getWorkflow()).toBeNull();
 	});
 
-	test("createWorkflow creates a workflow in idle state", async () => {
+	test("createWorkflow creates a workflow in idle state with null worktreePath", async () => {
 		const w = await engine.createWorkflow("Build a login page", "/tmp/test-repo");
 		expect(w.id).toBeTruthy();
 		expect(w.specification).toBe("Build a login page");
 		expect(w.status).toBe("idle");
-		expect(w.worktreePath).toBeTruthy();
+		expect(w.worktreePath).toBeNull();
 		expect(w.worktreeBranch).toMatch(/^tmp-/);
 		expect(w.summary).toBe("");
 		expect(w.pendingQuestion).toBeNull();
 		expect(w.lastOutput).toBe("");
 		expect(w.createdAt).toBeTruthy();
 		expect(w.updatedAt).toBeTruthy();
+	});
+
+	test("createWorktree and copyGitignoredFiles are callable as public methods", () => {
+		expect(typeof engine.createWorktree).toBe("function");
+		expect(typeof engine.copyGitignoredFiles).toBe("function");
 	});
 
 	test("getWorkflow returns created workflow", async () => {
@@ -277,10 +272,10 @@ describe("WorkflowEngine", () => {
 			expect(w.targetRepository).toBe("/tmp/test-repo");
 		});
 
-		test("worktree cwd uses targetRepository when provided", async () => {
-			let capturedCwd: string | undefined;
-			BunGlobal.Bun.spawn = (_cmd: unknown, opts: { cwd?: string }) => {
-				capturedCwd = opts?.cwd;
+		test("createWorkflow does not invoke git worktree", async () => {
+			let spawnCalled = false;
+			BunGlobal.Bun.spawn = (..._args: unknown[]) => {
+				spawnCalled = true;
 				return {
 					exited: Promise.resolve(0),
 					stdout: null,
@@ -291,45 +286,48 @@ describe("WorkflowEngine", () => {
 			};
 
 			await engine.createWorkflow("test", "/custom/repo");
-			expect(capturedCwd).toBe("/custom/repo");
-		});
-
-		test("worktree cwd uses targetRepository", async () => {
-			let capturedCwd: string | undefined;
-			BunGlobal.Bun.spawn = (_cmd: unknown, opts: { cwd?: string }) => {
-				capturedCwd = opts?.cwd;
-				return {
-					exited: Promise.resolve(0),
-					stdout: null,
-					stderr: null,
-					kill: () => {},
-					pid: 1234,
-				};
-			};
-
-			await engine.createWorkflow("test", "/custom/repo");
-			expect(capturedCwd).toBe("/custom/repo");
+			expect(spawnCalled).toBe(false);
 		});
 	});
 
-	test("worktree creation failure throws descriptive error", async () => {
-		BunGlobal.Bun.spawn = (..._args: unknown[]) => {
-			return {
-				exited: Promise.resolve(128),
-				stdout: null,
-				stderr: new ReadableStream({
-					start(controller) {
-						controller.enqueue(new TextEncoder().encode("fatal: branch already exists"));
-						controller.close();
-					},
-				}),
-				kill: () => {},
-				pid: 1234,
-			};
-		};
+	test("createWorkflow stores targetRepository on workflow", async () => {
+		const w = await engine.createWorkflow("test", "/custom/repo");
+		expect(w.targetRepository).toBe("/custom/repo");
+	});
 
-		await expect(engine.createWorkflow("test", "/tmp/test-repo")).rejects.toThrow(
-			"Failed to create git worktree",
-		);
+	describe("epic workflow creation", () => {
+		test("createEpicWorkflows returns all workflows with worktreePath null", async () => {
+			const { createEpicWorkflows } = await import("../src/workflow-engine");
+			const result = await createEpicWorkflows(
+				{
+					title: "Test Epic",
+					infeasibleNotes: null,
+					summary: "Test summary",
+					specs: [
+						{ id: "s1", title: "Spec A", description: "Do A", dependencies: [] },
+						{ id: "s2", title: "Spec B", description: "Do B", dependencies: ["s1"] },
+					],
+				},
+				"/tmp/test-repo",
+			);
+			for (const wf of result.workflows) {
+				expect(wf.worktreePath).toBeNull();
+			}
+		});
+
+		test("single-spec epic fallback returns worktreePath null", async () => {
+			const { createEpicWorkflows } = await import("../src/workflow-engine");
+			const result = await createEpicWorkflows(
+				{
+					title: "Single Epic",
+					infeasibleNotes: null,
+					summary: "Single summary",
+					specs: [{ id: "s1", title: "Only Spec", description: "Do it", dependencies: [] }],
+				},
+				"/tmp/test-repo",
+			);
+			expect(result.workflows).toHaveLength(1);
+			expect(result.workflows[0].worktreePath).toBeNull();
+		});
 	});
 });
