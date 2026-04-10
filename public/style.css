@@ -786,29 +786,55 @@ body::-webkit-scrollbar-track {
   border-color: var(--accent-blue);
 }
 
-.config-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  width: min(480px, 90vw);
-  height: 100vh;
+/* ── Config Page ──────────────────────────────────────── */
+
+.config-page {
+  padding: 0 0 40px;
+}
+
+.config-page-back {
+  display: inline-block;
+  color: var(--accent-blue);
+  text-decoration: none;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.config-page-back:hover {
+  text-decoration: underline;
+}
+
+.config-page-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+
+.config-page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.config-page-card {
   background: var(--surface);
-  border-left: 1px solid var(--border);
-  overflow-y: auto;
-  z-index: 100;
-  padding: 48px 20px 20px;
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
-.config-panel::-webkit-scrollbar {
-  width: 6px;
+.config-page-card--full {
+  grid-column: 1 / -1;
 }
 
-.config-panel::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+.config-page-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 400px;
 }
 
 .cfg-section-header {
@@ -976,14 +1002,14 @@ body::-webkit-scrollbar-track {
 }
 
 .purge-progress {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: var(--surface, #1a1a2e);
   display: flex;
   flex-direction: column;
   padding: 48px 20px 20px;
   gap: 12px;
-  z-index: 10;
+  z-index: 100;
 }
 
 .purge-progress-title {
@@ -1053,38 +1079,7 @@ body::-webkit-scrollbar-track {
   to { opacity: 1; transform: translateY(0); }
 }
 
-.config-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.4);
-  z-index: 99;
-}
 
-.cfg-close-btn {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-dim);
-  font-size: 1.1rem;
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
-.cfg-close-btn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
 
 .cfg-subgroup-heading {
   font-size: 0.75rem;
@@ -1142,11 +1137,6 @@ body::-webkit-scrollbar-track {
   margin-bottom: 4px;
 }
 
-@media (max-width: 768px) {
-  .config-panel {
-    width: 100vw;
-  }
-}
 
 /* ── Epic Label on Cards ─────────────────────────────── */
 
