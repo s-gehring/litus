@@ -125,15 +125,13 @@ export async function checkUvInstalled(): Promise<SetupCheckResult> {
 	};
 }
 
-/** Speckit prompt names that the full init produces. */
-const SPECKIT_NAMES = [
+/** Speckit prompt names produced by `specify init` (not bundled with the app). */
+const SPECKIT_INIT_NAMES = [
 	"clarify",
 	"implement",
 	"plan",
 	"specify",
 	"tasks",
-	"review",
-	"implementreview",
 ];
 
 /** Names of prompts bundled with the app that get auto-installed when speckit is already present. */
@@ -158,10 +156,10 @@ function installBundledSkills(skillsDir: string): string[] {
 	return installed;
 }
 
-/** Check whether any speckit skills exist in the target directory. */
+/** Check whether all speckit init skills exist in the target directory. */
 export function hasSpeckitSkills(targetDir: string): boolean {
 	const skillsDir = join(targetDir, ".claude", "skills");
-	return SPECKIT_NAMES.some((name) => skillExists(skillsDir, name));
+	return SPECKIT_INIT_NAMES.every((name) => skillExists(skillsDir, name));
 }
 
 /**
