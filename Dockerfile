@@ -19,20 +19,18 @@ RUN bun run build:client
 RUN rm -rf node_modules && bun install --frozen-lockfile --production
 
 # ---- Production stage ----
-FROM node:22-slim@sha256:f3a68cf41a855d227d1b0ab832bed9749469ef38cf4f58182fb8c893bc462383
+FROM node:22-alpine
 
 # Bun runtime (copied from build stage — same image, single static binary)
 COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 
 # Git is required for worktree management; Claude Code CLI is the agent runtime;
-# gosu is used by the entrypoint to drop privileges after fixing volume permissions
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends git gosu ca-certificates \
+# su-exec is the Alpine equivalent of gosu for privilege dropping in the entrypoint
+RUN apk add --no-cache git su-exec ca-certificates \
     && npm install -g @anthropic-ai/claude-code@2.1.98 \
     && npm cache clean --force \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /root/.npm /tmp/* \
+    && rm -rf /root/.npm /tmp/* \
     && find / -xdev -perm -4000 -type f -exec chmod a-s {} +
 
 LABEL org.opencontainers.image.title="Litus" \
@@ -43,8 +41,8 @@ LABEL org.opencontainers.image.title="Litus" \
 
 WORKDIR /app
 
-RUN groupadd --gid 1001 litus \
-    && useradd --uid 1001 --gid litus --create-home litus \
+RUN addgroup -g 1001 litus \
+    && adduser -u 1001 -G litus -h /home/litus -D litus \
     && mkdir -p /home/litus/.litus \
     && chown -R litus:litus /home/litus/.litus
 
