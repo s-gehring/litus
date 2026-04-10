@@ -25,7 +25,9 @@ describe("Dashboard route handler", () => {
 	});
 
 	test("mount shows dashboard elements", async () => {
-		const { createDashboardHandler } = await import("../../src/client/app");
+		const { createDashboardHandler } = await import(
+			"../../src/client/components/dashboard-handler"
+		);
 		const handler = createDashboardHandler();
 
 		// Hide elements first (simulating coming from another route)
@@ -41,7 +43,9 @@ describe("Dashboard route handler", () => {
 	});
 
 	test("unmount hides dashboard elements", async () => {
-		const { createDashboardHandler } = await import("../../src/client/app");
+		const { createDashboardHandler } = await import(
+			"../../src/client/components/dashboard-handler"
+		);
 		const handler = createDashboardHandler();
 
 		handler.mount(appContent);

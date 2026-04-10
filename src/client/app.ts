@@ -15,6 +15,7 @@ import {
 	updatePurgeProgress,
 } from "./components/config-page";
 import { createModal } from "./components/creation-modal";
+import { createDashboardHandler } from "./components/dashboard-handler";
 import { renderEpicTree } from "./components/epic-tree";
 import { updateFavicon } from "./components/favicon";
 import { createFolderPicker } from "./components/folder-picker";
@@ -39,32 +40,11 @@ import {
 } from "./components/workflow-window";
 import { $ } from "./dom";
 import { renderMarkdown } from "./render-markdown";
-import type { RouteHandler } from "./router";
 import { Router } from "./router";
 
 const stateManager = new ClientStateManager();
 
 let appRouter: Router | null = null;
-
-export function createDashboardHandler(): RouteHandler {
-	return {
-		mount(_container: HTMLElement) {
-			const cardStrip = document.getElementById("card-strip");
-			const welcomeArea = document.getElementById("welcome-area");
-			if (cardStrip) cardStrip.classList.remove("hidden");
-			if (welcomeArea) welcomeArea.classList.remove("hidden");
-			// detail-area visibility is managed by renderExpandedView
-		},
-		unmount() {
-			const cardStrip = document.getElementById("card-strip");
-			const welcomeArea = document.getElementById("welcome-area");
-			const detailArea = document.getElementById("detail-area");
-			if (cardStrip) cardStrip.classList.add("hidden");
-			if (welcomeArea) welcomeArea.classList.add("hidden");
-			if (detailArea) detailArea.classList.add("hidden");
-		},
-	};
-}
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
