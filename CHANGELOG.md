@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] — 2026-04-10
+
+### Fixed
+
+- Skip GitHub release creation if one already exists for the tag
+- Docker image fixes and runtime tool installation
+
+### Changed
+
+- Gate releases on CHANGELOG.md entry
+
 ## [1.1.0] — 2026-04-09
 
 ### Added
