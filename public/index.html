@@ -25,70 +25,70 @@
       </button>
     </header>
 
-    <!-- Card strip: compact workflow cards -->
-    <div id="card-strip" class="card-strip"></div>
+    <div id="app-content">
+      <!-- Card strip: compact workflow cards -->
+      <div id="card-strip" class="card-strip"></div>
 
-    <!-- Welcome / empty state (shown when no workflow is expanded) -->
-    <div id="welcome-area" class="welcome-area">
-      <p class="welcome-text">Click "New Specification" or "New Epic" to get started</p>
-    </div>
-
-    <!-- Detail area: expanded workflow view (hidden until a card is clicked) -->
-    <div id="detail-area" class="workflow-window hidden">
-      <!-- Status area -->
-      <div id="status-area" class="status-area">
-        <span class="status-label">Status:</span>
-        <span id="workflow-status" class="status-badge idle">idle</span>
-        <span id="current-step-label" class="current-step-label hidden"></span>
-        <a id="pr-link" class="pr-link hidden" target="_blank" rel="noopener noreferrer"></a>
-        <span class="summary-group">
-          <span id="workflow-summary" class="summary-text"></span>
-          <span id="workflow-step-summary" class="step-summary-text"></span>
-          <span id="workflow-flavor" class="flavor-text"></span>
-        </span>
+      <!-- Welcome / empty state (shown when no workflow is expanded) -->
+      <div id="welcome-area" class="welcome-area">
+        <p class="welcome-text">Click "New Specification" or "New Epic" to get started</p>
       </div>
 
-      <!-- Branch / worktree metadata -->
-      <div id="branch-info" class="branch-info hidden"></div>
-
-      <!-- User input / specification text -->
-      <div id="user-input" class="user-input hidden"></div>
-
-      <!-- Specification / description text (collapsible, for longer specs) -->
-      <details id="spec-details" class="spec-details hidden">
-        <summary class="spec-details-summary">Specification</summary>
-        <div id="spec-details-text" class="spec-details-text"></div>
-      </details>
-
-      <!-- Detail action buttons (start, force-start) -->
-      <div id="detail-actions" class="detail-actions hidden"></div>
-
-      <!-- Pipeline step indicators -->
-      <div id="pipeline-steps" class="pipeline-steps hidden"></div>
-
-      <!-- Output area -->
-      <div id="output-area" class="output-area">
-        <div id="output-log" class="output-log"></div>
-      </div>
-
-      <!-- Question panel (overlaps output-area from below) -->
-      <div id="question-panel" class="question-panel hidden">
-        <div class="question-header">
-          <span class="question-label">Agent Question</span>
-          <span id="question-confidence" class="confidence-badge"></span>
+      <!-- Detail area: expanded workflow view (hidden until a card is clicked) -->
+      <div id="detail-area" class="workflow-window hidden">
+        <!-- Status area -->
+        <div id="status-area" class="status-area">
+          <span class="status-label">Status:</span>
+          <span id="workflow-status" class="status-badge idle">idle</span>
+          <span id="current-step-label" class="current-step-label hidden"></span>
+          <a id="pr-link" class="pr-link hidden" target="_blank" rel="noopener noreferrer"></a>
+          <span class="summary-group">
+            <span id="workflow-summary" class="summary-text"></span>
+            <span id="workflow-step-summary" class="step-summary-text"></span>
+            <span id="workflow-flavor" class="flavor-text"></span>
+          </span>
         </div>
-        <p id="question-content" class="question-content"></p>
-        <div class="question-actions">
-          <textarea id="answer-input" class="answer-input" placeholder="Type your answer..." rows="2"></textarea>
-          <div class="question-buttons">
-            <button id="btn-submit-answer" class="btn btn-primary">Submit</button>
-            <button id="btn-skip-question" class="btn btn-secondary hidden">Skip</button>
+
+        <!-- Branch / worktree metadata -->
+        <div id="branch-info" class="branch-info hidden"></div>
+
+        <!-- User input / specification text -->
+        <div id="user-input" class="user-input hidden"></div>
+
+        <!-- Specification / description text (collapsible, for longer specs) -->
+        <details id="spec-details" class="spec-details hidden">
+          <summary class="spec-details-summary">Specification</summary>
+          <div id="spec-details-text" class="spec-details-text"></div>
+        </details>
+
+        <!-- Detail action buttons (start, force-start) -->
+        <div id="detail-actions" class="detail-actions hidden"></div>
+
+        <!-- Pipeline step indicators -->
+        <div id="pipeline-steps" class="pipeline-steps hidden"></div>
+
+        <!-- Output area -->
+        <div id="output-area" class="output-area">
+          <div id="output-log" class="output-log"></div>
+        </div>
+
+        <!-- Question panel (overlaps output-area from below) -->
+        <div id="question-panel" class="question-panel hidden">
+          <div class="question-header">
+            <span class="question-label">Agent Question</span>
+            <span id="question-confidence" class="confidence-badge"></span>
+          </div>
+          <p id="question-content" class="question-content"></p>
+          <div class="question-actions">
+            <textarea id="answer-input" class="answer-input" placeholder="Type your answer..." rows="2"></textarea>
+            <div class="question-buttons">
+              <button id="btn-submit-answer" class="btn btn-primary">Submit</button>
+              <button id="btn-skip-question" class="btn btn-secondary hidden">Skip</button>
+            </div>
           </div>
         </div>
       </div>
     </div>
-
-    <div id="config-panel" class="config-panel hidden"></div>
   </div>
 
   <script src="/app.js"></script>
