@@ -51,21 +51,23 @@ merge — so you can focus on the parts that actually need a human brain.
 | [Bun](https://bun.sh) >= 1.3.11                                                                                     | Runtime. Fast, TypeScript-native, no transpilation ceremony.                                            |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code)                                                       | The CLI agent that does the actual work. Must be installed and authenticated.                           |
 | [GitHub CLI (`gh`)](https://cli.github.com/)                                                                        | PR creation, CI monitoring, merge operations. Must be authenticated with permission to merge PRs without reviews. |
-| [Speckit](https://github.com/github/spec-kit) ([MIT License](https://github.com/github/spec-kit/blob/main/LICENSE)) | Claude Code slash commands for the specify → implement pipeline. Must be installed in your target repo. |
+| [uv](https://docs.astral.sh/uv/)                                                                                   | Python package runner. Required so Litus can auto-install [speckit](https://github.com/github/spec-kit) skills into target repos that don't have them yet. Pre-installed in the Docker image. |
 
 ### Prepare Target Repository
 
 Litus runs Claude Code agents against a **target repository** — the repo where you want code changes to happen. Before
 starting your first workflow, make sure the target repo is set up:
 
-1. **Initialize speckit** — Litus relies on [speckit](https://github.com/github/spec-kit) skills being present in the
-   target repo. Install speckit into your target repository's `.claude/skills/` directory by following
-   [speckit's setup instructions](https://github.com/github/spec-kit#getting-started).
-2. **Authenticate `gh`** — Run `gh auth login` and make sure the CLI has access to the target repo. Litus uses `gh` for
+1. **Authenticate `gh`** — Run `gh auth login` and make sure the CLI has access to the target repo. Litus uses `gh` for
    PR creation, CI polling, and merge.
-3. **Authenticate Claude Code** — Run `claude` once in the target repo to ensure the CLI is authenticated and working.
-4. **Verify git access** — Litus creates worktrees inside the target repo. Make sure you have push access and the repo
+2. **Authenticate Claude Code** — Run `claude` once in the target repo to ensure the CLI is authenticated and working.
+3. **Verify git access** — Litus creates worktrees inside the target repo. Make sure you have push access and the repo
    is cloned (not a shallow clone).
+
+> [!NOTE]
+> Litus relies on [speckit](https://github.com/github/spec-kit) skills in the target repo. If they're missing, Litus
+> auto-installs them via `uvx` during setup — just make sure `uv` is available on your `PATH`. In the Docker image,
+> this is already taken care of.
 
 ## How to Use
 
@@ -311,7 +313,8 @@ operations. You'll need it installed and authenticated (`gh auth login`).
 
 A set of Claude Code [skills](https://docs.anthropic.com/en/docs/claude-code/skills) that power the
 specify → implement pipeline. These live in your target repository's `.claude/skills/` directory and give the agent
-structured prompts for each pipeline step. Without speckit, Litus doesn't know what to tell the agent to do.
+structured prompts for each pipeline step. If speckit skills are missing from a target repo, Litus auto-installs them
+via `uvx` during the setup step.
 
 ## Development
 

@@ -57,7 +57,7 @@ COPY --chown=litus:litus LICENSE.md .
 
 USER litus
 RUN git config --global safe.directory '*' \
-    && printf 'specs\n.worktrees\n.specify\n.claude\n' > /home/litus/.gitignore_global \
+    && printf 'specs\n.worktrees\n.specify\n.claude\nCLAUDE.md\n' > /home/litus/.gitignore_global \
     && git config --global core.excludesFile /home/litus/.gitignore_global
 USER root
 
