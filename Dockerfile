@@ -19,20 +19,18 @@ RUN bun run build:client
 RUN rm -rf node_modules && bun install --frozen-lockfile --production
 
 # ---- Production stage ----
-FROM node:22-alpine
+FROM oven/bun:${BUN_VERSION}-slim
 
-# Bun runtime (copied from build stage — same image, single static binary)
-COPY --from=build /usr/local/bin/bun /usr/local/bin/bun
-RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
-
-# Git is required for worktree management; Claude Code CLI is the agent runtime;
-# su-exec is the Alpine equivalent of gosu for privilege dropping in the entrypoint
-RUN apk upgrade --no-cache \
-    && apk add --no-cache git su-exec ca-certificates \
-    && npm install -g @anthropic-ai/claude-code@2.1.98 \
-    && npm cache clean --force \
-    && rm -rf /root/.npm /tmp/* \
-    && find / -xdev -perm -4000 -type f -exec chmod a-s {} +
+# Node.js is required at runtime for Claude Code CLI (npm package).
+# git for worktree management; gosu for privilege dropping in the entrypoint.
+# curl for downloading gh + claude on first start (see docker-entrypoint.sh).
+# gh and claude are NOT shipped in the image — the entrypoint installs them on
+# first boot so the end-user accepts the respective licenses themselves.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git gosu ca-certificates curl \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* /tmp/*
 
 LABEL org.opencontainers.image.title="Litus" \
       org.opencontainers.image.description="A web-based orchestrator for Claude Code agents" \
@@ -42,8 +40,8 @@ LABEL org.opencontainers.image.title="Litus" \
 
 WORKDIR /app
 
-RUN addgroup -g 1001 litus \
-    && adduser -u 1001 -G litus -h /home/litus -D litus \
+RUN groupadd -g 1001 litus \
+    && useradd -u 1001 -g litus -m -d /home/litus litus \
     && mkdir -p /home/litus/.litus \
     && chown -R litus:litus /home/litus/.litus
 
