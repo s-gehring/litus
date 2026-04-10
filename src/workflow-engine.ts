@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { cp, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { configStore } from "./config-store";
-import { toErrorMessage } from "./errors";
 import { gitSpawn } from "./git-logger";
 import type { EpicAnalysisResult, Question, Workflow, WorkflowStatus } from "./types";
 import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS as transitions } from "./types";
@@ -21,16 +20,6 @@ export class WorkflowEngine {
 	async createWorkflow(specification: string, targetRepository: string): Promise<Workflow> {
 		const id = randomUUID();
 		const shortId = id.slice(0, 8);
-		let worktreePath: string | null = null;
-
-		// Create git worktree in detached HEAD — speckit's specify step
-		// will create the real feature branch via git checkout -b.
-		try {
-			worktreePath = await this.createWorktree(shortId, targetRepository);
-			await this.copyGitignoredFiles(targetRepository, worktreePath);
-		} catch (err) {
-			throw new Error(`Failed to create git worktree: ${toErrorMessage(err)}`);
-		}
 
 		const now = new Date().toISOString();
 		this.workflow = {
@@ -38,7 +27,7 @@ export class WorkflowEngine {
 			specification,
 			status: "idle",
 			targetRepository,
-			worktreePath,
+			worktreePath: null,
 			worktreeBranch: `tmp-${shortId}`,
 			featureBranch: null,
 			summary: "",
@@ -177,7 +166,7 @@ export class WorkflowEngine {
 		return resolve(targetRepo, newRelativePath);
 	}
 
-	private async createWorktree(shortId: string, cwd: string): Promise<string> {
+	async createWorktree(shortId: string, cwd: string): Promise<string> {
 		const worktreePath = `.worktrees/tmp-${shortId}`;
 		const result = await gitSpawn(["git", "worktree", "add", "--detach", worktreePath], {
 			cwd,
@@ -197,7 +186,7 @@ export class WorkflowEngine {
 		"CLAUDE.md",
 	];
 
-	private async copyGitignoredFiles(sourceCwd: string, worktreePath: string): Promise<void> {
+	async copyGitignoredFiles(sourceCwd: string, worktreePath: string): Promise<void> {
 		for (const entry of WorkflowEngine.GITIGNORED_PATHS) {
 			const src = join(sourceCwd, entry);
 			const dest = join(worktreePath, entry);
