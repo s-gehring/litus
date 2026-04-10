@@ -16,8 +16,26 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # ── Changelog gate ──────────────────────────────────────────────────
+  changelog-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write          # needed to delete the tag on failure
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Verify CHANGELOG entry exists for this release
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! grep -qE "^## \[${VERSION}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no entry for version ${VERSION}. Add a '## [${VERSION}]' section before tagging."
+            git push --delete origin "${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
   # ── Quality gate (shared with CI) ─────────────────────────────────
   quality:
+    needs: changelog-check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
