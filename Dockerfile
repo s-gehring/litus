@@ -54,7 +54,9 @@ COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/
 COPY --chown=litus:litus LICENSE.md .
 
 USER litus
-RUN git config --global safe.directory '*'
+RUN git config --global safe.directory '*' \
+    && printf 'specs\n.worktrees\n.specify\n.claude\n' > /home/litus/.gitignore_global \
+    && git config --global core.excludesFile /home/litus/.gitignore_global
 USER root
 
 EXPOSE 3000
