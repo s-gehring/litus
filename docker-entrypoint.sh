@@ -50,8 +50,9 @@ CLAUDE_DIR="/home/litus/.claude"
 
 # Claude Code: need ANTHROPIC_API_KEY or a mounted ~/.claude session
 if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ ! -d "$CLAUDE_DIR" ]; then
-    echo "WARNING: No Claude Code credentials found."
-    echo "  Either set ANTHROPIC_API_KEY or bind-mount ~/.claude to $CLAUDE_DIR"
+    echo "ERROR: No Claude Code credentials found."
+    echo "  Set ANTHROPIC_API_KEY or bind-mount ~/.claude to $CLAUDE_DIR"
+    exit 1
 fi
 
 # GitHub CLI: need GH_TOKEN (or GITHUB_TOKEN).
