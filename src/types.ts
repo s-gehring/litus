@@ -349,7 +349,12 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	{ name: "implement", displayName: "Implementing", prompt: "/speckit-implement" },
 	{ name: "review", displayName: "Reviewing", prompt: "/speckit-review" },
 	{ name: "implement-review", displayName: "Fixing Review", prompt: "/speckit-implementreview" },
-	{ name: "commit-push-pr", displayName: "Creating PR", prompt: "/commit-commands:commit-push-pr" },
+	{
+		name: "commit-push-pr",
+		displayName: "Creating PR",
+		prompt:
+			"Commit all uncommitted changes in atomic commits. Then push the branch and open a PR using gh.",
+	},
 	{ name: "monitor-ci", displayName: "Monitoring CI", prompt: "" },
 	{ name: "fix-ci", displayName: "Fixing CI", prompt: "" },
 	{ name: "merge-pr", displayName: "Merging PR", prompt: "" },
