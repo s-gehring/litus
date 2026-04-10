@@ -106,9 +106,26 @@ docker run -d \
   -p 3000:3000 \
   -e ANTHROPIC_API_KEY \
   -v litus-data:/home/litus/.litus \
+  -v /path/to/your/repo:/home/litus/repos/my-project \
   ghcr.io/s-gehring/litus:latest
 ```
 
+#### Mounting target repositories
+
+Litus runs Claude Code agents against a **target repository** — the repo where code changes happen. You must bind-mount
+each target repo into the container so the agent can access it:
+
+```bash
+-v /path/to/your/repo:/home/litus/repos/my-project
+```
+
+The container path you choose (e.g. `/home/litus/repos/my-project`) is what you'll select in the Litus UI when starting
+a workflow. You can mount multiple repositories:
+
+```bash
+-v ~/projects/frontend:/home/litus/repos/frontend \
+-v ~/projects/backend:/home/litus/repos/backend
+```
 #### Claude Code authentication
 
 The container ships with [Claude Code CLI](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) installed globally. It needs valid credentials to call the Anthropic API.
@@ -122,6 +139,7 @@ docker run -d \
   -e ANTHROPIC_API_KEY="sk-ant-..." \
   -p 3000:3000 \
   -v litus-data:/home/litus/.litus \
+  -v /path/to/your/repo:/home/litus/repos/my-project \
   ghcr.io/s-gehring/litus:latest
 ```
 
@@ -134,6 +152,7 @@ docker run -d \
   -v ~/.claude:/home/litus/.claude \
   -p 3000:3000 \
   -v litus-data:/home/litus/.litus \
+  -v /path/to/your/repo:/home/litus/repos/my-project \
   ghcr.io/s-gehring/litus:latest
 ```
 
@@ -146,11 +165,10 @@ docker run -d \
 
 #### Volumes
 
-The container declares a single volume:
-
 | Path | Purpose |
 |------|---------|
 | `/home/litus/.litus` | Workflow state, epic definitions, app config, and audit logs. Mount a named volume or bind mount to persist data across container restarts. |
+| `/home/litus/repos/<name>` | Target repository bind mounts. Mount one or more repos so the agent has something to work on. |
 
 The entrypoint automatically creates the required subdirectories (`workflows/`, `audit/`) and fixes ownership on bind mounts.
 
@@ -163,6 +181,7 @@ docker run -d \
   -e ANTHROPIC_API_KEY \
   -p 3000:3000 \
   -v ./litus-data:/home/litus/.litus \
+  -v ~/projects/my-app:/home/litus/repos/my-app \
   ghcr.io/s-gehring/litus:latest
 ```
 
