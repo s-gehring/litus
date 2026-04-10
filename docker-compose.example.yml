@@ -16,7 +16,7 @@ services:
       # Mount your target repository (repeat for multiple repos)
       - ~/projects/my-app:/home/litus/repos/my-app
       # Alternative Claude auth: mount host session instead of ANTHROPIC_API_KEY
-      # - ~/.claude:/home/litus/.claude:ro
+      # - ~/.claude:/home/litus/.claude
     restart: unless-stopped
 
 volumes:

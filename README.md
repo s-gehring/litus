@@ -153,7 +153,7 @@ setting `ANTHROPIC_API_KEY`:
 ```bash
 docker run -d \
   -e GH_TOKEN="ghp_..." \
-  -v ~/.claude:/home/litus/.claude:ro \
+  -v ~/.claude:/home/litus/.claude \
   -p 3000:3000 \
   -v litus-data:/home/litus/.litus \
   -v /path/to/your/repo:/home/litus/repos/my-project \
