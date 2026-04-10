@@ -516,6 +516,82 @@ describe("T022: effort validation", () => {
 	});
 });
 
+// ── Boolean-to-enum autoMode migration ────────────────────────────────────
+
+describe("autoMode: boolean-to-enum migration on load", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = makeTempDir();
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	test("autoMode: true migrates to 'full-auto'", () => {
+		writeFileSync(configPath(dir), JSON.stringify({ autoMode: true }));
+		const store = new ConfigStore(configPath(dir));
+		expect(store.get().autoMode).toBe("full-auto");
+	});
+
+	test("autoMode: false migrates to 'normal'", () => {
+		writeFileSync(configPath(dir), JSON.stringify({ autoMode: false }));
+		const store = new ConfigStore(configPath(dir));
+		expect(store.get().autoMode).toBe("normal");
+	});
+
+	test("autoMode: 'manual' passes through unchanged", () => {
+		writeFileSync(configPath(dir), JSON.stringify({ autoMode: "manual" }));
+		const store = new ConfigStore(configPath(dir));
+		expect(store.get().autoMode).toBe("manual");
+	});
+});
+
+// ── AutoMode validation ───────────────────────────────────────────────────
+
+describe("autoMode: validation rejects invalid values", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = makeTempDir();
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	test("save with autoMode = 'invalid' returns a validation error", () => {
+		const store = new ConfigStore(configPath(dir));
+		const { errors } = store.save({ autoMode: "invalid" as "manual" });
+
+		expect(errors.length).toBeGreaterThan(0);
+		const err = errors.find((e) => e.path === "autoMode");
+		expect(err).toBeDefined();
+	});
+
+	test("save with autoMode = 'full-auto' succeeds", () => {
+		const store = new ConfigStore(configPath(dir));
+		const { errors } = store.save({ autoMode: "full-auto" });
+		expect(errors).toHaveLength(0);
+		expect(store.get().autoMode).toBe("full-auto");
+	});
+
+	test("save with autoMode = 'manual' succeeds", () => {
+		const store = new ConfigStore(configPath(dir));
+		const { errors } = store.save({ autoMode: "manual" });
+		expect(errors).toHaveLength(0);
+		expect(store.get().autoMode).toBe("manual");
+	});
+
+	test("save with autoMode = 'normal' succeeds", () => {
+		const store = new ConfigStore(configPath(dir));
+		const { errors } = store.save({ autoMode: "normal" });
+		expect(errors).toHaveLength(0);
+		expect(store.get().autoMode).toBe("normal");
+	});
+});
+
 describe("T022: new defaults include efforts section", () => {
 	let dir: string;
 
