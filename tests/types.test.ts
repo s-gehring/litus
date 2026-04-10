@@ -46,7 +46,12 @@ import type {
 	WorkflowState,
 	WorkflowStatus,
 } from "../src/types";
-import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS } from "../src/types";
+import {
+	PIPELINE_STEP_DEFINITIONS,
+	shouldAutoAnswer,
+	shouldPauseBeforeMerge,
+	VALID_TRANSITIONS,
+} from "../src/types";
 
 function makeAppConfig(): AppConfig {
 	return {
@@ -109,9 +114,23 @@ function makeAppConfig(): AppConfig {
 			epicTimeoutMs: 300000,
 			cliIdleTimeoutMs: 600000,
 		},
-		autoMode: false,
+		autoMode: "normal",
 	};
 }
+
+describe("AutoMode helpers", () => {
+	test("shouldAutoAnswer returns true only for full-auto", () => {
+		expect(shouldAutoAnswer("full-auto")).toBe(true);
+		expect(shouldAutoAnswer("normal")).toBe(false);
+		expect(shouldAutoAnswer("manual")).toBe(false);
+	});
+
+	test("shouldPauseBeforeMerge returns true only for manual", () => {
+		expect(shouldPauseBeforeMerge("manual")).toBe(true);
+		expect(shouldPauseBeforeMerge("normal")).toBe(false);
+		expect(shouldPauseBeforeMerge("full-auto")).toBe(false);
+	});
+});
 
 describe("VALID_TRANSITIONS", () => {
 	test("idle can transition to running or waiting_for_dependencies", () => {

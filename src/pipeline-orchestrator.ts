@@ -427,6 +427,7 @@ export class PipelineOrchestrator {
 		} else if (step.name === STEP.FIX_CI) {
 			this.runFixCi(workflow);
 		} else if (step.name === STEP.MERGE_PR) {
+			workflow.mergeCycle.attempt = 0;
 			this.runMergePr(workflow);
 		} else if (step.name === STEP.SYNC_REPO) {
 			this.runSyncRepo(workflow);

@@ -1506,10 +1506,22 @@ body::-webkit-scrollbar-track {
   color: var(--accent-blue);
 }
 
-.btn-toggle.active {
+.btn-toggle.mode-normal {
   border-color: var(--accent-blue);
   background: rgba(74, 158, 255, 0.15);
   color: var(--accent-blue);
+}
+
+.btn-toggle.mode-full-auto {
+  border-color: var(--accent-green);
+  background: rgba(78, 204, 163, 0.15);
+  color: var(--accent-green);
+}
+
+.btn-toggle.mode-manual {
+  border-color: var(--accent-yellow);
+  background: rgba(240, 192, 64, 0.15);
+  color: var(--accent-yellow);
 }
 
 .hidden { display: none !important; }
