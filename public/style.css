@@ -788,8 +788,20 @@ body::-webkit-scrollbar-track {
 
 /* ── Config Page ──────────────────────────────────────── */
 
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .config-page {
   padding: 0 0 40px;
+  animation: page-enter 0.3s ease-out;
 }
 
 .config-page-back {
