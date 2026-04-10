@@ -1,6 +1,14 @@
-# Changelog
+    f# Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [1.1.0] — 2026-04-09
+
+### Added
+
+- Official Docker image published to GHCR with cosign-signed attestations
+- Automated GitHub Releases with downloadable tarballs on every tagged version
+- Container vulnerability scanning via Trivy
 
 ## [1.0.0] — 2026-04-08
 
@@ -8,7 +16,8 @@ First public release.
 
 ### Core
 
-- 13-step pipeline: setup, specify, clarify, plan, tasks, implement, review, fix-review, create-pr, monitor-ci, fix-ci, merge, sync
+- 13-step pipeline: setup, specify, clarify, plan, tasks, implement, review, fix-review, create-pr, monitor-ci, fix-ci,
+  merge, sync
 - Real-time agent output streaming via WebSocket
 - Question detection (regex pre-filter + Haiku classification) with in-browser answering
 - Pause, resume, and abort workflow controls
