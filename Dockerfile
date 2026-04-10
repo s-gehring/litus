@@ -31,7 +31,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git gosu ca-certificates \
     && npm install -g @anthropic-ai/claude-code@2.1.98 \
     && npm cache clean --force \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /root/.npm /tmp/* \
+    && find / -xdev -perm -4000 -type f -exec chmod a-s {} +
 
 LABEL org.opencontainers.image.title="Litus" \
       org.opencontainers.image.description="A web-based orchestrator for Claude Code agents" \
@@ -55,8 +57,6 @@ COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/
 COPY --chown=litus:litus LICENSE.md .
 
 EXPOSE 3000
-
-VOLUME ["/home/litus/.litus"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["bun", "--eval", "fetch('http://localhost:'+(process.env.PORT||'3000')+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
