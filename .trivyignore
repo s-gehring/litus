@@ -1,0 +1,7 @@
+# npm-bundled dependencies inside node:22-alpine — not used at runtime,
+# only present because we install claude-code globally via npm.
+# These packages are internal to npm's glob/minimatch and are never
+# invoked by our application code.
+CVE-2026-33672  # picomatch: method injection via crafted POSIX bracket expressions
+CVE-2026-33671  # picomatch: ReDoS via crafted extglob patterns
+CVE-2026-33750  # brace-expansion: DoS via zero step value in brace pattern

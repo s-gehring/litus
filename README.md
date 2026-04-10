@@ -97,6 +97,98 @@ For production (client must be pre-built):
 bun run start
 ```
 
+### Docker
+
+A pre-built image is published to [GitHub Container Registry](https://github.com/s-gehring/litus/pkgs/container/litus) on every release.
+
+```bash
+docker run -d \
+  -p 3000:3000 \
+  -e ANTHROPIC_API_KEY \
+  -v litus-data:/home/litus/.litus \
+  -v /path/to/your/repo:/home/litus/repos/my-project \
+  ghcr.io/s-gehring/litus:latest
+```
+
+#### Mounting target repositories
+
+Litus runs Claude Code agents against a **target repository** — the repo where code changes happen. You must bind-mount
+each target repo into the container so the agent can access it:
+
+```bash
+-v /path/to/your/repo:/home/litus/repos/my-project
+```
+
+The container path you choose (e.g. `/home/litus/repos/my-project`) is what you'll select in the Litus UI when starting
+a workflow. You can mount multiple repositories:
+
+```bash
+-v ~/projects/frontend:/home/litus/repos/frontend \
+-v ~/projects/backend:/home/litus/repos/backend
+```
+#### Claude Code authentication
+
+The container ships with [Claude Code CLI](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) installed globally. It needs valid credentials to call the Anthropic API.
+
+**Option A — API key (recommended for containers)**
+
+Pass your key as an environment variable:
+
+```bash
+docker run -d \
+  -e ANTHROPIC_API_KEY="sk-ant-..." \
+  -p 3000:3000 \
+  -v litus-data:/home/litus/.litus \
+  -v /path/to/your/repo:/home/litus/repos/my-project \
+  ghcr.io/s-gehring/litus:latest
+```
+
+**Option B — Mount an existing session**
+
+If you have already authenticated with `claude` on the host, bind-mount the credentials directory:
+
+```bash
+docker run -d \
+  -v ~/.claude:/home/litus/.claude \
+  -p 3000:3000 \
+  -v litus-data:/home/litus/.litus \
+  -v /path/to/your/repo:/home/litus/repos/my-project \
+  ghcr.io/s-gehring/litus:latest
+```
+
+#### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | — | API key for Claude Code CLI (required unless you mount `~/.claude`) |
+| `PORT` | `3000` | HTTP server listen port (inside the container) |
+
+#### Volumes
+
+| Path | Purpose |
+|------|---------|
+| `/home/litus/.litus` | Workflow state, epic definitions, app config, and audit logs. Mount a named volume or bind mount to persist data across container restarts. |
+| `/home/litus/repos/<name>` | Target repository bind mounts. Mount one or more repos so the agent has something to work on. |
+
+The entrypoint automatically creates the required subdirectories (`workflows/`, `audit/`) and fixes ownership on bind mounts.
+
+#### Example with bind mount
+
+```bash
+mkdir -p ./litus-data
+
+docker run -d \
+  -e ANTHROPIC_API_KEY \
+  -p 3000:3000 \
+  -v ./litus-data:/home/litus/.litus \
+  -v ~/projects/my-app:/home/litus/repos/my-app \
+  ghcr.io/s-gehring/litus:latest
+```
+
+> [!NOTE]
+> The container runs as a non-root user (`litus`, UID 1001). The entrypoint uses `gosu` to fix volume
+> permissions before dropping privileges — no manual `chown` needed.
+
 ### Using Litus
 
 1. You enter a feature spec in the browser and hit **Start**
@@ -233,12 +325,12 @@ bun audit                      # Dependency vulnerability scan
 1. Fork the repo
 2. Create a feature branch (`feat/your-thing`)
 3. Make your changes — keep commits atomic and small
-4. Commit messages must start with `feat:`, `bug:`, `chore:`, or `docs:`
+4. Follow [Conventional Commits](https://www.conventionalcommits.org) for all commit messages (CI enforces this on PRs)
 5. Run `bunx biome ci .` and `bun test` before pushing
 6. Open a PR against `master`
 
-Linting is enforced by Biome. CI will reject anything that doesn't pass `biome ci`, type checking, and tests. Don't
-fight it.
+Linting is enforced by Biome. CI will reject anything that doesn't pass `biome ci`, type checking, tests, or
+conventional commit checks. Don't fight it.
 
 ## License
 
