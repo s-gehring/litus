@@ -126,13 +126,7 @@ export async function checkUvInstalled(): Promise<SetupCheckResult> {
 }
 
 /** Speckit prompt names produced by `specify init` (not bundled with the app). */
-const SPECKIT_INIT_NAMES = [
-	"clarify",
-	"implement",
-	"plan",
-	"specify",
-	"tasks",
-];
+const SPECKIT_INIT_NAMES = ["clarify", "implement", "plan", "specify", "tasks"];
 
 /** Names of prompts bundled with the app that get auto-installed when speckit is already present. */
 const BUNDLED_SPECKIT_NAMES = ["review", "implementreview"];
