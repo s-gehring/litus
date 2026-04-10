@@ -41,9 +41,12 @@ if ! command -v claude >/dev/null 2>&1; then
     npm install -g @anthropic-ai/claude-code 2>&1 | tail -1
 fi
 
+# Ensure ~/.claude.json exists so Claude Code does not print repeated warnings.
+CLAUDE_JSON="/home/litus/.claude.json"
+[ -f "$CLAUDE_JSON" ] || gosu litus sh -c "echo '{}' > $CLAUDE_JSON"
+
 # ── Auth validation ─────────────────────────────────────────────────
 CLAUDE_DIR="/home/litus/.claude"
-GH_CONFIG="/home/litus/.config/gh"
 
 # Claude Code: need ANTHROPIC_API_KEY or a mounted ~/.claude session
 if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ ! -d "$CLAUDE_DIR" ]; then
@@ -51,10 +54,12 @@ if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ ! -d "$CLAUDE_DIR" ]; then
     echo "  Either set ANTHROPIC_API_KEY or bind-mount ~/.claude to $CLAUDE_DIR"
 fi
 
-# GitHub CLI: need GH_TOKEN or a mounted gh config
-if [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ] && [ ! -d "$GH_CONFIG" ]; then
+# GitHub CLI: need GH_TOKEN (or GITHUB_TOKEN).
+# NOTE: Mounting ~/.config/gh does NOT work — most installations store the
+# token in the OS keyring, not in the config files.
+if [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ]; then
     echo "ERROR: No GitHub CLI credentials found."
-    echo "  Set GH_TOKEN, GITHUB_TOKEN, or bind-mount gh config to $GH_CONFIG"
+    echo "  Set GH_TOKEN or GITHUB_TOKEN."
     exit 1
 fi
 

@@ -6,7 +6,7 @@ services:
     environment:
       # Claude Code authentication (required unless mounting ~/.claude below)
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      # GitHub CLI authentication (required unless mounting ~/.config/gh below)
+      # GitHub CLI authentication (required)
       - GH_TOKEN=${GH_TOKEN}
       # Uncomment to change the listen port inside the container
       # - PORT=3000
@@ -15,9 +15,8 @@ services:
       - litus-data:/home/litus/.litus
       # Mount your target repository (repeat for multiple repos)
       - ~/projects/my-app:/home/litus/repos/my-app
-      # Alternative auth: mount host credentials instead of env vars
-      # - ~/.claude:/home/litus/.claude
-      # - ~/.config/gh:/home/litus/.config/gh:ro
+      # Alternative Claude auth: mount host session instead of ANTHROPIC_API_KEY
+      # - ~/.claude:/home/litus/.claude:ro
     restart: unless-stopped
 
 volumes:
