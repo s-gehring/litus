@@ -211,7 +211,12 @@ export class ConfigStore {
 		this.savedConfig = current;
 
 		const warnings = this.checkPromptVariables(partial);
-		this.writeToDisk();
+		if (!this.writeToDisk()) {
+			return {
+				errors: [{ path: "_disk", message: "Failed to persist config to disk", value: undefined }],
+				warnings,
+			};
+		}
 		return { errors: [], warnings };
 	}
 
@@ -265,7 +270,7 @@ export class ConfigStore {
 		}
 	}
 
-	private writeToDisk(): void {
+	private writeToDisk(): boolean {
 		const dir = dirname(this.configPath);
 		mkdirSync(dir, { recursive: true });
 
@@ -276,6 +281,7 @@ export class ConfigStore {
 		try {
 			writeFileSync(tmpPath, data);
 			renameSync(tmpPath, this.configPath);
+			return true;
 		} catch (err) {
 			logger.error(`[config] Failed to write config: ${err}`);
 			try {
@@ -283,6 +289,7 @@ export class ConfigStore {
 			} catch {
 				/* ignore */
 			}
+			return false;
 		}
 	}
 
