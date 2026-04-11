@@ -882,6 +882,12 @@ body::-webkit-scrollbar-track {
   gap: 4px;
 }
 
+.cfg-field-row--numeric {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .cfg-field-row--textarea {
   gap: 6px;
   max-width: 720px;
@@ -909,8 +915,7 @@ body::-webkit-scrollbar-track {
   color: var(--text-dim);
 }
 
-.cfg-text-input,
-.cfg-number-input {
+.cfg-text-input {
   width: 100%;
   padding: 6px 10px;
   border: 1px solid var(--border);
@@ -919,6 +924,18 @@ body::-webkit-scrollbar-track {
   color: var(--text);
   font-family: inherit;
   font-size: 0.8rem;
+}
+
+.cfg-number-input {
+  width: 100px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.8rem;
+  text-align: right;
 }
 
 .cfg-text-input:focus,

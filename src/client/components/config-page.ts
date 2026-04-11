@@ -367,7 +367,7 @@ function buildNumericSection(sectionKey: string): HTMLElement {
 		if (unitSpan) inputWrap.appendChild(unitSpan);
 		inputWrap.appendChild(makeResetButton(meta.key));
 
-		const row = el("div", "cfg-field-row");
+		const row = el("div", "cfg-field-row cfg-field-row--numeric");
 		const labelEl = el("label", "cfg-label", meta.label);
 		labelEl.title = meta.description;
 		row.appendChild(labelEl);
