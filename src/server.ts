@@ -293,13 +293,15 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 				}
 			}
 
-			// SPA fallback: serve index.html for non-API, non-static paths
-			// so the client-side router can handle them
-			const indexFile = Bun.file("public/index.html");
-			if (await indexFile.exists()) {
-				return new Response(indexFile, {
-					headers: { "Content-Type": "text/html" },
-				});
+			// SPA fallback: serve index.html for navigation requests only
+			// (paths without a file extension) so the client-side router can handle them
+			if (!url.pathname.includes(".")) {
+				const indexFile = Bun.file("public/index.html");
+				if (await indexFile.exists()) {
+					return new Response(indexFile, {
+						headers: { "Content-Type": "text/html" },
+					});
+				}
 			}
 
 			return new Response("Not Found", { status: 404 });
