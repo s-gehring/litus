@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import type { ClientMessage, Workflow } from "../../src/types";
 import { makeWorkflow } from "../helpers";
@@ -555,6 +555,140 @@ describe("workflow-handlers", () => {
 					(m) => m.type === "error" && m.message === "Workflow is not waiting for dependencies",
 				),
 			).toBe(true);
+		});
+	});
+
+	describe("error logging in catch blocks", () => {
+		let errorSpy: ReturnType<typeof spyOn>;
+
+		beforeEach(() => {
+			errorSpy = spyOn(console, "error").mockImplementation(() => {});
+		});
+
+		afterEach(() => {
+			errorSpy.mockRestore();
+		});
+
+		test("handleStart logs error when startPipeline throws", async () => {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleStart>[0];
+
+			const mockOrch = {
+				startPipeline: async () => {
+					throw new Error("spawn failed");
+				},
+			} as unknown as PipelineOrchestrator;
+
+			const { deps } = createMockHandlerDeps({
+				createOrchestrator: () => mockOrch,
+			});
+
+			mockValidationResult = { valid: true, effectivePath: "/mock/repo" };
+
+			await handleStart(
+				mockWs,
+				{
+					type: "workflow:start",
+					specification: "Build a feature",
+					targetRepository: "/mock/repo",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(errorSpy).toHaveBeenCalledWith(
+				expect.any(String),
+				expect.stringContaining("[ws] workflow:start failed:"),
+				expect.anything(),
+			);
+		});
+
+		test("handleStartExisting logs error when startPipelineFromWorkflow throws", () => {
+			const wf = makeWorkflow({ status: "idle" });
+			const mockOrch = {
+				getEngine() {
+					return {
+						getWorkflow() {
+							return wf;
+						},
+					};
+				},
+				startPipelineFromWorkflow() {
+					throw new Error("engine failure");
+				},
+			} as unknown as PipelineOrchestrator;
+
+			const orchestrators = new Map<string, PipelineOrchestrator>();
+			orchestrators.set(wf.id, mockOrch);
+
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleStartExisting>[0];
+			const { deps } = createMockHandlerDeps({ orchestrators });
+
+			handleStartExisting(
+				mockWs,
+				{
+					type: "workflow:start-existing",
+					workflowId: wf.id,
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(errorSpy).toHaveBeenCalledWith(
+				expect.any(String),
+				expect.stringContaining("[ws] workflow:start-existing failed:"),
+				expect.anything(),
+			);
+		});
+	});
+
+	describe("withOrchestrator validation logging", () => {
+		let warnSpy: ReturnType<typeof spyOn>;
+
+		beforeEach(() => {
+			warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+		});
+
+		afterEach(() => {
+			warnSpy.mockRestore();
+		});
+
+		test("logs warning when workflowId is missing", () => {
+			const { ws, deps } = setup();
+
+			handleAnswer(
+				ws,
+				{
+					type: "workflow:answer",
+					questionId: "q1",
+					answer: "yes",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(warnSpy).toHaveBeenCalledWith(
+				expect.any(String),
+				expect.stringContaining("[ws] Missing workflowId"),
+			);
+		});
+
+		test("logs warning when workflow is not found", () => {
+			const { ws, deps } = setup();
+
+			handleAnswer(
+				ws,
+				{
+					type: "workflow:answer",
+					workflowId: "nonexistent",
+					questionId: "q1",
+					answer: "yes",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(warnSpy).toHaveBeenCalledWith(
+				expect.any(String),
+				expect.stringContaining("[ws] Workflow not found: nonexistent"),
+			);
 		});
 	});
 });
