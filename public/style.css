@@ -885,7 +885,7 @@ body::-webkit-scrollbar-track {
 .cfg-field-row--numeric {
   flex-direction: row;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
 }
 
 .cfg-field-row--textarea {

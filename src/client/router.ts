@@ -52,7 +52,7 @@ export class Router {
 
 		// Update history
 		if (opts?.replace) {
-			history.replaceState(null, "", path);
+			history.replaceState(null, "", path + window.location.search + window.location.hash);
 		} else {
 			history.pushState(null, "", path);
 		}
