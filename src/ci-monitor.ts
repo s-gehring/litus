@@ -125,10 +125,12 @@ export async function startMonitoring(
 			const msg = toErrorMessage(err);
 			if (msg.includes("rate limit")) {
 				const backoff = configStore.get().timing.rateLimitBackoffMs;
+				logger.warn("[ci-monitor] Rate limited during CI poll");
 				onOutput(`[poll ${pollCount}/${maxPolls}] Rate limited — waiting ${backoff / 1000}s`);
 				await Bun.sleep(backoff);
 				continue;
 			}
+			logger.warn("[ci-monitor] Poll error:", msg);
 			const interval = configStore.get().timing.ciPollIntervalMs;
 			onOutput(
 				`[poll ${pollCount}/${maxPolls}] Poll error: ${msg} — retrying in ${interval / 1000}s`,

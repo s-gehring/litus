@@ -63,6 +63,7 @@ export async function syncRepo(
 			onOutput("Worktree removed");
 		} catch (err) {
 			const msg = toErrorMessage(err);
+			logger.warn("[repo-syncer] Worktree removal failed:", msg);
 			const wtWarning = `Worktree removal failed: ${msg}`;
 			warning = warning ? `${warning}; ${wtWarning}` : wtWarning;
 			onOutput(wtWarning);
