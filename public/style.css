@@ -882,10 +882,20 @@ body::-webkit-scrollbar-track {
   gap: 4px;
 }
 
-.cfg-field-row--numeric {
-  flex-direction: row;
+.cfg-section--numeric {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 10px 16px;
   align-items: center;
-  gap: 12px;
+  justify-content: start;
+}
+
+.cfg-field-row--numeric {
+  display: contents;
+}
+
+.cfg-field-row--numeric .cfg-label {
+  text-align: right;
 }
 
 .cfg-field-row--textarea {

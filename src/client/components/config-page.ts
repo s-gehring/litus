@@ -327,7 +327,7 @@ function buildModelRow(
 }
 
 function buildNumericSection(sectionKey: string): HTMLElement {
-	const section = el("div", "cfg-section");
+	const section = el("div", "cfg-section cfg-section--numeric");
 	const metas = NUMERIC_SETTING_META.filter((m) => m.key.startsWith(`${sectionKey}.`));
 
 	for (const meta of metas) {
