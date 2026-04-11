@@ -1106,8 +1106,6 @@ body::-webkit-scrollbar-track {
   to { opacity: 1; transform: translateY(0); }
 }
 
-
-
 .cfg-subgroup-heading {
   font-size: 0.75rem;
   font-weight: 600;
