@@ -1164,6 +1164,26 @@ body::-webkit-scrollbar-track {
   margin-bottom: 4px;
 }
 
+@media (max-width: 768px) {
+  .cfg-tab {
+    padding: 8px 12px;
+    font-size: 0.8rem;
+  }
+
+  .cfg-section--numeric {
+    grid-template-columns: 1fr;
+  }
+
+  .cfg-field-row--numeric {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .cfg-field-row--numeric .cfg-label {
+    text-align: left;
+  }
+}
 
 /* ── Epic Label on Cards ─────────────────────────────── */
 
