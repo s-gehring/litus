@@ -52,11 +52,13 @@ export function withOrchestrator(
 	return (ws, data, deps) => {
 		const { workflowId } = data as { workflowId?: string };
 		if (!workflowId) {
+			logger.warn("[ws] Missing workflowId in message");
 			deps.sendTo(ws, { type: "error", message: "Missing workflowId" });
 			return;
 		}
 		const orch = deps.orchestrators.get(workflowId);
 		if (!orch) {
+			logger.warn(`[ws] Workflow not found: ${workflowId}`);
 			deps.sendTo(ws, { type: "error", message: "Workflow not found" });
 			return;
 		}
