@@ -8,15 +8,14 @@ import type {
 } from "../types";
 import { ClientStateManager } from "./client-state-manager";
 import {
-	createConfigPanel,
-	hideConfigPanel,
+	createConfigPageHandler,
 	hidePurgeProgress,
-	showConfigPanel,
 	showPurgeProgress,
-	updateConfigPanel,
+	updateConfigPage,
 	updatePurgeProgress,
-} from "./components/config-panel";
+} from "./components/config-page";
 import { createModal } from "./components/creation-modal";
+import { createDashboardHandler } from "./components/dashboard-handler";
 import { renderEpicTree } from "./components/epic-tree";
 import { updateFavicon } from "./components/favicon";
 import { createFolderPicker } from "./components/folder-picker";
@@ -41,8 +40,11 @@ import {
 } from "./components/workflow-window";
 import { $ } from "./dom";
 import { renderMarkdown } from "./render-markdown";
+import { Router } from "./router";
 
 const stateManager = new ClientStateManager();
+
+let appRouter: Router | null = null;
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -301,7 +303,7 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "purge:complete": {
 			hidePurgeProgress();
-			hideConfigPanel();
+			if (appRouter) appRouter.navigate("/");
 			renderCards();
 			renderExpandedView();
 			if (msg.warnings.length > 0) {
@@ -311,7 +313,7 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "config:state": {
-			updateConfigPanel(msg.config, msg.warnings);
+			updateConfigPage(msg.config, msg.warnings);
 			syncAutoModeToggle(msg.config.autoMode);
 			break;
 		}
@@ -926,26 +928,28 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	});
 
-	// Config panel
-	const configPanel = createConfigPanel(send);
-	const configContainer = document.getElementById("config-panel");
-	if (configContainer) configContainer.appendChild(configPanel);
+	// Initialize router
+	const appContent = document.getElementById("app-content");
+	if (appContent) {
+		appRouter = new Router(appContent, "/");
+		appRouter.register("/", createDashboardHandler());
+		appRouter.register(
+			"/config",
+			createConfigPageHandler(send, (path) => appRouter?.navigate(path)),
+		);
+		appRouter.start();
+	}
 
-	// Config overlay (click-outside-to-close)
-	const overlay = document.createElement("div");
-	overlay.id = "config-overlay";
-	overlay.className = "config-overlay hidden";
-	overlay.addEventListener("click", () => hideConfigPanel());
-	document.body.appendChild(overlay);
-
+	// Gear button → router navigation
 	const btnConfig = document.getElementById("btn-config");
 	if (btnConfig) {
 		btnConfig.addEventListener("click", () => {
-			const panel = document.getElementById("config-panel");
-			if (panel?.classList.contains("hidden")) {
-				showConfigPanel(send);
-			} else {
-				hideConfigPanel();
+			if (appRouter) {
+				if (appRouter.currentPath === "/config") {
+					appRouter.navigate("/");
+				} else {
+					appRouter.navigate("/config");
+				}
 			}
 		});
 	}

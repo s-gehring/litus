@@ -1,127 +1,16 @@
+import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "../../config-metadata";
 import type { AppConfig, ClientMessage, ConfigWarning, EffortLevel } from "../../types";
-
-// Metadata mirrored from config-store (server-side) — kept in sync manually.
-// Keys use "section.field" dot-path notation.
-const NUMERIC_SETTING_META = [
-	{
-		key: "limits.reviewCycleMaxIterations",
-		label: "Review Cycle Max Iterations",
-		description: "Maximum number of review-fix iterations before advancing",
-		min: 1,
-		defaultValue: 16,
-		unit: "iterations",
-	},
-	{
-		key: "limits.ciFixMaxAttempts",
-		label: "CI Fix Max Attempts",
-		description: "Maximum number of CI fix attempts before giving up",
-		min: 1,
-		defaultValue: 3,
-		unit: "attempts",
-	},
-	{
-		key: "limits.mergeMaxAttempts",
-		label: "Merge Max Attempts",
-		description: "Maximum number of merge conflict resolution attempts",
-		min: 1,
-		defaultValue: 3,
-		unit: "attempts",
-	},
-	{
-		key: "limits.maxJsonRetries",
-		label: "Max JSON Retries",
-		description: "Maximum retry attempts when epic analysis returns unparseable JSON",
-		min: 0,
-		defaultValue: 2,
-		unit: "retries",
-	},
-	{
-		key: "timing.ciGlobalTimeoutMs",
-		label: "CI Global Timeout",
-		description: "Maximum time to wait for CI checks to complete",
-		min: 60_000,
-		defaultValue: 1_800_000,
-		unit: "ms",
-	},
-	{
-		key: "timing.ciPollIntervalMs",
-		label: "CI Poll Interval",
-		description: "How often to poll CI check status",
-		min: 5_000,
-		defaultValue: 15_000,
-		unit: "ms",
-	},
-	{
-		key: "timing.activitySummaryIntervalMs",
-		label: "Activity Summary Interval",
-		description: "Minimum time between activity summary generation",
-		min: 5_000,
-		defaultValue: 15_000,
-		unit: "ms",
-	},
-	{
-		key: "timing.rateLimitBackoffMs",
-		label: "Rate Limit Backoff",
-		description: "Wait time when rate limited by GitHub API",
-		min: 10_000,
-		defaultValue: 60_000,
-		unit: "ms",
-	},
-	{
-		key: "timing.maxCiLogLength",
-		label: "Max CI Log Length",
-		description: "Maximum characters of CI log to include in fix prompt",
-		min: 1_000,
-		defaultValue: 50_000,
-		unit: "chars",
-	},
-	{
-		key: "timing.maxClientOutputLines",
-		label: "Max Client Output Lines",
-		description: "Maximum number of output lines kept in the browser",
-		min: 100,
-		defaultValue: 5_000,
-		unit: "lines",
-	},
-	{
-		key: "timing.epicTimeoutMs",
-		label: "Epic Analysis Timeout",
-		description: "Maximum time to wait for epic decomposition analysis",
-		min: 60_000,
-		defaultValue: 900_000,
-		unit: "ms",
-	},
-];
-
-const PROMPT_VARIABLES: Record<string, Array<{ name: string; description: string }>> = {
-	questionDetection: [{ name: "text", description: "The text being analyzed for questions" }],
-	reviewClassification: [
-		{ name: "reviewOutput", description: "The code review output to classify" },
-	],
-	activitySummarization: [{ name: "text", description: "Recent agent output to summarize" }],
-	specSummarization: [{ name: "specification", description: "The feature specification text" }],
-	mergeConflictResolution: [
-		{ name: "specSummary", description: "Summary of the feature being implemented" },
-	],
-	ciFixInstruction: [
-		{ name: "prUrl", description: "The pull request URL" },
-		{ name: "logSections", description: "Formatted CI failure log sections" },
-	],
-	epicDecomposition: [
-		{ name: "epicDescription", description: "The epic description to decompose into specs" },
-	],
-};
+import type { RouteHandler } from "../router";
 
 const EFFORT_LEVELS: EffortLevel[] = ["low", "medium", "high", "max"];
 
-// Module-level send reference — set when createConfigPanel is called
-// biome-ignore lint/suspicious/noExplicitAny: internal dispatch uses dynamic message shapes
-let sendFn: ((msg: any) => void) | null = null;
+// Module-level send reference
+let sendFn: ((msg: ClientMessage) => void) | null = null;
 
-// Cached panel root for updateConfigPanel / showConfigWarning
-let panelRoot: HTMLElement | null = null;
+// Cached page root for updateConfigPage
+let pageRoot: HTMLElement | null = null;
 
-// ── Helpers ────��───────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────
 
 function el<K extends keyof HTMLElementTagNameMap>(
 	tag: K,
@@ -134,22 +23,9 @@ function el<K extends keyof HTMLElementTagNameMap>(
 	return e;
 }
 
-function makeSectionHeader(title: string, sectionEl: HTMLElement): HTMLElement {
-	const header = el("div", "cfg-section-header");
-	const titleSpan = el("span", "cfg-section-title", title);
-	const chevron = el("span", "cfg-section-chevron", "▾");
-	header.appendChild(titleSpan);
-	header.appendChild(chevron);
-	header.addEventListener("click", () => {
-		const collapsed = sectionEl.classList.toggle("cfg-section-collapsed");
-		chevron.textContent = collapsed ? "▸" : "▾";
-	});
-	return header;
-}
-
 function makeResetButton(dotPath: string): HTMLButtonElement {
-	const btn = el("button", "cfg-reset-btn", "↺");
-	btn.title = `Reset to default`;
+	const btn = el("button", "cfg-reset-btn", "\u21BA");
+	btn.title = "Reset to default";
 	btn.type = "button";
 	btn.addEventListener("click", () => {
 		sendFn?.({ type: "config:reset", key: dotPath });
@@ -198,7 +74,6 @@ function buildModelsSection(): HTMLElement {
 	modelsLink.appendChild(a);
 	section.appendChild(modelsLink);
 
-	// Classification Models sub-group
 	const classificationHeading = el("div", "cfg-subgroup-heading", "Classification Models");
 	const classificationDesc = el(
 		"div",
@@ -239,7 +114,6 @@ function buildModelsSection(): HTMLElement {
 		section.appendChild(buildModelRow(key, label, "model name", description));
 	}
 
-	// Workflow Step Models sub-group
 	const workflowHeading = el(
 		"div",
 		"cfg-subgroup-heading cfg-subgroup-heading--spaced",
@@ -322,7 +196,7 @@ function buildModelRow(
 	const effortLabel = el("span", "cfg-effort-label", "Effort:");
 	const effortSelect = makeEffortSelect(key);
 
-	const resetBtn = el("button", "cfg-reset-btn", "↺");
+	const resetBtn = el("button", "cfg-reset-btn", "\u21BA");
 	resetBtn.title = "Reset to default";
 	resetBtn.type = "button";
 	resetBtn.addEventListener("click", () => {
@@ -342,7 +216,7 @@ function buildModelRow(
 }
 
 function buildNumericSection(sectionKey: string): HTMLElement {
-	const section = el("div", "cfg-section");
+	const section = el("div", "cfg-section cfg-section--numeric");
 	const metas = NUMERIC_SETTING_META.filter((m) => m.key.startsWith(`${sectionKey}.`));
 
 	for (const meta of metas) {
@@ -353,7 +227,6 @@ function buildNumericSection(sectionKey: string): HTMLElement {
 		input.dataset.cfgPath = meta.key;
 		input.dataset.rawValue = String(meta.defaultValue);
 
-		// Format on blur
 		input.addEventListener("blur", () => {
 			const val = parseNumericValue(input.value);
 			if (!Number.isNaN(val)) {
@@ -362,7 +235,6 @@ function buildNumericSection(sectionKey: string): HTMLElement {
 			}
 		});
 
-		// Show raw on focus
 		input.addEventListener("focus", () => {
 			input.value = input.dataset.rawValue ?? input.value;
 		});
@@ -384,7 +256,7 @@ function buildNumericSection(sectionKey: string): HTMLElement {
 		if (unitSpan) inputWrap.appendChild(unitSpan);
 		inputWrap.appendChild(makeResetButton(meta.key));
 
-		const row = el("div", "cfg-field-row");
+		const row = el("div", "cfg-field-row cfg-field-row--numeric");
 		const labelEl = el("label", "cfg-label", meta.label);
 		labelEl.title = meta.description;
 		row.appendChild(labelEl);
@@ -451,7 +323,6 @@ function buildPromptsSection(): HTMLElement {
 			});
 		});
 
-		// Template variable info
 		const vars = PROMPT_VARIABLES[key] ?? [];
 		const varInfo = el("div", "cfg-var-info");
 		if (vars.length > 0) {
@@ -485,89 +356,16 @@ function buildPromptsSection(): HTMLElement {
 function makeWarningToast(warning: ConfigWarning): HTMLElement {
 	const toast = el("div", "cfg-warning-toast");
 	const msg = el("span", "cfg-warning-msg", warning.message);
-	const close = el("button", "cfg-warning-close", "×");
+	const close = el("button", "cfg-warning-close", "\u00D7");
 	close.type = "button";
 	close.addEventListener("click", () => toast.remove());
 	toast.appendChild(msg);
 	toast.appendChild(close);
-	// Auto-remove after 8 seconds
 	setTimeout(() => toast.remove(), 8000);
 	return toast;
 }
 
-// ── Exported API ───────────────────────────────────────────
-
-export function createConfigPanel(send: (msg: ClientMessage) => void): HTMLElement {
-	sendFn = send;
-
-	const panel = el("div", "cfg-panel");
-	panelRoot = panel;
-
-	// Close button
-	const closeBtn = el("button", "cfg-close-btn", "×");
-	closeBtn.type = "button";
-	closeBtn.title = "Close";
-	closeBtn.addEventListener("click", () => hideConfigPanel());
-	panel.appendChild(closeBtn);
-
-	// Warnings container (at top of panel)
-	const warningsContainer = el("div", "cfg-warnings");
-	warningsContainer.id = "cfg-warnings";
-	panel.appendChild(warningsContainer);
-
-	// Models section
-	const modelsBody = buildModelsSection();
-	const modelsHeader = makeSectionHeader("Models", modelsBody);
-	panel.appendChild(modelsHeader);
-	panel.appendChild(modelsBody);
-
-	// Limits section
-	const limitsBody = buildNumericSection("limits");
-	const limitsHeader = makeSectionHeader("Limits", limitsBody);
-	panel.appendChild(limitsHeader);
-	panel.appendChild(limitsBody);
-
-	// Timing section
-	const timingBody = buildNumericSection("timing");
-	const timingHeader = makeSectionHeader("Timing", timingBody);
-	panel.appendChild(timingHeader);
-	panel.appendChild(timingBody);
-
-	// Prompts section (collapsed by default — it's large)
-	const promptsBody = buildPromptsSection();
-	const promptsHeader = makeSectionHeader("Prompts", promptsBody);
-	promptsBody.classList.add("cfg-section-collapsed");
-	// Update chevron to match collapsed state
-	const chevron = promptsHeader.querySelector(".cfg-section-chevron");
-	if (chevron) chevron.textContent = "▸";
-	panel.appendChild(promptsHeader);
-	panel.appendChild(promptsBody);
-
-	// Reset all button at the bottom
-	const resetAll = el("button", "cfg-reset-all-btn", "Reset all to defaults");
-	resetAll.type = "button";
-	resetAll.addEventListener("click", () => {
-		sendFn?.({ type: "config:reset" });
-	});
-	panel.appendChild(resetAll);
-
-	// Purge all data button (danger zone)
-	const purgeBtn = el("button", "cfg-purge-btn", "Purge All Data");
-	purgeBtn.type = "button";
-	purgeBtn.title =
-		"Delete all workflows, epics, audit logs, worktrees, and branches. This cannot be undone.";
-	purgeBtn.addEventListener("click", () => {
-		const confirmed = confirm(
-			"This will permanently delete ALL workflows, epics, audit logs, git worktrees, and feature branches across all repositories.\n\nThis cannot be undone. Continue?",
-		);
-		if (confirmed) {
-			sendFn?.({ type: "purge:all" });
-		}
-	});
-	panel.appendChild(purgeBtn);
-
-	return panel;
-}
+// ── Purge overlay ──────────────────────────────────────────
 
 function ensurePurgeOverlay(): HTMLElement {
 	let overlay = document.getElementById("purge-progress");
@@ -583,9 +381,7 @@ function ensurePurgeOverlay(): HTMLElement {
 			<div class="purge-progress-step" id="purge-step-label"></div>
 			<div class="purge-progress-log" id="purge-log"></div>
 		`;
-		// Append to the outer config-panel container so it covers the whole panel
-		const container = document.getElementById("config-panel");
-		if (container) container.appendChild(overlay);
+		if (pageRoot) pageRoot.appendChild(overlay);
 	}
 	return overlay;
 }
@@ -616,30 +412,14 @@ export function updatePurgeProgress(step: string, current: number, total: number
 }
 
 export function hidePurgeProgress(): void {
-	const el = document.getElementById("purge-progress");
-	if (el) el.classList.add("hidden");
-}
-
-export function hideConfigPanel(): void {
-	const panel = document.getElementById("config-panel");
-	const overlay = document.getElementById("config-overlay");
-	if (panel) panel.classList.add("hidden");
+	const overlay = document.getElementById("purge-progress");
 	if (overlay) overlay.classList.add("hidden");
 }
 
-export function showConfigPanel(send: (msg: ClientMessage) => void): void {
-	const panel = document.getElementById("config-panel");
-	const overlay = document.getElementById("config-overlay");
-	if (panel) panel.classList.remove("hidden");
-	if (overlay) overlay.classList.remove("hidden");
-	send({ type: "config:get" });
-}
+export function updateConfigPage(config: AppConfig, warnings?: ConfigWarning[]): void {
+	if (!pageRoot) return;
 
-export function updateConfigPanel(config: AppConfig, warnings?: ConfigWarning[]): void {
-	if (!panelRoot) return;
-
-	// Update all text/textarea inputs by data-cfg-path
-	const allInputs = panelRoot.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+	const allInputs = pageRoot.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
 		"input[data-cfg-path], textarea[data-cfg-path]",
 	);
 	for (const input of allInputs) {
@@ -652,11 +432,9 @@ export function updateConfigPanel(config: AppConfig, warnings?: ConfigWarning[])
 
 		const value = sectionData[key];
 		if (value !== undefined) {
-			// For numeric text inputs, store raw value and display formatted
 			if (input.classList.contains("cfg-number-input")) {
 				const numVal = Number(value);
 				(input as HTMLInputElement).dataset.rawValue = String(numVal);
-				// Only format if the input is not focused
 				if (document.activeElement !== input) {
 					input.value = formatNumber(numVal);
 				} else {
@@ -668,8 +446,7 @@ export function updateConfigPanel(config: AppConfig, warnings?: ConfigWarning[])
 		}
 	}
 
-	// Update all effort selects
-	const allSelects = panelRoot.querySelectorAll<HTMLSelectElement>("select[data-cfg-path]");
+	const allSelects = pageRoot.querySelectorAll<HTMLSelectElement>("select[data-cfg-path]");
 	for (const select of allSelects) {
 		const path = select.dataset.cfgPath;
 		if (!path) continue;
@@ -696,4 +473,128 @@ export function showConfigWarning(warnings: ConfigWarning[]): void {
 	for (const warning of warnings) {
 		container.appendChild(makeWarningToast(warning));
 	}
+}
+
+// ── Config page route handler ──────────────────────────────
+
+function createConfigPage(
+	send: (msg: ClientMessage) => void,
+	navigate: (path: string) => void,
+): HTMLElement {
+	sendFn = send;
+
+	const page = el("div", "config-page");
+	pageRoot = page;
+
+	// Back link
+	const backLink = el("a", "config-page-back", "\u2190 Back");
+	backLink.href = "/";
+	backLink.addEventListener("click", (e) => {
+		e.preventDefault();
+		navigate("/");
+	});
+	page.appendChild(backLink);
+
+	// Page title
+	const title = el("h2", "config-page-title", "Configuration");
+	page.appendChild(title);
+
+	// Warnings container
+	const warningsContainer = el("div", "cfg-warnings");
+	warningsContainer.id = "cfg-warnings";
+	page.appendChild(warningsContainer);
+
+	// Tab bar + panels
+	const tabBar = el("div", "cfg-tab-bar");
+	const panelContainer = el("div", "cfg-panel-container");
+	const panels = new Map<string, HTMLElement>();
+
+	const tabDefs: Array<{ id: string; label: string; content: HTMLElement }> = [
+		{ id: "models", label: "Models", content: buildModelsSection() },
+		{ id: "limits", label: "Limits", content: buildNumericSection("limits") },
+		{ id: "timing", label: "Timing", content: buildNumericSection("timing") },
+		{ id: "prompts", label: "Prompts", content: buildPromptsSection() },
+	];
+	const validTabIds = new Set(tabDefs.map((t) => t.id));
+
+	function activateTab(id: string, pushHash = true) {
+		for (const btn of tabBar.querySelectorAll<HTMLButtonElement>(".cfg-tab")) {
+			btn.classList.toggle("cfg-tab--active", btn.dataset.tab === id);
+		}
+		for (const [panelId, panel] of panels) {
+			panel.classList.toggle("cfg-panel--active", panelId === id);
+		}
+		if (pushHash) {
+			history.replaceState(null, "", `${window.location.pathname}#${id}`);
+		}
+	}
+
+	for (const { id, label, content } of tabDefs) {
+		const tab = el("button", "cfg-tab", label);
+		tab.type = "button";
+		tab.dataset.tab = id;
+		tab.addEventListener("click", () => activateTab(id));
+		tabBar.appendChild(tab);
+
+		const panel = el("div", "cfg-panel");
+		panel.appendChild(content);
+		panels.set(id, panel);
+		panelContainer.appendChild(panel);
+	}
+
+	// Restore tab from URL hash, default to first tab
+	const hashTab = window.location.hash.slice(1);
+	const initialTab = validTabIds.has(hashTab) ? hashTab : tabDefs[0].id;
+	activateTab(initialTab, false);
+
+	page.appendChild(tabBar);
+	page.appendChild(panelContainer);
+
+	// Action buttons
+	const actions = el("div", "config-page-actions");
+
+	const resetAll = el("button", "cfg-reset-all-btn", "Reset all to defaults");
+	resetAll.type = "button";
+	resetAll.addEventListener("click", () => {
+		sendFn?.({ type: "config:reset" });
+	});
+	actions.appendChild(resetAll);
+
+	const purgeBtn = el("button", "cfg-purge-btn", "Purge All Data");
+	purgeBtn.type = "button";
+	purgeBtn.title =
+		"Delete all workflows, epics, audit logs, worktrees, and branches. This cannot be undone.";
+	purgeBtn.addEventListener("click", () => {
+		const confirmed = confirm(
+			"This will permanently delete ALL workflows, epics, audit logs, git worktrees, and feature branches across all repositories.\n\nThis cannot be undone. Continue?",
+		);
+		if (confirmed) {
+			sendFn?.({ type: "purge:all" });
+		}
+	});
+	actions.appendChild(purgeBtn);
+
+	page.appendChild(actions);
+
+	return page;
+}
+
+export function createConfigPageHandler(
+	send: (msg: ClientMessage) => void,
+	navigate: (path: string) => void,
+): RouteHandler {
+	return {
+		mount(container: HTMLElement) {
+			const page = createConfigPage(send, navigate);
+			container.appendChild(page);
+			send({ type: "config:get" });
+		},
+		unmount() {
+			if (pageRoot) {
+				pageRoot.remove();
+				pageRoot = null;
+			}
+			sendFn = null;
+		},
+	};
 }
