@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Dedicated config page with client-side routing between dashboard and settings
+- Auto-install speckit during setup — no manual installation required
+- Three-state auto-mode (off, auto-answer, full-auto) replacing the simple on/off toggle
+
+### Fixed
+
+- Docker: fixed read-only mount, git safe directory warnings, and gitignore handling
+
 ## [1.1.1] — 2026-04-10
 
 ### Fixed
