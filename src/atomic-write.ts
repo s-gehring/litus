@@ -21,13 +21,17 @@ export async function atomicWrite(filePath: string, data: string): Promise<void>
 				return;
 			} catch (err) {
 				if (attempt >= 3) {
-					logger.warn(`[atomic-write] Rename failed after retries, falling back to direct write: ${filePath}`);
+					logger.warn(
+						`[atomic-write] Rename failed after retries, falling back to direct write: ${filePath}`,
+					);
 					await Bun.write(filePath, data);
 					return;
 				}
 				const code = (err as NodeJS.ErrnoException).code;
 				if (code === "EPERM" || code === "EACCES") {
-					logger.warn(`[atomic-write] ${code} on rename (attempt ${attempt}), retrying: ${filePath}`);
+					logger.warn(
+						`[atomic-write] ${code} on rename (attempt ${attempt}), retrying: ${filePath}`,
+					);
 					await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
 					continue;
 				}

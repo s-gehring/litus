@@ -87,8 +87,8 @@ function connect(): void {
 		try {
 			const msg = JSON.parse(event.data) as ServerMessage;
 			handleMessage(msg);
-		} catch {
-			// Ignore malformed messages
+		} catch (err) {
+			console.warn("[ws] Failed to parse message:", err);
 		}
 	};
 }

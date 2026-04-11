@@ -63,7 +63,8 @@ export function createFolderPicker(placeholder = "~/git"): FolderPicker {
 			suggestions = data.folders ?? [];
 			selectedIndex = -1;
 			showDropdown();
-		} catch {
+		} catch (err) {
+			console.warn("[folder-picker] Failed to fetch suggestions:", err);
 			suggestions = [];
 			hideDropdown();
 		}
