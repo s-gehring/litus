@@ -366,8 +366,8 @@ export class CLIRunner {
 		try {
 			mkdirSync(EVENTS_DIR, { recursive: true });
 			appendFileSync(EVENTS_FILE, `${JSON.stringify(event)}\n`);
-		} catch {
-			// Best-effort logging — don't break the pipeline
+		} catch (err) {
+			logger.warn("[cli-runner] Failed to write audit event:", err);
 		}
 		// Extract session ID from the stream
 		if (event.session_id && !entry.sessionId) {

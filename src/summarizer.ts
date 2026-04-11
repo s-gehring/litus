@@ -49,7 +49,8 @@ export class Summarizer {
 						callback(summary);
 					}
 				})
-				.catch(() => {
+				.catch((err) => {
+					logger.warn("[summarizer] Activity summary failed:", err);
 					if (this.pendingSummary.has(workflowId)) {
 						this.pendingSummary.set(workflowId, false);
 					}
@@ -78,7 +79,8 @@ export class Summarizer {
 			});
 			if (!ok) return null;
 			return stdout.trim() || null;
-		} catch {
+		} catch (err) {
+			logger.warn("[summarizer] generateSummary failed:", err);
 			return null;
 		}
 	}
@@ -107,7 +109,8 @@ export class Summarizer {
 				summary: String(parsed.summary ?? "").slice(0, 50),
 				flavor: String(parsed.flavor ?? "").slice(0, 100),
 			};
-		} catch {
+		} catch (err) {
+			logger.warn("[summarizer] generateSpecSummary failed:", err);
 			return { summary: "", flavor: "" };
 		}
 	}

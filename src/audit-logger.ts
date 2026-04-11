@@ -32,12 +32,12 @@ export class AuditLogger {
 			for (const file of files) {
 				try {
 					unlinkSync(join(this.auditDir, file));
-				} catch {
-					// Already gone
+				} catch (err) {
+					logger.warn(`[audit] Failed to remove audit file ${file}:`, err);
 				}
 			}
-		} catch {
-			// Directory doesn't exist
+		} catch (err) {
+			logger.warn("[audit] Failed to list audit directory:", err);
 		}
 	}
 

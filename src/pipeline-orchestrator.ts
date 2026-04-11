@@ -875,6 +875,7 @@ export class PipelineOrchestrator {
 				this.engine.updateStepSummary(workflowId, stepSummary);
 				this.callbacks.onStateChange(workflowId);
 			} catch (e) {
+				logger.warn("[pipeline] Step summary update failed:", e);
 				if (e instanceof Error && !e.message.includes("not found")) throw e;
 			}
 		});
@@ -1261,8 +1262,8 @@ export class PipelineOrchestrator {
 				workflow.featureBranch = best;
 				logger.info(`[pipeline] Detected feature branch: ${best}`);
 			}
-		} catch {
-			// specs/ directory might not exist yet — not fatal
+		} catch (err) {
+			logger.warn("[pipeline] Failed to scan specs/ directory:", err);
 		}
 	}
 

@@ -244,7 +244,8 @@ async function listSubdirectories(parentDir: string): Promise<string[]> {
 		}
 		folders.sort((a, b) => a.localeCompare(b));
 		return folders;
-	} catch {
+	} catch (err) {
+		logger.warn(`[server] Failed to list subdirectories of ${parentDir}:`, err);
 		return [];
 	}
 }

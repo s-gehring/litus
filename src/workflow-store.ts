@@ -117,8 +117,8 @@ export class WorkflowStore {
 		try {
 			const content = await Bun.file(indexFile).text();
 			return JSON.parse(content) as WorkflowIndexEntry[];
-		} catch {
-			// Index missing or corrupted — rebuild from directory scan
+		} catch (err) {
+			logger.warn("[workflow-store] Index corrupted, rebuilding:", err);
 			return this.rebuildIndex();
 		}
 	}
@@ -148,8 +148,8 @@ export class WorkflowStore {
 			const updated = index.filter((e) => e.id !== id);
 			this.ensureDir();
 			await atomicWrite(this.indexPath(), JSON.stringify(updated, null, 2));
-		} catch {
-			// Index update failed — non-critical
+		} catch (err) {
+			logger.warn("[workflow-store] Index update failed after remove:", err);
 		}
 	}
 
@@ -159,7 +159,8 @@ export class WorkflowStore {
 			try {
 				const content = await Bun.file(this.indexPath()).text();
 				index = JSON.parse(content) as WorkflowIndexEntry[];
-			} catch {
+			} catch (err) {
+				logger.warn("[workflow-store] Failed to parse index, starting fresh:", err);
 				index = [];
 			}
 

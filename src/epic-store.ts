@@ -29,7 +29,8 @@ export class EpicStore {
 			const data = await file.json();
 			if (!Array.isArray(data)) return [];
 			return data as PersistedEpic[];
-		} catch {
+		} catch (err) {
+			logger.warn("[epic-store] Failed to load epics:", err);
 			return [];
 		}
 	}
