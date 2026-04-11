@@ -264,8 +264,8 @@ export class ConfigStore {
 			} else {
 				this.savedConfig = null;
 			}
-		} catch {
-			logger.warn("[config] Failed to load config.json, using defaults");
+		} catch (err) {
+			logger.warn("[config] Failed to load config.json, using defaults:", err);
 			this.savedConfig = null;
 		}
 	}

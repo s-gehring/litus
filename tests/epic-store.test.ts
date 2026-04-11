@@ -56,7 +56,7 @@ describe("EpicStore", () => {
 		warnSpy.mockRestore();
 	});
 
-	test("loadAll returns empty array and logs warning when data is not an array", async () => {
+	test("loadAll returns empty array without warning when data is not an array", async () => {
 		const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
 
 		mkdirSync(baseDir, { recursive: true });
@@ -64,7 +64,7 @@ describe("EpicStore", () => {
 
 		const result = await store.loadAll();
 		expect(result).toEqual([]);
-		// No warning expected — non-array is handled gracefully without logging
+		expect(warnSpy).not.toHaveBeenCalled();
 		warnSpy.mockRestore();
 	});
 

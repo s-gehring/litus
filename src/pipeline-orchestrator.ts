@@ -875,8 +875,10 @@ export class PipelineOrchestrator {
 				this.engine.updateStepSummary(workflowId, stepSummary);
 				this.callbacks.onStateChange(workflowId);
 			} catch (e) {
-				logger.warn("[pipeline] Step summary update failed:", e);
-				if (e instanceof Error && !e.message.includes("not found")) throw e;
+				if (e instanceof Error && !e.message.includes("not found")) {
+					logger.warn("[pipeline] Step summary update failed:", e);
+					throw e;
+				}
 			}
 		});
 	}
