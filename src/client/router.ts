@@ -50,7 +50,8 @@ export class Router {
 			this.currentHandler.unmount();
 		}
 
-		// Update history
+		// Update history — replaceState preserves search/hash (used by start/popstate
+		// to restore state), pushState uses a clean URL (new navigation clears old hash)
 		if (opts?.replace) {
 			history.replaceState(null, "", path + window.location.search + window.location.hash);
 		} else {
