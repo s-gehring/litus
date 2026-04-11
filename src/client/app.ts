@@ -933,13 +933,11 @@ document.addEventListener("DOMContentLoaded", () => {
 	if (appContent) {
 		appRouter = new Router(appContent, "/");
 		appRouter.register("/", createDashboardHandler());
-		appRouter.register("/config", createConfigPageHandler(send));
+		appRouter.register(
+			"/config",
+			createConfigPageHandler(send, (path) => appRouter?.navigate(path)),
+		);
 		appRouter.start();
-
-		// Listen for router:navigate custom events (used by config page Back link)
-		window.addEventListener("router:navigate", ((e: CustomEvent) => {
-			appRouter?.navigate(e.detail);
-		}) as EventListener);
 	}
 
 	// Gear button → router navigation

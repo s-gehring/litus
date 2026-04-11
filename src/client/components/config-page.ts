@@ -115,8 +115,7 @@ const PROMPT_VARIABLES: Record<string, Array<{ name: string; description: string
 const EFFORT_LEVELS: EffortLevel[] = ["low", "medium", "high", "max"];
 
 // Module-level send reference
-// biome-ignore lint/suspicious/noExplicitAny: internal dispatch uses dynamic message shapes
-let sendFn: ((msg: any) => void) | null = null;
+let sendFn: ((msg: ClientMessage) => void) | null = null;
 
 // Cached page root for updateConfigPage
 let pageRoot: HTMLElement | null = null;
@@ -588,7 +587,10 @@ export function showConfigWarning(warnings: ConfigWarning[]): void {
 
 // ── Config page route handler ──────────────────────────────
 
-function createConfigPage(send: (msg: ClientMessage) => void): HTMLElement {
+function createConfigPage(
+	send: (msg: ClientMessage) => void,
+	navigate: (path: string) => void,
+): HTMLElement {
 	sendFn = send;
 
 	const page = el("div", "config-page");
@@ -599,8 +601,7 @@ function createConfigPage(send: (msg: ClientMessage) => void): HTMLElement {
 	backLink.href = "/";
 	backLink.addEventListener("click", (e) => {
 		e.preventDefault();
-		// Navigate via router — imported dynamically to avoid circular deps
-		window.dispatchEvent(new CustomEvent("router:navigate", { detail: "/" }));
+		navigate("/");
 	});
 	page.appendChild(backLink);
 
@@ -688,10 +689,13 @@ function createConfigPage(send: (msg: ClientMessage) => void): HTMLElement {
 	return page;
 }
 
-export function createConfigPageHandler(send: (msg: ClientMessage) => void): RouteHandler {
+export function createConfigPageHandler(
+	send: (msg: ClientMessage) => void,
+	navigate: (path: string) => void,
+): RouteHandler {
 	return {
 		mount(container: HTMLElement) {
-			const page = createConfigPage(send);
+			const page = createConfigPage(send, navigate);
 			container.appendChild(page);
 			send({ type: "config:get" });
 		},

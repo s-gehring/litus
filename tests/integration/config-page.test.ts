@@ -62,11 +62,13 @@ describe("Dashboard route handler", () => {
 describe("Config page", () => {
 	let container: HTMLElement;
 	let sendSpy: ReturnType<typeof mock>;
+	let navigateSpy: ReturnType<typeof mock>;
 
 	beforeEach(() => {
 		document.body.innerHTML = `<div id="app"><div id="app-content"></div></div>`;
 		container = document.getElementById("app-content") as HTMLElement;
 		sendSpy = mock(() => {});
+		navigateSpy = mock(() => {});
 	});
 
 	afterEach(() => {
@@ -75,7 +77,7 @@ describe("Config page", () => {
 
 	test("mount renders all config sections", async () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
-		const handler = createConfigPageHandler(sendSpy);
+		const handler = createConfigPageHandler(sendSpy, navigateSpy);
 
 		handler.mount(container);
 
@@ -93,7 +95,7 @@ describe("Config page", () => {
 
 	test("mount renders Reset and Purge buttons", async () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
-		const handler = createConfigPageHandler(sendSpy);
+		const handler = createConfigPageHandler(sendSpy, navigateSpy);
 
 		handler.mount(container);
 
@@ -108,7 +110,7 @@ describe("Config page", () => {
 
 	test("mount renders Back link", async () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
-		const handler = createConfigPageHandler(sendSpy);
+		const handler = createConfigPageHandler(sendSpy, navigateSpy);
 
 		handler.mount(container);
 
@@ -119,7 +121,7 @@ describe("Config page", () => {
 
 	test("mount sends config:get", async () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
-		const handler = createConfigPageHandler(sendSpy);
+		const handler = createConfigPageHandler(sendSpy, navigateSpy);
 
 		handler.mount(container);
 
@@ -128,7 +130,7 @@ describe("Config page", () => {
 
 	test("unmount removes config page from container", async () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
-		const handler = createConfigPageHandler(sendSpy);
+		const handler = createConfigPageHandler(sendSpy, navigateSpy);
 
 		handler.mount(container);
 		expect(container.querySelector(".config-page")).toBeTruthy();

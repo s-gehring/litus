@@ -13,6 +13,7 @@ import type {
 	AutoMode,
 	ConfigValidationError,
 	ConfigWarning,
+	DeepPartial,
 	EffortLevel,
 	NumericSettingMeta,
 	PromptConfig,
@@ -303,7 +304,7 @@ export class ConfigStore {
 		};
 	}
 
-	save(partial: Partial<AppConfig>): {
+	save(partial: DeepPartial<AppConfig>): {
 		errors: ConfigValidationError[];
 		warnings: ConfigWarning[];
 	} {
@@ -402,7 +403,7 @@ export class ConfigStore {
 		}
 	}
 
-	private validate(partial: Partial<AppConfig>): ConfigValidationError[] {
+	private validate(partial: DeepPartial<AppConfig>): ConfigValidationError[] {
 		const errors: ConfigValidationError[] = [];
 
 		const VALID_AUTO_MODES: AutoMode[] = ["manual", "normal", "full-auto"];
@@ -510,7 +511,7 @@ export class ConfigStore {
 		}
 	}
 
-	private checkPromptVariables(partial: Partial<AppConfig>): ConfigWarning[] {
+	private checkPromptVariables(partial: DeepPartial<AppConfig>): ConfigWarning[] {
 		const warnings: ConfigWarning[] = [];
 
 		if (!partial.prompts) return warnings;

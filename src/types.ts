@@ -1,3 +1,5 @@
+export type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
+
 // ── Config types ──────────────────────────────────────────
 
 export interface ModelConfig {
@@ -552,6 +554,6 @@ export type ClientMessage =
 	| { type: "workflow:start-existing"; workflowId: string }
 	| { type: "workflow:force-start"; workflowId: string }
 	| { type: "config:get" }
-	| { type: "config:save"; config: Partial<AppConfig> }
+	| { type: "config:save"; config: DeepPartial<AppConfig> }
 	| { type: "config:reset"; key?: string }
 	| { type: "purge:all" };
