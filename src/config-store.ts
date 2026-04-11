@@ -9,6 +9,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "./config-metadata";
+import { logger } from "./logger";
 import type {
 	AppConfig,
 	AutoMode,
@@ -210,7 +211,12 @@ export class ConfigStore {
 		this.savedConfig = current;
 
 		const warnings = this.checkPromptVariables(partial);
-		this.writeToDisk();
+		if (!this.writeToDisk()) {
+			return {
+				errors: [{ path: "_disk", message: "Failed to persist config to disk", value: undefined }],
+				warnings,
+			};
+		}
 		return { errors: [], warnings };
 	}
 
@@ -258,13 +264,13 @@ export class ConfigStore {
 			} else {
 				this.savedConfig = null;
 			}
-		} catch {
-			console.warn("[config] Failed to load config.json, using defaults");
+		} catch (err) {
+			logger.warn("[config] Failed to load config.json, using defaults:", err);
 			this.savedConfig = null;
 		}
 	}
 
-	private writeToDisk(): void {
+	private writeToDisk(): boolean {
 		const dir = dirname(this.configPath);
 		mkdirSync(dir, { recursive: true });
 
@@ -275,13 +281,15 @@ export class ConfigStore {
 		try {
 			writeFileSync(tmpPath, data);
 			renameSync(tmpPath, this.configPath);
+			return true;
 		} catch (err) {
-			console.error(`[config] Failed to write config: ${err}`);
+			logger.error(`[config] Failed to write config: ${err}`);
 			try {
 				unlinkSync(tmpPath);
 			} catch {
 				/* ignore */
 			}
+			return false;
 		}
 	}
 

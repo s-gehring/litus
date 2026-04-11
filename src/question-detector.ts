@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { configStore } from "./config-store";
+import { logger } from "./logger";
 import { runClaude } from "./spawn-utils";
 import type { Question } from "./types";
 
@@ -69,7 +70,7 @@ export class QuestionDetector {
 			if (!ok) return false;
 			return stdout.trim().toLowerCase().startsWith("yes");
 		} catch (err) {
-			console.warn("[question-detector] classifyWithHaiku failed:", err);
+			logger.warn("[question-detector] classifyWithHaiku failed:", err);
 			return false;
 		} finally {
 			this.pendingClassification = false;

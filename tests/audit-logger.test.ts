@@ -225,7 +225,10 @@ describe("double endRun", () => {
 
 		const events = readEvents("double-end-test");
 		expect(events).toHaveLength(2); // only start + first end
-		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Unknown runId"));
+		expect(warnSpy).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.stringContaining("Unknown runId"),
+		);
 		warnSpy.mockRestore();
 	});
 });

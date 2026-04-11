@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ConfigStore, DEFAULT_CONFIG } from "../src/config-store";
@@ -630,5 +630,38 @@ describe("T022: new defaults include efforts section", () => {
 
 		expect(config.limits.maxJsonRetries).toBe(2);
 		expect(config.timing.epicTimeoutMs).toBe(900_000);
+	});
+});
+
+// ── Disk write failure propagation ───────────────────────────────────────
+describe("save returns _disk error when writeToDisk fails", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = makeTempDir();
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	test("save returns _disk error when config path is a directory (rename fails)", () => {
+		// Create a directory where the config file should be — renameSync(tmp, dir) fails
+		const configDir = join(dir, "config.json");
+		mkdirSync(configDir);
+
+		const store = new ConfigStore(configDir);
+		const { errors } = store.save({
+			limits: {
+				ciFixMaxAttempts: 5,
+				reviewCycleMaxIterations: 16,
+				mergeMaxAttempts: 3,
+				maxJsonRetries: 2,
+			},
+		});
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].path).toBe("_disk");
+		expect(errors[0].message).toContain("Failed to persist config to disk");
 	});
 });

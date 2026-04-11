@@ -1,4 +1,5 @@
 import { gitSpawn } from "../git-logger";
+import { logger } from "../logger";
 import type { MessageHandler } from "./handler-types";
 
 export const handlePurgeAll: MessageHandler = async (_ws, _data, deps) => {
@@ -123,11 +124,11 @@ export const handlePurgeAll: MessageHandler = async (_ws, _data, deps) => {
 	deps.sharedAuditLogger.removeAll();
 	completedOps++;
 
-	console.log(
+	logger.info(
 		`[purge] All data purged (${allWorkflows.length} workflows, ${repoCleanup.size} repos)`,
 	);
 	if (warnings.length > 0) {
-		console.warn(`[purge] Warnings: ${warnings.join("; ")}`);
+		logger.warn(`[purge] Warnings: ${warnings.join("; ")}`);
 	}
 
 	deps.broadcast({ type: "purge:complete", warnings });

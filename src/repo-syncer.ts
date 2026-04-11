@@ -1,4 +1,5 @@
 import { toErrorMessage } from "./errors";
+import { logger } from "./logger";
 import { defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
 import type { SyncResult } from "./types";
 import type { WorkflowEngine } from "./workflow-engine";
@@ -62,6 +63,7 @@ export async function syncRepo(
 			onOutput("Worktree removed");
 		} catch (err) {
 			const msg = toErrorMessage(err);
+			logger.warn("[repo-syncer] Worktree removal failed:", msg);
 			const wtWarning = `Worktree removal failed: ${msg}`;
 			warning = warning ? `${warning}; ${wtWarning}` : wtWarning;
 			onOutput(wtWarning);

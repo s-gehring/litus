@@ -1,4 +1,5 @@
 import { toErrorMessage } from "../errors";
+import { logger } from "../logger";
 import type { ClientMessage } from "../types";
 import type { MessageHandler } from "./handler-types";
 import { validateRepo, validateTextInput, withOrchestrator } from "./handler-types";
@@ -25,6 +26,7 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 		deps.broadcast({ type: "workflow:created", workflow: state });
 	} catch (err) {
 		const message = toErrorMessage(err);
+		logger.error("[ws] workflow:start failed:", err);
 		deps.sendTo(ws, { type: "error", message });
 	}
 };
@@ -114,6 +116,7 @@ export const handleStartExisting: MessageHandler = withOrchestrator((ws, data, d
 	try {
 		orch.startPipelineFromWorkflow(workflow);
 	} catch (err) {
+		logger.error("[ws] workflow:start-existing failed:", err);
 		deps.sendTo(ws, { type: "error", message: `Failed to start workflow: ${err}` });
 		return;
 	}
@@ -135,6 +138,7 @@ export const handleForceStart: MessageHandler = withOrchestrator((ws, data, deps
 	try {
 		orch.startPipelineFromWorkflow(workflow);
 	} catch (err) {
+		logger.error("[ws] workflow:force-start failed:", err);
 		workflow.epicDependencyStatus = "waiting";
 		deps.sendTo(ws, { type: "error", message: `Failed to force-start workflow: ${err}` });
 		return;

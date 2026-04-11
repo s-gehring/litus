@@ -4,6 +4,7 @@ import type { CLIRunner } from "../cli-runner";
 import type { ConfigStore } from "../config-store";
 import type { EpicAnalysisProcess } from "../epic-analyzer";
 import type { EpicStore } from "../epic-store";
+import { logger } from "../logger";
 import type { PipelineOrchestrator } from "../pipeline-orchestrator";
 import type { Summarizer } from "../summarizer";
 import { validateTargetRepository } from "../target-repo-validator";
@@ -51,11 +52,13 @@ export function withOrchestrator(
 	return (ws, data, deps) => {
 		const { workflowId } = data as { workflowId?: string };
 		if (!workflowId) {
+			logger.warn(`[ws] Missing workflowId in ${data.type} message`);
 			deps.sendTo(ws, { type: "error", message: "Missing workflowId" });
 			return;
 		}
 		const orch = deps.orchestrators.get(workflowId);
 		if (!orch) {
+			logger.warn(`[ws] Workflow not found: ${workflowId} (${data.type})`);
 			deps.sendTo(ws, { type: "error", message: "Workflow not found" });
 			return;
 		}

@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { logger } from "./logger";
 import type { AuditConfig, AuditEvent, AuditEventType } from "./types";
 
 const DEFAULT_AUDIT_DIR = join(homedir(), ".litus", "audit");
@@ -21,7 +22,7 @@ export class AuditLogger {
 		try {
 			mkdirSync(this.auditDir, { recursive: true });
 		} catch (err) {
-			console.warn(`[audit] Failed to create audit directory: ${err}`);
+			logger.warn(`[audit] Failed to create audit directory: ${err}`);
 		}
 	}
 
@@ -31,12 +32,12 @@ export class AuditLogger {
 			for (const file of files) {
 				try {
 					unlinkSync(join(this.auditDir, file));
-				} catch {
-					// Already gone
+				} catch (err) {
+					logger.warn(`[audit] Failed to remove audit file ${file}:`, err);
 				}
 			}
-		} catch {
-			// Directory doesn't exist
+		} catch (err) {
+			logger.warn("[audit] Failed to list audit directory:", err);
 		}
 	}
 
@@ -114,7 +115,7 @@ export class AuditLogger {
 		try {
 			const run = this.runs.get(runId);
 			if (!run) {
-				console.warn(`[audit] Unknown runId: ${runId} — event dropped`);
+				logger.warn(`[audit] Unknown runId: ${runId} — event dropped`);
 				return;
 			}
 
@@ -137,7 +138,7 @@ export class AuditLogger {
 			const filePath = join(this.auditDir, `${run.safeFileName}.jsonl`);
 			appendFileSync(filePath, `${JSON.stringify(event)}\n`);
 		} catch (err) {
-			console.warn(`[audit] Failed to write event: ${err}`);
+			logger.warn(`[audit] Failed to write event: ${err}`);
 		}
 	}
 }

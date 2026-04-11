@@ -1,6 +1,7 @@
 import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
 import { gitSpawn } from "./git-logger";
+import { logger } from "./logger";
 import type { CiCheckResult, CiCycle } from "./types";
 
 export async function checkGhAuth(): Promise<void> {
@@ -124,10 +125,12 @@ export async function startMonitoring(
 			const msg = toErrorMessage(err);
 			if (msg.includes("rate limit")) {
 				const backoff = configStore.get().timing.rateLimitBackoffMs;
+				logger.warn("[ci-monitor] Rate limited during CI poll");
 				onOutput(`[poll ${pollCount}/${maxPolls}] Rate limited — waiting ${backoff / 1000}s`);
 				await Bun.sleep(backoff);
 				continue;
 			}
+			logger.warn("[ci-monitor] Poll error:", msg);
 			const interval = configStore.get().timing.ciPollIntervalMs;
 			onOutput(
 				`[poll ${pollCount}/${maxPolls}] Poll error: ${msg} — retrying in ${interval / 1000}s`,

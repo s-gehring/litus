@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { AsyncLock } from "./async-lock";
 import { atomicWrite } from "./atomic-write";
+import { logger } from "./logger";
 import type { PersistedEpic } from "./types";
 
 export class EpicStore {
@@ -28,7 +29,8 @@ export class EpicStore {
 			const data = await file.json();
 			if (!Array.isArray(data)) return [];
 			return data as PersistedEpic[];
-		} catch {
+		} catch (err) {
+			logger.warn("[epic-store] Failed to load epics:", err);
 			return [];
 		}
 	}

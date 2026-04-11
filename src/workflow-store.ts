@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { AsyncLock } from "./async-lock";
 import { atomicWrite } from "./atomic-write";
+import { logger } from "./logger";
 import type { Workflow, WorkflowIndexEntry } from "./types";
 
 export class WorkflowStore {
@@ -58,7 +59,7 @@ export class WorkflowStore {
 			const content = await Bun.file(filePath).text();
 			const data = JSON.parse(content);
 			if (!data.id || !Array.isArray(data.steps) || !data.status) {
-				console.warn(`[workflow-store] Invalid workflow structure for ${id}`);
+				logger.warn(`[workflow-store] Invalid workflow structure for ${id}`);
 				return null;
 			}
 			if (
@@ -66,7 +67,7 @@ export class WorkflowStore {
 				data.currentStepIndex < 0 ||
 				data.currentStepIndex >= data.steps.length
 			) {
-				console.warn(`[workflow-store] Invalid currentStepIndex for ${id}`);
+				logger.warn(`[workflow-store] Invalid currentStepIndex for ${id}`);
 				return null;
 			}
 			// Migration: backfill mergeCycle for pre-merge-pr workflows
@@ -81,7 +82,7 @@ export class WorkflowStore {
 			if (data.epicAnalysisMs === undefined) data.epicAnalysisMs = 0;
 			return data as Workflow;
 		} catch {
-			console.warn(`[workflow-store] Failed to load workflow ${id}`);
+			logger.warn(`[workflow-store] Failed to load workflow ${id}`);
 			return null;
 		}
 	}
@@ -116,8 +117,8 @@ export class WorkflowStore {
 		try {
 			const content = await Bun.file(indexFile).text();
 			return JSON.parse(content) as WorkflowIndexEntry[];
-		} catch {
-			// Index missing or corrupted — rebuild from directory scan
+		} catch (err) {
+			logger.warn("[workflow-store] Index corrupted, rebuilding:", err);
 			return this.rebuildIndex();
 		}
 	}
@@ -147,8 +148,8 @@ export class WorkflowStore {
 			const updated = index.filter((e) => e.id !== id);
 			this.ensureDir();
 			await atomicWrite(this.indexPath(), JSON.stringify(updated, null, 2));
-		} catch {
-			// Index update failed — non-critical
+		} catch (err) {
+			logger.warn("[workflow-store] Index update failed after remove:", err);
 		}
 	}
 
@@ -158,7 +159,8 @@ export class WorkflowStore {
 			try {
 				const content = await Bun.file(this.indexPath()).text();
 				index = JSON.parse(content) as WorkflowIndexEntry[];
-			} catch {
+			} catch (err) {
+				logger.warn("[workflow-store] Failed to parse index, starting fresh:", err);
 				index = [];
 			}
 

@@ -152,7 +152,7 @@ describe("runClaude", () => {
 			spawnMock.mockImplementation(() => mockSpawnResponse("", "something broke", 1));
 			await runClaude({ prompt: "hello", callerLabel: "test-caller" });
 			expect(warnMock).toHaveBeenCalledTimes(1);
-			const msg = (warnMock.mock.calls as string[][])[0][0];
+			const msg = (warnMock.mock.calls as string[][])[0][1];
 			expect(msg).toContain("test-caller");
 			expect(msg).toContain("1");
 		});
@@ -163,7 +163,7 @@ describe("runClaude", () => {
 			const longStderr = "x".repeat(300);
 			spawnMock.mockImplementation(() => mockSpawnResponse("", longStderr, 1));
 			await runClaude({ prompt: "hello", callerLabel: "truncate-test" });
-			const msg = (warnMock.mock.calls as string[][])[0][0];
+			const msg = (warnMock.mock.calls as string[][])[0][1];
 			expect(msg).toContain("x".repeat(200));
 			expect(msg).not.toContain("x".repeat(201));
 		});
@@ -205,7 +205,7 @@ describe("runClaude", () => {
 			});
 			await runClaude({ prompt: "hello", callerLabel: "spawn-test" });
 			expect(warnMock).toHaveBeenCalledTimes(1);
-			const msg = (warnMock.mock.calls as string[][])[0][0];
+			const msg = (warnMock.mock.calls as string[][])[0][1];
 			expect(msg).toContain("spawn-test");
 			expect(msg).toContain("binary not found");
 		});

@@ -11,6 +11,7 @@ import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import { toErrorMessage } from "./errors";
 import { gitSpawn } from "./git-logger";
+import { logger } from "./logger";
 import {
 	mergePr as defaultMergePr,
 	resolveConflicts as defaultResolveConflicts,
@@ -177,7 +178,7 @@ export class PipelineOrchestrator {
 				this.callbacks.onStateChange(workflow.id);
 			})
 			.catch((err) => {
-				console.warn(`[pipeline] Summary generation failed: ${err}`);
+				logger.warn(`[pipeline] Summary generation failed: ${err}`);
 			});
 	}
 
@@ -202,7 +203,7 @@ export class PipelineOrchestrator {
 				this.callbacks.onStateChange(workflow.id);
 			})
 			.catch((err) => {
-				console.warn(`[pipeline] Summary generation failed: ${err}`);
+				logger.warn(`[pipeline] Summary generation failed: ${err}`);
 			});
 
 		return workflow;
@@ -492,7 +493,7 @@ export class PipelineOrchestrator {
 		// Update epic dependency status for siblings if this workflow was cancelled
 		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
 			this.checkEpicDependencies(workflow).catch((err) => {
-				console.error(`[pipeline] Failed to check epic dependencies: ${err}`);
+				logger.error(`[pipeline] Failed to check epic dependencies: ${err}`);
 			});
 		}
 	}
@@ -874,7 +875,10 @@ export class PipelineOrchestrator {
 				this.engine.updateStepSummary(workflowId, stepSummary);
 				this.callbacks.onStateChange(workflowId);
 			} catch (e) {
-				if (e instanceof Error && !e.message.includes("not found")) throw e;
+				if (e instanceof Error && !e.message.includes("not found")) {
+					logger.warn("[pipeline] Step summary update failed:", e);
+					throw e;
+				}
 			}
 		});
 	}
@@ -907,7 +911,7 @@ export class PipelineOrchestrator {
 					this.pauseForQuestion(workflowId, candidate);
 				})
 				.catch((err) => {
-					console.warn(`[pipeline] Haiku classification failed, advancing: ${err}`);
+					logger.warn(`[pipeline] Haiku classification failed, advancing: ${err}`);
 					this.advanceAfterStep(workflowId);
 				});
 		} else {
@@ -1019,7 +1023,7 @@ export class PipelineOrchestrator {
 				case "handle-implement-review-complete":
 					this.handleImplementReviewComplete(workflow).catch((err) => {
 						const msg = toErrorMessage(err);
-						console.error(`[pipeline] Implement-review completion error: ${msg}`);
+						logger.error(`[pipeline] Implement-review completion error: ${msg}`);
 						this.handleStepError(workflow.id, msg);
 					});
 					return;
@@ -1187,7 +1191,7 @@ export class PipelineOrchestrator {
 		// Check epic dependencies — notify server to resolve dependent workflows
 		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
 			this.checkEpicDependencies(workflow).catch((err) => {
-				console.error(`[pipeline] Failed to check epic dependencies: ${err}`);
+				logger.error(`[pipeline] Failed to check epic dependencies: ${err}`);
 			});
 		}
 	}
@@ -1258,10 +1262,10 @@ export class PipelineOrchestrator {
 			}
 			if (best) {
 				workflow.featureBranch = best;
-				console.log(`[pipeline] Detected feature branch: ${best}`);
+				logger.info(`[pipeline] Detected feature branch: ${best}`);
 			}
-		} catch {
-			// specs/ directory might not exist yet — not fatal
+		} catch (err) {
+			logger.warn("[pipeline] Failed to scan specs/ directory:", err);
 		}
 	}
 
@@ -1290,9 +1294,9 @@ export class PipelineOrchestrator {
 			workflow.worktreeBranch = workflow.featureBranch as string;
 			this.persistWorkflow(workflow);
 			this.callbacks.onStateChange(workflow.id);
-			console.log(`[pipeline] Renamed worktree to ${newRelativePath}`);
+			logger.info(`[pipeline] Renamed worktree to ${newRelativePath}`);
 		} catch (err) {
-			console.warn(`[pipeline] Worktree rename failed (non-fatal): ${toErrorMessage(err)}`);
+			logger.warn(`[pipeline] Worktree rename failed (non-fatal): ${toErrorMessage(err)}`);
 		}
 	}
 
@@ -1343,7 +1347,7 @@ export class PipelineOrchestrator {
 		// Update epic dependency status for siblings if this workflow errored
 		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
 			this.checkEpicDependencies(workflow).catch((err) => {
-				console.error(`[pipeline] Failed to check epic dependencies: ${err}`);
+				logger.error(`[pipeline] Failed to check epic dependencies: ${err}`);
 			});
 		}
 	}
@@ -1368,7 +1372,7 @@ export class PipelineOrchestrator {
 
 	private persistWorkflow(workflow: Workflow): void {
 		this.store.save(workflow).catch((err) => {
-			console.error(`[pipeline] Failed to persist workflow: ${err}`);
+			logger.error(`[pipeline] Failed to persist workflow: ${err}`);
 		});
 	}
 
@@ -1424,7 +1428,7 @@ export class PipelineOrchestrator {
 			this.engine.transition(workflowId, status);
 		} catch (e) {
 			if (e instanceof Error && !e.message.includes("Invalid transition")) throw e;
-			else console.warn(`[pipeline] Suppressed transition error: ${e}`);
+			else logger.warn(`[pipeline] Suppressed transition error: ${e}`);
 		}
 	}
 
