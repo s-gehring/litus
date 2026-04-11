@@ -635,7 +635,7 @@ function createConfigPage(
 			panel.classList.toggle("cfg-panel--active", panelId === id);
 		}
 		if (pushHash) {
-			history.replaceState(null, "", `/config#${id}`);
+			history.replaceState(null, "", `${window.location.pathname}#${id}`);
 		}
 	}
 
