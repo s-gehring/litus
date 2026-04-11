@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { AsyncLock } from "./async-lock";
 import { atomicWrite } from "./atomic-write";
+import { logger } from "./logger";
 import type { PersistedEpic } from "./types";
 
 export class EpicStore {

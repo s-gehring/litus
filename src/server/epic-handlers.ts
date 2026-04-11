@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { analyzeEpic } from "../epic-analyzer";
 import { toErrorMessage } from "../errors";
+import { logger } from "../logger";
 import type { ClientMessage, PersistedEpic } from "../types";
 import { createEpicWorkflows } from "../workflow-engine";
 import type { MessageHandler } from "./handler-types";
@@ -43,7 +44,7 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 	const epicId = randomUUID();
 	const trimmedDesc = description.trim();
 	const analysisStartedAt = Date.now();
-	console.log(`[epic] Starting analysis (${epicId.slice(0, 8)}): "${trimmedDesc.slice(0, 80)}"`);
+	logger.info(`[epic] Starting analysis (${epicId.slice(0, 8)}): "${trimmedDesc.slice(0, 80)}"`);
 
 	deps.broadcast({ type: "epic:created", epicId, description: trimmedDesc });
 
@@ -56,7 +57,7 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			}
 		})
 		.catch((err) => {
-			console.warn(`[epic] Summary generation failed: ${err}`);
+			logger.warn(`[epic] Summary generation failed: ${err}`);
 		});
 
 	try {
@@ -66,11 +67,11 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 		});
 
 		const analysisMs = Date.now() - analysisStartedAt;
-		console.log(`[epic] Analysis complete (${epicId.slice(0, 8)}): ${result.specs.length} specs`);
+		logger.info(`[epic] Analysis complete (${epicId.slice(0, 8)}): ${result.specs.length} specs`);
 
 		// Handle infeasible epic (empty specs with infeasibleNotes)
 		if (result.specs.length === 0 && result.infeasibleNotes) {
-			console.log(
+			logger.info(
 				`[epic] Infeasible (${epicId.slice(0, 8)}): ${result.infeasibleNotes.slice(0, 80)}`,
 			);
 			const epicData = buildEpicData({
@@ -141,9 +142,9 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 		});
 	} catch (err) {
 		const message = toErrorMessage(err);
-		console.error(`[epic] Analysis failed (${epicId.slice(0, 8)}): ${message}`);
+		logger.error(`[epic] Analysis failed (${epicId.slice(0, 8)}): ${message}`);
 		if (err instanceof Error && err.stack) {
-			console.error(`[epic] Stack trace: ${err.stack}`);
+			logger.error(`[epic] Stack trace: ${err.stack}`);
 		}
 		deps.broadcast({ type: "epic:error", epicId, message });
 	}

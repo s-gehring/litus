@@ -1,5 +1,6 @@
 import type { ServerWebSocket } from "bun";
 import { toErrorMessage } from "../errors";
+import { logger } from "../logger";
 import type { HandlerDeps, MessageHandler, WsData } from "./handler-types";
 
 export class MessageRouter {
@@ -43,13 +44,13 @@ export class MessageRouter {
 			const result = handler(ws, parsed as Parameters<MessageHandler>[1], deps);
 			if (result instanceof Promise) {
 				result.catch((err) => {
-					console.error("[ws] Async message handling error:", err);
+					logger.error("[ws] Async message handling error:", err);
 					const text = toErrorMessage(err);
 					deps.sendTo(ws, { type: "error", message: text });
 				});
 			}
 		} catch (err) {
-			console.error("[ws] Message handling error:", err);
+			logger.error("[ws] Message handling error:", err);
 			const text = toErrorMessage(err);
 			deps.sendTo(ws, { type: "error", message: text });
 		}

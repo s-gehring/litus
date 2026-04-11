@@ -6,6 +6,7 @@ import { computeDependencyStatus } from "./dependency-resolver";
 import type { EpicAnalysisProcess } from "./epic-analyzer";
 import { EpicStore } from "./epic-store";
 import { setGitLogCallback } from "./git-logger";
+import { logger } from "./logger";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -84,7 +85,7 @@ function createCallbacks() {
 			orchestrators.delete(workflowId);
 		},
 		onError: (workflowId: string, error: string) => {
-			console.error(`[pipeline] Step error (${workflowId}): ${error}`);
+			logger.error(`[pipeline] Step error (${workflowId}): ${error}`);
 			broadcast({ type: "workflow:output", workflowId, text: `Error: ${error}` });
 			broadcastWorkflowState(workflowId);
 		},
@@ -331,11 +332,11 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 	const port = BASE_PORT + i;
 	try {
 		server = startServer(port);
-		console.log(`Litus running at http://localhost:${port}`);
+		logger.info(`Litus running at http://localhost:${port}`);
 		break;
 	} catch (err) {
 		if (i === MAX_PORT_RETRIES - 1) throw err;
-		console.warn(`Port ${port} in use, trying ${port + 1}...`);
+		logger.warn(`Port ${port} in use, trying ${port + 1}...`);
 	}
 }
 
@@ -376,7 +377,7 @@ process.on("SIGTERM", () => {
 					waitingStep.pid = null;
 					await sharedStore.save(workflow);
 				}
-				console.log(
+				logger.info(
 					`[startup] Restored waiting_for_input workflow ${workflow.id} (question pending)`,
 				);
 			}
@@ -389,15 +390,15 @@ process.on("SIGTERM", () => {
 
 				// monitor-ci is direct code execution — restart polling from scratch
 				if (runningStep?.name === STEP.MONITOR_CI) {
-					console.log(`[startup] Restarting monitor-ci for workflow ${workflow.id}`);
+					logger.info(`[startup] Restarting monitor-ci for workflow ${workflow.id}`);
 					workflow.ciCycle.monitorStartedAt = null;
 					orch.resumeMonitorCi(workflow.id);
 				} else if (runningStep?.sessionId) {
-					console.log(
+					logger.info(
 						`[startup] Resuming workflow ${workflow.id} step "${runningStep.name}" (session: ${runningStep.sessionId})`,
 					);
 					orch.resumeStep(workflow.id).catch((err) => {
-						console.error(`[startup] Failed to resume workflow ${workflow.id}: ${err}`);
+						logger.error(`[startup] Failed to resume workflow ${workflow.id}: ${err}`);
 					});
 				} else {
 					workflow.activeWorkStartedAt = null;
@@ -417,7 +418,7 @@ process.on("SIGTERM", () => {
 		}
 
 		if (restoredCount > 0) {
-			console.log(`[startup] Restored ${restoredCount} workflow(s)`);
+			logger.info(`[startup] Restored ${restoredCount} workflow(s)`);
 		}
 
 		for (const workflow of allWorkflows) {
@@ -441,7 +442,7 @@ process.on("SIGTERM", () => {
 
 				const orch = orchestrators.get(workflow.id);
 				if (orch) {
-					console.log(`[startup] Auto-starting unblocked workflow ${workflow.id}`);
+					logger.info(`[startup] Auto-starting unblocked workflow ${workflow.id}`);
 					orch.startPipelineFromWorkflow(workflow);
 				}
 			} else if (depStatus.status === "blocked") {
@@ -451,6 +452,6 @@ process.on("SIGTERM", () => {
 			}
 		}
 	} catch (err) {
-		console.error(`[startup] Failed to restore workflows: ${err}`);
+		logger.error(`[startup] Failed to restore workflows: ${err}`);
 	}
 })();

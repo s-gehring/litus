@@ -9,6 +9,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "./config-metadata";
+import { logger } from "./logger";
 import type {
 	AppConfig,
 	AutoMode,
@@ -259,7 +260,7 @@ export class ConfigStore {
 				this.savedConfig = null;
 			}
 		} catch {
-			console.warn("[config] Failed to load config.json, using defaults");
+			logger.warn("[config] Failed to load config.json, using defaults");
 			this.savedConfig = null;
 		}
 	}
@@ -276,7 +277,7 @@ export class ConfigStore {
 			writeFileSync(tmpPath, data);
 			renameSync(tmpPath, this.configPath);
 		} catch (err) {
-			console.error(`[config] Failed to write config: ${err}`);
+			logger.error(`[config] Failed to write config: ${err}`);
 			try {
 				unlinkSync(tmpPath);
 			} catch {

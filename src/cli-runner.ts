@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
+import { logger } from "./logger";
 import { cleanEnv, readStream } from "./spawn-utils";
 import { DELTA_FLUSH_TIMEOUT_MS, type EffortLevel, type ToolUsage, type Workflow } from "./types";
 
@@ -88,7 +89,7 @@ export class CLIRunner {
 		// Guard: kill any lingering process for this workflow before starting a new one
 		const existing = this.running.get(workflow.id);
 		if (existing) {
-			console.warn(
+			logger.warn(
 				`[cli-runner] Killing existing process (pid=${existing.process.pid}) for workflow ${workflow.id} before starting new one`,
 			);
 			existing.stale = true;
@@ -120,7 +121,7 @@ export class CLIRunner {
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
-			console.info(`[cli-runner] Starting CLI for workflow ${workflow.id} | cwd=${cwd}`);
+			logger.info(`[cli-runner] Starting CLI for workflow ${workflow.id} | cwd=${cwd}`);
 			proc = Bun.spawn(args, {
 				cwd,
 				stdout: "pipe",
@@ -130,7 +131,7 @@ export class CLIRunner {
 			});
 		} catch (err) {
 			const msg = toErrorMessage(err);
-			console.error(`[cli-runner] Failed to spawn process: ${msg}`);
+			logger.error(`[cli-runner] Failed to spawn process: ${msg}`);
 			queueMicrotask(() => callbacks.onError(msg));
 			return;
 		}
@@ -149,7 +150,7 @@ export class CLIRunner {
 		};
 
 		this.running.set(workflow.id, entry);
-		console.info(`[cli-runner] Spawned pid=${proc.pid} for workflow ${workflow.id}`);
+		logger.info(`[cli-runner] Spawned pid=${proc.pid} for workflow ${workflow.id}`);
 		callbacks.onPid?.(proc.pid);
 		this.streamOutput(entry);
 	}
@@ -165,7 +166,7 @@ export class CLIRunner {
 		// Guard: kill any lingering process for this workflow
 		const existing = this.running.get(workflowId);
 		if (existing) {
-			console.warn(
+			logger.warn(
 				`[cli-runner] Killing existing process (pid=${existing.process.pid}) for workflow ${workflowId} before resuming`,
 			);
 			existing.stale = true;
@@ -195,7 +196,7 @@ export class CLIRunner {
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
-			console.info(`[cli-runner] Resuming ${sessionId} for workflow ${workflowId}`);
+			logger.info(`[cli-runner] Resuming ${sessionId} for workflow ${workflowId}`);
 			proc = Bun.spawn(args, {
 				cwd,
 				stdout: "pipe",
@@ -205,7 +206,7 @@ export class CLIRunner {
 			});
 		} catch (err) {
 			const msg = toErrorMessage(err);
-			console.error(`[cli-runner] Failed to spawn resume process: ${msg}`);
+			logger.error(`[cli-runner] Failed to spawn resume process: ${msg}`);
 			queueMicrotask(() => callbacks.onError(msg));
 			return;
 		}
@@ -255,7 +256,7 @@ export class CLIRunner {
 		if (timeoutMs <= 0) return;
 		entry.idleTimer = setTimeout(() => {
 			if (entry.stale) return;
-			console.error(
+			logger.error(
 				`[cli-runner] Idle timeout (${timeoutMs}ms) for workflow ${entry.workflowId} — killing process`,
 			);
 			entry.stale = true;
@@ -269,7 +270,7 @@ export class CLIRunner {
 		const startTime = Date.now();
 		const stdout = proc.stdout;
 		if (!stdout || typeof stdout === "number") {
-			console.warn(
+			logger.warn(
 				`[cli-runner] No stdout pipe for workflow ${workflowId} (stdout=${typeof stdout})`,
 			);
 			return;
@@ -314,7 +315,7 @@ export class CLIRunner {
 				}
 			}
 		} catch (err) {
-			console.error(`[cli-runner] Stream read error for workflow ${workflowId}: ${err}`);
+			logger.error(`[cli-runner] Stream read error for workflow ${workflowId}: ${err}`);
 		}
 
 		if (entry.idleTimer) {
@@ -329,7 +330,7 @@ export class CLIRunner {
 		const elapsedMs = Date.now() - startTime;
 		// Always read stderr for diagnostics
 		const stderr = await readStream(proc.stderr);
-		console.info(
+		logger.info(
 			`[cli-runner] pid=${proc.pid} workflow=${workflowId} exited code=${exitCode} elapsed=${elapsedMs}ms receivedData=${receivedAnyData} session=${entry.sessionId ?? "none"}${stderr ? ` stderr=${stderr.slice(0, 300)}` : ""}`,
 		);
 

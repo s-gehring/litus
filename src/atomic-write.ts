@@ -1,5 +1,6 @@
 import { mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
+import { logger } from "./logger";
 
 /**
  * Write data to a file atomically via tmp-rename.

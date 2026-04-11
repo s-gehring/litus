@@ -1,5 +1,6 @@
 import { configStore } from "./config-store";
 import { buildGraph, detectCycles } from "./dependency-resolver";
+import { logger } from "./logger";
 import { cleanEnv } from "./spawn-utils";
 import { DELTA_FLUSH_TIMEOUT_MS, type EpicAnalysisResult, type ToolUsage } from "./types";
 
@@ -239,7 +240,7 @@ async function runCLIStream(
 
 	// Prefer assistant event text (authoritative); fall back to delta-accumulated text
 	const accumulatedText = lastAssistantText || deltaAccumulated;
-	console.log(
+	logger.info(
 		`[epic] Stream done: assistantText=${lastAssistantText.length} chars, deltaText=${deltaAccumulated.length} chars`,
 	);
 
@@ -295,10 +296,10 @@ export async function analyzeEpic(
 			return parseAnalysisResult(accumulatedText);
 		} catch (err) {
 			lastError = err as Error;
-			console.error(
+			logger.error(
 				`[epic] Parse attempt ${attempt + 1}/${maxJsonRetries + 1} failed: ${lastError.message}`,
 			);
-			console.error(
+			logger.error(
 				`[epic] Accumulated text (${accumulatedText.length} chars): ${accumulatedText.slice(0, 200)}...${accumulatedText.slice(-200)}`,
 			);
 			if (attempt >= maxJsonRetries || !sessionId) break;

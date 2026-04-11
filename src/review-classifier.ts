@@ -1,4 +1,5 @@
 import { configStore } from "./config-store";
+import { logger } from "./logger";
 import { runClaude } from "./spawn-utils";
 import type { ReviewSeverity } from "./types";
 
@@ -26,7 +27,7 @@ export class ReviewClassifier {
 			}
 			return "minor";
 		} catch (err) {
-			console.warn("[review-classifier] classify failed:", err);
+			logger.warn("[review-classifier] classify failed:", err);
 			return "major";
 		}
 	}

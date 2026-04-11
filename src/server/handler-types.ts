@@ -4,6 +4,7 @@ import type { CLIRunner } from "../cli-runner";
 import type { ConfigStore } from "../config-store";
 import type { EpicAnalysisProcess } from "../epic-analyzer";
 import type { EpicStore } from "../epic-store";
+import { logger } from "../logger";
 import type { PipelineOrchestrator } from "../pipeline-orchestrator";
 import type { Summarizer } from "../summarizer";
 import { validateTargetRepository } from "../target-repo-validator";

@@ -1,4 +1,5 @@
 import { toErrorMessage } from "./errors";
+import { logger } from "./logger";
 import { defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
 import type { SyncResult } from "./types";
 import type { WorkflowEngine } from "./workflow-engine";

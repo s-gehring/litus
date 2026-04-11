@@ -1,6 +1,7 @@
 import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
 import { gitSpawn } from "./git-logger";
+import { logger } from "./logger";
 import type { CiCheckResult, CiCycle } from "./types";
 
 export async function checkGhAuth(): Promise<void> {

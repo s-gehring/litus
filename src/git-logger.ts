@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import { readStream } from "./spawn-utils";
 
 type GitLogCallback = (msg: string) => void;
@@ -53,7 +54,7 @@ export async function gitSpawn(
 ): Promise<GitSpawnResult> {
 	const cwd = options?.cwd;
 	const startMsg = formatLog(cmd, cwd, options?.extra);
-	console.log(startMsg);
+	logger.info(startMsg);
 	globalLogCallback?.(startMsg);
 
 	const proc = Bun.spawn(cmd, {
@@ -69,7 +70,7 @@ export async function gitSpawn(
 
 	const result = { code, stdout: stdout.trim(), stderr: stderr.trim() };
 	const resultMsg = formatResult(cmd, result);
-	console.log(resultMsg);
+	logger.info(resultMsg);
 	globalLogCallback?.(resultMsg);
 
 	return result;

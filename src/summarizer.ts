@@ -1,4 +1,5 @@
 import { configStore } from "./config-store";
+import { logger } from "./logger";
 import { runClaude } from "./spawn-utils";
 
 export class Summarizer {

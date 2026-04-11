@@ -1,5 +1,6 @@
 import { tmpdir } from "node:os";
 import { toErrorMessage } from "./errors";
+import { logger } from "./logger";
 import type { EffortLevel } from "./types";
 
 export interface RunClaudeOptions {
@@ -105,7 +106,7 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 
 		if (timedOut) {
 			const label = options.callerLabel ?? "runClaude";
-			console.warn(`[${label}] timed out after ${options.timeoutMs}ms`);
+			logger.warn(`[${label}] timed out after ${options.timeoutMs}ms`);
 			return { ok: false, exitCode: -1, stdout: "", stderr: "timeout" };
 		}
 
@@ -113,14 +114,14 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 		const stderr = await readStream(proc.stderr);
 
 		if (exitCode !== 0 && options.callerLabel) {
-			console.warn(`[${options.callerLabel}] claude exited ${exitCode}: ${stderr.slice(0, 200)}`);
+			logger.warn(`[${options.callerLabel}] claude exited ${exitCode}: ${stderr.slice(0, 200)}`);
 		}
 
 		return { ok: exitCode === 0, exitCode, stdout, stderr };
 	} catch (err) {
 		const message = toErrorMessage(err);
 		if (options.callerLabel) {
-			console.warn(`[${options.callerLabel}] spawn failed: ${message.slice(0, 200)}`);
+			logger.warn(`[${options.callerLabel}] spawn failed: ${message.slice(0, 200)}`);
 		}
 		return { ok: false, exitCode: -1, stdout: "", stderr: message };
 	}

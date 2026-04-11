@@ -1,4 +1,5 @@
 import { toErrorMessage } from "../errors";
+import { logger } from "../logger";
 import type { ClientMessage } from "../types";
 import type { MessageHandler } from "./handler-types";
 import { validateRepo, validateTextInput, withOrchestrator } from "./handler-types";
