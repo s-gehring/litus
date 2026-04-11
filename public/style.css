@@ -873,6 +873,7 @@ body::-webkit-scrollbar-track {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-width: 560px;
 }
 
 .cfg-field-row {
@@ -883,6 +884,7 @@ body::-webkit-scrollbar-track {
 
 .cfg-field-row--textarea {
   gap: 6px;
+  max-width: 720px;
 }
 
 .cfg-label {

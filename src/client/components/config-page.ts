@@ -624,13 +624,17 @@ function createConfigPage(send: (msg: ClientMessage) => void): HTMLElement {
 		{ id: "timing", label: "Timing", content: buildNumericSection("timing") },
 		{ id: "prompts", label: "Prompts", content: buildPromptsSection() },
 	];
+	const validTabIds = new Set(tabDefs.map((t) => t.id));
 
-	function activateTab(id: string) {
+	function activateTab(id: string, pushHash = true) {
 		for (const btn of tabBar.querySelectorAll<HTMLButtonElement>(".cfg-tab")) {
 			btn.classList.toggle("cfg-tab--active", btn.dataset.tab === id);
 		}
 		for (const [panelId, panel] of panels) {
 			panel.classList.toggle("cfg-panel--active", panelId === id);
+		}
+		if (pushHash) {
+			history.replaceState(null, "", `/config#${id}`);
 		}
 	}
 
@@ -641,14 +645,16 @@ function createConfigPage(send: (msg: ClientMessage) => void): HTMLElement {
 		tab.addEventListener("click", () => activateTab(id));
 		tabBar.appendChild(tab);
 
-		const panel = el("div", id === "models" ? "cfg-panel cfg-panel--active" : "cfg-panel");
+		const panel = el("div", "cfg-panel");
 		panel.appendChild(content);
 		panels.set(id, panel);
 		panelContainer.appendChild(panel);
 	}
 
-	const firstTab = tabBar.querySelector<HTMLButtonElement>(".cfg-tab");
-	if (firstTab) firstTab.classList.add("cfg-tab--active");
+	// Restore tab from URL hash, default to first tab
+	const hashTab = window.location.hash.slice(1);
+	const initialTab = validTabIds.has(hashTab) ? hashTab : tabDefs[0].id;
+	activateTab(initialTab, false);
 
 	page.appendChild(tabBar);
 	page.appendChild(panelContainer);
