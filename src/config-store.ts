@@ -144,6 +144,38 @@ Rules:
 - If the epic is already atomic (cannot be split), return a single spec
 - If parts are infeasible, set \`infeasibleNotes\` to explain why
 - If the ENTIRE epic is infeasible, \`specs\` can be an empty array with \`infeasibleNotes\` explaining why`,
+		feedbackImplementerInstruction: `You are applying the user's latest feedback to the current feature branch, which already has an open PR at \${prUrl}.
+
+\${feedbackContext}
+
+\${priorOutcomes}
+
+Latest user feedback (apply this):
+
+\${latestFeedbackText}
+
+Instructions:
+
+1. Apply the feedback to the code. The user's feedback is authoritative and overrides any prior spec or plan content on conflict.
+2. If the feedback is already satisfied or no code change is warranted, do not invent changes — just explain and report "no changes" in the result sentinel below.
+3. If you do make changes, commit them with atomic Conventional Commit messages (e.g. \`feat:\`, \`fix:\`, \`refactor:\`, \`test:\`, \`docs:\`) and push to the current branch. Never force-push.
+4. Judge whether this feedback materially changes the PR's end outcome (not just a cleanup, rename, or internal tweak). If materially relevant, losslessly update the PR description:
+   a. Read the current body with: gh pr view \${prUrl} --json body -q .body
+   b. Add a clearly-delimited new section describing the change, or amend an existing section in place. Never delete, reorder, or rewrite prior content.
+   c. Write the new body to a temp file and call: gh pr edit \${prUrl} --body-file <tempfile>
+   d. If the \`gh pr edit\` call fails AFTER commits are already pushed, do not revert the commits. Report the failure in the result sentinel below — it is a non-fatal warning.
+5. At the very end of your output, emit a single fenced sentinel block with the structured result (no other text after it):
+
+<<<FEEDBACK_IMPLEMENTER_RESULT
+{
+  "outcome": "success" | "no changes" | "failed",
+  "summary": "one short line describing what changed, or why nothing changed",
+  "materiallyRelevant": true | false,
+  "prDescriptionUpdate": { "attempted": true, "succeeded": true, "errorMessage": null } | null
+}
+FEEDBACK_IMPLEMENTER_RESULT>>>
+
+Set \`prDescriptionUpdate\` to \`null\` when no PR description update was attempted. When attempted, set \`succeeded\` honestly and include \`errorMessage\` on failure.`,
 	},
 	autoMode: "normal",
 	limits: {
@@ -419,6 +451,22 @@ export class ConfigStore {
 					path: `prompts.${key}`,
 					missingVariables: missing,
 					message: `Template variable(s) ${missing.map((v) => `\${${v}}`).join(", ")} not present in the prompt`,
+				});
+			}
+
+			// The feedback-implementer output parser depends on the sentinel block.
+			// Warn if a user-customized template drops it entirely — the orchestrator
+			// falls back to git-based inference, but loses materiallyRelevant /
+			// prDescriptionUpdate signals without the sentinel.
+			if (
+				key === "feedbackImplementerInstruction" &&
+				!value.includes("FEEDBACK_IMPLEMENTER_RESULT")
+			) {
+				warnings.push({
+					path: `prompts.${key}`,
+					missingVariables: [],
+					message:
+						"Sentinel marker `FEEDBACK_IMPLEMENTER_RESULT` not present — the orchestrator cannot parse agent-reported outcome, materiallyRelevant, or prDescriptionUpdate fields",
 				});
 			}
 		}

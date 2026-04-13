@@ -17,6 +17,15 @@ export const PROMPT_VARIABLES: Record<keyof PromptConfig, PromptVariableInfo[]> 
 	epicDecomposition: [
 		{ name: "epicDescription", description: "The epic description to decompose into specs" },
 	],
+	feedbackImplementerInstruction: [
+		{
+			name: "feedbackContext",
+			description: "All prior user feedback entries labelled authoritative",
+		},
+		{ name: "priorOutcomes", description: "Summary + commit refs from prior feedback iterations" },
+		{ name: "latestFeedbackText", description: "The user's most recent feedback text" },
+		{ name: "prUrl", description: "The pull request URL" },
+	],
 };
 
 export const NUMERIC_SETTING_META: NumericSettingMeta[] = [

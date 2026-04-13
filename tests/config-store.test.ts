@@ -434,6 +434,46 @@ describe("T005: template variable warning generation", () => {
 		// The save must still have persisted the new prompt
 		expect(store.get().prompts.questionDetection).toBe("Is this a question? Answer yes or no.");
 	});
+
+	test("save a feedbackImplementerInstruction without the sentinel marker warns", () => {
+		const store = new ConfigStore(configPath(dir));
+
+		// Keep all placeholders but drop the sentinel contract — should warn.
+		const { errors, warnings } = store.save({
+			prompts: {
+				...DEFAULT_CONFIG.prompts,
+				feedbackImplementerInstruction:
+					"Apply ${latestFeedbackText} to PR ${prUrl}. Context: ${feedbackContext} ${priorOutcomes}",
+			},
+		});
+
+		expect(errors).toHaveLength(0);
+		const warning = warnings.find(
+			(w) =>
+				w.path === "prompts.feedbackImplementerInstruction" &&
+				w.message.includes("FEEDBACK_IMPLEMENTER_RESULT"),
+		);
+		expect(warning).toBeDefined();
+	});
+
+	test("save a feedbackImplementerInstruction with the sentinel marker does not warn about it", () => {
+		const store = new ConfigStore(configPath(dir));
+
+		const { warnings } = store.save({
+			prompts: {
+				...DEFAULT_CONFIG.prompts,
+				feedbackImplementerInstruction:
+					"Apply ${latestFeedbackText} to PR ${prUrl}. Context: ${feedbackContext} ${priorOutcomes}. Emit FEEDBACK_IMPLEMENTER_RESULT block.",
+			},
+		});
+
+		const sentinelWarning = warnings.find(
+			(w) =>
+				w.path === "prompts.feedbackImplementerInstruction" &&
+				w.message.includes("FEEDBACK_IMPLEMENTER_RESULT"),
+		);
+		expect(sentinelWarning).toBeUndefined();
+	});
 });
 
 // ── T022: New model keys, effort validation, optional model validation ────

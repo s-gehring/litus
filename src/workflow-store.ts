@@ -80,6 +80,8 @@ export class WorkflowStore {
 			if (!Array.isArray(data.epicDependencies)) data.epicDependencies = [];
 			if (data.epicDependencyStatus === undefined) data.epicDependencyStatus = null;
 			if (data.epicAnalysisMs === undefined) data.epicAnalysisMs = 0;
+			// Migration: backfill feedbackEntries for pre-feedback workflows
+			if (!Array.isArray(data.feedbackEntries)) data.feedbackEntries = [];
 			return data as Workflow;
 		} catch {
 			logger.warn(`[workflow-store] Failed to load workflow ${id}`);

@@ -5,6 +5,7 @@ import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import type { EpicAnalysisProcess } from "./epic-analyzer";
 import { EpicStore } from "./epic-store";
+import { recoverInterruptedFeedbackImplementer } from "./feedback-implementer";
 import { setGitLogCallback } from "./git-logger";
 import { logger } from "./logger";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
@@ -18,6 +19,7 @@ import { handlePurgeAll } from "./server/purge-handlers";
 import {
 	handleAbort,
 	handleAnswer,
+	handleFeedback,
 	handleForceStart,
 	handlePause,
 	handleResume,
@@ -217,6 +219,7 @@ router.register("workflow:abort", handleAbort);
 router.register("workflow:retry", handleRetry);
 router.register("workflow:start-existing", handleStartExisting);
 router.register("workflow:force-start", handleForceStart);
+router.register("workflow:feedback", handleFeedback);
 router.register("config:get", handleConfigGet);
 router.register("config:save", handleConfigSave);
 router.register("config:reset", handleConfigReset);
@@ -394,6 +397,14 @@ process.on("SIGTERM", () => {
 					logger.info(`[startup] Restarting monitor-ci for workflow ${workflow.id}`);
 					workflow.ciCycle.monitorStartedAt = null;
 					orch.resumeMonitorCi(workflow.id);
+				} else if (runningStep?.name === STEP.FEEDBACK_IMPLEMENTER) {
+					// FR-020: cancelled-via-restart path — mark in-flight entry cancelled
+					// and rewind to merge-pr pause. We do not auto-retry the agent.
+					recoverInterruptedFeedbackImplementer(workflow);
+					await sharedStore.save(workflow);
+					logger.info(
+						`[startup] Cancelled interrupted feedback-implementer for workflow ${workflow.id} and rewound to merge-pr pause`,
+					);
 				} else if (runningStep?.sessionId) {
 					logger.info(
 						`[startup] Resuming workflow ${workflow.id} step "${runningStep.name}" (session: ${runningStep.sessionId})`,

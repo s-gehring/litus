@@ -75,6 +75,7 @@ function createFakeEngine() {
 				epicAnalysisMs: 0,
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,
+				feedbackEntries: [],
 				createdAt: now,
 				updatedAt: now,
 			};
@@ -236,6 +237,7 @@ describe("PipelineOrchestrator", () => {
 	let summarizer: ReturnType<typeof createFakeSummarizer>;
 	let auditLogger: ReturnType<typeof createFakeAuditLogger>;
 	let store: ReturnType<typeof createFakeWorkflowStore>;
+	let detectNewCommitsResult: string[] = [];
 
 	beforeEach(() => {
 		configStore.save({ autoMode: "normal" });
@@ -247,6 +249,7 @@ describe("PipelineOrchestrator", () => {
 		summarizer = createFakeSummarizer();
 		auditLogger = createFakeAuditLogger();
 		store = createFakeWorkflowStore();
+		detectNewCommitsResult = [];
 
 		// biome-ignore lint/suspicious/noExplicitAny: DI with compatible fakes
 		const deps: Record<string, any> = {
@@ -265,6 +268,8 @@ describe("PipelineOrchestrator", () => {
 			}),
 			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 			checkoutMaster: async () => ({ code: 0, stderr: "" }),
+			getGitHead: async () => "pre-run-head-sha",
+			detectNewCommits: async () => detectNewCommitsResult,
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});
@@ -290,7 +295,7 @@ describe("PipelineOrchestrator", () => {
 			expect(cli._startCalls.length).toBe(1);
 		});
 
-		test("pipeline has 13 steps in correct order", async () => {
+		test("pipeline has 14 steps in correct order", async () => {
 			await startAndFlush("test");
 			const wf = getWf(engine);
 
@@ -306,6 +311,7 @@ describe("PipelineOrchestrator", () => {
 				"commit-push-pr",
 				"monitor-ci",
 				"fix-ci",
+				"feedback-implementer",
 				"merge-pr",
 				"sync-repo",
 			];
@@ -1740,4 +1746,529 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.pendingQuestion?.id).toBe("q-manual");
 		});
 	});
+
+	describe("manual-mode feedback loop", () => {
+		const PR_URL = "https://github.com/owner/repo/pull/1";
+
+		async function seedMergePrPause(): Promise<Workflow> {
+			configStore.save({ autoMode: "manual" });
+			await startAndFlush("test");
+			const wf = getWf(engine);
+			wf.prUrl = PR_URL;
+			wf.worktreePath = "/tmp/test-worktree";
+			const mergeIdx = wf.steps.findIndex((s) => s.name === "merge-pr");
+			// Complete preceding steps cosmetically for realism
+			for (let i = 0; i < mergeIdx; i++) {
+				wf.steps[i].status = "completed";
+			}
+			wf.currentStepIndex = mergeIdx;
+			wf.steps[mergeIdx].status = "paused";
+			wf.status = "paused";
+			return wf;
+		}
+
+		test("submitFeedback appends entry, transitions running, starts feedback-implementer", async () => {
+			const wf = await seedMergePrPause();
+			const cliCountBefore = cli._startCalls.length;
+
+			orchestrator.submitFeedback(wf.id, "rename x to count");
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(wf.feedbackEntries).toHaveLength(1);
+			expect(wf.feedbackEntries[0].text).toBe("rename x to count");
+			expect(wf.feedbackEntries[0].iteration).toBe(1);
+			expect(wf.feedbackEntries[0].outcome).toBeNull();
+			expect(wf.status).toBe("running");
+
+			const fiIdx = wf.steps.findIndex((s) => s.name === "feedback-implementer");
+			expect(wf.currentStepIndex).toBe(fiIdx);
+
+			const cliCall = cli._startCalls[cli._startCalls.length - 1];
+			expect(cli._startCalls.length).toBeGreaterThan(cliCountBefore);
+			expect(cliCall.workflow.specification).toContain("rename x to count");
+			expect(cliCall.workflow.specification).toContain(PR_URL);
+		});
+
+		test("submitFeedback with whitespace-only text behaves like Resume (FR-014)", async () => {
+			const wf = await seedMergePrPause();
+
+			orchestrator.submitFeedback(wf.id, "   \n\t  ");
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(wf.feedbackEntries).toHaveLength(0);
+			// resume() for merge-pr calls runMergePr → mergePrFn. We didn't mock mergePrFn,
+			// so it will fail asynchronously. Just check state transitioned to running.
+			expect(wf.status === "running" || wf.status === "error").toBe(true);
+		});
+
+		test("submitFeedback rejects when an in-flight entry exists (FR-016)", async () => {
+			const wf = await seedMergePrPause();
+			wf.feedbackEntries = [
+				{
+					id: "fe-inflight",
+					iteration: 1,
+					text: "previous",
+					submittedAt: new Date().toISOString(),
+					submittedAtStepName: "merge-pr",
+					outcome: null,
+				},
+			];
+
+			orchestrator.submitFeedback(wf.id, "new one");
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(wf.feedbackEntries).toHaveLength(1);
+			expect(wf.feedbackEntries[0].text).toBe("previous");
+			expect(wf.status).toBe("paused");
+		});
+
+		test("feedback-implementer success with commits routes to monitor-ci", async () => {
+			const wf = await seedMergePrPause();
+			detectNewCommitsResult = ["commit-abc"];
+
+			orchestrator.submitFeedback(wf.id, "rename x to count");
+			await new Promise((r) => setTimeout(r, 10));
+
+			// Simulate agent emitting a sentinel + completing
+			const sentinel = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":"success","summary":"renamed","materiallyRelevant":true}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+			cli.getLastCallbacks().onOutput(sentinel);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 30));
+
+			const entry = wf.feedbackEntries[0];
+			expect(entry.outcome).not.toBeNull();
+			expect(entry.outcome?.value).toBe("success");
+			expect(entry.outcome?.commitRefs).toEqual(["commit-abc"]);
+
+			const monIdx = wf.steps.findIndex((s) => s.name === "monitor-ci");
+			expect(wf.currentStepIndex).toBe(monIdx);
+		});
+
+		test("feedback-implementer no-changes outcome rewinds to merge-pr paused", async () => {
+			const wf = await seedMergePrPause();
+			detectNewCommitsResult = [];
+
+			orchestrator.submitFeedback(wf.id, "already done");
+			await new Promise((r) => setTimeout(r, 10));
+
+			const sentinel = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":"no changes","summary":"already done","materiallyRelevant":false}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+			cli.getLastCallbacks().onOutput(sentinel);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 30));
+
+			const entry = wf.feedbackEntries[0];
+			expect(entry.outcome?.value).toBe("no changes");
+
+			const mergeIdx = wf.steps.findIndex((s) => s.name === "merge-pr");
+			expect(wf.currentStepIndex).toBe(mergeIdx);
+			expect(wf.status).toBe("paused");
+			expect(wf.steps[mergeIdx].status).toBe("paused");
+		});
+
+		test("feedback-implementer CLI error rewinds to merge-pr paused with failed outcome (FR-012)", async () => {
+			const wf = await seedMergePrPause();
+
+			orchestrator.submitFeedback(wf.id, "impossible");
+			await new Promise((r) => setTimeout(r, 10));
+
+			cli.getLastCallbacks().onError("agent exploded");
+			await new Promise((r) => setTimeout(r, 20));
+
+			const entry = wf.feedbackEntries[0];
+			expect(entry.outcome?.value).toBe("failed");
+			expect(entry.outcome?.summary).toContain("agent exploded");
+
+			const mergeIdx = wf.steps.findIndex((s) => s.name === "merge-pr");
+			expect(wf.currentStepIndex).toBe(mergeIdx);
+			expect(wf.status).toBe("paused");
+
+			// FI step status is resolved (not left "running") after error handling.
+			const fiIdx = wf.steps.findIndex((s) => s.name === "feedback-implementer");
+			expect(wf.steps[fiIdx].status).toBe("error");
+			expect(wf.steps[fiIdx].error).toContain("agent exploded");
+			expect(wf.steps[fiIdx].pid).toBeNull();
+			expect(wf.steps[fiIdx].completedAt).not.toBeNull();
+		});
+
+		test("Abort during feedback-implementer sets cancelled outcome (FR-019)", async () => {
+			const wf = await seedMergePrPause();
+
+			orchestrator.submitFeedback(wf.id, "refactor everything");
+			await new Promise((r) => setTimeout(r, 10));
+
+			// Simulate user pausing mid-run
+			orchestrator.pause(wf.id);
+			expect(wf.status).toBe("paused");
+
+			// Then aborting
+			orchestrator.cancelPipeline(wf.id);
+			await new Promise((r) => setTimeout(r, 10));
+
+			const entry = wf.feedbackEntries[0];
+			expect(entry.outcome?.value).toBe("cancelled");
+			expect(entry.outcome?.summary).toContain("Cancelled by user abort");
+			expect(wf.status).toBe("cancelled");
+		});
+
+		test("pause during submitFeedback→getGitHead await does not spawn CLI", async () => {
+			// Race scenario (#1.4): submitFeedback calls runFeedbackImplementer which
+			// awaits getGitHead. If the user clicks Pause before the promise resolves,
+			// the subsequent runStep should NOT spawn a CLI.
+			const pending = Promise.withResolvers<void>();
+			const blockingGetGitHead = async (): Promise<string> => {
+				await pending.promise;
+				return "pre-run-head-sha";
+			};
+			// biome-ignore lint/suspicious/noExplicitAny: test DI
+			const deps: Record<string, any> = {
+				engine,
+				cliRunner: cli,
+				questionDetector: qd,
+				reviewClassifier: rc,
+				summarizer,
+				auditLogger,
+				workflowStore: store,
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: blockingGetGitHead,
+				detectNewCommits: async () => detectNewCommitsResult,
+			};
+			orchestrator = new PipelineOrchestrator(callbacks, deps);
+
+			const wf = await seedMergePrPause();
+			const cliCountBefore = cli._startCalls.length;
+
+			orchestrator.submitFeedback(wf.id, "refactor");
+			// submit flipped state to running but getGitHead is still pending.
+			await new Promise((r) => setTimeout(r, 10));
+			expect(wf.status).toBe("running");
+
+			orchestrator.pause(wf.id);
+			expect(wf.status).toBe("paused");
+
+			// Now unblock — runStep should NOT spawn a new CLI because the workflow
+			// is paused and the step is paused.
+			pending.resolve();
+			await new Promise((r) => setTimeout(r, 30));
+
+			expect(cli._startCalls.length).toBe(cliCountBefore);
+		});
+
+		test("pause-resume preserves feedbackPreRunHead across a single iteration", async () => {
+			// Swap getGitHead for a counting version so we can assert it only ran once
+			// across the pause-resume cycle. Must re-instantiate the orchestrator.
+			let getGitHeadCalls = 0;
+			const countingGetGitHead = async () => {
+				getGitHeadCalls++;
+				return "pre-run-head-sha";
+			};
+			// biome-ignore lint/suspicious/noExplicitAny: test DI
+			const deps: Record<string, any> = {
+				engine,
+				cliRunner: cli,
+				questionDetector: qd,
+				reviewClassifier: rc,
+				summarizer,
+				auditLogger,
+				workflowStore: store,
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: countingGetGitHead,
+				detectNewCommits: async () => detectNewCommitsResult,
+			};
+			orchestrator = new PipelineOrchestrator(callbacks, deps);
+
+			const wf = await seedMergePrPause();
+
+			orchestrator.submitFeedback(wf.id, "refactor extensively");
+			await new Promise((r) => setTimeout(r, 20));
+			expect(getGitHeadCalls).toBe(1);
+
+			// Simulate session ID not yet captured, then pause (no CLI kill matters here).
+			orchestrator.pause(wf.id);
+			expect(wf.status).toBe("paused");
+
+			orchestrator.resume(wf.id);
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Head should have been snapshot only ONCE — preserved across pause-resume.
+			expect(getGitHeadCalls).toBe(1);
+		});
+
+		test("iteration counter increments across multiple submissions", async () => {
+			const wf = await seedMergePrPause();
+
+			orchestrator.submitFeedback(wf.id, "first feedback");
+			await new Promise((r) => setTimeout(r, 10));
+
+			// Force a no-changes outcome so we return to merge-pr pause
+			const sentinel1 = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":"no changes","summary":"","materiallyRelevant":false}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+			cli.getLastCallbacks().onOutput(sentinel1);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 30));
+
+			expect(wf.status).toBe("paused");
+
+			orchestrator.submitFeedback(wf.id, "second feedback");
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(wf.feedbackEntries).toHaveLength(2);
+			expect(wf.feedbackEntries[1].iteration).toBe(2);
+		});
+
+		test("CLI prompt includes the prior feedback context for subsequent iterations (FR-010)", async () => {
+			const wf = await seedMergePrPause();
+
+			// Manually seed a completed entry as if from a prior iteration
+			wf.feedbackEntries = [
+				{
+					id: "fe-prev",
+					iteration: 1,
+					text: "earlier feedback",
+					submittedAt: new Date().toISOString(),
+					submittedAtStepName: "merge-pr",
+					outcome: {
+						value: "success",
+						summary: "earlier change",
+						commitRefs: ["prev-abc"],
+						warnings: [],
+					},
+				},
+			];
+
+			orchestrator.submitFeedback(wf.id, "newer feedback");
+			await new Promise((r) => setTimeout(r, 10));
+
+			const cliCall = cli._startCalls[cli._startCalls.length - 1];
+			expect(cliCall.workflow.specification).toContain("USER FEEDBACK");
+			expect(cliCall.workflow.specification).toContain("authoritative");
+			expect(cliCall.workflow.specification).toContain("earlier feedback");
+			expect(cliCall.workflow.specification).toContain("newer feedback");
+		});
+
+		test("PR-description update failure after commits lands as success + warning (FR-007, FR-008)", async () => {
+			const wf = await seedMergePrPause();
+			detectNewCommitsResult = ["commit-landed"];
+
+			orchestrator.submitFeedback(wf.id, "big materially relevant change");
+			await new Promise((r) => setTimeout(r, 10));
+
+			const sentinel = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":"success","summary":"landed big change","materiallyRelevant":true,"prDescriptionUpdate":{"attempted":true,"succeeded":false,"errorMessage":"gh: rate limited"}}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+			cli.getLastCallbacks().onOutput(sentinel);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 30));
+
+			const entry = wf.feedbackEntries[0];
+			expect(entry.outcome?.value).toBe("success");
+			expect(entry.outcome?.commitRefs).toEqual(["commit-landed"]);
+			expect(entry.outcome?.warnings).toHaveLength(1);
+			expect(entry.outcome?.warnings[0].kind).toBe("pr_description_update_failed");
+			expect(entry.outcome?.warnings[0].message).toContain("gh: rate limited");
+
+			// Workflow still proceeds to monitor-ci — the PR edit failure is non-fatal
+			const monIdx = wf.steps.findIndex((s) => s.name === "monitor-ci");
+			expect(wf.currentStepIndex).toBe(monIdx);
+		});
+
+		test("runFeedbackImplementer prompt includes Prior outcome records section when prior entries exist (FR-017)", async () => {
+			const wf = await seedMergePrPause();
+
+			wf.feedbackEntries = [
+				{
+					id: "fe-prev",
+					iteration: 1,
+					text: "earlier feedback",
+					submittedAt: new Date().toISOString(),
+					submittedAtStepName: "merge-pr",
+					outcome: {
+						value: "success",
+						summary: "first change summary",
+						commitRefs: ["prev-abc"],
+						warnings: [],
+					},
+				},
+			];
+
+			orchestrator.submitFeedback(wf.id, "newer feedback");
+			await new Promise((r) => setTimeout(r, 10));
+
+			const spec = cli._startCalls[cli._startCalls.length - 1].workflow.specification;
+			expect(spec).toContain("Prior feedback-implementer outcome records");
+			expect(spec).toContain("first change summary");
+			expect(spec).toContain("prev-abc");
+		});
+	});
+
+	describe("feedback context injection into other CLI steps (US2)", () => {
+		test("fix-ci prompt is prefixed with the feedback context block when entries exist", async () => {
+			configStore.save({ autoMode: "normal" });
+			await startAndFlush("test");
+			const wf = getWf(engine);
+			wf.worktreePath = "/tmp/test-worktree";
+			wf.prUrl = "https://github.com/owner/repo/pull/7";
+			wf.feedbackEntries = [
+				{
+					id: "fe-1",
+					iteration: 1,
+					text: "use XMLHttpRequest instead of fetch",
+					submittedAt: new Date().toISOString(),
+					submittedAtStepName: "merge-pr",
+					outcome: {
+						value: "success",
+						summary: "replaced fetch",
+						commitRefs: ["abc"],
+						warnings: [],
+					},
+				},
+			];
+			wf.ciCycle.lastCheckResults = [
+				{ name: "build", state: "failure", bucket: "fail", link: "http://log" },
+			];
+			const fixIdx = wf.steps.findIndex((s) => s.name === "fix-ci");
+			wf.currentStepIndex = fixIdx;
+			wf.steps[fixIdx].status = "running";
+			wf.status = "running";
+
+			// Directly invoke retry path which re-enters fix-ci
+			// Use resume-style invocation: retryStep works from "error", so simulate via engine transition
+			wf.status = "error";
+			wf.steps[fixIdx].status = "error";
+			await orchestrator.retryStep(wf.id);
+			await new Promise((r) => setTimeout(r, 50));
+
+			const lastCall = cli._startCalls[cli._startCalls.length - 1];
+			expect(lastCall.workflow.specification).toContain("USER FEEDBACK");
+			expect(lastCall.workflow.specification).toContain("use XMLHttpRequest");
+		});
+
+		test("no feedback context is injected when feedbackEntries is empty", async () => {
+			configStore.save({ autoMode: "normal" });
+			await startAndFlush("test");
+			const wf = getWf(engine);
+
+			// Advance to specify CLI spawn
+			const lastCall = cli._startCalls[cli._startCalls.length - 1];
+			expect(lastCall.workflow.specification).not.toContain("USER FEEDBACK");
+			expect(wf.feedbackEntries).toEqual([]);
+
+			// Also assert the helper directly, so future callers are pinned to the
+			// same empty-string contract regardless of how startStep composes prompts.
+			const { buildFeedbackContext } = await import("../src/feedback-injector");
+			expect(buildFeedbackContext(wf)).toBe("");
+		});
+	});
+
+	describe("interrupted feedback-implementer startup recovery (FR-020)", () => {
+		test("recoverInterruptedFeedbackImplementer cancels in-flight entry and rewinds to merge-pr pause", async () => {
+			const { recoverInterruptedFeedbackImplementer } = await import("../src/feedback-implementer");
+			const wf = makeCallbacksWorkflowForRecovery();
+
+			recoverInterruptedFeedbackImplementer(wf);
+
+			const latest = wf.feedbackEntries[wf.feedbackEntries.length - 1];
+			expect(latest.outcome?.value).toBe("cancelled");
+			expect(latest.outcome?.summary).toBe("Interrupted by server restart");
+			expect(latest.outcome?.commitRefs).toEqual([]);
+
+			const fiStep = wf.steps.find((s) => s.name === "feedback-implementer");
+			expect(fiStep?.status).toBe("pending");
+			expect(fiStep?.sessionId).toBeNull();
+
+			const mergeIdx = wf.steps.findIndex((s) => s.name === "merge-pr");
+			expect(wf.currentStepIndex).toBe(mergeIdx);
+			expect(wf.steps[mergeIdx].status).toBe("paused");
+			expect(wf.status).toBe("paused");
+		});
+	});
 });
+
+function makeCallbacksWorkflowForRecovery(): Workflow {
+	const now = new Date().toISOString();
+	const wf: Workflow = {
+		id: "recovery-test",
+		specification: "test",
+		status: "running" as WorkflowStatus,
+		targetRepository: "/tmp/repo",
+		worktreePath: "/tmp/wt",
+		worktreeBranch: "test",
+		featureBranch: null,
+		summary: "",
+		stepSummary: "",
+		flavor: "",
+		pendingQuestion: null,
+		lastOutput: "",
+		steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
+			name: def.name,
+			displayName: def.displayName,
+			status: "pending" as const,
+			prompt: def.prompt,
+			sessionId: null,
+			output: "",
+			error: null,
+			startedAt: null,
+			completedAt: null,
+			pid: null,
+		})),
+		currentStepIndex: 0,
+		reviewCycle: {
+			iteration: 1,
+			maxIterations: DEFAULT_CONFIG.limits.reviewCycleMaxIterations,
+			lastSeverity: null,
+		},
+		ciCycle: {
+			attempt: 0,
+			maxAttempts: 3,
+			monitorStartedAt: null,
+			globalTimeoutMs: 30 * 60 * 1000,
+			lastCheckResults: [],
+			failureLogs: [],
+		},
+		mergeCycle: { attempt: 0, maxAttempts: 3 },
+		prUrl: null,
+		epicId: null,
+		epicTitle: null,
+		epicDependencies: [],
+		epicDependencyStatus: null,
+		epicAnalysisMs: 0,
+		activeWorkMs: 0,
+		activeWorkStartedAt: now,
+		feedbackEntries: [
+			{
+				id: "fe-1",
+				iteration: 1,
+				text: "refactor everything",
+				submittedAt: now,
+				submittedAtStepName: "merge-pr",
+				outcome: null,
+			},
+		],
+		createdAt: now,
+		updatedAt: now,
+	};
+	const fiIdx = wf.steps.findIndex((s) => s.name === "feedback-implementer");
+	wf.currentStepIndex = fiIdx;
+	wf.steps[fiIdx].status = "running";
+	wf.steps[fiIdx].sessionId = "old-session";
+	wf.steps[fiIdx].output = "partial output";
+	return wf;
+}

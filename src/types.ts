@@ -54,6 +54,7 @@ export interface PromptConfig {
 	mergeConflictResolution: string;
 	ciFixInstruction: string;
 	epicDecomposition: string;
+	feedbackImplementerInstruction: string;
 }
 
 export interface LimitConfig {
@@ -230,6 +231,7 @@ export type PipelineStepName =
 	| "commit-push-pr"
 	| "monitor-ci"
 	| "fix-ci"
+	| "feedback-implementer"
 	| "merge-pr"
 	| "sync-repo";
 
@@ -361,6 +363,7 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	},
 	{ name: "monitor-ci", displayName: "Monitoring CI", prompt: "" },
 	{ name: "fix-ci", displayName: "Fixing CI", prompt: "" },
+	{ name: "feedback-implementer", displayName: "Applying Feedback", prompt: "" },
 	{ name: "merge-pr", displayName: "Merging PR", prompt: "" },
 	{ name: "sync-repo", displayName: "Syncing Repository", prompt: "" },
 ];
@@ -378,12 +381,37 @@ export const STEP = {
 	COMMIT_PUSH_PR: "commit-push-pr",
 	MONITOR_CI: "monitor-ci",
 	FIX_CI: "fix-ci",
+	FEEDBACK_IMPLEMENTER: "feedback-implementer",
 	MERGE_PR: "merge-pr",
 	SYNC_REPO: "sync-repo",
 } as const satisfies Record<string, PipelineStepName>;
 
 // Delta buffer flush timeout used across CLI stream consumers
 export const DELTA_FLUSH_TIMEOUT_MS = 50;
+
+// Manual-mode feedback loop: per-iteration outcome of a feedback-implementer run
+export type FeedbackOutcomeValue = "success" | "no changes" | "failed" | "cancelled";
+
+export interface FeedbackOutcomeWarning {
+	kind: "pr_description_update_failed";
+	message: string;
+}
+
+export interface FeedbackOutcome {
+	value: FeedbackOutcomeValue;
+	summary: string;
+	commitRefs: string[];
+	warnings: FeedbackOutcomeWarning[];
+}
+
+export interface FeedbackEntry {
+	id: string;
+	iteration: number;
+	text: string;
+	submittedAt: string;
+	submittedAtStepName: PipelineStepName;
+	outcome: FeedbackOutcome | null;
+}
 
 // Workflow entity (extended with pipeline fields)
 export interface Workflow {
@@ -412,6 +440,7 @@ export interface Workflow {
 	epicAnalysisMs: number;
 	activeWorkMs: number;
 	activeWorkStartedAt: string | null;
+	feedbackEntries: FeedbackEntry[];
 	createdAt: string;
 	updatedAt: string;
 }
@@ -555,6 +584,7 @@ export type ClientMessage =
 	| { type: "epic:cancel" }
 	| { type: "workflow:start-existing"; workflowId: string }
 	| { type: "workflow:force-start"; workflowId: string }
+	| { type: "workflow:feedback"; workflowId: string; text: string }
 	| { type: "config:get" }
 	| { type: "config:save"; config: DeepPartial<AppConfig> }
 	| { type: "config:reset"; key?: string }

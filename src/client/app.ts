@@ -1,4 +1,5 @@
 import type {
+	AutoMode,
 	ClientMessage,
 	EpicAggregatedState,
 	EpicClientState,
@@ -18,6 +19,7 @@ import { createModal } from "./components/creation-modal";
 import { createDashboardHandler } from "./components/dashboard-handler";
 import { renderEpicTree } from "./components/epic-tree";
 import { updateFavicon } from "./components/favicon";
+import { hideFeedbackPanel, showFeedbackPanel } from "./components/feedback-panel";
 import { createFolderPicker } from "./components/folder-picker";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
@@ -31,6 +33,7 @@ import {
 	updateBranchInfo,
 	updateDetailActions,
 	updateEpicStatus,
+	updateFeedbackHistorySection,
 	updateFlavor,
 	updateSpecDetails,
 	updateStepSummary,
@@ -48,6 +51,7 @@ let appRouter: Router | null = null;
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let currentAutoMode: AutoMode = "normal";
 
 function getWsUrl(): string {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -315,6 +319,11 @@ function handleMessage(msg: ServerMessage): void {
 		case "config:state": {
 			updateConfigPage(msg.config, msg.warnings);
 			syncAutoModeToggle(msg.config.autoMode);
+			const prevMode = currentAutoMode;
+			currentAutoMode = msg.config.autoMode;
+			if (prevMode !== currentAutoMode) {
+				renderExpandedView();
+			}
 			break;
 		}
 
@@ -421,6 +430,7 @@ function renderExpandedView(): void {
 		if (detailArea) detailArea.classList.add("hidden");
 		if (welcomeArea) welcomeArea.classList.remove("hidden");
 		hideQuestion();
+		hideFeedbackPanel();
 		updateWorkflowStatus(null);
 		updateBranchInfo(null);
 		renderPipelineSteps(null);
@@ -429,6 +439,7 @@ function renderExpandedView(): void {
 		updateUserInput("");
 		updateSpecDetails("");
 		updateDetailActions([]);
+		updateFeedbackHistorySection([]);
 		return;
 	}
 
@@ -638,6 +649,7 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	updateFlavor(wf.flavor ?? "");
 	updateUserInput(wf.specification);
 	updateSpecDetails("");
+	updateFeedbackHistorySection(wf.feedbackEntries);
 
 	// Action buttons: Pause, Resume, Abort, Retry, and epic-specific actions
 	const actions: { label: string; className: string; onClick: () => void }[] = [];
@@ -656,6 +668,13 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 			className: "btn-primary",
 			onClick: () => send({ type: "workflow:resume", workflowId: wf.id }),
 		});
+		if (currentAutoMode === "manual" && wf.steps[wf.currentStepIndex]?.name === "merge-pr") {
+			actions.push({
+				label: "Provide Feedback",
+				className: "btn-secondary",
+				onClick: () => openFeedbackPanel(wf),
+			});
+		}
 		actions.push({
 			label: "Abort",
 			className: "btn-danger",
@@ -724,6 +743,21 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	} else {
 		hideQuestion();
 	}
+
+	// Auto-hide the feedback panel when the workflow is no longer at the manual-mode merge-pr pause
+	const feedbackEligible =
+		wf.status === "paused" &&
+		currentAutoMode === "manual" &&
+		wf.steps[wf.currentStepIndex]?.name === "merge-pr";
+	if (!feedbackEligible) {
+		hideFeedbackPanel();
+	}
+}
+
+function openFeedbackPanel(wf: WorkflowState): void {
+	showFeedbackPanel(wf, (text) => {
+		send({ type: "workflow:feedback", workflowId: wf.id, text });
+	});
 }
 
 function openSpecModal(): void {

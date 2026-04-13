@@ -181,6 +181,57 @@ describe("WorkflowStore", () => {
 		expect(indexAfter.some((e) => e.id === "remove-me")).toBe(false);
 	});
 
+	test("feedback entries round-trip through save + load", async () => {
+		const workflow = makeWorkflow({ id: "fb-round-trip" });
+		workflow.feedbackEntries = [
+			{
+				id: "fe-1",
+				iteration: 1,
+				text: "rename x to count",
+				submittedAt: "2026-04-13T14:22:01.000Z",
+				submittedAtStepName: "merge-pr",
+				outcome: {
+					value: "success",
+					summary: "renamed x to count",
+					commitRefs: ["abc1234"],
+					warnings: [],
+				},
+			},
+			{
+				id: "fe-2",
+				iteration: 2,
+				text: "also update the test file",
+				submittedAt: "2026-04-13T14:40:00.000Z",
+				submittedAtStepName: "merge-pr",
+				outcome: null,
+			},
+		];
+
+		await store.save(workflow);
+		const loaded = await store.load("fb-round-trip");
+
+		assertDefined(loaded);
+		expect(loaded.feedbackEntries).toHaveLength(2);
+		expect(loaded.feedbackEntries[0].iteration).toBe(1);
+		expect(loaded.feedbackEntries[0].outcome?.value).toBe("success");
+		expect(loaded.feedbackEntries[0].outcome?.commitRefs).toEqual(["abc1234"]);
+		expect(loaded.feedbackEntries[1].outcome).toBeNull();
+	});
+
+	test("migration backfills feedbackEntries = [] for legacy workflows", async () => {
+		mkdirSync(baseDir, { recursive: true });
+		const legacy = makeWorkflow({ id: "legacy-no-feedback" });
+		// Simulate a persisted workflow from before this feature — drop the field
+		const legacyRaw = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>;
+		delete legacyRaw.feedbackEntries;
+		writeFileSync(join(baseDir, "legacy-no-feedback.json"), JSON.stringify(legacyRaw, null, 2));
+
+		const loaded = await store.load("legacy-no-feedback");
+
+		assertDefined(loaded);
+		expect(loaded.feedbackEntries).toEqual([]);
+	});
+
 	test("T011: loadIndex rebuilds from scanning *.json when index.json is missing", async () => {
 		const w1 = makeWorkflow({ id: "scan-1", updatedAt: "2026-01-01T00:00:00.000Z" });
 		const w2 = makeWorkflow({ id: "scan-2", updatedAt: "2026-02-01T00:00:00.000Z" });

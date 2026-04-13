@@ -73,6 +73,7 @@ export class WorkflowEngine {
 			epicAnalysisMs: 0,
 			activeWorkMs: 0,
 			activeWorkStartedAt: null,
+			feedbackEntries: [],
 			createdAt: now,
 			updatedAt: now,
 		};

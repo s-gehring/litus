@@ -121,9 +121,9 @@ describe("T030: PROMPT_VARIABLES covers all PromptConfig keys", () => {
 		}
 	});
 
-	test("all 7 prompt fields have non-empty default values", () => {
+	test("all 8 prompt fields have non-empty default values", () => {
 		const promptKeys = Object.keys(DEFAULT_CONFIG.prompts) as (keyof AppConfig["prompts"])[];
-		expect(promptKeys).toHaveLength(7);
+		expect(promptKeys).toHaveLength(8);
 		for (const key of promptKeys) {
 			expect(typeof DEFAULT_CONFIG.prompts[key]).toBe("string");
 			expect(DEFAULT_CONFIG.prompts[key].length).toBeGreaterThan(0);

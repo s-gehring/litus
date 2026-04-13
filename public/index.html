@@ -55,6 +55,9 @@
         <!-- User input / specification text -->
         <div id="user-input" class="user-input hidden"></div>
 
+        <!-- Feedback iteration history (manual-mode merge-pr) -->
+        <div id="workflow-feedback-section" class="workflow-feedback-section hidden"></div>
+
         <!-- Specification / description text (collapsible, for longer specs) -->
         <details id="spec-details" class="spec-details hidden">
           <summary class="spec-details-summary">Specification</summary>
@@ -84,6 +87,21 @@
             <div class="question-buttons">
               <button id="btn-submit-answer" class="btn btn-primary">Submit</button>
               <button id="btn-skip-question" class="btn btn-secondary hidden">Skip</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feedback panel (manual-mode merge-pr iteration) -->
+        <div id="feedback-panel" class="question-panel feedback-panel hidden">
+          <div class="question-header">
+            <span class="question-label">Provide Feedback</span>
+          </div>
+          <div id="feedback-history" class="feedback-history"></div>
+          <div class="question-actions">
+            <textarea id="feedback-input" class="answer-input" placeholder="What should change before we merge?" rows="3"></textarea>
+            <div class="question-buttons">
+              <button id="btn-submit-feedback" class="btn btn-primary">Submit</button>
+              <button id="btn-cancel-feedback" class="btn btn-secondary">Cancel</button>
             </div>
           </div>
         </div>
