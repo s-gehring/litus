@@ -12,12 +12,30 @@ function formatEntry(entry: FeedbackEntry): string {
 	return `${header}\n${quoted}`;
 }
 
+export interface BuildFeedbackContextOptions {
+	/**
+	 * When true, the in-flight feedback entry (the last one with outcome=null)
+	 * is excluded from the generated block. Used by the feedback-implementer
+	 * prompt: the agent already receives the current iteration via
+	 * ${latestFeedbackText}, and re-labelling it "in progress" here would
+	 * duplicate the same text under two headers in the agent's own prompt.
+	 */
+	excludeInFlight?: boolean;
+}
+
 /**
  * Build the feedback-context block injected into every CLI-spawned step prompt.
- * Returns "" when the workflow has no feedback entries.
+ * Returns "" when there are no entries to include.
  */
-export function buildFeedbackContext(workflow: Workflow): string {
-	if (workflow.feedbackEntries.length === 0) return "";
-	const body = workflow.feedbackEntries.map(formatEntry).join("\n\n");
+export function buildFeedbackContext(
+	workflow: Workflow,
+	options: BuildFeedbackContextOptions = {},
+): string {
+	let entries = workflow.feedbackEntries;
+	if (options.excludeInFlight) {
+		entries = entries.filter((e) => e.outcome !== null);
+	}
+	if (entries.length === 0) return "";
+	const body = entries.map(formatEntry).join("\n\n");
 	return `${HEADER}\n\n${body}`;
 }

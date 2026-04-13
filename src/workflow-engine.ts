@@ -74,6 +74,7 @@ export class WorkflowEngine {
 			activeWorkMs: 0,
 			activeWorkStartedAt: null,
 			feedbackEntries: [],
+			feedbackPreRunHead: null,
 			createdAt: now,
 			updatedAt: now,
 		};

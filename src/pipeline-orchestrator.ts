@@ -124,7 +124,6 @@ export class PipelineOrchestrator {
 	private currentAuditRunId: string | null = null;
 	private pipelineName: string | null = null;
 	private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-	private feedbackPreRunHead: string | null = null;
 	private mergePrFn: typeof defaultMergePr;
 	private resolveConflictsFn: typeof defaultResolveConflicts;
 	private syncRepoFn: typeof defaultSyncRepo;
@@ -528,7 +527,7 @@ export class PipelineOrchestrator {
 					commitRefs: [],
 					warnings: [],
 				};
-				const preRunHead = this.feedbackPreRunHead;
+				const preRunHead = workflow.feedbackPreRunHead;
 				const cwd = workflow.worktreePath;
 				if (preRunHead && cwd) {
 					this.detectNewCommitsFn(preRunHead, cwd)
@@ -545,7 +544,7 @@ export class PipelineOrchestrator {
 						});
 				}
 			}
-			this.feedbackPreRunHead = null;
+			workflow.feedbackPreRunHead = null;
 		}
 
 		if (
@@ -573,10 +572,11 @@ export class PipelineOrchestrator {
 	}
 
 	/**
-	 * Accept a feedback submission on a manual-mode merge-pr pause. Non-empty text
-	 * creates a new FeedbackEntry and starts the feedback-implementer step. Empty
-	 * text is treated as Resume (FR-014) — the handler normally routes that path,
-	 * but this method handles it defensively too.
+	 * Accept a feedback submission on a manual-mode merge-pr pause. Non-empty
+	 * text creates a new FeedbackEntry and starts the feedback-implementer step.
+	 * The WS handler always routes empty/whitespace input straight to resume()
+	 * and never reaches this method with empty text; the empty-text early-return
+	 * below exists as a defensive no-op for direct programmatic callers.
 	 */
 	submitFeedback(workflowId: string, text: string): void {
 		const workflow = this.getWorkflowOrThrow(workflowId);
@@ -628,10 +628,12 @@ export class PipelineOrchestrator {
 		}
 		const cwd = requireWorktreePath(workflow);
 
-		// Only snapshot HEAD on the first run. Preserving across pause-resume ensures
-		// commits pushed before the pause are still counted in `commitRefs`.
-		if (!this.feedbackPreRunHead) {
-			this.feedbackPreRunHead = await this.getGitHeadFn(cwd);
+		// Only snapshot HEAD on the first run. The value is persisted on the
+		// workflow so it also survives server restart — commits pushed before a
+		// pause/restart are still counted in `commitRefs` when the run resumes.
+		if (!workflow.feedbackPreRunHead) {
+			workflow.feedbackPreRunHead = await this.getGitHeadFn(cwd);
+			this.persistWorkflow(workflow);
 		}
 
 		// Race guard: if the user paused (or the workflow otherwise left running)
@@ -645,6 +647,9 @@ export class PipelineOrchestrator {
 			currentStep?.name !== STEP.FEEDBACK_IMPLEMENTER ||
 			currentStep.status !== "running"
 		) {
+			logger.info(
+				`[pipeline] Feedback-implementer race guard fired for workflow ${workflow.id}; user paused during pre-run head snapshot`,
+			);
 			return;
 		}
 
@@ -658,7 +663,7 @@ export class PipelineOrchestrator {
 	 */
 	private async completeFeedbackImplementer(workflow: Workflow): Promise<void> {
 		const cwd = workflow.worktreePath;
-		const preRunHead = this.feedbackPreRunHead;
+		const preRunHead = workflow.feedbackPreRunHead;
 		const commits = preRunHead && cwd ? await this.detectNewCommitsFn(preRunHead, cwd) : [];
 
 		const step = workflow.steps[workflow.currentStepIndex];
@@ -670,16 +675,22 @@ export class PipelineOrchestrator {
 			latest.outcome = outcome;
 		}
 		workflow.updatedAt = new Date().toISOString();
-		this.feedbackPreRunHead = null;
+		workflow.feedbackPreRunHead = null;
 
 		if (outcome.value === "success") {
+			// A user-initiated feedback iteration begins a fresh CI cycle — reset
+			// the attempt counters so prior fix-ci / merge retries don't starve
+			// the new cycle of attempts.
+			workflow.ciCycle.attempt = 0;
+			workflow.ciCycle.monitorStartedAt = null;
+			workflow.ciCycle.failureLogs = [];
+			workflow.mergeCycle.attempt = 0;
+
 			const monitorIdx = this.requireStepIndex(workflow, STEP.MONITOR_CI);
 			const monitorStep = workflow.steps[monitorIdx];
 			this.stepRunner.resetStep(monitorStep, "pending");
-			workflow.ciCycle.monitorStartedAt = null;
-			workflow.ciCycle.failureLogs = [];
 			workflow.currentStepIndex = monitorIdx;
-			this.persistWorkflow(workflow);
+			// Persistence is handled by startStep.
 			this.startStep(workflow);
 			return;
 		}
@@ -1117,6 +1128,17 @@ export class PipelineOrchestrator {
 				workflowId,
 				`CLI process exited successfully but produced no output — step "${step.name}" cannot advance without results`,
 			);
+			return;
+		}
+
+		// Feedback-implementer is a non-interactive step: its output is parsed
+		// from a sentinel block and routed by completeFeedbackImplementer. Skip
+		// the question classifier so an agent emitting question-shaped text
+		// (or a Haiku misclassification) can't strand the workflow in
+		// waiting_for_input and silently block every subsequent feedback
+		// submission via the FR-016 in-flight guard.
+		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+			this.advanceAfterStep(workflowId);
 			return;
 		}
 
@@ -1571,7 +1593,7 @@ export class PipelineOrchestrator {
 			step.error = error;
 			step.completedAt = new Date().toISOString();
 			step.pid = null;
-			this.feedbackPreRunHead = null;
+			workflow.feedbackPreRunHead = null;
 			this.callbacks.onOutput(workflowId, `Error: ${error}`);
 			this.routeToMergePrPause(workflow);
 			return;

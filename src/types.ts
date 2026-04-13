@@ -441,6 +441,14 @@ export interface Workflow {
 	activeWorkMs: number;
 	activeWorkStartedAt: string | null;
 	feedbackEntries: FeedbackEntry[];
+	/**
+	 * Git HEAD SHA captured when the current feedback-implementer iteration
+	 * started. Persisted on the workflow so pause→resume (including across a
+	 * server restart) counts commits from the original pre-run head rather than
+	 * re-snapshotting and losing commits that already landed. Null when no FI
+	 * iteration is in flight.
+	 */
+	feedbackPreRunHead: string | null;
 	createdAt: string;
 	updatedAt: string;
 }

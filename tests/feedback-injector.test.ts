@@ -156,4 +156,54 @@ describe("buildFeedbackContext", () => {
 		expect(out.toLowerCase()).toContain("authoritative");
 		expect(out).toMatch(/overrides? spec\/plan/i);
 	});
+
+	describe("excludeInFlight option", () => {
+		test("omits the in-flight entry when excludeInFlight is true", () => {
+			const wf = makeWorkflow();
+			wf.feedbackEntries = [
+				entry({
+					id: "fe-1",
+					iteration: 1,
+					text: "earlier completed feedback",
+					outcome: {
+						value: "success",
+						summary: "did it",
+						commitRefs: ["abc"],
+						warnings: [],
+					},
+				}),
+				entry({
+					id: "fe-2",
+					iteration: 2,
+					text: "the iteration in progress",
+					outcome: null,
+				}),
+			];
+
+			const out = buildFeedbackContext(wf, { excludeInFlight: true });
+
+			expect(out).toContain("earlier completed feedback");
+			expect(out).not.toContain("the iteration in progress");
+			expect(out).not.toContain("in progress");
+		});
+
+		test("returns empty string when only an in-flight entry exists and excludeInFlight=true", () => {
+			const wf = makeWorkflow();
+			wf.feedbackEntries = [
+				entry({ id: "fe-1", iteration: 1, text: "first feedback", outcome: null }),
+			];
+
+			expect(buildFeedbackContext(wf, { excludeInFlight: true })).toBe("");
+			// And without the option, the helper still emits the in-progress block
+			expect(buildFeedbackContext(wf)).toContain("first feedback");
+		});
+
+		test("default behavior (no options) still includes the in-flight entry", () => {
+			const wf = makeWorkflow();
+			wf.feedbackEntries = [
+				entry({ id: "fe-1", iteration: 1, text: "in-flight text", outcome: null }),
+			];
+			expect(buildFeedbackContext(wf)).toContain("in-flight text");
+		});
+	});
 });

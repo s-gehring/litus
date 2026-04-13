@@ -82,6 +82,7 @@ export class WorkflowStore {
 			if (data.epicAnalysisMs === undefined) data.epicAnalysisMs = 0;
 			// Migration: backfill feedbackEntries for pre-feedback workflows
 			if (!Array.isArray(data.feedbackEntries)) data.feedbackEntries = [];
+			if (data.feedbackPreRunHead === undefined) data.feedbackPreRunHead = null;
 			return data as Workflow;
 		} catch {
 			logger.warn(`[workflow-store] Failed to load workflow ${id}`);

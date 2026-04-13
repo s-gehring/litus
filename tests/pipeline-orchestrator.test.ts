@@ -76,6 +76,7 @@ function createFakeEngine() {
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,
 				feedbackEntries: [],
+				feedbackPreRunHead: null,
 				createdAt: now,
 				updatedAt: now,
 			};
@@ -2117,6 +2118,180 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			expect(spec).toContain("first change summary");
 			expect(spec).toContain("prev-abc");
 		});
+
+		test("paused-FI across restart reuses the persisted feedbackPreRunHead", async () => {
+			// Scenario (review-2 #1.1): user submits feedback, the agent pushes a
+			// commit, user presses Pause, the server restarts before the user
+			// resumes. When the workflow is reloaded with feedbackPreRunHead
+			// persisted, the fresh orchestrator instance MUST NOT re-snapshot HEAD
+			// on resume — otherwise commits pushed before the pause are excluded
+			// from commitRefs.
+			let getGitHeadCalls = 0;
+			const countingGetGitHead = async () => {
+				getGitHeadCalls++;
+				return "fresh-head-after-restart";
+			};
+			// biome-ignore lint/suspicious/noExplicitAny: test DI
+			const deps: Record<string, any> = {
+				engine,
+				cliRunner: cli,
+				questionDetector: qd,
+				reviewClassifier: rc,
+				summarizer,
+				auditLogger,
+				workflowStore: store,
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: countingGetGitHead,
+				detectNewCommits: async () => detectNewCommitsResult,
+			};
+			orchestrator = new PipelineOrchestrator(callbacks, deps);
+
+			const wf = await seedMergePrPause();
+
+			// Simulate the pre-restart state: a feedback iteration ran and its
+			// pre-run head was persisted on the workflow. The user then paused.
+			wf.feedbackPreRunHead = "original-head-before-feedback";
+			wf.feedbackEntries.push({
+				id: "fe-resumed",
+				iteration: 1,
+				text: "refactor everything",
+				submittedAt: new Date().toISOString(),
+				submittedAtStepName: "merge-pr",
+				outcome: null,
+			});
+			const fiIdx = wf.steps.findIndex((s) => s.name === "feedback-implementer");
+			wf.currentStepIndex = fiIdx;
+			wf.steps[fiIdx].status = "paused";
+			wf.status = "paused";
+
+			// Resume — the step has no sessionId, so runFeedbackImplementer is
+			// called fresh. It must skip the getGitHead call because the workflow
+			// already carries the persisted preRunHead.
+			orchestrator.resume(wf.id);
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(getGitHeadCalls).toBe(0);
+			expect(wf.feedbackPreRunHead).toBe("original-head-before-feedback");
+
+			// Further: when the iteration completes, detectNewCommits is called
+			// with the persisted preRunHead — not the fresh one.
+			detectNewCommitsResult = ["commit-from-before-pause"];
+			const sentinel = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":"success","summary":"done","materiallyRelevant":false}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+			cli.getLastCallbacks().onOutput(sentinel);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 30));
+
+			expect(wf.feedbackEntries[wf.feedbackEntries.length - 1].outcome?.commitRefs).toEqual([
+				"commit-from-before-pause",
+			]);
+		});
+
+		test("FI output that looks like a question does NOT enter waiting_for_input", async () => {
+			// Scenario (review-2 #1.2): the question detector/classifier must be
+			// skipped for the feedback-implementer step so agent output that looks
+			// question-shaped can't strand the workflow in waiting_for_input (which
+			// would silently block every subsequent feedback submission via the
+			// FR-016 in-flight guard).
+			const wf = await seedMergePrPause();
+			detectNewCommitsResult = ["commit-abc"];
+
+			orchestrator.submitFeedback(wf.id, "do the thing");
+			await new Promise((r) => setTimeout(r, 10));
+
+			// The detector would normally flag this candidate; force it to be
+			// classified as a question so we can verify the step name guard wins.
+			qd._pushDetectResult({
+				id: "q-fi",
+				content: "Should I proceed?",
+				detectedAt: new Date().toISOString(),
+			});
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
+			const sentinel = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":"success","summary":"done","materiallyRelevant":false}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+			cli.getLastCallbacks().onOutput(sentinel);
+			cli.getLastCallbacks().onOutput("Should I proceed?");
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 30));
+
+			expect(wf.status).not.toBe("waiting_for_input");
+			expect(wf.pendingQuestion).toBeNull();
+
+			// Success path routed to monitor-ci as expected.
+			const monIdx = wf.steps.findIndex((s) => s.name === "monitor-ci");
+			expect(wf.currentStepIndex).toBe(monIdx);
+		});
+
+		test("feedback success resets ciCycle.attempt and mergeCycle.attempt", async () => {
+			// Scenario (review-2 #1.3): the prior CI cycle may have consumed fix-ci
+			// attempts; a user-initiated feedback iteration starts a conceptually
+			// new cycle and must reset the counters.
+			const wf = await seedMergePrPause();
+			wf.ciCycle.attempt = 2;
+			wf.mergeCycle.attempt = 1;
+			detectNewCommitsResult = ["commit-from-feedback"];
+
+			orchestrator.submitFeedback(wf.id, "try again");
+			await new Promise((r) => setTimeout(r, 10));
+
+			const sentinel = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":"success","summary":"applied","materiallyRelevant":false}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+			cli.getLastCallbacks().onOutput(sentinel);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 30));
+
+			expect(wf.ciCycle.attempt).toBe(0);
+			expect(wf.mergeCycle.attempt).toBe(0);
+			const monIdx = wf.steps.findIndex((s) => s.name === "monitor-ci");
+			expect(wf.currentStepIndex).toBe(monIdx);
+		});
+
+		test("FI prompt excludes the in-flight entry from its feedback context", async () => {
+			// Scenario (review-2 #1.4): the FI agent already gets the current
+			// iteration via ${latestFeedbackText}; the ${feedbackContext} must not
+			// additionally label it as "in progress" — the agent would see the
+			// same text twice with different labels.
+			const wf = await seedMergePrPause();
+			wf.feedbackEntries = [
+				{
+					id: "fe-prev",
+					iteration: 1,
+					text: "earlier completed feedback",
+					submittedAt: new Date().toISOString(),
+					submittedAtStepName: "merge-pr",
+					outcome: {
+						value: "success",
+						summary: "done",
+						commitRefs: ["abc"],
+						warnings: [],
+					},
+				},
+			];
+
+			orchestrator.submitFeedback(wf.id, "the brand new iteration");
+			await new Promise((r) => setTimeout(r, 10));
+
+			const spec = cli._startCalls[cli._startCalls.length - 1].workflow.specification;
+			// Prior completed entry IS in the authoritative context block.
+			expect(spec).toContain("earlier completed feedback");
+			// The in-flight entry's text only appears once (via latestFeedbackText),
+			// and no "in progress" label is ever attached to it.
+			const inProgressOccurrences = (spec.match(/in progress/g) ?? []).length;
+			expect(inProgressOccurrences).toBe(0);
+			const latestOccurrences = (spec.match(/the brand new iteration/g) ?? []).length;
+			expect(latestOccurrences).toBe(1);
+		});
 	});
 
 	describe("feedback context injection into other CLI steps (US2)", () => {
@@ -2262,6 +2437,7 @@ function makeCallbacksWorkflowForRecovery(): Workflow {
 				outcome: null,
 			},
 		],
+		feedbackPreRunHead: "head-before-restart-sha",
 		createdAt: now,
 		updatedAt: now,
 	};

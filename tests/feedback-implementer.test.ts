@@ -11,7 +11,7 @@ import {
 	parseAgentResult,
 	reconcileOutcome,
 } from "../src/feedback-implementer";
-import type { AppConfig, FeedbackEntry } from "../src/types";
+import type { AppConfig, FeedbackEntry, WorkflowStatus } from "../src/types";
 import { makeWorkflow } from "./helpers";
 
 function cloneConfig(): AppConfig {
@@ -385,5 +385,95 @@ describe("detectNewCommits", () => {
 	test("returns empty array when preRunHead is invalid", async () => {
 		const commits = await detectNewCommits("0000000000000000000000000000000000000000", repoDir);
 		expect(commits).toEqual([]);
+	});
+
+	test("returns empty array when cwd does not exist (gitSpawn throws)", async () => {
+		// Exercise the try/catch: Bun.spawn rejects for a non-existent cwd.
+		// The helper must swallow the error and return [].
+		const bogusCwd = join(
+			tmpdir(),
+			`feedback-impl-bogus-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+		);
+		const commits = await detectNewCommits("abc123", bogusCwd);
+		expect(commits).toEqual([]);
+	});
+});
+
+describe("recoverInterruptedFeedbackImplementer corner cases", () => {
+	async function importRecover() {
+		const { recoverInterruptedFeedbackImplementer } = await import("../src/feedback-implementer");
+		return recoverInterruptedFeedbackImplementer;
+	}
+
+	test("does not corrupt an outcome that is already set on the latest entry", async () => {
+		const recover = await importRecover();
+		const wf = makeWorkflow();
+		wf.feedbackEntries = [
+			entry({
+				iteration: 1,
+				text: "earlier iteration",
+				outcome: {
+					value: "success",
+					summary: "done already",
+					commitRefs: ["sha-done"],
+					warnings: [],
+				},
+			}),
+		];
+		const fiIdx = wf.steps.findIndex((s) => s.name === "feedback-implementer");
+		wf.currentStepIndex = fiIdx;
+		wf.steps[fiIdx].status = "running";
+
+		recover(wf);
+
+		// Outcome preserved — only null outcomes are mutated.
+		const latest = wf.feedbackEntries[wf.feedbackEntries.length - 1];
+		expect(latest.outcome?.value).toBe("success");
+		expect(latest.outcome?.summary).toBe("done already");
+		// Workflow is still rewound to merge-pr pause even when no in-flight entry
+		// needed cancelling — this is the FR-020 contract.
+		const mergeIdx = wf.steps.findIndex((s) => s.name === "merge-pr");
+		expect(wf.currentStepIndex).toBe(mergeIdx);
+		expect(wf.status).toBe("paused");
+	});
+
+	test("handles workflows missing the feedback-implementer step (stale schema)", async () => {
+		const recover = await importRecover();
+		const wf = makeWorkflow();
+		wf.steps = wf.steps.filter((s) => s.name !== "feedback-implementer");
+		wf.feedbackEntries = [entry({ iteration: 1, text: "in flight", outcome: null })];
+		wf.status = "running" as WorkflowStatus;
+
+		// Must not throw even when the FI step is absent.
+		expect(() => recover(wf)).not.toThrow();
+
+		const latest = wf.feedbackEntries[wf.feedbackEntries.length - 1];
+		expect(latest.outcome?.value).toBe("cancelled");
+		expect(wf.status).toBe("paused");
+	});
+
+	test("handles workflows missing the merge-pr step", async () => {
+		const recover = await importRecover();
+		const wf = makeWorkflow();
+		wf.steps = wf.steps.filter((s) => s.name !== "merge-pr");
+		wf.feedbackEntries = [entry({ iteration: 1, text: "in flight", outcome: null })];
+		wf.status = "running" as WorkflowStatus;
+
+		expect(() => recover(wf)).not.toThrow();
+		// Workflow status still falls back to paused even if the rewind target is
+		// missing — the status-last convention ensures a safe terminal state.
+		expect(wf.status).toBe("paused");
+	});
+
+	test("clears feedbackPreRunHead so the next iteration starts fresh", async () => {
+		const recover = await importRecover();
+		const wf = makeWorkflow();
+		wf.feedbackPreRunHead = "interrupted-head-sha";
+		wf.feedbackEntries = [entry({ iteration: 1, text: "interrupted", outcome: null })];
+		wf.status = "running" as WorkflowStatus;
+
+		recover(wf);
+
+		expect(wf.feedbackPreRunHead).toBeNull();
 	});
 });

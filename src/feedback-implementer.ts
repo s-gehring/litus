@@ -51,7 +51,10 @@ export function buildFeedbackPrompt(
 	prUrl: string,
 ): string {
 	const template = config.prompts.feedbackImplementerInstruction;
-	const feedbackContext = buildFeedbackContext(workflow);
+	// Drop the in-flight entry from the context so the agent doesn't see its own
+	// pending feedback twice — once here as "in progress", once via
+	// ${latestFeedbackText}.
+	const feedbackContext = buildFeedbackContext(workflow, { excludeInFlight: true });
 	const priorOutcomes = buildPriorOutcomesSection(workflow);
 
 	return template
@@ -151,7 +154,14 @@ export function parseAgentResult(output: string): ParsedAgentResult {
  * the workflow in place to: mark the in-flight entry cancelled with summary
  * "Interrupted by server restart", reset the feedback-implementer step to
  * pending, rewind currentStepIndex to merge-pr, and set both step and workflow
- * status to paused.
+ * status to paused. Also clears feedbackPreRunHead — the next iteration starts
+ * fresh.
+ *
+ * Ordering convention: all per-step mutations happen first, workflow-level
+ * status (`status`, `activeWorkStartedAt`, `updatedAt`) is set last. If a
+ * future change introduces an intermediate persistence call, the workflow
+ * won't briefly be observed as `running` while internal fields are already
+ * rewound.
  */
 export function recoverInterruptedFeedbackImplementer(workflow: Workflow): void {
 	const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
@@ -180,6 +190,7 @@ export function recoverInterruptedFeedbackImplementer(workflow: Workflow): void 
 		mergeStep.status = "paused";
 		workflow.currentStepIndex = mergeIdx;
 	}
+	workflow.feedbackPreRunHead = null;
 	workflow.status = "paused";
 	workflow.activeWorkStartedAt = null;
 	workflow.updatedAt = new Date().toISOString();

@@ -232,6 +232,29 @@ describe("WorkflowStore", () => {
 		expect(loaded.feedbackEntries).toEqual([]);
 	});
 
+	test("migration backfills feedbackPreRunHead = null for legacy workflows", async () => {
+		mkdirSync(baseDir, { recursive: true });
+		const legacy = makeWorkflow({ id: "legacy-no-prerunhead" });
+		const legacyRaw = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>;
+		delete legacyRaw.feedbackPreRunHead;
+		writeFileSync(join(baseDir, "legacy-no-prerunhead.json"), JSON.stringify(legacyRaw, null, 2));
+
+		const loaded = await store.load("legacy-no-prerunhead");
+
+		assertDefined(loaded);
+		expect(loaded.feedbackPreRunHead).toBeNull();
+	});
+
+	test("feedbackPreRunHead survives save + load round-trip", async () => {
+		const workflow = makeWorkflow({ id: "prerunhead-round-trip" });
+		workflow.feedbackPreRunHead = "abc1234deadbeef";
+		await store.save(workflow);
+
+		const loaded = await store.load("prerunhead-round-trip");
+		assertDefined(loaded);
+		expect(loaded.feedbackPreRunHead).toBe("abc1234deadbeef");
+	});
+
 	test("T011: loadIndex rebuilds from scanning *.json when index.json is missing", async () => {
 		const w1 = makeWorkflow({ id: "scan-1", updatedAt: "2026-01-01T00:00:00.000Z" });
 		const w2 = makeWorkflow({ id: "scan-2", updatedAt: "2026-02-01T00:00:00.000Z" });
