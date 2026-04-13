@@ -102,7 +102,6 @@ export function makeWorkflowState(overrides?: Partial<WorkflowState>): WorkflowS
 		activeWorkMs: 0,
 		activeWorkStartedAt: null,
 		feedbackEntries: [],
-		feedbackPreRunHead: null,
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
 		...overrides,

@@ -159,7 +159,7 @@ Instructions:
 1. Apply the feedback to the code. The user's feedback is authoritative and overrides any prior spec or plan content on conflict.
 2. If the feedback is already satisfied or no code change is warranted, do not invent changes — just explain and report "no changes" in the result sentinel below.
 3. If you do make changes, commit them with atomic Conventional Commit messages (e.g. \`feat:\`, \`fix:\`, \`refactor:\`, \`test:\`, \`docs:\`) and push to the current branch. Never force-push.
-4. Judge whether this feedback materially changes the PR's end outcome (not just a cleanup, rename, or internal tweak). If materially relevant, losslessly update the PR description:
+4. Judge whether this feedback materially changes the PR's end outcome (not just a cleanup, internal-only rename, or developer-facing tweak — user-facing renames or label changes ARE material). If materially relevant, losslessly update the PR description:
    a. Read the current body with: gh pr view \${prUrl} --json body -q .body
    b. Add a clearly-delimited new section describing the change, or amend an existing section in place. Never delete, reorder, or rewrite prior content.
    c. Write the new body to a temp file and call: gh pr edit \${prUrl} --body-file <tempfile>

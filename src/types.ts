@@ -454,7 +454,7 @@ export interface Workflow {
 }
 
 // Serializable workflow state for WebSocket messages (strips internal fields from workflow and steps)
-export type WorkflowState = Omit<Workflow, "steps"> & {
+export type WorkflowState = Omit<Workflow, "steps" | "feedbackPreRunHead"> & {
 	steps: Omit<PipelineStep, "sessionId" | "prompt" | "pid">[];
 };
 

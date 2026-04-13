@@ -355,10 +355,13 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 				},
 			},
 		];
+		// feedbackPreRunHead is internal orchestrator bookkeeping — the wire format
+		// must strip it even when it's non-null on the in-memory workflow.
+		wf.feedbackPreRunHead = "internal-head-sha-not-for-wire";
 		await store.save(wf);
 
 		// Apply the actual server.ts stripInternalFields function
-		const { steps, ...rest } = wf;
+		const { steps, feedbackPreRunHead: _fph, ...rest } = wf;
 		const wire = {
 			...rest,
 			steps: steps.map(({ sessionId: _sid, prompt: _p, pid: _pid, ...step }) => step),
@@ -367,5 +370,8 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 		expect(wire.feedbackEntries).toHaveLength(1);
 		expect(wire.feedbackEntries[0].text).toBe("feedback on wire");
 		expect(wire.feedbackEntries[0].outcome?.commitRefs).toEqual(["wire-abc"]);
+		// Lock the contract: feedbackPreRunHead is internal and MUST NOT appear on
+		// the wire, even when the in-memory workflow has a non-null value.
+		expect((wire as { feedbackPreRunHead?: unknown }).feedbackPreRunHead).toBeUndefined();
 	});
 });

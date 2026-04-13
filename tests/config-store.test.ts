@@ -474,6 +474,15 @@ describe("T005: template variable warning generation", () => {
 		);
 		expect(sentinelWarning).toBeUndefined();
 	});
+
+	// Lock the "user-facing rename is material" guidance. Spec US3 cites a
+	// user-facing label rename as the canonical example of a materially-relevant
+	// change; the prompt must not silently lump all renames into the non-material
+	// bucket.
+	test("default feedbackImplementerInstruction flags user-facing renames as material", () => {
+		const prompt = DEFAULT_CONFIG.prompts.feedbackImplementerInstruction;
+		expect(prompt).toContain("user-facing");
+	});
 });
 
 // ── T022: New model keys, effort validation, optional model validation ────

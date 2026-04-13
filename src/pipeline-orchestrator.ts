@@ -357,6 +357,20 @@ export class PipelineOrchestrator {
 		if (workflow.status !== "error") return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
+
+		// Feedback-implementer has no retry path: a failed FI run rewinds to the
+		// merge-pr pause and invites the user to submit fresh feedback (FR-012).
+		// If a future refactor ever routes an FI failure to workflow.status=error,
+		// this guard keeps retryStep from spawning a CLI with the step's empty
+		// static prompt (types.ts PIPELINE_STEP_DEFINITIONS) and skipping feedback
+		// context injection (runStep treats FI as a pre-built prompt).
+		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+			logger.warn(
+				`[pipeline] retryStep called on feedback-implementer for workflow ${workflowId}; FI cannot be retried — submit new feedback instead`,
+			);
+			return;
+		}
+
 		this.stepRunner.resetStep(step);
 		workflow.updatedAt = new Date().toISOString();
 
@@ -593,11 +607,34 @@ export class PipelineOrchestrator {
 			this.resume(workflowId);
 			return;
 		}
-		if (workflow.status !== "paused") return;
+		// Handler-side validation in `handleFeedback` is authoritative; these guards
+		// are defense-in-depth for programmatic callers. Log on silent drop so a
+		// mis-sequencing can be diagnosed from the logs instead of source inspection.
+		if (workflow.status !== "paused") {
+			logger.warn(
+				`[pipeline] submitFeedback rejected for workflow ${workflowId}: workflow status=${workflow.status}, expected paused`,
+			);
+			return;
+		}
 		const step = workflow.steps[workflow.currentStepIndex];
-		if (step.name !== STEP.MERGE_PR) return;
-		if (configStore.get().autoMode !== "manual") return;
-		if (workflow.feedbackEntries.some((e) => e.outcome === null)) return;
+		if (step.name !== STEP.MERGE_PR) {
+			logger.warn(
+				`[pipeline] submitFeedback rejected for workflow ${workflowId}: current step=${step.name}, expected ${STEP.MERGE_PR}`,
+			);
+			return;
+		}
+		if (configStore.get().autoMode !== "manual") {
+			logger.warn(
+				`[pipeline] submitFeedback rejected for workflow ${workflowId}: autoMode is not manual`,
+			);
+			return;
+		}
+		if (workflow.feedbackEntries.some((e) => e.outcome === null)) {
+			logger.warn(
+				`[pipeline] submitFeedback rejected for workflow ${workflowId}: an in-flight feedback entry already exists`,
+			);
+			return;
+		}
 
 		const now = new Date().toISOString();
 		const entry: FeedbackEntry = {
@@ -709,6 +746,11 @@ export class PipelineOrchestrator {
 		if (outcome.value === "failed") {
 			step.status = "error";
 			step.error = outcome.summary;
+			// Stamp completedAt at the moment the outcome was determined, matching
+			// handleStepError's FI branch. `advanceAfterStep` set a placeholder
+			// milliseconds earlier — overwrite so both error paths carry the same
+			// semantic "moment the FI run ended" timestamp.
+			step.completedAt = new Date().toISOString();
 		}
 
 		// no changes / agent-reported failed → rewind to merge-pr pause.

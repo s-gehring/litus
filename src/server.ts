@@ -16,6 +16,7 @@ import { handleEpicCancel, handleEpicStart } from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
 import { MessageRouter } from "./server/message-router";
 import { handlePurgeAll } from "./server/purge-handlers";
+import { broadcastPersistedWorkflowState } from "./server/workflow-broadcaster";
 import {
 	handleAbort,
 	handleAnswer,
@@ -136,7 +137,7 @@ function createOrchestrator(): PipelineOrchestrator {
 }
 
 function stripInternalFields(w: Workflow): WorkflowState {
-	const { steps, ...rest } = w;
+	const { steps, feedbackPreRunHead: _fph, ...rest } = w;
 	return {
 		...rest,
 		steps: steps.map(({ sessionId: _sid, prompt: _p, pid: _pid, ...step }) => step),
@@ -187,7 +188,13 @@ function broadcastWorkflowState(workflowId: string) {
 	const state = getWorkflowState(workflowId);
 	if (state) {
 		broadcast({ type: "workflow:state", workflow: state });
+		return;
 	}
+	// After cancelPipeline deletes the orchestrator, late-arriving callbacks (e.g.
+	// the post-cancel commit-backfill in pipeline-orchestrator.cancelPipeline) still
+	// invoke onStateChange. Fall back to the persisted workflow so the client sees
+	// the final commitRefs without needing a page reload.
+	void broadcastPersistedWorkflowState(workflowId, sharedStore, stripInternalFields, broadcast);
 }
 
 // ── HandlerDeps construction ────────────────────────────

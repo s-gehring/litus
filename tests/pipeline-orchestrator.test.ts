@@ -2497,6 +2497,25 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			expect(entry.outcome?.commitRefs).toEqual([]);
 			expect(wf.status).toBe("cancelled");
 		});
+
+		// retryStep on feedback-implementer is unreachable under today's routing
+		// (FI failures rewind to merge-pr pause, never to workflow.status=error).
+		// This test locks the guard so a future refactor that routes FI failures
+		// to "error" can't silently spawn a CLI with FI's empty static prompt.
+		test("retryStep is a no-op on feedback-implementer (FI cannot be retried)", async () => {
+			const wf = await seedMergePrPause();
+			const fiIdx = wf.steps.findIndex((s) => s.name === "feedback-implementer");
+			wf.currentStepIndex = fiIdx;
+			wf.steps[fiIdx].status = "error";
+			wf.status = "error";
+
+			const callsBefore = cli._startCalls.length;
+			await orchestrator.retryStep(wf.id);
+			await new Promise((r) => setTimeout(r, 10));
+
+			expect(cli._startCalls.length).toBe(callsBefore);
+			expect(wf.status).toBe("error");
+		});
 	});
 
 	describe("feedback context injection into other CLI steps (US2)", () => {
