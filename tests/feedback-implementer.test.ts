@@ -225,6 +225,38 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 		const parsed = parseAgentResult(output);
 		expect(parsed.prDescriptionUpdate?.errorMessage).toBeNull();
 	});
+
+	test("unrecognized outcome string falls back to outcome=null (review-3 §1.4/§3.3)", () => {
+		// A typo like "succeeded" (not "success") or any other unknown string
+		// must not silently map to a known outcome. The caller (reconcileOutcome)
+		// then picks based on commits + cliFailed; the orchestrator additionally
+		// emits a logger.warn so the mis-customisation is diagnosable.
+		const output = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":"succeeded","summary":"typo","materiallyRelevant":false}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+		const parsed = parseAgentResult(output);
+		expect(parsed.sentinelFound).toBe(true);
+		expect(parsed.outcome).toBeNull();
+		expect(parsed.summary).toBe("typo");
+	});
+
+	test("non-string outcome value falls back to outcome=null (review-3 §1.4/§3.3)", () => {
+		const output = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":42,"summary":"wrong type","materiallyRelevant":false}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+		const parsed = parseAgentResult(output);
+		expect(parsed.sentinelFound).toBe(true);
+		expect(parsed.outcome).toBeNull();
+	});
+
+	test("missing outcome field falls back to outcome=null (review-3 §1.4/§3.3)", () => {
+		const output = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"summary":"no outcome key","materiallyRelevant":false}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+		const parsed = parseAgentResult(output);
+		expect(parsed.sentinelFound).toBe(true);
+		expect(parsed.outcome).toBeNull();
+	});
 });
 
 describe("reconcileOutcome", () => {

@@ -539,8 +539,15 @@ export class PipelineOrchestrator {
 								this.callbacks.onStateChange(workflowId);
 							}
 						})
-						.catch(() => {
-							// Best-effort commit backfill — agent already cancelled
+						.catch((err) => {
+							// Best-effort commit backfill — agent already cancelled.
+							// Surface the failure so a missing commitRefs on a cancelled
+							// entry can be traced back to this path instead of silently
+							// showing []. Production detectNewCommits swallows its own
+							// errors; this fires only when a custom/test-injected fn throws.
+							logger.warn(
+								`[pipeline] Post-cancel commit backfill failed for workflow ${workflowId}: ${toErrorMessage(err)}`,
+							);
 						});
 				}
 			}
@@ -607,12 +614,14 @@ export class PipelineOrchestrator {
 		// Reset merge-pr so a clean re-entry is possible after CI re-runs
 		this.stepRunner.resetStep(step, "pending");
 
-		this.engine.transition(workflowId, "running");
-		this.persistWorkflow(workflow);
-		this.callbacks.onStateChange(workflowId);
-
+		// Advance currentStepIndex BEFORE transitioning the workflow to running, so
+		// no broadcast ever carries the logically-impossible `{ status: running,
+		// currentStep: merge-pr }` combination. startStep emits the single final
+		// broadcast once the feedback-implementer step is seeded.
 		const fiIndex = this.requireStepIndex(workflow, STEP.FEEDBACK_IMPLEMENTER);
 		workflow.currentStepIndex = fiIndex;
+
+		this.engine.transition(workflowId, "running");
 		this.startStep(workflow);
 	}
 
@@ -687,12 +696,19 @@ export class PipelineOrchestrator {
 			workflow.mergeCycle.attempt = 0;
 
 			const monitorIdx = this.requireStepIndex(workflow, STEP.MONITOR_CI);
-			const monitorStep = workflow.steps[monitorIdx];
-			this.stepRunner.resetStep(monitorStep, "pending");
 			workflow.currentStepIndex = monitorIdx;
-			// Persistence is handled by startStep.
+			// Persistence and step reset are handled by startStep.
 			this.startStep(workflow);
 			return;
+		}
+
+		// Agent-reported failed: align FI step status with the entry outcome so
+		// the pipeline-step indicator and the outcome badge agree. `no changes`
+		// leaves the step at `completed` — the step ran successfully, the agent
+		// simply produced nothing to commit.
+		if (outcome.value === "failed") {
+			step.status = "error";
+			step.error = outcome.summary;
 		}
 
 		// no changes / agent-reported failed → rewind to merge-pr pause.
@@ -1594,7 +1610,8 @@ export class PipelineOrchestrator {
 			step.completedAt = new Date().toISOString();
 			step.pid = null;
 			workflow.feedbackPreRunHead = null;
-			this.callbacks.onOutput(workflowId, `Error: ${error}`);
+			workflow.updatedAt = new Date().toISOString();
+			this.callbacks.onError(workflowId, error);
 			this.routeToMergePrPause(workflow);
 			return;
 		}

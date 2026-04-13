@@ -15,6 +15,11 @@ const OUTCOME_CLASSES: Record<FeedbackOutcomeValue, string> = {
 	cancelled: "outcome-cancelled",
 };
 
+function formatTimestamp(iso: string): string {
+	const d = new Date(iso);
+	return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
 export function showFeedbackPanel(workflow: WorkflowState, onSubmit: (text: string) => void): void {
 	const panel = $("#feedback-panel");
 	const input = $("#feedback-input") as HTMLTextAreaElement;
@@ -57,6 +62,12 @@ export function hideFeedbackPanel(): void {
 	panel.classList.add("hidden");
 }
 
+/** True when the feedback modal is currently visible. */
+export function isFeedbackPanelVisible(): boolean {
+	const panel = document.getElementById("feedback-panel");
+	return panel !== null && !panel.classList.contains("hidden");
+}
+
 export function renderFeedbackHistory(entries: FeedbackEntry[]): void {
 	const container = $("#feedback-history");
 	container.replaceChildren();
@@ -88,7 +99,8 @@ function renderFeedbackEntry(entry: FeedbackEntry): HTMLDivElement {
 
 	const ts = document.createElement("span");
 	ts.className = "feedback-entry-timestamp";
-	ts.textContent = entry.submittedAt;
+	ts.textContent = formatTimestamp(entry.submittedAt);
+	ts.title = entry.submittedAt;
 	header.appendChild(ts);
 
 	const badge = document.createElement("span");

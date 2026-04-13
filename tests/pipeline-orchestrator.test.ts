@@ -2292,6 +2292,211 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			const latestOccurrences = (spec.match(/the brand new iteration/g) ?? []).length;
 			expect(latestOccurrences).toBe(1);
 		});
+
+		test("agent-reported failed outcome promotes FI step status to error (review-3 §1.1)", async () => {
+			// Locks the data-model contract: when the agent self-reports `failed`
+			// with zero new commits, completeFeedbackImplementer must align the FI
+			// step's PipelineStep status with the entry outcome (both = error/failed).
+			// Otherwise the pipeline-step indicator shows green while the outcome
+			// badge shows red.
+			const wf = await seedMergePrPause();
+			detectNewCommitsResult = [];
+
+			orchestrator.submitFeedback(wf.id, "do the impossible");
+			await new Promise((r) => setTimeout(r, 10));
+
+			const sentinel = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":"failed","summary":"could not apply: rule conflict","materiallyRelevant":false}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+			cli.getLastCallbacks().onOutput(sentinel);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 30));
+
+			const entry = wf.feedbackEntries[0];
+			expect(entry.outcome?.value).toBe("failed");
+
+			const fiIdx = wf.steps.findIndex((s) => s.name === "feedback-implementer");
+			expect(wf.steps[fiIdx].status).toBe("error");
+			expect(wf.steps[fiIdx].error).toContain("could not apply");
+
+			// Workflow still rewinds to merge-pr pause (FR-012); only the FI step
+			// status reflects the failure.
+			const mergeIdx = wf.steps.findIndex((s) => s.name === "merge-pr");
+			expect(wf.currentStepIndex).toBe(mergeIdx);
+			expect(wf.status).toBe("paused");
+		});
+
+		test("agent-reported no-changes leaves FI step status at completed (review-3 §1.1)", async () => {
+			// Companion to the §1.1 test above: `no changes` is a successful run
+			// that produced nothing — the step ran fine, the agent simply judged
+			// no edit was needed. Step status stays `completed`; only the entry
+			// outcome differentiates `success` from `no changes`.
+			const wf = await seedMergePrPause();
+			detectNewCommitsResult = [];
+
+			orchestrator.submitFeedback(wf.id, "no-op please");
+			await new Promise((r) => setTimeout(r, 10));
+
+			const sentinel = `<<<FEEDBACK_IMPLEMENTER_RESULT
+{"outcome":"no changes","summary":"already done","materiallyRelevant":false}
+FEEDBACK_IMPLEMENTER_RESULT>>>`;
+			cli.getLastCallbacks().onOutput(sentinel);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 30));
+
+			const fiIdx = wf.steps.findIndex((s) => s.name === "feedback-implementer");
+			expect(wf.steps[fiIdx].status).toBe("completed");
+			expect(wf.steps[fiIdx].error).toBeNull();
+		});
+
+		test("submitFeedback never broadcasts a {running, currentStep: merge-pr} interim state (review-3 §1.3)", async () => {
+			// Locks the broadcast-ordering contract: every onStateChange call must
+			// observe a workflow whose current step is feedback-implementer once we
+			// reach the running state — never merge-pr-while-running, which is a
+			// state the rest of the system asserts cannot happen.
+			const wf = await seedMergePrPause();
+			const observed: { status: string; stepName: string | undefined }[] = [];
+			(callbacks.onStateChange as ReturnType<typeof mock>).mockImplementation(() => {
+				observed.push({
+					status: wf.status,
+					stepName: wf.steps[wf.currentStepIndex]?.name,
+				});
+			});
+
+			orchestrator.submitFeedback(wf.id, "rename x to count");
+			await new Promise((r) => setTimeout(r, 10));
+
+			// No broadcast should ever pair status=running with currentStep=merge-pr
+			const offending = observed.filter((o) => o.status === "running" && o.stepName === "merge-pr");
+			expect(offending).toEqual([]);
+
+			// And the final observed state lands on feedback-implementer + running
+			const last = observed[observed.length - 1];
+			expect(last.status).toBe("running");
+			expect(last.stepName).toBe("feedback-implementer");
+		});
+
+		test("runFeedbackImplementer fires onError when the in-flight entry is missing (review-3 §1.2/§3.2/§3.6)", async () => {
+			// Direct programmatic mis-sequencing path: getActiveWorkflow returns a
+			// workflow whose feedbackEntries do not contain a null-outcome entry.
+			// Drive it by mutating the workflow after the FI step is running so the
+			// guard at runFeedbackImplementer's top trips.
+			const wf = await seedMergePrPause();
+
+			orchestrator.submitFeedback(wf.id, "test");
+			await new Promise((r) => setTimeout(r, 10));
+
+			// Resolve the in-flight entry's outcome from underneath the orchestrator,
+			// then trigger another runFeedbackImplementer-style call by re-entering
+			// the step. Simulate by directly calling resume after clearing entry.
+			wf.feedbackEntries[0].outcome = {
+				value: "success",
+				summary: "stub",
+				commitRefs: [],
+				warnings: [],
+			};
+			// Force the step back to running and re-invoke the entry-guarded path.
+			const fiIdx = wf.steps.findIndex((s) => s.name === "feedback-implementer");
+			wf.steps[fiIdx].status = "paused";
+			wf.steps[fiIdx].sessionId = null;
+			wf.status = "paused";
+
+			(callbacks.onError as ReturnType<typeof mock>).mockClear();
+			(callbacks.onOutput as ReturnType<typeof mock>).mockClear();
+
+			orchestrator.resume(wf.id);
+			await new Promise((r) => setTimeout(r, 30));
+
+			// The early-return guard fires handleStepError → onError (NOT onOutput).
+			const errorCalls = (callbacks.onError as ReturnType<typeof mock>).mock.calls;
+			expect(errorCalls.length).toBeGreaterThanOrEqual(1);
+			expect(errorCalls[0][1]).toContain("No in-flight feedback entry");
+		});
+
+		test("runFeedbackImplementer fires onError when prUrl is missing (review-3 §3.2)", async () => {
+			const wf = await seedMergePrPause();
+			wf.prUrl = null; // simulate the impossible-but-defended case
+
+			(callbacks.onError as ReturnType<typeof mock>).mockClear();
+
+			orchestrator.submitFeedback(wf.id, "anything");
+			await new Promise((r) => setTimeout(r, 30));
+
+			const errorCalls = (callbacks.onError as ReturnType<typeof mock>).mock.calls;
+			expect(errorCalls.length).toBeGreaterThanOrEqual(1);
+			const messages = errorCalls.map((c: unknown[]) => String(c[1]));
+			expect(messages.some((m) => m.includes("No PR URL"))).toBe(true);
+		});
+
+		test("CLI error in FI emits onError (not onOutput) — review-3 §1.2/§3.6", async () => {
+			// Locks the contract: FI failures must go through callbacks.onError,
+			// matching every other step's error path. onOutput would lose the
+			// logger.error line and the immediate state broadcast.
+			const wf = await seedMergePrPause();
+
+			orchestrator.submitFeedback(wf.id, "impossible");
+			await new Promise((r) => setTimeout(r, 10));
+
+			(callbacks.onError as ReturnType<typeof mock>).mockClear();
+			(callbacks.onOutput as ReturnType<typeof mock>).mockClear();
+
+			cli.getLastCallbacks().onError("agent crashed");
+			await new Promise((r) => setTimeout(r, 30));
+
+			const onErrorCalls = (callbacks.onError as ReturnType<typeof mock>).mock.calls;
+			expect(onErrorCalls.length).toBeGreaterThanOrEqual(1);
+			expect(onErrorCalls[0][1]).toContain("agent crashed");
+
+			// And onOutput is NOT called with the error string disguised as output.
+			const errorShapedOutputs = (callbacks.onOutput as ReturnType<typeof mock>).mock.calls.filter(
+				(c: unknown[]) => String(c[1]).startsWith("Error: agent crashed"),
+			);
+			expect(errorShapedOutputs).toEqual([]);
+		});
+
+		test("cancelPipeline commit-backfill rejection is logged, not unhandled (review-3 §1.5/§3.5)", async () => {
+			// Inject a throwing detectNewCommitsFn so the .catch() in cancelPipeline
+			// fires. The promise must NOT propagate as an unhandled rejection, and
+			// commitRefs on the cancelled entry stays empty.
+			const failingDetect = async (): Promise<string[]> => {
+				throw new Error("git unavailable");
+			};
+			// biome-ignore lint/suspicious/noExplicitAny: test DI
+			const deps: Record<string, any> = {
+				engine,
+				cliRunner: cli,
+				questionDetector: qd,
+				reviewClassifier: rc,
+				summarizer,
+				auditLogger,
+				workflowStore: store,
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: async () => "head-sha",
+				detectNewCommits: failingDetect,
+			};
+			orchestrator = new PipelineOrchestrator(callbacks, deps);
+
+			const wf = await seedMergePrPause();
+			orchestrator.submitFeedback(wf.id, "do something");
+			await new Promise((r) => setTimeout(r, 10));
+
+			orchestrator.pause(wf.id);
+			orchestrator.cancelPipeline(wf.id);
+			// Wait long enough for the swallowed promise's .catch handler to run.
+			await new Promise((r) => setTimeout(r, 30));
+
+			const entry = wf.feedbackEntries[0];
+			expect(entry.outcome?.value).toBe("cancelled");
+			expect(entry.outcome?.commitRefs).toEqual([]);
+			expect(wf.status).toBe("cancelled");
+		});
 	});
 
 	describe("feedback context injection into other CLI steps (US2)", () => {

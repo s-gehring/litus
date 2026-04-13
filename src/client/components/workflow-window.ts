@@ -276,6 +276,11 @@ function truncateText(text: string, max = FEEDBACK_PREVIEW_MAX_CHARS): string {
 	return `${collapsed.slice(0, max - 1).trimEnd()}…`;
 }
 
+function formatFeedbackTimestamp(iso: string): string {
+	const d = new Date(iso);
+	return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
 export function updateFeedbackHistorySection(entries: FeedbackEntry[]): void {
 	const section = $("#workflow-feedback-section");
 	if (!section) return;
@@ -313,7 +318,8 @@ function renderFeedbackHistoryEntry(entry: FeedbackEntry): HTMLDivElement {
 
 	const ts = document.createElement("span");
 	ts.className = "workflow-feedback-entry-timestamp";
-	ts.textContent = entry.submittedAt;
+	ts.textContent = formatFeedbackTimestamp(entry.submittedAt);
+	ts.title = entry.submittedAt;
 	head.appendChild(ts);
 
 	const badge = document.createElement("span");

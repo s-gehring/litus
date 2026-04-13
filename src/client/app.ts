@@ -1,11 +1,12 @@
-import type {
-	AutoMode,
-	ClientMessage,
-	EpicAggregatedState,
-	EpicClientState,
-	ServerMessage,
-	WorkflowClientState,
-	WorkflowState,
+import {
+	type AutoMode,
+	type ClientMessage,
+	type EpicAggregatedState,
+	type EpicClientState,
+	type ServerMessage,
+	STEP,
+	type WorkflowClientState,
+	type WorkflowState,
 } from "../types";
 import { ClientStateManager } from "./client-state-manager";
 import {
@@ -19,7 +20,12 @@ import { createModal } from "./components/creation-modal";
 import { createDashboardHandler } from "./components/dashboard-handler";
 import { renderEpicTree } from "./components/epic-tree";
 import { updateFavicon } from "./components/favicon";
-import { hideFeedbackPanel, showFeedbackPanel } from "./components/feedback-panel";
+import {
+	hideFeedbackPanel,
+	isFeedbackPanelVisible,
+	renderFeedbackHistory,
+	showFeedbackPanel,
+} from "./components/feedback-panel";
 import { createFolderPicker } from "./components/folder-picker";
 import { renderPipelineSteps } from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
@@ -668,7 +674,7 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 			className: "btn-primary",
 			onClick: () => send({ type: "workflow:resume", workflowId: wf.id }),
 		});
-		if (currentAutoMode === "manual" && wf.steps[wf.currentStepIndex]?.name === "merge-pr") {
+		if (currentAutoMode === "manual" && wf.steps[wf.currentStepIndex]?.name === STEP.MERGE_PR) {
 			actions.push({
 				label: "Provide Feedback",
 				className: "btn-secondary",
@@ -748,9 +754,14 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	const feedbackEligible =
 		wf.status === "paused" &&
 		currentAutoMode === "manual" &&
-		wf.steps[wf.currentStepIndex]?.name === "merge-pr";
+		wf.steps[wf.currentStepIndex]?.name === STEP.MERGE_PR;
 	if (!feedbackEligible) {
 		hideFeedbackPanel();
+	} else if (isFeedbackPanelVisible()) {
+		// Keep the modal's history in sync with live state broadcasts — otherwise
+		// a late `workflow:state` arriving while the panel is open shows the
+		// snapshot from the moment the panel was opened.
+		renderFeedbackHistory(wf.feedbackEntries);
 	}
 }
 

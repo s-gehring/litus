@@ -1,5 +1,6 @@
 import { buildFeedbackContext } from "./feedback-injector";
 import { gitSpawn } from "./git-logger";
+import { logger } from "./logger";
 import {
 	type AppConfig,
 	type FeedbackOutcome,
@@ -120,6 +121,14 @@ export function parseAgentResult(output: string): ParsedAgentResult {
 		if (parsed.outcome === "success") outcome = "success";
 		else if (parsed.outcome === "no changes") outcome = "no changes";
 		else if (parsed.outcome === "failed") outcome = "failed";
+		else if (parsed.outcome !== undefined && parsed.outcome !== null) {
+			// Unrecognized value — a customised prompt or buggy agent can silently
+			// downgrade `failed` to `no changes` via the reconcile fallback. Log
+			// so future mis-customisations are diagnosable.
+			logger.warn(
+				`[feedback-implementer] Unrecognized outcome value in sentinel: ${JSON.stringify(parsed.outcome)}; falling back to git-based inference`,
+			);
+		}
 
 		const raw = parsed.prDescriptionUpdate;
 		const prDescriptionUpdate: PrDescriptionUpdateResult | null =
