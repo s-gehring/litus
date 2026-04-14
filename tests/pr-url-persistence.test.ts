@@ -55,6 +55,8 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
 		epicAnalysisMs: 0,
 		activeWorkMs: 0,
 		activeWorkStartedAt: null,
+		feedbackEntries: [],
+		feedbackPreRunHead: null,
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
 		...overrides,

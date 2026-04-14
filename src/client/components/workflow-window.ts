@@ -1,4 +1,11 @@
-import type { EpicStatus, OutputEntry, ToolUsage, WorkflowState } from "../../types";
+import type {
+	EpicStatus,
+	FeedbackEntry,
+	FeedbackOutcomeValue,
+	OutputEntry,
+	ToolUsage,
+	WorkflowState,
+} from "../../types";
 import { $ } from "../dom";
 import { renderMarkdown } from "../render-markdown";
 
@@ -251,6 +258,104 @@ export function updateSpecDetails(text: string): void {
 	} else {
 		details.classList.add("hidden");
 	}
+}
+
+const FEEDBACK_OUTCOME_CLASSES: Record<FeedbackOutcomeValue, string> = {
+	success: "outcome-success",
+	"no changes": "outcome-no-changes",
+	failed: "outcome-failed",
+	cancelled: "outcome-cancelled",
+};
+
+const FEEDBACK_PREVIEW_MAX_CHARS = 140;
+
+function truncateText(text: string, max = FEEDBACK_PREVIEW_MAX_CHARS): string {
+	// Collapse newlines so multi-line feedback shows a compact single-line preview.
+	const collapsed = text.replace(/\r?\n+/g, " ").trim();
+	if (collapsed.length <= max) return collapsed;
+	return `${collapsed.slice(0, max - 1).trimEnd()}…`;
+}
+
+function formatFeedbackTimestamp(iso: string): string {
+	const d = new Date(iso);
+	return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+export function updateFeedbackHistorySection(entries: FeedbackEntry[]): void {
+	const section = $("#workflow-feedback-section");
+	if (!section) return;
+
+	if (entries.length === 0) {
+		section.classList.add("hidden");
+		section.replaceChildren();
+		return;
+	}
+
+	section.classList.remove("hidden");
+	section.replaceChildren();
+
+	const header = document.createElement("div");
+	header.className = "workflow-feedback-header";
+	header.textContent = `Feedback history (${entries.length})`;
+	section.appendChild(header);
+
+	for (const entry of entries) {
+		section.appendChild(renderFeedbackHistoryEntry(entry));
+	}
+}
+
+function renderFeedbackHistoryEntry(entry: FeedbackEntry): HTMLDivElement {
+	const row = document.createElement("div");
+	row.className = "workflow-feedback-entry";
+
+	const head = document.createElement("div");
+	head.className = "workflow-feedback-entry-head";
+
+	const iter = document.createElement("span");
+	iter.className = "workflow-feedback-entry-iter";
+	iter.textContent = `#${entry.iteration}`;
+	head.appendChild(iter);
+
+	const ts = document.createElement("span");
+	ts.className = "workflow-feedback-entry-timestamp";
+	ts.textContent = formatFeedbackTimestamp(entry.submittedAt);
+	ts.title = entry.submittedAt;
+	head.appendChild(ts);
+
+	const badge = document.createElement("span");
+	if (entry.outcome) {
+		badge.className = `workflow-feedback-entry-outcome ${FEEDBACK_OUTCOME_CLASSES[entry.outcome.value]}`;
+		badge.textContent = entry.outcome.value;
+	} else {
+		badge.className = "workflow-feedback-entry-outcome outcome-pending";
+		badge.textContent = "pending";
+	}
+	head.appendChild(badge);
+
+	row.appendChild(head);
+
+	const preview = document.createElement("div");
+	preview.className = "workflow-feedback-entry-preview";
+	preview.textContent = truncateText(entry.text);
+	row.appendChild(preview);
+
+	if (entry.outcome?.summary) {
+		const summary = document.createElement("div");
+		summary.className = "workflow-feedback-entry-summary";
+		summary.textContent = entry.outcome.summary;
+		row.appendChild(summary);
+	}
+
+	if (entry.outcome?.warnings && entry.outcome.warnings.length > 0) {
+		for (const w of entry.outcome.warnings) {
+			const warn = document.createElement("div");
+			warn.className = "workflow-feedback-entry-warning";
+			warn.textContent = `${w.kind}: ${w.message}`;
+			row.appendChild(warn);
+		}
+	}
+
+	return row;
 }
 
 export function updateDetailActions(

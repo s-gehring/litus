@@ -19,6 +19,7 @@ mock.module("../../src/target-repo-validator", () => ({
 import {
 	handleAbort,
 	handleAnswer,
+	handleFeedback,
 	handleForceStart,
 	handlePause,
 	handleResume,
@@ -63,6 +64,9 @@ function setup(workflow?: Partial<Workflow>) {
 		},
 		startPipelineFromWorkflow(...args: unknown[]) {
 			calls.push({ method: "startPipelineFromWorkflow", args });
+		},
+		submitFeedback(...args: unknown[]) {
+			calls.push({ method: "submitFeedback", args });
 		},
 	} as unknown as PipelineOrchestrator;
 
@@ -516,6 +520,251 @@ describe("workflow-handlers", () => {
 			expect(msgs.some((m) => m.type === "error" && m.message === "Workflow is not idle")).toBe(
 				true,
 			);
+		});
+	});
+
+	describe("handleFeedback", () => {
+		function feedbackSetup(overrides?: {
+			inFlight?: boolean;
+			step?: string;
+			status?: string;
+			autoMode?: string;
+		}) {
+			const s = setup({
+				status: (overrides?.status ?? "paused") as Workflow["status"],
+			});
+			const step = overrides?.step ?? "merge-pr";
+			const stepIdx = s.wf.steps.findIndex((st) => st.name === step);
+			if (stepIdx >= 0) {
+				s.wf.currentStepIndex = stepIdx;
+				s.wf.steps[stepIdx].status = "paused";
+			}
+			if (overrides?.inFlight) {
+				s.wf.feedbackEntries = [
+					{
+						id: "in-flight-1",
+						iteration: 1,
+						text: "in flight",
+						submittedAt: new Date().toISOString(),
+						submittedAtStepName: "merge-pr",
+						outcome: null,
+					},
+				];
+			}
+			const autoMode = (overrides?.autoMode ?? "manual") as "manual" | "normal" | "full-auto";
+			// biome-ignore lint/suspicious/noExplicitAny: mock config save accepts partial
+			(s.deps.configStore.save as any)({ autoMode });
+			return s;
+		}
+
+		test("accepts non-empty feedback on manual merge-pr pause", () => {
+			const { ws, deps, calls, wf } = feedbackSetup();
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "  rename x to count  ",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls).toHaveLength(1);
+			expect(calls[0].method).toBe("submitFeedback");
+			expect(calls[0].args).toEqual([wf.id, "  rename x to count  "]);
+		});
+
+		test("empty text resumes the workflow (FR-014)", () => {
+			const { ws, deps, calls, wf } = feedbackSetup();
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "   ",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls).toHaveLength(1);
+			expect(calls[0].method).toBe("resume");
+		});
+
+		test("rejects unknown workflow", () => {
+			const { ws, deps, sentMessages } = feedbackSetup();
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: "nonexistent",
+					text: "hi",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(msgs.some((m) => m.type === "error" && m.message === "Workflow not found")).toBe(true);
+		});
+
+		test("rejects text over max length", () => {
+			const { ws, deps, sentMessages, wf } = feedbackSetup();
+			const oversize = "x".repeat(100_001);
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: oversize,
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some((m) => m.type === "error" && m.message.includes("exceeds maximum length")),
+			).toBe(true);
+		});
+
+		test("rejects when workflow status is not paused", () => {
+			const { ws, deps, sentMessages, wf } = feedbackSetup({ status: "running" });
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "anything",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some(
+					(m) =>
+						m.type === "error" &&
+						m.message === "Workflow is not paused at a feedback-eligible step",
+				),
+			).toBe(true);
+		});
+
+		test("rejects when current step is not merge-pr", () => {
+			const { ws, deps, sentMessages, wf } = feedbackSetup({ step: "implement" });
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "anything",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some(
+					(m) =>
+						m.type === "error" &&
+						m.message === "Workflow is not paused at a feedback-eligible step",
+				),
+			).toBe(true);
+		});
+
+		test("rejects when autoMode is not manual", () => {
+			const { ws, deps, sentMessages, wf } = feedbackSetup({ autoMode: "normal" });
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "anything",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some(
+					(m) =>
+						m.type === "error" &&
+						m.message === "Workflow is not paused at a feedback-eligible step",
+				),
+			).toBe(true);
+		});
+
+		test("rejects when an in-flight feedback entry exists (FR-016)", () => {
+			const { ws, deps, sentMessages, wf } = feedbackSetup({ inFlight: true });
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "another",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some(
+					(m) => m.type === "error" && m.message === "A feedback iteration is already in progress",
+				),
+			).toBe(true);
+		});
+
+		test("rejects empty feedback when current step is not merge-pr", () => {
+			const { ws, deps, sentMessages, calls, wf } = feedbackSetup({ step: "implement" });
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "   ",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls).toHaveLength(0);
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some(
+					(m) =>
+						m.type === "error" &&
+						m.message === "Workflow is not paused at a feedback-eligible step",
+				),
+			).toBe(true);
+		});
+
+		test("rejects empty feedback when autoMode is not manual", () => {
+			const { ws, deps, sentMessages, calls, wf } = feedbackSetup({ autoMode: "normal" });
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls).toHaveLength(0);
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some(
+					(m) =>
+						m.type === "error" &&
+						m.message === "Workflow is not paused at a feedback-eligible step",
+				),
+			).toBe(true);
 		});
 	});
 

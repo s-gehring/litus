@@ -97,6 +97,7 @@ function makeAppConfig(): AppConfig {
 			mergeConflictResolution: "",
 			ciFixInstruction: "",
 			epicDecomposition: "",
+			feedbackImplementerInstruction: "",
 		},
 		limits: {
 			reviewCycleMaxIterations: 16,
@@ -186,7 +187,7 @@ describe("VALID_TRANSITIONS", () => {
 });
 
 describe("PIPELINE_STEP_DEFINITIONS", () => {
-	test("has exactly 13 steps in correct order", () => {
+	test("has exactly 14 steps in correct order", () => {
 		const expectedNames: PipelineStepName[] = [
 			"setup",
 			"specify",
@@ -199,6 +200,7 @@ describe("PIPELINE_STEP_DEFINITIONS", () => {
 			"commit-push-pr",
 			"monitor-ci",
 			"fix-ci",
+			"feedback-implementer",
 			"merge-pr",
 			"sync-repo",
 		];
@@ -454,10 +456,12 @@ describe("Workflow Lifecycle", () => {
 			epicAnalysisMs: 0,
 			activeWorkMs: 0,
 			activeWorkStartedAt: null,
+			feedbackEntries: [],
+			feedbackPreRunHead: null,
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:00:00Z",
 		};
-		expect(Object.keys(w)).toHaveLength(27);
+		expect(Object.keys(w)).toHaveLength(29);
 		expect(w.status).toBe("idle");
 	});
 
@@ -507,6 +511,7 @@ describe("Workflow Lifecycle", () => {
 			epicAnalysisMs: 0,
 			activeWorkMs: 0,
 			activeWorkStartedAt: null,
+			feedbackEntries: [],
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:00:00Z",
 		};
@@ -532,7 +537,7 @@ describe("Workflow Lifecycle", () => {
 // ── Phase 4: Pipeline Step Progression ──────────────────────
 
 describe("Pipeline Step Progression", () => {
-	test("PipelineStepName has exactly 13 values in execution order", () => {
+	test("PipelineStepName has exactly 14 values in execution order", () => {
 		const names: PipelineStepName[] = [
 			"setup",
 			"specify",
@@ -545,11 +550,12 @@ describe("Pipeline Step Progression", () => {
 			"commit-push-pr",
 			"monitor-ci",
 			"fix-ci",
+			"feedback-implementer",
 			"merge-pr",
 			"sync-repo",
 		];
-		expect(names).toHaveLength(13);
-		expect(new Set(names).size).toBe(13);
+		expect(names).toHaveLength(14);
+		expect(new Set(names).size).toBe(14);
 	});
 
 	test("PIPELINE_STEP_DEFINITIONS match PipelineStepName order", () => {
@@ -565,10 +571,11 @@ describe("Pipeline Step Progression", () => {
 			"commit-push-pr",
 			"monitor-ci",
 			"fix-ci",
+			"feedback-implementer",
 			"merge-pr",
 			"sync-repo",
 		];
-		expect(PIPELINE_STEP_DEFINITIONS).toHaveLength(13);
+		expect(PIPELINE_STEP_DEFINITIONS).toHaveLength(14);
 		for (let i = 0; i < expectedOrder.length; i++) {
 			expect(PIPELINE_STEP_DEFINITIONS[i].name).toBe(expectedOrder[i]);
 		}
@@ -635,6 +642,7 @@ describe("ServerMessage variants", () => {
 					epicAnalysisMs: 0,
 					activeWorkMs: 0,
 					activeWorkStartedAt: null,
+					feedbackEntries: [],
 					createdAt: "",
 					updatedAt: "",
 				},
@@ -952,8 +960,9 @@ describe("Config types", () => {
 			mergeConflictResolution: "",
 			ciFixInstruction: "",
 			epicDecomposition: "",
+			feedbackImplementerInstruction: "",
 		};
-		expect(Object.keys(config)).toHaveLength(7);
+		expect(Object.keys(config)).toHaveLength(8);
 	});
 
 	test("LimitConfig shape (4 fields)", () => {
@@ -1152,6 +1161,7 @@ describe("WorkflowClientState shape", () => {
 				epicAnalysisMs: 0,
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,
+				feedbackEntries: [],
 				createdAt: "",
 				updatedAt: "",
 			},

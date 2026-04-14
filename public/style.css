@@ -565,6 +565,146 @@ header h1 {
   gap: 8px;
 }
 
+/* Feedback panel — shares question-panel base styling; adds history list + outcome badges */
+.feedback-panel {
+  border-bottom-color: rgba(100, 180, 255, 0.3);
+}
+
+.feedback-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 30vh;
+  overflow-y: auto;
+  margin: 8px 0 12px;
+  padding-right: 4px;
+}
+
+.feedback-history-empty {
+  font-size: 0.8rem;
+  color: var(--text-muted, #9aa);
+  font-style: italic;
+}
+
+.feedback-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.feedback-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+}
+
+.feedback-entry-iter {
+  font-weight: 600;
+  color: var(--accent-yellow);
+}
+
+.feedback-entry-timestamp {
+  color: var(--text-muted, #9aa);
+  font-family: monospace;
+}
+
+.feedback-entry-outcome,
+.workflow-feedback-entry-outcome {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.outcome-success   { background: rgba(80, 200, 120, 0.2); color: #5c8; }
+.outcome-no-changes { background: rgba(180, 180, 180, 0.2); color: #bbb; }
+.outcome-failed    { background: rgba(220, 100, 100, 0.2); color: #d88; }
+.outcome-cancelled { background: rgba(180, 140, 80, 0.2); color: #caa; }
+.outcome-pending   { background: rgba(100, 180, 255, 0.2); color: #8bf; }
+
+.feedback-entry-text {
+  font-size: 0.85rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.feedback-entry-summary {
+  font-size: 0.75rem;
+  color: var(--text-muted, #9aa);
+  font-style: italic;
+}
+
+.feedback-entry-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.feedback-entry-warning,
+.workflow-feedback-entry-warning {
+  font-size: 0.7rem;
+  color: #d88;
+  padding: 2px 6px;
+  border-left: 2px solid #d88;
+}
+
+/* Always-visible feedback history section in the workflow detail */
+.workflow-feedback-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.workflow-feedback-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent-blue);
+}
+
+.workflow-feedback-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.workflow-feedback-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.7rem;
+}
+
+.workflow-feedback-entry-iter {
+  font-weight: 600;
+  color: var(--accent-yellow);
+}
+
+.workflow-feedback-entry-timestamp {
+  color: var(--text-muted, #9aa);
+  font-family: monospace;
+}
+
+.workflow-feedback-entry-preview {
+  font-size: 0.8rem;
+  line-height: 1.3;
+  color: var(--text);
+}
+
 /* Buttons */
 .btn {
   padding: 8px 20px;

@@ -1,6 +1,15 @@
-    f# Changelog
+# Changelog
 
 All notable changes to this project will be documented in this file.
+
+## Unreleased
+
+### Added
+
+- Manual-mode feedback loop: a **Provide Feedback** action on the merge-PR pause lets you submit free-form feedback,
+  which spawns a dedicated agent that applies it, commits with Conventional Commit messages, pushes, and optionally
+  updates the PR description. Submitted feedback is persisted on the workflow, survives server restart, and is injected
+  as authoritative context into every subsequent agent step — overriding spec/plan content on conflict.
 
 ## [1.2.0] — 2026-04-11
 

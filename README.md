@@ -226,21 +226,53 @@ Litus orchestrates a 13-step pipeline. Each step is either handled by Litus itse
 
 ### The Pipeline
 
-| Step           | Actor          | What happens                                              |
-|----------------|----------------|-----------------------------------------------------------|
-| **Setup**      | Litus          | Validates repo, git, GitHub CLI, auth, speckit skills     |
-| **Specify**    | Claude         | Formalizes your description into a structured spec        |
-| **Clarify**    | Claude + Human | Resolves ambiguities in the spec                          |
-| **Plan**       | Claude         | Creates a technical design                                |
-| **Tasks**      | Claude         | Generates a task checklist                                |
-| **Implement**  | Claude         | Writes the code                                           |
-| **Review**     | Claude         | Self-critiques the implementation                         |
-| **Fix Review** | Claude         | Addresses review findings (loops if critical/major)       |
-| **Create PR**  | Claude         | Commits, pushes, opens a GitHub PR                        |
-| **Monitor CI** | Litus          | Polls GitHub Actions with exponential backoff             |
-| **Fix CI**     | Claude + Litus | Reads failure logs, attempts fixes (configurable retries) |
-| **Merge PR**   | Litus          | Squash-merges the PR                                      |
-| **Sync Repo**  | Litus          | Pulls changes and cleans up the worktree                  |
+| Step                  | Actor          | What happens                                                      |
+|-----------------------|----------------|-------------------------------------------------------------------|
+| **Setup**             | Litus          | Validates repo, git, GitHub CLI, auth, speckit skills             |
+| **Specify**           | Claude         | Formalizes your description into a structured spec                |
+| **Clarify**           | Claude + Human | Resolves ambiguities in the spec                                  |
+| **Plan**              | Claude         | Creates a technical design                                        |
+| **Tasks**             | Claude         | Generates a task checklist                                        |
+| **Implement**         | Claude         | Writes the code                                                   |
+| **Review**            | Claude         | Self-critiques the implementation                                 |
+| **Fix Review**        | Claude         | Addresses review findings (loops if critical/major)               |
+| **Create PR**         | Claude         | Commits, pushes, opens a GitHub PR                                |
+| **Monitor CI**        | Litus          | Polls GitHub Actions with exponential backoff                     |
+| **Fix CI**            | Claude + Litus | Reads failure logs, attempts fixes (configurable retries)         |
+| **Applying Feedback** | Claude         | Applies user-provided feedback (manual mode only, on-demand)      |
+| **Merge PR**          | Litus          | Squash-merges the PR (pauses for review in manual mode)           |
+| **Sync Repo**         | Litus          | Pulls changes and cleans up the worktree                          |
+
+### Manual-mode feedback loop
+
+In **Manual** automation mode, Litus pauses before merging so you can review the PR. At that pause, you can:
+
+- **Resume** — merge the PR as-is.
+- **Provide Feedback** — type free-form feedback. Litus spins up a dedicated `feedback-implementer` agent that reads your
+  feedback, makes the requested changes, commits with Conventional Commit messages, and pushes. When the change is
+  materially relevant to the PR outcome, the agent also losslessly augments the PR description on GitHub.
+- **Abort** — stop the workflow entirely.
+
+After a feedback iteration lands commits, CI re-runs, and you return to the same merge-pause with the same choices —
+iterate as many times as you need.
+
+The **Provide Feedback** button only appears in Manual mode. In Normal or Full Auto modes the workflow merges
+automatically and the button is never shown.
+
+**How feedback is applied to later agents.** Every submitted feedback entry is persisted alongside the workflow and
+injected as an authoritative "USER FEEDBACK (overrides spec/plan on any conflict)" block into every subsequent agent
+prompt (including `fix-ci` and `review` iterations). If a later agent could otherwise undo your change to match the
+original spec, the feedback block tells it to preserve your preference.
+
+**Semantics.**
+- Empty or whitespace-only feedback acts as Resume — no entry is created, the iteration counter does not advance.
+- Only one feedback iteration can run at a time per workflow.
+- Pausing then aborting during a feedback run records the iteration as `cancelled` and terminates the workflow.
+- Restarting the server during a feedback run records the iteration as `cancelled` and rewinds to the merge-PR pause, so
+  you can retry with the same or different feedback.
+
+Iteration history — text, timestamp, outcome badge, and any non-fatal warnings (e.g., PR description update failed) —
+is always visible on the workflow detail view.
 
 ### Epics
 

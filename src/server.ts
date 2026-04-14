@@ -5,6 +5,7 @@ import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import type { EpicAnalysisProcess } from "./epic-analyzer";
 import { EpicStore } from "./epic-store";
+import { recoverInterruptedFeedbackImplementer } from "./feedback-implementer";
 import { setGitLogCallback } from "./git-logger";
 import { logger } from "./logger";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
@@ -15,9 +16,11 @@ import { handleEpicCancel, handleEpicStart } from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
 import { MessageRouter } from "./server/message-router";
 import { handlePurgeAll } from "./server/purge-handlers";
+import { broadcastPersistedWorkflowState } from "./server/workflow-broadcaster";
 import {
 	handleAbort,
 	handleAnswer,
+	handleFeedback,
 	handleForceStart,
 	handlePause,
 	handleResume,
@@ -134,7 +137,7 @@ function createOrchestrator(): PipelineOrchestrator {
 }
 
 function stripInternalFields(w: Workflow): WorkflowState {
-	const { steps, ...rest } = w;
+	const { steps, feedbackPreRunHead: _fph, ...rest } = w;
 	return {
 		...rest,
 		steps: steps.map(({ sessionId: _sid, prompt: _p, pid: _pid, ...step }) => step),
@@ -185,7 +188,13 @@ function broadcastWorkflowState(workflowId: string) {
 	const state = getWorkflowState(workflowId);
 	if (state) {
 		broadcast({ type: "workflow:state", workflow: state });
+		return;
 	}
+	// After cancelPipeline deletes the orchestrator, late-arriving callbacks (e.g.
+	// the post-cancel commit-backfill in pipeline-orchestrator.cancelPipeline) still
+	// invoke onStateChange. Fall back to the persisted workflow so the client sees
+	// the final commitRefs without needing a page reload.
+	void broadcastPersistedWorkflowState(workflowId, sharedStore, stripInternalFields, broadcast);
 }
 
 // ── HandlerDeps construction ────────────────────────────
@@ -217,6 +226,7 @@ router.register("workflow:abort", handleAbort);
 router.register("workflow:retry", handleRetry);
 router.register("workflow:start-existing", handleStartExisting);
 router.register("workflow:force-start", handleForceStart);
+router.register("workflow:feedback", handleFeedback);
 router.register("config:get", handleConfigGet);
 router.register("config:save", handleConfigSave);
 router.register("config:reset", handleConfigReset);
@@ -394,6 +404,14 @@ process.on("SIGTERM", () => {
 					logger.info(`[startup] Restarting monitor-ci for workflow ${workflow.id}`);
 					workflow.ciCycle.monitorStartedAt = null;
 					orch.resumeMonitorCi(workflow.id);
+				} else if (runningStep?.name === STEP.FEEDBACK_IMPLEMENTER) {
+					// FR-020: cancelled-via-restart path — mark in-flight entry cancelled
+					// and rewind to merge-pr pause. We do not auto-retry the agent.
+					recoverInterruptedFeedbackImplementer(workflow);
+					await sharedStore.save(workflow);
+					logger.info(
+						`[startup] Cancelled interrupted feedback-implementer for workflow ${workflow.id} and rewound to merge-pr pause`,
+					);
 				} else if (runningStep?.sessionId) {
 					logger.info(
 						`[startup] Resuming workflow ${workflow.id} step "${runningStep.name}" (session: ${runningStep.sessionId})`,

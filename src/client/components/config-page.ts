@@ -388,9 +388,12 @@ function ensurePurgeOverlay(): HTMLElement {
 
 export function showPurgeProgress(): void {
 	const overlay = ensurePurgeOverlay();
+	const wasHidden = overlay.classList.contains("hidden");
 	overlay.classList.remove("hidden");
-	const log = document.getElementById("purge-log");
-	if (log) log.textContent = "";
+	if (wasHidden) {
+		const log = document.getElementById("purge-log");
+		if (log) log.textContent = "";
+	}
 }
 
 export function updatePurgeProgress(step: string, current: number, total: number): void {

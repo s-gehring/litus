@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { AuditLogger } from "./audit-logger";
@@ -10,6 +11,13 @@ import { CLIStepRunner } from "./cli-step-runner";
 import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import { toErrorMessage } from "./errors";
+import {
+	buildFeedbackPrompt,
+	detectNewCommits,
+	parseAgentResult,
+	reconcileOutcome,
+} from "./feedback-implementer";
+import { buildFeedbackContext } from "./feedback-injector";
 import { gitSpawn } from "./git-logger";
 import { logger } from "./logger";
 import {
@@ -27,6 +35,7 @@ import { routeAfterStep as computeRoute, shouldLoopReview } from "./step-router"
 import { Summarizer } from "./summarizer";
 import {
 	type EffortLevel,
+	type FeedbackEntry,
 	type ModelConfig,
 	type PipelineCallbacks,
 	type PipelineStepName,
@@ -69,6 +78,10 @@ export interface PipelineDeps {
 	runSetupChecks?: (targetDir: string) => Promise<SetupResult>;
 	ensureSpeckitSkills?: typeof defaultEnsureSpeckitSkills;
 	checkoutMaster?: (cwd: string) => Promise<{ code: number; stderr: string }>;
+	/** Returns the git HEAD SHA at the worktree, or null on failure. Overridable in tests. */
+	getGitHead?: (cwd: string) => Promise<string | null>;
+	/** Returns new commit SHAs in `preRunHead..HEAD` order. Overridable in tests. */
+	detectNewCommits?: (preRunHead: string, cwd: string) => Promise<string[]>;
 }
 
 const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
@@ -117,6 +130,8 @@ export class PipelineOrchestrator {
 	private runSetupChecksFn: (targetDir: string) => Promise<SetupResult>;
 	private ensureSpeckitSkillsFn: typeof defaultEnsureSpeckitSkills;
 	private checkoutMasterFn: (cwd: string) => Promise<{ code: number; stderr: string }>;
+	private getGitHeadFn: (cwd: string) => Promise<string | null>;
+	private detectNewCommitsFn: (preRunHead: string, cwd: string) => Promise<string[]>;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -144,6 +159,17 @@ export class PipelineOrchestrator {
 				});
 				return { code: result.code, stderr: result.stderr };
 			});
+		this.getGitHeadFn =
+			deps?.getGitHead ??
+			(async (cwd: string) => {
+				try {
+					const r = await gitSpawn(["git", "rev-parse", "HEAD"], { cwd });
+					return r.code === 0 ? r.stdout.trim() : null;
+				} catch {
+					return null;
+				}
+			});
+		this.detectNewCommitsFn = deps?.detectNewCommits ?? detectNewCommits;
 		this.callbacks = callbacks;
 	}
 
@@ -331,6 +357,20 @@ export class PipelineOrchestrator {
 		if (workflow.status !== "error") return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
+
+		// Feedback-implementer has no retry path: a failed FI run rewinds to the
+		// merge-pr pause and invites the user to submit fresh feedback (FR-012).
+		// If a future refactor ever routes an FI failure to workflow.status=error,
+		// this guard keeps retryStep from spawning a CLI with the step's empty
+		// static prompt (types.ts PIPELINE_STEP_DEFINITIONS) and skipping feedback
+		// context injection (runStep treats FI as a pre-built prompt).
+		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+			logger.warn(
+				`[pipeline] retryStep called on feedback-implementer for workflow ${workflowId}; FI cannot be retried — submit new feedback instead`,
+			);
+			return;
+		}
+
 		this.stepRunner.resetStep(step);
 		workflow.updatedAt = new Date().toISOString();
 
@@ -433,6 +473,20 @@ export class PipelineOrchestrator {
 			this.runMonitorCi(workflow);
 		} else if (step.name === STEP.FIX_CI) {
 			this.runFixCi(workflow);
+		} else if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+			if (step.sessionId) {
+				this.stepRunner.resumeStep(
+					workflowId,
+					step.sessionId,
+					cwd,
+					this.buildStepCallbacks(workflowId),
+					this.buildStepEnv(workflow),
+				);
+			} else {
+				this.runFeedbackImplementer(workflow).catch((err) => {
+					this.handleStepError(workflowId, toErrorMessage(err));
+				});
+			}
 		} else if (step.name === STEP.MERGE_PR) {
 			workflow.mergeCycle.attempt = 0;
 			this.runMergePr(workflow);
@@ -474,6 +528,46 @@ export class PipelineOrchestrator {
 		this.engine.clearQuestion(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
+
+		// If aborting a feedback-implementer run, record the in-flight entry as cancelled
+		// (FR-019). Git-based commit detection runs fire-and-forget — the outcome is
+		// immediately persisted with commitRefs: [] and backfilled when detection resolves.
+		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+			const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
+			if (latest && latest.outcome === null) {
+				latest.outcome = {
+					value: "cancelled",
+					summary: "Cancelled by user abort",
+					commitRefs: [],
+					warnings: [],
+				};
+				const preRunHead = workflow.feedbackPreRunHead;
+				const cwd = workflow.worktreePath;
+				if (preRunHead && cwd) {
+					this.detectNewCommitsFn(preRunHead, cwd)
+						.then((commits) => {
+							if (latest.outcome && commits.length > 0) {
+								latest.outcome.commitRefs = commits;
+								workflow.updatedAt = new Date().toISOString();
+								this.persistWorkflow(workflow);
+								this.callbacks.onStateChange(workflowId);
+							}
+						})
+						.catch((err) => {
+							// Best-effort commit backfill — agent already cancelled.
+							// Surface the failure so a missing commitRefs on a cancelled
+							// entry can be traced back to this path instead of silently
+							// showing []. Production detectNewCommits swallows its own
+							// errors; this fires only when a custom/test-injected fn throws.
+							logger.warn(
+								`[pipeline] Post-cancel commit backfill failed for workflow ${workflowId}: ${toErrorMessage(err)}`,
+							);
+						});
+				}
+			}
+			workflow.feedbackPreRunHead = null;
+		}
+
 		if (
 			step.status === "running" ||
 			step.status === "waiting_for_input" ||
@@ -496,6 +590,184 @@ export class PipelineOrchestrator {
 				logger.error(`[pipeline] Failed to check epic dependencies: ${err}`);
 			});
 		}
+	}
+
+	/**
+	 * Accept a feedback submission on a manual-mode merge-pr pause. Non-empty
+	 * text creates a new FeedbackEntry and starts the feedback-implementer step.
+	 * The WS handler always routes empty/whitespace input straight to resume()
+	 * and never reaches this method with empty text; the empty-text early-return
+	 * below exists as a defensive no-op for direct programmatic callers.
+	 */
+	submitFeedback(workflowId: string, text: string): void {
+		const workflow = this.getWorkflowOrThrow(workflowId);
+		const trimmed = text.trim();
+
+		if (trimmed === "") {
+			this.resume(workflowId);
+			return;
+		}
+		// Handler-side validation in `handleFeedback` is authoritative; these guards
+		// are defense-in-depth for programmatic callers. Log on silent drop so a
+		// mis-sequencing can be diagnosed from the logs instead of source inspection.
+		if (workflow.status !== "paused") {
+			logger.warn(
+				`[pipeline] submitFeedback rejected for workflow ${workflowId}: workflow status=${workflow.status}, expected paused`,
+			);
+			return;
+		}
+		const step = workflow.steps[workflow.currentStepIndex];
+		if (step.name !== STEP.MERGE_PR) {
+			logger.warn(
+				`[pipeline] submitFeedback rejected for workflow ${workflowId}: current step=${step.name}, expected ${STEP.MERGE_PR}`,
+			);
+			return;
+		}
+		if (configStore.get().autoMode !== "manual") {
+			logger.warn(
+				`[pipeline] submitFeedback rejected for workflow ${workflowId}: autoMode is not manual`,
+			);
+			return;
+		}
+		if (workflow.feedbackEntries.some((e) => e.outcome === null)) {
+			logger.warn(
+				`[pipeline] submitFeedback rejected for workflow ${workflowId}: an in-flight feedback entry already exists`,
+			);
+			return;
+		}
+
+		const now = new Date().toISOString();
+		const entry: FeedbackEntry = {
+			id: randomUUID(),
+			iteration: workflow.feedbackEntries.length + 1,
+			text: trimmed,
+			submittedAt: now,
+			submittedAtStepName: STEP.MERGE_PR,
+			outcome: null,
+		};
+		workflow.feedbackEntries.push(entry);
+		workflow.updatedAt = now;
+
+		// Reset merge-pr so a clean re-entry is possible after CI re-runs
+		this.stepRunner.resetStep(step, "pending");
+
+		// Advance currentStepIndex BEFORE transitioning the workflow to running, so
+		// no broadcast ever carries the logically-impossible `{ status: running,
+		// currentStep: merge-pr }` combination. startStep emits the single final
+		// broadcast once the feedback-implementer step is seeded.
+		const fiIndex = this.requireStepIndex(workflow, STEP.FEEDBACK_IMPLEMENTER);
+		workflow.currentStepIndex = fiIndex;
+
+		this.engine.transition(workflowId, "running");
+		this.startStep(workflow);
+	}
+
+	private async runFeedbackImplementer(workflow: Workflow): Promise<void> {
+		const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
+		if (!latest || latest.outcome !== null) {
+			this.handleStepError(workflow.id, "No in-flight feedback entry to implement");
+			return;
+		}
+		if (!workflow.prUrl) {
+			this.handleStepError(workflow.id, "No PR URL — cannot run feedback-implementer");
+			return;
+		}
+		const cwd = requireWorktreePath(workflow);
+
+		// Only snapshot HEAD on the first run. The value is persisted on the
+		// workflow so it also survives server restart — commits pushed before a
+		// pause/restart are still counted in `commitRefs` when the run resumes.
+		if (!workflow.feedbackPreRunHead) {
+			workflow.feedbackPreRunHead = await this.getGitHeadFn(cwd);
+			this.persistWorkflow(workflow);
+		}
+
+		// Race guard: if the user paused (or the workflow otherwise left running)
+		// while awaiting git, don't spawn the CLI — the pause already killed any
+		// in-flight process and the user's intent is to stop.
+		const current = this.getActiveWorkflow(workflow.id);
+		const currentStep = current?.steps[current.currentStepIndex];
+		if (
+			!current ||
+			current.status !== "running" ||
+			currentStep?.name !== STEP.FEEDBACK_IMPLEMENTER ||
+			currentStep.status !== "running"
+		) {
+			logger.info(
+				`[pipeline] Feedback-implementer race guard fired for workflow ${workflow.id}; user paused during pre-run head snapshot`,
+			);
+			return;
+		}
+
+		const prompt = buildFeedbackPrompt(configStore.get(), workflow, latest.text, workflow.prUrl);
+		this.runStep(workflow, prompt, cwd);
+	}
+
+	/**
+	 * After a feedback-implementer step completes normally: parse its output,
+	 * reconcile with git, write the outcome onto the latest entry, and route.
+	 */
+	private async completeFeedbackImplementer(workflow: Workflow): Promise<void> {
+		const cwd = workflow.worktreePath;
+		const preRunHead = workflow.feedbackPreRunHead;
+		const commits = preRunHead && cwd ? await this.detectNewCommitsFn(preRunHead, cwd) : [];
+
+		const step = workflow.steps[workflow.currentStepIndex];
+		const parsed = parseAgentResult(step.output);
+		const outcome = reconcileOutcome(parsed, commits, false);
+
+		const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
+		if (latest && latest.outcome === null) {
+			latest.outcome = outcome;
+		}
+		workflow.updatedAt = new Date().toISOString();
+		workflow.feedbackPreRunHead = null;
+
+		if (outcome.value === "success") {
+			// A user-initiated feedback iteration begins a fresh CI cycle — reset
+			// the attempt counters so prior fix-ci / merge retries don't starve
+			// the new cycle of attempts.
+			workflow.ciCycle.attempt = 0;
+			workflow.ciCycle.monitorStartedAt = null;
+			workflow.ciCycle.failureLogs = [];
+			workflow.mergeCycle.attempt = 0;
+
+			const monitorIdx = this.requireStepIndex(workflow, STEP.MONITOR_CI);
+			workflow.currentStepIndex = monitorIdx;
+			// Persistence and step reset are handled by startStep.
+			this.startStep(workflow);
+			return;
+		}
+
+		// Agent-reported failed: align FI step status with the entry outcome so
+		// the pipeline-step indicator and the outcome badge agree. `no changes`
+		// leaves the step at `completed` — the step ran successfully, the agent
+		// simply produced nothing to commit.
+		if (outcome.value === "failed") {
+			step.status = "error";
+			step.error = outcome.summary;
+			// Stamp completedAt at the moment the outcome was determined, matching
+			// handleStepError's FI branch. `advanceAfterStep` set a placeholder
+			// milliseconds earlier — overwrite so both error paths carry the same
+			// semantic "moment the FI run ended" timestamp.
+			step.completedAt = new Date().toISOString();
+		}
+
+		// no changes / agent-reported failed → rewind to merge-pr pause.
+		this.routeToMergePrPause(workflow);
+	}
+
+	/**
+	 * Rewind currentStepIndex to merge-pr and re-enter startStep, which will
+	 * pause in manual mode (the same state the user was in before submitting).
+	 */
+	private routeToMergePrPause(workflow: Workflow): void {
+		const mergeIdx = this.requireStepIndex(workflow, STEP.MERGE_PR);
+		const mergeStep = workflow.steps[mergeIdx];
+		this.stepRunner.resetStep(mergeStep, "pending");
+		workflow.currentStepIndex = mergeIdx;
+		this.persistWorkflow(workflow);
+		this.startStep(workflow);
 	}
 
 	private startStep(workflow: Workflow): void {
@@ -534,6 +806,13 @@ export class PipelineOrchestrator {
 			return;
 		}
 
+		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+			this.runFeedbackImplementer(workflow).catch((err) => {
+				this.handleStepError(workflow.id, toErrorMessage(err));
+			});
+			return;
+		}
+
 		if (step.name === STEP.MERGE_PR) {
 			if (shouldPauseBeforeMerge(configStore.get().autoMode)) {
 				const prInfo = workflow.prUrl ? ` — review PR: ${workflow.prUrl}` : "";
@@ -560,12 +839,73 @@ export class PipelineOrchestrator {
 		const cwd = requireWorktreePath(workflow);
 		const config = configStore.get();
 		const configKey = STEP_CONFIG_KEY[step.name];
+
+		if (step.name === STEP.COMMIT_PUSH_PR) {
+			this.ensureBranchBeforeCommitPushPr(workflow, cwd)
+				.then(() => {
+					this.runStep(
+						workflow,
+						step.prompt,
+						cwd,
+						configKey ? config.models[configKey] : undefined,
+						configKey ? config.efforts[configKey] : undefined,
+					);
+				})
+				.catch((err) => {
+					this.handleStepError(workflow.id, toErrorMessage(err));
+				});
+			return;
+		}
+
 		this.runStep(
 			workflow,
 			step.prompt,
 			cwd,
 			configKey ? config.models[configKey] : undefined,
 			configKey ? config.efforts[configKey] : undefined,
+		);
+	}
+
+	/**
+	 * Safety net: if the worktree is on detached HEAD when commit-push-pr starts,
+	 * switch to (or create) the feature branch. Only acts when detached — logged
+	 * to both server logger and client step output so the fallback is visible.
+	 */
+	private async ensureBranchBeforeCommitPushPr(workflow: Workflow, cwd: string): Promise<void> {
+		const branch = await this.getBranch(cwd);
+		// null → git query failed (missing dir / unavailable git); leave state alone
+		// anything other than "HEAD" → already on a branch, nothing to do
+		if (branch !== "HEAD") return;
+
+		const targetBranch = workflow.featureBranch ?? workflow.worktreeBranch;
+		if (!targetBranch) {
+			throw new Error(
+				"Worktree is on detached HEAD and no feature branch name is available to recover",
+			);
+		}
+
+		const warnMsg = `[safety] Worktree on detached HEAD — switching to branch '${targetBranch}' before creating PR`;
+		logger.warn(`[pipeline] ${warnMsg}`);
+		this.handleStepOutput(workflow.id, warnMsg);
+
+		const switchExisting = await gitSpawn(["git", "switch", targetBranch], { cwd });
+		if (switchExisting.code === 0) {
+			const okMsg = `[safety] Switched to existing branch '${targetBranch}'`;
+			logger.info(`[pipeline] ${okMsg}`);
+			this.handleStepOutput(workflow.id, okMsg);
+			return;
+		}
+
+		const createBranch = await gitSpawn(["git", "switch", "-c", targetBranch], { cwd });
+		if (createBranch.code === 0) {
+			const okMsg = `[safety] Created branch '${targetBranch}' from detached HEAD`;
+			logger.info(`[pipeline] ${okMsg}`);
+			this.handleStepOutput(workflow.id, okMsg);
+			return;
+		}
+
+		throw new Error(
+			`Failed to recover from detached HEAD: could not switch to or create branch '${targetBranch}': ${createBranch.stderr || `exit ${createBranch.code}`}`,
 		);
 	}
 
@@ -841,9 +1181,20 @@ export class PipelineOrchestrator {
 		model?: string,
 		effort?: EffortLevel,
 	): void {
+		// Inject accumulated user feedback as authoritative context into every
+		// CLI-spawned step (FR-010). Skip for feedback-implementer, whose prompt
+		// template already interpolates ${feedbackContext} directly.
+		const step = workflow.steps[workflow.currentStepIndex];
+		let finalPrompt = prompt;
+		if (step?.name !== STEP.FEEDBACK_IMPLEMENTER) {
+			const feedbackCtx = buildFeedbackContext(workflow);
+			if (feedbackCtx) {
+				finalPrompt = `${feedbackCtx}\n\n---\n\n${prompt}`;
+			}
+		}
 		const stepWorkflow: Workflow = {
 			...workflow,
-			specification: prompt,
+			specification: finalPrompt,
 			worktreePath: cwd,
 		};
 
@@ -896,6 +1247,17 @@ export class PipelineOrchestrator {
 				workflowId,
 				`CLI process exited successfully but produced no output — step "${step.name}" cannot advance without results`,
 			);
+			return;
+		}
+
+		// Feedback-implementer is a non-interactive step: its output is parsed
+		// from a sentinel block and routed by completeFeedbackImplementer. Skip
+		// the question classifier so an agent emitting question-shaped text
+		// (or a Haiku misclassification) can't strand the workflow in
+		// waiting_for_input and silently block every subsequent feedback
+		// submission via the FR-016 in-flight guard.
+		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+			this.advanceAfterStep(workflowId);
 			return;
 		}
 
@@ -965,6 +1327,13 @@ export class PipelineOrchestrator {
 
 		// Reset activity buffer between steps so the next step starts fresh
 		this.summarizer.resetBuffer(workflowId);
+
+		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+			this.completeFeedbackImplementer(workflow).catch((err) => {
+				this.handleStepError(workflowId, `Feedback routing failed: ${toErrorMessage(err)}`);
+			});
+			return;
+		}
 
 		if (step.name === STEP.COMMIT_PUSH_PR) {
 			const url = extractPrUrl(step.output);
@@ -1324,6 +1693,32 @@ export class PipelineOrchestrator {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 
+		const step = workflow.steps[workflow.currentStepIndex];
+
+		// Feedback-implementer pre-commit failure: record failed outcome and rewind
+		// to merge-pr pause. Do NOT transition the workflow to error state.
+		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+			this.summarizer.cleanup(workflowId);
+			const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
+			if (latest && latest.outcome === null) {
+				latest.outcome = {
+					value: "failed",
+					summary: error,
+					commitRefs: [],
+					warnings: [],
+				};
+			}
+			step.status = "error";
+			step.error = error;
+			step.completedAt = new Date().toISOString();
+			step.pid = null;
+			workflow.feedbackPreRunHead = null;
+			workflow.updatedAt = new Date().toISOString();
+			this.callbacks.onError(workflowId, error);
+			this.routeToMergePrPause(workflow);
+			return;
+		}
+
 		this.summarizer.cleanup(workflowId);
 
 		if (this.currentAuditRunId) {
@@ -1331,7 +1726,6 @@ export class PipelineOrchestrator {
 			this.currentAuditRunId = null;
 		}
 
-		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "error";
 		step.error = error;
 		step.pid = null;

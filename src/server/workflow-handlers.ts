@@ -1,6 +1,6 @@
 import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
-import type { ClientMessage } from "../types";
+import { type ClientMessage, STEP } from "../types";
 import type { MessageHandler } from "./handler-types";
 import { validateRepo, validateTextInput, withOrchestrator } from "./handler-types";
 
@@ -121,6 +121,72 @@ export const handleStartExisting: MessageHandler = withOrchestrator((ws, data, d
 		return;
 	}
 	deps.broadcastWorkflowState(msg.workflowId);
+});
+
+const FEEDBACK_INELIGIBLE_MSG = "Workflow is not paused at a feedback-eligible step";
+const FEEDBACK_MAX_LENGTH = 100_000;
+
+export const handleFeedback: MessageHandler = withOrchestrator((ws, data, deps, orch) => {
+	const msg = data as ClientMessage & { type: "workflow:feedback" };
+	const { workflowId, text } = msg;
+
+	if (typeof text !== "string") {
+		deps.sendTo(ws, { type: "error", message: "Feedback text is required" });
+		return;
+	}
+	if (text.length > FEEDBACK_MAX_LENGTH) {
+		deps.sendTo(ws, {
+			type: "error",
+			message: `Feedback exceeds maximum length (${FEEDBACK_MAX_LENGTH.toLocaleString()} characters)`,
+		});
+		return;
+	}
+
+	const workflow = orch.getEngine().getWorkflow();
+	if (!workflow) {
+		deps.sendTo(ws, { type: "error", message: "Workflow not found" });
+		return;
+	}
+
+	// Contract: feedback (including the empty-resume path) is only valid at the
+	// manual-mode merge-pr pause. Validate uniformly before branching on text.
+	if (workflow.status !== "paused") {
+		deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
+		return;
+	}
+	const step = workflow.steps[workflow.currentStepIndex];
+	if (step?.name !== STEP.MERGE_PR) {
+		deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
+		return;
+	}
+	if (deps.configStore.get().autoMode !== "manual") {
+		deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
+		return;
+	}
+
+	// Empty → Resume. All other validation has already passed.
+	if (text.trim() === "") {
+		orch.resume(workflowId);
+		return;
+	}
+
+	if (workflow.feedbackEntries.some((e) => e.outcome === null)) {
+		deps.sendTo(ws, {
+			type: "error",
+			message: "A feedback iteration is already in progress",
+		});
+		return;
+	}
+
+	try {
+		orch.submitFeedback(workflowId, text);
+	} catch (err) {
+		logger.error("[ws] workflow:feedback failed:", err);
+		deps.sendTo(ws, {
+			type: "error",
+			message: `Failed to submit feedback: ${toErrorMessage(err)}`,
+		});
+	}
 });
 
 export const handleForceStart: MessageHandler = withOrchestrator((ws, data, deps, orch) => {
