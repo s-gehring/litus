@@ -839,12 +839,73 @@ export class PipelineOrchestrator {
 		const cwd = requireWorktreePath(workflow);
 		const config = configStore.get();
 		const configKey = STEP_CONFIG_KEY[step.name];
+
+		if (step.name === STEP.COMMIT_PUSH_PR) {
+			this.ensureBranchBeforeCommitPushPr(workflow, cwd)
+				.then(() => {
+					this.runStep(
+						workflow,
+						step.prompt,
+						cwd,
+						configKey ? config.models[configKey] : undefined,
+						configKey ? config.efforts[configKey] : undefined,
+					);
+				})
+				.catch((err) => {
+					this.handleStepError(workflow.id, toErrorMessage(err));
+				});
+			return;
+		}
+
 		this.runStep(
 			workflow,
 			step.prompt,
 			cwd,
 			configKey ? config.models[configKey] : undefined,
 			configKey ? config.efforts[configKey] : undefined,
+		);
+	}
+
+	/**
+	 * Safety net: if the worktree is on detached HEAD when commit-push-pr starts,
+	 * switch to (or create) the feature branch. Only acts when detached — logged
+	 * to both server logger and client step output so the fallback is visible.
+	 */
+	private async ensureBranchBeforeCommitPushPr(workflow: Workflow, cwd: string): Promise<void> {
+		const branch = await this.getBranch(cwd);
+		// null → git query failed (missing dir / unavailable git); leave state alone
+		// anything other than "HEAD" → already on a branch, nothing to do
+		if (branch !== "HEAD") return;
+
+		const targetBranch = workflow.featureBranch ?? workflow.worktreeBranch;
+		if (!targetBranch) {
+			throw new Error(
+				"Worktree is on detached HEAD and no feature branch name is available to recover",
+			);
+		}
+
+		const warnMsg = `[safety] Worktree on detached HEAD — switching to branch '${targetBranch}' before creating PR`;
+		logger.warn(`[pipeline] ${warnMsg}`);
+		this.handleStepOutput(workflow.id, warnMsg);
+
+		const switchExisting = await gitSpawn(["git", "switch", targetBranch], { cwd });
+		if (switchExisting.code === 0) {
+			const okMsg = `[safety] Switched to existing branch '${targetBranch}'`;
+			logger.info(`[pipeline] ${okMsg}`);
+			this.handleStepOutput(workflow.id, okMsg);
+			return;
+		}
+
+		const createBranch = await gitSpawn(["git", "switch", "-c", targetBranch], { cwd });
+		if (createBranch.code === 0) {
+			const okMsg = `[safety] Created branch '${targetBranch}' from detached HEAD`;
+			logger.info(`[pipeline] ${okMsg}`);
+			this.handleStepOutput(workflow.id, okMsg);
+			return;
+		}
+
+		throw new Error(
+			`Failed to recover from detached HEAD: could not switch to or create branch '${targetBranch}': ${createBranch.stderr || `exit ${createBranch.code}`}`,
 		);
 	}
 

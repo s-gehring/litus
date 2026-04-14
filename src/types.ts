@@ -359,7 +359,7 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 		name: "commit-push-pr",
 		displayName: "Creating PR",
 		prompt:
-			"Commit all uncommitted changes in atomic commits. Then push the branch and open a PR using gh.",
+			"Commit all uncommitted changes in atomic commits. Then push the branch and open a PR using gh, which is already authenticated for the current repository.",
 	},
 	{ name: "monitor-ci", displayName: "Monitoring CI", prompt: "" },
 	{ name: "fix-ci", displayName: "Fixing CI", prompt: "" },
