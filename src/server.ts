@@ -436,6 +436,21 @@ process.on("SIGTERM", () => {
 						runningStep.pid = null;
 					}
 					workflow.status = "error";
+					// seedFromWorkflows above installed a ready(refCount=N) entry
+					// that counted this workflow as a live consumer. Now that we've
+					// force-transitioned it to error without running the normal
+					// teardown, drain its refcount so the seeded entry drops to the
+					// true number of consumers (and the clone is eventually deleted
+					// when the others finish).
+					if (workflow.managedRepo) {
+						const { owner, repo } = workflow.managedRepo;
+						workflow.managedRepo = null;
+						await managedRepoStore
+							.release(owner, repo)
+							.catch((err) =>
+								logger.warn(`[startup] managed-repo release failed for ${owner}/${repo}: ${err}`),
+							);
+					}
 					workflow.updatedAt = new Date().toISOString();
 					await sharedStore.save(workflow);
 				}

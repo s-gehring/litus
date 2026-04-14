@@ -105,6 +105,25 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 
 		const { workflows } = await createEpicWorkflows(result, repoDir, epicId);
 
+		// Defensive guard: if the analyzer produced zero specs without flagging
+		// the epic as infeasible (malformed JSON, future no-op code path, etc.),
+		// no child workflow will own the initial acquire. Leave `committed` false
+		// so the `finally` below drops the refcount.
+		if (workflows.length === 0) {
+			logger.warn(
+				`[epic] ${epicId.slice(0, 8)} produced 0 workflows without infeasibleNotes — releasing clone`,
+			);
+			deps.broadcast({
+				type: "epic:result",
+				epicId,
+				title: result.title,
+				specCount: 0,
+				workflowIds: [],
+				summary: result.summary,
+			});
+			return;
+		}
+
 		// For a managed clone, refCount is at 1 (the initial acquire). Bring it up
 		// to N so each child workflow is counted as an independent consumer.
 		if (resolved.managedRepo && workflows.length > 1) {

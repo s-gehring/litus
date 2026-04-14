@@ -1553,11 +1553,17 @@ export class PipelineOrchestrator {
 
 	/**
 	 * Release the managed clone's refcount (if this workflow was cloned from a URL).
-	 * Swallows errors — this is best-effort teardown bookkeeping.
+	 * Idempotent: clears `workflow.managedRepo` after release so retry-then-error
+	 * paths (error → running → error) and any other double-entry into a terminal
+	 * handler cannot double-release. Also keeps restart-time `seedFromWorkflows`
+	 * self-consistent — a workflow whose refcount has already been released will
+	 * not be re-counted if it somehow survives as a non-terminal record on disk.
 	 */
 	private releaseManagedRepoIfAny(workflow: Workflow): void {
 		if (!workflow.managedRepo || !this.managedRepoStore) return;
 		const { owner, repo } = workflow.managedRepo;
+		workflow.managedRepo = null;
+		this.persistWorkflow(workflow);
 		this.managedRepoStore.release(owner, repo).catch((err) => {
 			logger.warn(
 				`[pipeline] managed-repo release failed for ${owner}/${repo}: ${toErrorMessage(err)}`,

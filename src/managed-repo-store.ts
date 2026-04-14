@@ -1,4 +1,4 @@
-import { rm as fsRm } from "node:fs/promises";
+import { rm as fsRm, stat as fsStat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { AsyncLock } from "./async-lock";
@@ -193,11 +193,19 @@ export class ManagedRepoStore {
 				// Transition cloning → ready under lock; final refCount is `waiters`.
 				const finalPath = await this.lockFor(key).run(async () => {
 					const current = this.states.get(key);
-					const waiters = current?.kind === "cloning" ? current.waiters : 1;
+					// The per-key lock guarantees no other transition happens between
+					// installing `cloning` (acquire owner branch) and this block.
+					// Hitting any other state is a state-machine bug, not a race.
+					if (!current || current.kind !== "cloning") {
+						throw new ManagedRepoStoreError(
+							"state-invariant",
+							`expected cloning state for ${key}, found ${current?.kind ?? "none"}`,
+						);
+					}
 					this.states.set(key, {
 						kind: "ready",
 						path: destPath,
-						refCount: waiters,
+						refCount: current.waiters,
 						owner,
 						repo,
 					});
@@ -238,7 +246,11 @@ export class ManagedRepoStore {
 		if (ghResult.code === 0) return {};
 
 		const isGhMissing = ghResult.missing;
-		const isAuthError = /not logged in|authentication|gh auth login/i.test(ghResult.stderr);
+		// Match gh-specific auth phrasing only. The previous "authentication"
+		// substring was too broad — it matched proxy errors, generic git helper
+		// messages, and self-hosted gh variants, causing us to silently fall
+		// back to `git clone` on genuine clone failures and hide the real error.
+		const isAuthError = /not logged in|gh auth login|you must authenticate/i.test(ghResult.stderr);
 
 		if (!isGhMissing && !isAuthError) {
 			throw new ManagedRepoStoreError(
@@ -387,8 +399,7 @@ export function createDefaultManagedRepoStore(): ManagedRepoStore {
 		},
 		async pathExists(p) {
 			try {
-				const { stat } = await import("node:fs/promises");
-				await stat(p);
+				await fsStat(p);
 				return true;
 			} catch {
 				return false;

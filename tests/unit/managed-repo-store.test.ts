@@ -40,9 +40,12 @@ function mockDeps(opts: MockDepsOptions = {}): {
 			if (cmd[0] === "gh" || (cmd[0] === "git" && cmd[1] === "clone")) {
 				const r = opts.cloneBehavior ? await opts.cloneBehavior(cmd, cwd) : ok();
 				if (r.code === 0) {
-					// Synthesize that the destPath now exists
-					const destPath = cmd[cmd.length - 1];
-					existing.add(destPath);
+					// Synthesize that the destPath now exists. The destPath is
+					// positional: index 4 for `gh repo clone <owner/repo> <dest> -- --quiet`,
+					// index 3 for `git clone <url> <dest>`. Using `cmd[cmd.length - 1]`
+					// worked for git but picked up `--quiet` on the gh path.
+					const destPath = cmd[0] === "gh" ? cmd[4] : cmd[3];
+					if (destPath) existing.add(destPath);
 				}
 				return r;
 			}

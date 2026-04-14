@@ -113,4 +113,27 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		expect(releaseCalls).toHaveLength(1);
 		expect(releaseCalls[0]).toEqual({ owner: "Err", repo: "Path" });
 	});
+
+	test("re-entry into handleStepError (retry → error) does not double-release", async () => {
+		// `error → running` is a valid transition (retry). A retried workflow
+		// can fail again and re-enter `handleStepError`; the release hook must
+		// not fire a second time for the same acquire.
+		const { orch, engine, releaseCalls } = createTestDeps();
+		const wf = makeWorkflow({
+			status: "running",
+			managedRepo: { owner: "Err", repo: "Path" },
+		});
+		wf.currentStepIndex = 0;
+		engine.setWorkflow(wf);
+
+		asPrivate(orch).handleStepError(wf.id, "boom");
+		// Simulate retry re-arming the step so the second error path runs fully.
+		wf.status = "running";
+		wf.steps[wf.currentStepIndex].status = "running";
+		asPrivate(orch).handleStepError(wf.id, "boom again");
+
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(releaseCalls).toHaveLength(1);
+	});
 });
