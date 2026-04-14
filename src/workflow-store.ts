@@ -121,7 +121,9 @@ export class WorkflowStore {
 			const content = await Bun.file(indexFile).text();
 			return JSON.parse(content) as WorkflowIndexEntry[];
 		} catch (err) {
-			logger.warn("[workflow-store] Index corrupted, rebuilding:", err);
+			if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+				logger.warn("[workflow-store] Index corrupted, rebuilding:", err);
+			}
 			return this.rebuildIndex();
 		}
 	}
@@ -163,7 +165,9 @@ export class WorkflowStore {
 				const content = await Bun.file(this.indexPath()).text();
 				index = JSON.parse(content) as WorkflowIndexEntry[];
 			} catch (err) {
-				logger.warn("[workflow-store] Failed to parse index, starting fresh:", err);
+				if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
+					logger.warn("[workflow-store] Failed to parse index, starting fresh:", err);
+				}
 				index = [];
 			}
 
@@ -189,33 +193,32 @@ export class WorkflowStore {
 	}
 
 	private async rebuildIndex(): Promise<WorkflowIndexEntry[]> {
-		if (!existsSync(this.baseDir)) return [];
-
-		const files = readdirSync(this.baseDir).filter(
-			(f) => f.endsWith(".json") && f !== "index.json",
-		);
 		const index: WorkflowIndexEntry[] = [];
 
-		for (const file of files) {
-			const id = file.replace(/\.json$/, "");
-			const workflow = await this.load(id);
-			if (workflow) {
-				index.push({
-					id: workflow.id,
-					branch: workflow.worktreeBranch,
-					status: workflow.status,
-					summary: workflow.summary,
-					epicId: workflow.epicId,
-					createdAt: workflow.createdAt,
-					updatedAt: workflow.updatedAt,
-				});
+		if (existsSync(this.baseDir)) {
+			const files = readdirSync(this.baseDir).filter(
+				(f) => f.endsWith(".json") && f !== "index.json",
+			);
+
+			for (const file of files) {
+				const id = file.replace(/\.json$/, "");
+				const workflow = await this.load(id);
+				if (workflow) {
+					index.push({
+						id: workflow.id,
+						branch: workflow.worktreeBranch,
+						status: workflow.status,
+						summary: workflow.summary,
+						epicId: workflow.epicId,
+						createdAt: workflow.createdAt,
+						updatedAt: workflow.updatedAt,
+					});
+				}
 			}
 		}
 
-		if (index.length > 0) {
-			this.ensureDir();
-			await atomicWrite(this.indexPath(), JSON.stringify(index, null, 2));
-		}
+		this.ensureDir();
+		await atomicWrite(this.indexPath(), JSON.stringify(index, null, 2));
 
 		return index;
 	}
