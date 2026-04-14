@@ -2,11 +2,23 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, normalize } from "node:path";
 import { gitSpawn } from "./git-logger";
+import { looksLikeGitUrl, parseGitHubUrl } from "./git-url";
 
 export interface TargetRepoValidation {
 	valid: boolean;
 	error?: string;
+	/**
+	 * Local filesystem path when `kind === "path"`. For `kind === "url"` callers
+	 * should consume `owner`/`repo` instead — do not treat this as a path.
+	 */
 	effectivePath: string;
+	/** "url" — remote GitHub URL (not yet cloned); "path" — local filesystem path. */
+	kind?: "url" | "path";
+	/** Parsed owner/repo for `kind === "url"` — saves callers from re-parsing. */
+	owner?: string;
+	repo?: string;
+	/** Machine-readable error code (currently only `non-github-url`). */
+	code?: "non-github-url";
 }
 
 /** Expand ~ to home directory and normalize separators. */
@@ -26,6 +38,28 @@ export async function validateTargetRepository(
 			valid: false,
 			error: "Target repository path is required",
 			effectivePath: "",
+		};
+	}
+
+	const raw = path.trim();
+
+	// URL branch: accept GitHub URLs without touching the filesystem; reject other hosts.
+	if (looksLikeGitUrl(raw)) {
+		const parsed = parseGitHubUrl(raw);
+		if (parsed) {
+			return {
+				valid: true,
+				effectivePath: raw,
+				kind: "url",
+				owner: parsed.owner,
+				repo: parsed.repo,
+			};
+		}
+		return {
+			valid: false,
+			error: "Only GitHub URLs are supported — use a local folder path for other hosts.",
+			effectivePath: raw,
+			code: "non-github-url",
 		};
 	}
 
@@ -79,5 +113,5 @@ export async function validateTargetRepository(
 		};
 	}
 
-	return { valid: true, effectivePath: trimmed };
+	return { valid: true, effectivePath: trimmed, kind: "path" };
 }

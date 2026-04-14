@@ -458,10 +458,11 @@ describe("Workflow Lifecycle", () => {
 			activeWorkStartedAt: null,
 			feedbackEntries: [],
 			feedbackPreRunHead: null,
+			managedRepo: null,
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:00:00Z",
 		};
-		expect(Object.keys(w)).toHaveLength(29);
+		expect(Object.keys(w)).toHaveLength(30);
 		expect(w.status).toBe("idle");
 	});
 
@@ -643,6 +644,7 @@ describe("ServerMessage variants", () => {
 					activeWorkMs: 0,
 					activeWorkStartedAt: null,
 					feedbackEntries: [],
+					managedRepo: null,
 					createdAt: "",
 					updatedAt: "",
 				},
@@ -1162,6 +1164,7 @@ describe("WorkflowClientState shape", () => {
 				activeWorkMs: 0,
 				activeWorkStartedAt: null,
 				feedbackEntries: [],
+				managedRepo: null,
 				createdAt: "",
 				updatedAt: "",
 			},

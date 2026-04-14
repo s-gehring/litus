@@ -2,11 +2,11 @@ import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
 import { type ClientMessage, STEP } from "../types";
 import type { MessageHandler } from "./handler-types";
-import { validateRepo, validateTextInput, withOrchestrator } from "./handler-types";
+import { resolveTargetRepo, validateTextInput, withOrchestrator } from "./handler-types";
 
 export const handleStart: MessageHandler = async (ws, data, deps) => {
 	const msg = data as ClientMessage & { type: "workflow:start" };
-	const { specification, targetRepository } = msg;
+	const { specification, targetRepository, submissionId } = msg;
 
 	const inputError = validateTextInput(specification, "Specification");
 	if (inputError) {
@@ -14,13 +14,16 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 		return;
 	}
 
-	const repoPath = await validateRepo(targetRepository, ws, deps);
-	if (!repoPath) return;
+	const resolved = await resolveTargetRepo(targetRepository, submissionId, ws, deps);
+	if (!resolved) return;
 
+	let committed = false;
 	try {
 		const orch = deps.createOrchestrator();
-		const workflow = await orch.startPipeline(specification.trim(), repoPath);
+		const workflow = await orch.startPipeline(specification.trim(), resolved.path);
+		if (resolved.managedRepo) workflow.managedRepo = resolved.managedRepo;
 		deps.orchestrators.set(workflow.id, orch);
+		committed = true;
 
 		const state = deps.stripInternalFields(workflow);
 		deps.broadcast({ type: "workflow:created", workflow: state });
@@ -28,6 +31,14 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 		const message = toErrorMessage(err);
 		logger.error("[ws] workflow:start failed:", err);
 		deps.sendTo(ws, { type: "error", message });
+	} finally {
+		if (!committed && resolved.managedRepo) {
+			await deps.managedRepoStore
+				.release(resolved.managedRepo.owner, resolved.managedRepo.repo)
+				.catch((relErr) => {
+					logger.warn(`[ws] managed-repo release after failed workflow:start: ${relErr}`);
+				});
+		}
 	}
 };
 

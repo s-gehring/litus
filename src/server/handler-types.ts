@@ -5,6 +5,7 @@ import type { ConfigStore } from "../config-store";
 import type { EpicAnalysisProcess } from "../epic-analyzer";
 import type { EpicStore } from "../epic-store";
 import { logger } from "../logger";
+import type { ManagedRepoStore } from "../managed-repo-store";
 import type { PipelineOrchestrator } from "../pipeline-orchestrator";
 import type { Summarizer } from "../summarizer";
 import { validateTargetRepository } from "../target-repo-validator";
@@ -23,6 +24,7 @@ export interface HandlerDeps {
 	sharedCliRunner: CLIRunner;
 	sharedSummarizer: Summarizer;
 	configStore: ConfigStore;
+	managedRepoStore: ManagedRepoStore;
 	epicAnalysisRef: { current: EpicAnalysisProcess | null };
 	createOrchestrator: () => PipelineOrchestrator;
 	broadcastWorkflowState: (workflowId: string) => void;
@@ -97,4 +99,105 @@ export async function validateRepo(
 		return null;
 	}
 	return validation.effectivePath;
+}
+
+/**
+ * Resolve a target repo input to an effective local path.
+ *
+ * - For local-path inputs, behaves like `validateRepo` and returns `{ path, managedRepo: null }`.
+ * - For GitHub URL inputs, acquires a managed clone via `deps.managedRepoStore`, broadcasting
+ *   `repo:clone-*` events keyed by `submissionId`. On clone failure, emits `repo:clone-error`
+ *   and returns `null` (no workflow record should be created).
+ * - For non-GitHub URL inputs, emits `repo:clone-error` with code `non-github-url` and returns `null`.
+ */
+export async function resolveTargetRepo(
+	targetRepository: string | undefined,
+	submissionId: string | undefined,
+	ws: ServerWebSocket<WsData>,
+	deps: HandlerDeps,
+): Promise<{ path: string; managedRepo: { owner: string; repo: string } | null } | null> {
+	if (!targetRepository) {
+		deps.sendTo(ws, { type: "error", message: "Target repository is required" });
+		return null;
+	}
+
+	const validation = await validateTargetRepository(targetRepository);
+
+	if (validation.kind === "url" && validation.valid) {
+		const sid = submissionId ?? "";
+		// Validator guarantees owner/repo are set when kind === "url" && valid.
+		const owner = validation.owner as string;
+		const repo = validation.repo as string;
+		try {
+			const result = await deps.managedRepoStore.acquire(sid, targetRepository, {
+				onStart: (o, r, reused) =>
+					deps.broadcast({
+						type: "repo:clone-start",
+						submissionId: sid,
+						owner: o,
+						repo: r,
+						reused,
+					}),
+				onProgress: (step, message) =>
+					deps.broadcast({
+						type: "repo:clone-progress",
+						submissionId: sid,
+						owner,
+						repo,
+						step,
+						message,
+					}),
+			});
+			deps.broadcast({
+				type: "repo:clone-complete",
+				submissionId: sid,
+				owner: result.owner,
+				repo: result.repo,
+				path: result.path,
+			});
+			return {
+				path: result.path,
+				managedRepo: { owner: result.owner, repo: result.repo },
+			};
+		} catch (err) {
+			const code = (err as { code?: string }).code as
+				| "non-github-url"
+				| "clone-failed"
+				| "auth-required"
+				| "not-found"
+				| "network"
+				| "unknown"
+				| undefined;
+			const message = err instanceof Error ? err.message : String(err);
+			logger.warn(`[ws] repo clone failed (${owner}/${repo}): ${message}`);
+			deps.sendTo(ws, {
+				type: "repo:clone-error",
+				submissionId: sid,
+				owner,
+				repo,
+				code: code ?? "unknown",
+				message,
+			});
+			return null;
+		}
+	}
+
+	if (!validation.valid) {
+		if (validation.code === "non-github-url") {
+			const sid = submissionId ?? "";
+			deps.sendTo(ws, {
+				type: "repo:clone-error",
+				submissionId: sid,
+				owner: "",
+				repo: "",
+				code: "non-github-url",
+				message: validation.error ?? "Only GitHub URLs are supported",
+			});
+			return null;
+		}
+		deps.sendTo(ws, { type: "error", message: validation.error ?? "Invalid target repository" });
+		return null;
+	}
+
+	return { path: validation.effectivePath, managedRepo: null };
 }

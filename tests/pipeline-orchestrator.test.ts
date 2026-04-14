@@ -77,6 +77,7 @@ function createFakeEngine() {
 				activeWorkStartedAt: null,
 				feedbackEntries: [],
 				feedbackPreRunHead: null,
+				managedRepo: null,
 				createdAt: now,
 				updatedAt: now,
 			};
@@ -2662,6 +2663,7 @@ function makeCallbacksWorkflowForRecovery(): Workflow {
 			},
 		],
 		feedbackPreRunHead: "head-before-restart-sha",
+		managedRepo: null,
 		createdAt: now,
 		updatedAt: now,
 	};

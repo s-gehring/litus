@@ -101,4 +101,49 @@ describe("validateTargetRepository", () => {
 		expect(result.valid).toBe(true);
 		expect(result.effectivePath).toBe(bareRepoPath);
 	});
+
+	// T005: URL-branch behaviour. The validator short-circuits before touching
+	// the filesystem when the input looks like a git URL.
+
+	test("accepts GitHub HTTPS URL without touching filesystem", async () => {
+		const result = await validateTargetRepository("https://github.com/Foo/Bar.git");
+		expect(result.valid).toBe(true);
+		expect(result.kind).toBe("url");
+		expect(result.owner).toBe("Foo");
+		expect(result.repo).toBe("Bar");
+	});
+
+	test("accepts GitHub SSH URL", async () => {
+		const result = await validateTargetRepository("git@github.com:foo/bar.git");
+		expect(result.valid).toBe(true);
+		expect(result.kind).toBe("url");
+		expect(result.owner).toBe("foo");
+		expect(result.repo).toBe("bar");
+	});
+
+	test("accepts GitHub URL without .git suffix", async () => {
+		const result = await validateTargetRepository("https://github.com/foo/bar");
+		expect(result.valid).toBe(true);
+		expect(result.kind).toBe("url");
+	});
+
+	test("rejects non-GitHub URL with code non-github-url", async () => {
+		const result = await validateTargetRepository("https://gitlab.com/foo/bar.git");
+		expect(result.valid).toBe(false);
+		expect(result.code).toBe("non-github-url");
+		expect(result.error).toContain("GitHub");
+	});
+
+	test("rejects malformed git@ URL with non-github-url code", async () => {
+		const result = await validateTargetRepository("git@gitlab.com:foo/bar.git");
+		expect(result.valid).toBe(false);
+		expect(result.code).toBe("non-github-url");
+	});
+
+	test("local path still passes through as kind=path", async () => {
+		const result = await validateTargetRepository(gitRepoPath);
+		expect(result.valid).toBe(true);
+		expect(result.kind).toBe("path");
+		expect(result.effectivePath).toBe(gitRepoPath);
+	});
 });

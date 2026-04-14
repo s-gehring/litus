@@ -1,8 +1,20 @@
 import type { ServerWebSocket } from "bun";
+import type { ManagedRepoStore } from "../../src/managed-repo-store";
 import type { HandlerDeps, WsData } from "../../src/server/handler-types";
 import type { ServerMessage, Workflow, WorkflowState } from "../../src/types";
 import { type CallTracker, createCallTracker } from "./call-tracker";
 import { createMockConfigStore, createMockEpicStore, createMockWorkflowStore } from "./mock-stores";
+
+function createMockManagedRepoStore(): ManagedRepoStore {
+	return {
+		async acquire(_submissionId: string, _rawUrl: string) {
+			throw new Error("managedRepoStore.acquire not mocked — pass an override");
+		},
+		async release() {},
+		async bumpRefCount() {},
+		async seedFromWorkflows() {},
+	} as unknown as ManagedRepoStore;
+}
 
 export interface MockHandlerDeps {
 	deps: HandlerDeps;
@@ -41,6 +53,7 @@ export function createMockHandlerDeps(overrides?: Partial<HandlerDeps>): MockHan
 		sharedCliRunner: {} as unknown as HandlerDeps["sharedCliRunner"],
 		sharedSummarizer: {} as unknown as HandlerDeps["sharedSummarizer"],
 		configStore: mockConfigStore.mock as unknown as HandlerDeps["configStore"],
+		managedRepoStore: createMockManagedRepoStore(),
 		epicAnalysisRef: { current: null },
 		createOrchestrator: (() => {
 			throw new Error("createOrchestrator not mocked");

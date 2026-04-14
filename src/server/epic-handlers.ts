@@ -5,7 +5,7 @@ import { logger } from "../logger";
 import type { ClientMessage, PersistedEpic } from "../types";
 import { createEpicWorkflows } from "../workflow-engine";
 import type { MessageHandler } from "./handler-types";
-import { validateRepo, validateTextInput } from "./handler-types";
+import { resolveTargetRepo, validateTextInput } from "./handler-types";
 
 function buildEpicData(
 	fields: Pick<PersistedEpic, "epicId" | "description" | "status" | "title" | "workflowIds"> & {
@@ -30,7 +30,7 @@ function buildEpicData(
 
 export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 	const msg = data as ClientMessage & { type: "epic:start" };
-	const { description, targetRepository, autoStart } = msg;
+	const { description, targetRepository, autoStart, submissionId } = msg;
 
 	const inputError = validateTextInput(description, "Epic description", 10);
 	if (inputError) {
@@ -38,9 +38,11 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 		return;
 	}
 
-	const repoDir = await validateRepo(targetRepository, ws, deps);
-	if (!repoDir) return;
+	const resolved = await resolveTargetRepo(targetRepository, submissionId, ws, deps);
+	if (!resolved) return;
+	const repoDir = resolved.path;
 
+	let committed = false;
 	const epicId = randomUUID();
 	const trimmedDesc = description.trim();
 	const analysisStartedAt = Date.now();
@@ -91,10 +93,27 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 				title: result.title,
 				infeasibleNotes: result.infeasibleNotes,
 			});
+			// Infeasible: no child workflows are created, so the initial acquire
+			// has no consumer to own it. Release the clone immediately.
+			if (resolved.managedRepo) {
+				await deps.managedRepoStore
+					.release(resolved.managedRepo.owner, resolved.managedRepo.repo)
+					.catch((relErr) => logger.warn(`[epic] infeasible release failed: ${relErr}`));
+			}
 			return;
 		}
 
 		const { workflows } = await createEpicWorkflows(result, repoDir, epicId);
+
+		// For a managed clone, refCount is at 1 (the initial acquire). Bring it up
+		// to N so each child workflow is counted as an independent consumer.
+		if (resolved.managedRepo && workflows.length > 1) {
+			await deps.managedRepoStore.bumpRefCount(
+				resolved.managedRepo.owner,
+				resolved.managedRepo.repo,
+				workflows.length - 1,
+			);
+		}
 
 		// Store the analysis duration on the first child workflow
 		if (workflows.length > 0) {
@@ -105,6 +124,7 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 
 		// Persist and register orchestrators for each workflow
 		for (const workflow of workflows) {
+			if (resolved.managedRepo) workflow.managedRepo = resolved.managedRepo;
 			await deps.sharedStore.save(workflow);
 
 			const orch = deps.createOrchestrator();
@@ -140,6 +160,7 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			workflowIds,
 			summary: result.summary,
 		});
+		committed = true;
 	} catch (err) {
 		const message = toErrorMessage(err);
 		logger.error(`[epic] Analysis failed (${epicId.slice(0, 8)}): ${message}`);
@@ -147,6 +168,16 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			logger.error(`[epic] Stack trace: ${err.stack}`);
 		}
 		deps.broadcast({ type: "epic:error", epicId, message });
+	} finally {
+		// If we failed before the workflows took ownership of the clone, release
+		// the initial acquire so the clone is cleaned up.
+		if (!committed && resolved.managedRepo) {
+			await deps.managedRepoStore
+				.release(resolved.managedRepo.owner, resolved.managedRepo.repo)
+				.catch((relErr) => {
+					logger.warn(`[epic] managed-repo release after failed epic:start: ${relErr}`);
+				});
+		}
 	}
 };
 
