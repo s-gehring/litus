@@ -5,7 +5,7 @@ import type { Workflow } from "../../src/types";
 import { WorkflowEngine } from "../../src/workflow-engine";
 import { makeWorkflow } from "../helpers";
 
-function createTestDeps(): {
+function createTestDeps(opts: { releaseReject?: Error } = {}): {
 	orch: PipelineOrchestrator;
 	engine: WorkflowEngine;
 	releaseCalls: { owner: string; repo: string }[];
@@ -17,6 +17,7 @@ function createTestDeps(): {
 		},
 		async release(owner: string, repo: string) {
 			releaseCalls.push({ owner, repo });
+			if (opts.releaseReject) throw opts.releaseReject;
 		},
 		async seedFromWorkflows() {},
 		async bumpRefCount() {},
@@ -135,5 +136,69 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		await new Promise((r) => setTimeout(r, 10));
 
 		expect(releaseCalls).toHaveLength(1);
+	});
+});
+
+describe("PipelineOrchestrator — release() failure is contained", () => {
+	// The orchestrator fires release() without awaiting, and attaches a `.catch`
+	// that logs a warning. A rejecting release must not leak an unhandled
+	// rejection or leave the workflow in a non-terminal state — callers rely on
+	// these hooks being no-throw relative to the surrounding terminal transition.
+
+	test("cancelPipeline still transitions to cancelled when release rejects", async () => {
+		const { orch, engine, releaseCalls } = createTestDeps({
+			releaseReject: new Error("rm failed: EBUSY"),
+		});
+		const wf = makeWorkflow({
+			status: "paused",
+			managedRepo: { owner: "Foo", repo: "Bar" },
+		});
+		engine.setWorkflow(wf);
+
+		orch.cancelPipeline(wf.id);
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(releaseCalls).toHaveLength(1);
+		// Workflow reached cancelled state; the rejected release did not
+		// prevent the transition or leave managedRepo set.
+		expect(wf.status).toBe("cancelled");
+		expect(wf.managedRepo).toBeNull();
+	});
+
+	test("completeWorkflow still transitions to completed when release rejects", async () => {
+		const { orch, engine, releaseCalls } = createTestDeps({
+			releaseReject: new Error("rm failed: EACCES"),
+		});
+		const wf = makeWorkflow({
+			status: "running",
+			managedRepo: { owner: "Baz", repo: "Qux" },
+		});
+		engine.setWorkflow(wf);
+
+		asPrivate(orch).completeWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(releaseCalls).toHaveLength(1);
+		expect(wf.status).toBe("completed");
+		expect(wf.managedRepo).toBeNull();
+	});
+
+	test("handleStepError still transitions to error when release rejects", async () => {
+		const { orch, engine, releaseCalls } = createTestDeps({
+			releaseReject: new Error("rm failed: EPERM"),
+		});
+		const wf = makeWorkflow({
+			status: "running",
+			managedRepo: { owner: "Err", repo: "Path" },
+		});
+		wf.currentStepIndex = 0;
+		engine.setWorkflow(wf);
+
+		asPrivate(orch).handleStepError(wf.id, "boom");
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(releaseCalls).toHaveLength(1);
+		expect(wf.status).toBe("error");
+		expect(wf.managedRepo).toBeNull();
 	});
 });

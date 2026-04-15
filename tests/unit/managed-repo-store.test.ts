@@ -45,9 +45,10 @@ function mockDeps(opts: MockDepsOptions = {}): {
 				const r = opts.cloneBehavior ? await opts.cloneBehavior(cmd, cwd) : ok();
 				if (r.code === 0) {
 					// Synthesize that the destPath now exists. The destPath is
-					// positional: index 4 for `gh repo clone <owner/repo> <dest> -- --quiet`,
-					// index 4 for `git clone --quiet <url> <dest>`.
-					const destPath = cmd[0] === "gh" ? cmd[4] : cmd[4];
+					// positional index 4 for both forms:
+					//   `gh repo clone <owner/repo> <dest> -- --quiet`
+					//   `git clone --quiet <url> <dest>`
+					const destPath = cmd[4];
 					if (destPath) existing.add(destPath);
 				}
 				return r;
@@ -77,11 +78,13 @@ describe("ManagedRepoStore — fresh clone (US1)", () => {
 		const { deps, calls } = mockDeps({ baseDir: "/root/.litus/repos" });
 		const store = new ManagedRepoStore(deps);
 
-		const result = await store.acquire("sub-1", "https://github.com/Foo/Bar.git");
+		const result = await store.acquire("https://github.com/Foo/Bar.git");
 
-		expect(result.owner).toBe("Foo");
-		expect(result.repo).toBe("Bar");
-		expect(result.path).toBe(join("/root/.litus/repos", "Foo", "Bar"));
+		// Owner/repo are canonicalised to lowercase so the on-disk destPath,
+		// state-map key, and workflow record all agree regardless of URL case.
+		expect(result.owner).toBe("foo");
+		expect(result.repo).toBe("bar");
+		expect(result.path).toBe(join("/root/.litus/repos", "foo", "bar"));
 		expect(result.reused).toBe(false);
 
 		// gh was tried (exactly one clone invocation for the single successful clone)
@@ -98,8 +101,8 @@ describe("ManagedRepoStore — fresh clone (US1)", () => {
 		const { deps, calls } = mockDeps();
 		const store = new ManagedRepoStore(deps);
 
-		const a = await store.acquire("s1", "https://github.com/Foo/Bar.git");
-		const b = await store.acquire("s2", "git@github.com:foo/bar");
+		const a = await store.acquire("https://github.com/Foo/Bar.git");
+		const b = await store.acquire("git@github.com:foo/bar");
 
 		expect(a.path).toBe(b.path);
 		// Only one clone (the second is a ready-reuse)
@@ -121,10 +124,10 @@ describe("ManagedRepoStore — fresh clone (US1)", () => {
 			},
 		});
 		const store = new ManagedRepoStore(deps);
-		const r = await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		const r = await store.acquire("https://github.com/Foo/Bar.git");
 
 		expect(ghTried).toBe(true);
-		expect(r.path).toContain("Foo");
+		expect(r.path).toContain("foo");
 
 		const cloneCalls = calls.filter(
 			(c) => c.cmd[0] === "gh" || (c.cmd[0] === "git" && c.cmd[1] === "clone"),
@@ -146,7 +149,7 @@ describe("ManagedRepoStore — fresh clone (US1)", () => {
 			},
 		});
 		const store = new ManagedRepoStore(deps);
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 
 		const cloneCalls = calls.filter(
 			(c) => c.cmd[0] === "gh" || (c.cmd[0] === "git" && c.cmd[1] === "clone"),
@@ -160,7 +163,7 @@ describe("ManagedRepoStore — fresh clone (US1)", () => {
 			cloneBehavior: () => fail("fatal: could not find repository", 1),
 		});
 		const store = new ManagedRepoStore(deps);
-		await expect(store.acquire("s1", "https://github.com/Foo/Bar.git")).rejects.toThrow();
+		await expect(store.acquire("https://github.com/Foo/Bar.git")).rejects.toThrow();
 
 		// The failed entry is cleaned up so a retry could start fresh.
 		expect(store.getStateForTest("foo/bar")).toBeUndefined();
@@ -171,7 +174,7 @@ describe("ManagedRepoStore — fresh clone (US1)", () => {
 		const store = new ManagedRepoStore(deps);
 		let caught: unknown;
 		try {
-			await store.acquire("s1", "https://gitlab.com/foo/bar.git");
+			await store.acquire("https://gitlab.com/foo/bar.git");
 		} catch (err) {
 			caught = err;
 		}
@@ -183,7 +186,7 @@ describe("ManagedRepoStore — fresh clone (US1)", () => {
 		const { deps } = mockDeps();
 		const store = new ManagedRepoStore(deps);
 		const events: Array<{ kind: string; step?: string; reused?: boolean }> = [];
-		await store.acquire("s1", "https://github.com/Foo/Bar.git", {
+		await store.acquire("https://github.com/Foo/Bar.git", {
 			onStart: (_o, _r, reused) => events.push({ kind: "start", reused }),
 			onProgress: (step) => events.push({ kind: "progress", step }),
 		});
@@ -210,8 +213,8 @@ describe("ManagedRepoStore — US2 (coalescing + ready reuse)", () => {
 		});
 		const store = new ManagedRepoStore(deps);
 
-		const p1 = store.acquire("s1", "https://github.com/Foo/Bar.git");
-		const p2 = store.acquire("s2", "git@github.com:foo/bar");
+		const p1 = store.acquire("https://github.com/Foo/Bar.git");
+		const p2 = store.acquire("git@github.com:foo/bar");
 
 		// Let both queue
 		await Promise.resolve();
@@ -235,8 +238,8 @@ describe("ManagedRepoStore — US2 (coalescing + ready reuse)", () => {
 		const { deps, calls } = mockDeps();
 		const store = new ManagedRepoStore(deps);
 
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
-		await store.acquire("s2", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 
 		const fetchCalls = calls.filter((c) => c.cmd[0] === "git" && c.cmd[1] === "fetch");
 		expect(fetchCalls).toHaveLength(1);
@@ -250,7 +253,7 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 		const { deps, removed } = mockDeps();
 		const store = new ManagedRepoStore(deps);
 
-		const r = await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		const r = await store.acquire("https://github.com/Foo/Bar.git");
 		await store.release("Foo", "Bar");
 
 		expect(removed).toContain(r.path);
@@ -261,8 +264,8 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 		const { deps, removed } = mockDeps();
 		const store = new ManagedRepoStore(deps);
 
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
-		await store.acquire("s2", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 		await store.release("Foo", "Bar");
 
 		expect(removed).toEqual([]);
@@ -285,8 +288,15 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 			throw err;
 		};
 		const store = new ManagedRepoStore(deps);
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 		await expect(store.release("Foo", "Bar")).resolves.toBeUndefined();
+		// Pin the cleanup behaviour: an ENOENT-swallowed release must drop the
+		// state entry entirely (not restore ready(1) like the EBUSY path). A
+		// future refactor that accidentally treats ENOENT like EBUSY would
+		// leak the in-memory entry forever — the on-disk dir is truly gone, so
+		// future acquires would re-clone, but the stale ready(1) refcount
+		// would never drain.
+		expect(store.getStateForTest("foo/bar")).toBeUndefined();
 	});
 
 	test("release on non-ENOENT rm failure re-installs ready state so a retry can delete", async () => {
@@ -302,7 +312,7 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 			// Second attempt succeeds.
 		};
 		const store = new ManagedRepoStore(deps);
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 
 		let firstErr: unknown;
 		try {
@@ -328,7 +338,7 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 			throw err;
 		};
 		const store = new ManagedRepoStore(deps);
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 		let releaseErr: unknown;
 		try {
 			await store.release("Foo", "Bar");
@@ -339,7 +349,7 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 
 		// Re-acquiring should treat the surviving clone as a reuse, not attempt a fresh clone
 		// (which would fail because destPath already exists on disk).
-		const result = await store.acquire("s2", "https://github.com/Foo/Bar.git");
+		const result = await store.acquire("https://github.com/Foo/Bar.git");
 		expect(result.reused).toBe(true);
 		const cloneCalls = calls.filter(
 			(c) => c.cmd[0] === "gh" || (c.cmd[0] === "git" && c.cmd[1] === "clone"),
@@ -358,10 +368,10 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 		};
 		const store = new ManagedRepoStore(deps);
 
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 		const releasePromise = store.release("Foo", "Bar");
 		// While deletion is in flight, start a new acquire for same repo
-		const acquirePromise = store.acquire("s2", "https://github.com/Foo/Bar.git");
+		const acquirePromise = store.acquire("https://github.com/Foo/Bar.git");
 		await Promise.resolve();
 		resolveDelete();
 		await releasePromise;
@@ -372,27 +382,29 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 		);
 		// One clone for the first acquire, a second clone after the delete
 		expect(cloneCalls.length).toBe(2);
-		expect(r.path).toContain("Foo");
+		expect(r.path).toContain("foo");
 	});
 
 	test("seedFromWorkflows seeds ready(refCount=N) for non-terminal workflows whose clone dir exists", async () => {
 		const baseDir = "/root/.litus/repos";
-		const existing = new Set<string>([join(baseDir, "Foo", "Bar")]);
+		// Acquire canonicalises owner/repo to lowercase, so on-disk dirs
+		// created in production are lowercased; match that here.
+		const existing = new Set<string>([join(baseDir, "foo", "bar")]);
 		const { deps } = mockDeps({ baseDir, existing });
 		const store = new ManagedRepoStore(deps);
 
-		// 2 non-terminal + 1 terminal for Foo/Bar; 1 non-terminal for Missing/One (dir missing)
+		// 2 non-terminal + 1 terminal for foo/bar; 1 non-terminal for missing/one (dir missing)
 		await store.seedFromWorkflows([
 			{
-				managedRepo: { owner: "Foo", repo: "Bar" },
+				managedRepo: { owner: "foo", repo: "bar" },
 				status: "running",
 			} as never,
 			{
-				managedRepo: { owner: "Foo", repo: "Bar" },
+				managedRepo: { owner: "foo", repo: "bar" },
 				status: "paused",
 			} as never,
 			{
-				managedRepo: { owner: "Foo", repo: "Bar" },
+				managedRepo: { owner: "foo", repo: "bar" },
 				status: "completed",
 			} as never,
 			{
@@ -400,7 +412,7 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 				status: "running",
 			} as never,
 			{
-				managedRepo: { owner: "Missing", repo: "One" },
+				managedRepo: { owner: "missing", repo: "one" },
 				status: "running",
 			} as never,
 		]);
@@ -414,7 +426,7 @@ describe("ManagedRepoStore — bumpRefCount", () => {
 	test("increments refCount on a ready entry", async () => {
 		const { deps } = mockDeps();
 		const store = new ManagedRepoStore(deps);
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 		await store.bumpRefCount("Foo", "Bar", 2);
 		expect(store.getStateForTest("foo/bar")).toEqual({ kind: "ready", refCount: 3 });
 	});
@@ -422,7 +434,7 @@ describe("ManagedRepoStore — bumpRefCount", () => {
 	test("no-op when by <= 0", async () => {
 		const { deps } = mockDeps();
 		const store = new ManagedRepoStore(deps);
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 		await store.bumpRefCount("Foo", "Bar", 0);
 		await store.bumpRefCount("Foo", "Bar", -3);
 		expect(store.getStateForTest("foo/bar")).toEqual({ kind: "ready", refCount: 1 });
@@ -450,7 +462,7 @@ describe("ManagedRepoStore — bumpRefCount", () => {
 			await deleteGate;
 		};
 		const store = new ManagedRepoStore(deps);
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 		const releasePromise = store.release("Foo", "Bar");
 		// State is now "deleting" — bump must fail loudly.
 		await expect(store.bumpRefCount("Foo", "Bar", 1)).rejects.toMatchObject({
@@ -463,7 +475,7 @@ describe("ManagedRepoStore — bumpRefCount", () => {
 	test("subsequent release(n) decrements the bumped count correctly", async () => {
 		const { deps, removed } = mockDeps();
 		const store = new ManagedRepoStore(deps);
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 		await store.bumpRefCount("Foo", "Bar", 2); // refCount = 3
 		await store.release("Foo", "Bar"); // refCount = 2
 		expect(removed).toEqual([]);
@@ -478,9 +490,9 @@ describe("ManagedRepoStore — progress event sequences", () => {
 	test("ready-reuse emits fetching progress", async () => {
 		const { deps } = mockDeps();
 		const store = new ManagedRepoStore(deps);
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 		const events: Array<{ step?: string; reused?: boolean }> = [];
-		await store.acquire("s2", "https://github.com/Foo/Bar.git", {
+		await store.acquire("https://github.com/Foo/Bar.git", {
 			onStart: (_o, _r, reused) => events.push({ reused }),
 			onProgress: (step) => events.push({ step }),
 		});
@@ -491,7 +503,7 @@ describe("ManagedRepoStore — progress event sequences", () => {
 
 	test("salvage: pre-existing matching clone dir is adopted without cloning", async () => {
 		const baseDir = "/root/.litus/repos";
-		const destPath = join(baseDir, "Foo", "Bar");
+		const destPath = join(baseDir, "foo", "bar");
 		const existing = new Set<string>([destPath]);
 		const { deps, calls } = mockDeps({
 			baseDir,
@@ -500,7 +512,7 @@ describe("ManagedRepoStore — progress event sequences", () => {
 		});
 		const store = new ManagedRepoStore(deps);
 
-		const r = await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		const r = await store.acquire("https://github.com/Foo/Bar.git");
 
 		expect(r.path).toBe(destPath);
 		expect(r.reused).toBe(false);
@@ -515,7 +527,7 @@ describe("ManagedRepoStore — progress event sequences", () => {
 
 	test("salvage: pre-existing dir whose origin mismatches is wiped and re-cloned", async () => {
 		const baseDir = "/root/.litus/repos";
-		const destPath = join(baseDir, "Foo", "Bar");
+		const destPath = join(baseDir, "foo", "bar");
 		const existing = new Set<string>([destPath]);
 		const { deps, calls, removed } = mockDeps({
 			baseDir,
@@ -524,7 +536,7 @@ describe("ManagedRepoStore — progress event sequences", () => {
 		});
 		const store = new ManagedRepoStore(deps);
 
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 
 		expect(removed).toContain(destPath);
 		// A full clone happened because salvage probe returned false.
@@ -536,7 +548,7 @@ describe("ManagedRepoStore — progress event sequences", () => {
 
 	test("salvage: pre-existing non-git dir is wiped and re-cloned", async () => {
 		const baseDir = "/root/.litus/repos";
-		const destPath = join(baseDir, "Foo", "Bar");
+		const destPath = join(baseDir, "foo", "bar");
 		const existing = new Set<string>([destPath]);
 		const { deps, calls, removed } = mockDeps({
 			baseDir,
@@ -545,7 +557,7 @@ describe("ManagedRepoStore — progress event sequences", () => {
 		});
 		const store = new ManagedRepoStore(deps);
 
-		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		await store.acquire("https://github.com/Foo/Bar.git");
 
 		expect(removed).toContain(destPath);
 		const cloneCalls = calls.filter(
@@ -567,9 +579,9 @@ describe("ManagedRepoStore — progress event sequences", () => {
 		});
 		const store = new ManagedRepoStore(deps);
 
-		const p1 = store.acquire("s1", "https://github.com/Foo/Bar.git");
+		const p1 = store.acquire("https://github.com/Foo/Bar.git");
 		const events: Array<{ step?: string; reused?: boolean }> = [];
-		const p2 = store.acquire("s2", "https://github.com/Foo/Bar.git", {
+		const p2 = store.acquire("https://github.com/Foo/Bar.git", {
 			onStart: (_o, _r, reused) => events.push({ reused }),
 			onProgress: (step) => events.push({ step }),
 		});

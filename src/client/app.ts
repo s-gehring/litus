@@ -374,9 +374,15 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "repo:clone-complete": {
+			// Guard against duplicate/late events: if the entry is already gone
+			// (user dismissed the modal, or a prior clone-complete fired), skip
+			// onComplete — calling modal.hide() on an already-hidden modal is
+			// tolerated by the browser but not part of the contract.
+			const handlers = pendingCloneSubmissions.get(msg.submissionId);
+			if (!handlers) break;
 			// onComplete calls modal.hide(), which is wrapped to delete the
 			// entry — no explicit delete needed here.
-			pendingCloneSubmissions.get(msg.submissionId)?.onComplete();
+			handlers.onComplete();
 			break;
 		}
 

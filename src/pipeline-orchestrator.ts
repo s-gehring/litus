@@ -1562,6 +1562,15 @@ export class PipelineOrchestrator {
 	 * handler cannot double-release. Also keeps restart-time `seedFromWorkflows`
 	 * self-consistent — a workflow whose refcount has already been released will
 	 * not be re-counted if it somehow survives as a non-terminal record on disk.
+	 *
+	 * INVARIANT — caller contract: the workflow MUST have already been transitioned
+	 * to a terminal state (completed/cancelled/error) AND that state MUST have
+	 * been persisted before this method is invoked. Both `persistWorkflow` here
+	 * and `managedRepoStore.release` are fire-and-forget; the ordering that makes
+	 * this safe is: terminal-state-save happens in the caller → this method's
+	 * two async operations fire → a crash between them leaves a terminal record
+	 * on disk (which `seedFromWorkflows` filters out). Move the release earlier
+	 * in the lifecycle only if you also move the terminal persist earlier.
 	 */
 	private releaseManagedRepoIfAny(workflow: Workflow): void {
 		if (!workflow.managedRepo || !this.managedRepoStore) return;

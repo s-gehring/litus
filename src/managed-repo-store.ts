@@ -83,11 +83,7 @@ export class ManagedRepoStore {
 		return { kind: "deleting" };
 	}
 
-	async acquire(
-		_submissionId: string,
-		rawUrl: string,
-		callbacks?: AcquireCallbacks,
-	): Promise<AcquireResult> {
+	async acquire(rawUrl: string, callbacks?: AcquireCallbacks): Promise<AcquireResult> {
 		const parsed = parseGitHubUrl(rawUrl);
 		if (!parsed) {
 			throw new ManagedRepoStoreError(
@@ -95,7 +91,17 @@ export class ManagedRepoStore {
 				"Only GitHub URLs are supported — use a local folder path for other hosts.",
 			);
 		}
-		const { owner, repo } = parsed;
+		// Canonicalise owner/repo to lowercase so the state key, the on-disk
+		// destPath, and the owner/repo written onto the workflow record all
+		// agree on casing. Without this, a second submission of the same repo
+		// in different case (e.g. "Foo/Bar" then "foo/bar") shares the state
+		// entry via canonicalKey but writes a differently-cased `managedRepo`
+		// onto its workflow; on Linux (case-sensitive FS), `seedFromWorkflows`
+		// would then fail to find the clone at <baseDir>/foo/bar because the
+		// actual dir is <baseDir>/Foo/Bar. Lowercasing here matches GitHub's
+		// own canonical behaviour (github.com/Foo/Bar ↔ github.com/foo/bar).
+		const owner = parsed.owner.toLowerCase();
+		const repo = parsed.repo.toLowerCase();
 		const key = canonicalKey(owner, repo);
 		const destPath = join(this.deps.baseDir, owner, repo);
 
@@ -243,6 +249,9 @@ export class ManagedRepoStore {
 				await this.lockFor(key).run(async () => {
 					const current = this.states.get(key);
 					if (current?.kind === "cloning") {
+						// Safe to delete the lock entry from inside its own run: this
+						// callback finishes before any new lockFor(key) observes the
+						// absent entry and creates a fresh lock.
 						this.states.delete(key);
 						this.locks.delete(key);
 					}
@@ -403,6 +412,9 @@ export class ManagedRepoStore {
 					repo,
 				});
 			} else {
+				// Safe to delete the lock entry from inside its own run: this
+				// callback finishes before any new lockFor(key) observes the
+				// absent entry and creates a fresh lock.
 				this.states.delete(key);
 				this.locks.delete(key);
 			}

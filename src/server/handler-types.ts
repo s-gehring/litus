@@ -140,7 +140,7 @@ export async function resolveTargetRepo(
 		const owner = validation.owner as string;
 		const repo = validation.repo as string;
 		try {
-			const result = await deps.managedRepoStore.acquire(sid, targetRepository, {
+			const result = await deps.managedRepoStore.acquire(targetRepository, {
 				onStart: (o, r, reused) =>
 					deps.broadcast({
 						type: "repo:clone-start",
