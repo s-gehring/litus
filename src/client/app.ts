@@ -1,3 +1,4 @@
+import { looksLikeGitUrl } from "../git-url";
 import {
 	type AutoMode,
 	type ClientMessage,
@@ -373,12 +374,14 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "repo:clone-complete": {
+			// onComplete calls modal.hide(), which is wrapped to delete the
+			// entry — no explicit delete needed here.
 			pendingCloneSubmissions.get(msg.submissionId)?.onComplete();
-			pendingCloneSubmissions.delete(msg.submissionId);
 			break;
 		}
 
 		case "repo:clone-error": {
+			// onError leaves the modal open (inline error), so delete explicitly.
 			pendingCloneSubmissions.get(msg.submissionId)?.onError(msg.code, msg.message);
 			pendingCloneSubmissions.delete(msg.submissionId);
 			break;
@@ -394,10 +397,6 @@ interface PendingCloneHandlers {
 }
 
 const pendingCloneSubmissions = new Map<string, PendingCloneHandlers>();
-
-function looksLikeGitUrl(s: string): boolean {
-	return /^(https?:\/\/|ssh:\/\/|git@)/i.test(s.trim());
-}
 
 /**
  * Wire a modal to a pending clone submission: renders status, disables the

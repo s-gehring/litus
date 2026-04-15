@@ -188,12 +188,32 @@ export class ManagedRepoStore {
 			// Owner role: perform the clone outside the lock
 			callbacks?.onStart?.(owner, repo, false);
 			callbacks?.onProgress?.("resolving");
-			callbacks?.onProgress?.("cloning");
 			try {
-				const { fallbackUsed } = await this.performClone(owner, repo, rawUrl, destPath);
-				logger.info(
-					`[managed-repo] action=clone owner=${owner} repo=${repo}${fallbackUsed ? ` fallbackUsed=${fallbackUsed}` : ""}`,
-				);
+				// Salvage a pre-existing matching clone at destPath — covers crashes
+				// mid-release (dir survived but state was wiped), seedFromWorkflows
+				// skipping an all-terminal repo, and release failures where the
+				// state was cleaned up but the dir was not. Without this probe,
+				// performClone fails opaquely ("destination not empty") on any of
+				// those paths.
+				const salvaged =
+					(await this.deps.pathExists(destPath)) &&
+					(await this.trySalvageExistingClone(owner, repo, destPath));
+				let fallbackUsed: "git" | undefined;
+				if (salvaged) {
+					logger.info(`[managed-repo] action=salvage owner=${owner} repo=${repo}`);
+				} else {
+					// If destPath exists but isn't a valid matching clone, remove it so
+					// `git`/`gh clone` won't fail with "destination not empty".
+					if (await this.deps.pathExists(destPath)) {
+						await this.deps.rm(destPath);
+					}
+					callbacks?.onProgress?.("cloning");
+					const cloneRes = await this.performClone(owner, repo, rawUrl, destPath);
+					fallbackUsed = cloneRes.fallbackUsed;
+					logger.info(
+						`[managed-repo] action=clone owner=${owner} repo=${repo}${fallbackUsed ? ` fallbackUsed=${fallbackUsed}` : ""}`,
+					);
+				}
 				// Transition cloning → ready under lock; final refCount is `waiters`.
 				const finalPath = await this.lockFor(key).run(async () => {
 					const current = this.states.get(key);
@@ -222,12 +242,36 @@ export class ManagedRepoStore {
 				// Clean up the cloning entry so a retry can start fresh
 				await this.lockFor(key).run(async () => {
 					const current = this.states.get(key);
-					if (current?.kind === "cloning") this.states.delete(key);
+					if (current?.kind === "cloning") {
+						this.states.delete(key);
+						this.locks.delete(key);
+					}
 				});
 				decision.rejectClone(err);
 				throw err;
 			}
 		}
+	}
+
+	/**
+	 * Probe whether `destPath` is a valid git repo whose `origin` points at the
+	 * expected GitHub `<owner>/<repo>`. Returns `true` on a match, `false` on any
+	 * mismatch, probe failure, or non-git directory (caller then wipes and
+	 * re-clones).
+	 */
+	private async trySalvageExistingClone(
+		owner: string,
+		repo: string,
+		destPath: string,
+	): Promise<boolean> {
+		const revParse = await this.deps.runCmd(["git", "rev-parse", "--git-dir"], destPath);
+		if (revParse.code !== 0) return false;
+		const remote = await this.deps.runCmd(["git", "remote", "get-url", "origin"], destPath);
+		if (remote.code !== 0) return false;
+		const url = remote.stdout.trim();
+		const parsed = parseGitHubUrl(url);
+		if (!parsed) return false;
+		return canonicalKey(parsed.owner, parsed.repo) === canonicalKey(owner, repo);
 	}
 
 	private async performClone(
@@ -264,7 +308,7 @@ export class ManagedRepoStore {
 		}
 
 		// Fall back to raw git clone with the user-supplied URL
-		const gitResult = await this.deps.runCmd(["git", "clone", rawUrl, destPath]);
+		const gitResult = await this.deps.runCmd(["git", "clone", "--quiet", rawUrl, destPath]);
 		if (gitResult.code !== 0) {
 			throw new ManagedRepoStoreError(
 				"clone-failed",
@@ -360,6 +404,7 @@ export class ManagedRepoStore {
 				});
 			} else {
 				this.states.delete(key);
+				this.locks.delete(key);
 			}
 		});
 

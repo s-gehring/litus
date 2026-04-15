@@ -23,6 +23,10 @@ interface MockDepsOptions {
 	cloneBehavior?: (cmd: string[], cwd?: string) => RunCmdResult | Promise<RunCmdResult>;
 	fetchBehavior?: (cmd: string[], cwd?: string) => RunCmdResult | Promise<RunCmdResult>;
 	existing?: Set<string>;
+	/** If set, `git remote get-url origin` returns this URL for any cwd. */
+	salvageRemoteUrl?: string;
+	/** If true, `git rev-parse --git-dir` returns code 1 (not a git dir). */
+	salvageRevParseFails?: boolean;
 }
 
 function mockDeps(opts: MockDepsOptions = {}): {
@@ -42,15 +46,20 @@ function mockDeps(opts: MockDepsOptions = {}): {
 				if (r.code === 0) {
 					// Synthesize that the destPath now exists. The destPath is
 					// positional: index 4 for `gh repo clone <owner/repo> <dest> -- --quiet`,
-					// index 3 for `git clone <url> <dest>`. Using `cmd[cmd.length - 1]`
-					// worked for git but picked up `--quiet` on the gh path.
-					const destPath = cmd[0] === "gh" ? cmd[4] : cmd[3];
+					// index 4 for `git clone --quiet <url> <dest>`.
+					const destPath = cmd[0] === "gh" ? cmd[4] : cmd[4];
 					if (destPath) existing.add(destPath);
 				}
 				return r;
 			}
 			if (cmd[0] === "git" && cmd[1] === "fetch") {
 				return opts.fetchBehavior ? await opts.fetchBehavior(cmd, cwd) : ok();
+			}
+			if (cmd[0] === "git" && cmd[1] === "rev-parse" && cmd[2] === "--git-dir") {
+				return opts.salvageRevParseFails ? fail("not a git repository", 128) : ok(".git");
+			}
+			if (cmd[0] === "git" && cmd[1] === "remote" && cmd[2] === "get-url") {
+				return opts.salvageRemoteUrl ? ok(opts.salvageRemoteUrl) : fail("no origin", 2);
 			}
 			return ok();
 		},
@@ -478,6 +487,71 @@ describe("ManagedRepoStore — progress event sequences", () => {
 		expect(events[0]).toEqual({ reused: true });
 		const steps = events.filter((e) => e.step).map((e) => e.step);
 		expect(steps).toEqual(["fetching", "ready"]);
+	});
+
+	test("salvage: pre-existing matching clone dir is adopted without cloning", async () => {
+		const baseDir = "/root/.litus/repos";
+		const destPath = join(baseDir, "Foo", "Bar");
+		const existing = new Set<string>([destPath]);
+		const { deps, calls } = mockDeps({
+			baseDir,
+			existing,
+			salvageRemoteUrl: "https://github.com/Foo/Bar.git",
+		});
+		const store = new ManagedRepoStore(deps);
+
+		const r = await store.acquire("s1", "https://github.com/Foo/Bar.git");
+
+		expect(r.path).toBe(destPath);
+		expect(r.reused).toBe(false);
+		// No clone subprocess ran — salvage adopted the existing dir.
+		const cloneCalls = calls.filter(
+			(c) => c.cmd[0] === "gh" || (c.cmd[0] === "git" && c.cmd[1] === "clone"),
+		);
+		expect(cloneCalls).toHaveLength(0);
+		// Refcount is still 1 (the initial acquire).
+		expect(store.getStateForTest("foo/bar")).toEqual({ kind: "ready", refCount: 1 });
+	});
+
+	test("salvage: pre-existing dir whose origin mismatches is wiped and re-cloned", async () => {
+		const baseDir = "/root/.litus/repos";
+		const destPath = join(baseDir, "Foo", "Bar");
+		const existing = new Set<string>([destPath]);
+		const { deps, calls, removed } = mockDeps({
+			baseDir,
+			existing,
+			salvageRemoteUrl: "https://github.com/Other/Repo.git",
+		});
+		const store = new ManagedRepoStore(deps);
+
+		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+
+		expect(removed).toContain(destPath);
+		// A full clone happened because salvage probe returned false.
+		const cloneCalls = calls.filter(
+			(c) => c.cmd[0] === "gh" || (c.cmd[0] === "git" && c.cmd[1] === "clone"),
+		);
+		expect(cloneCalls).toHaveLength(1);
+	});
+
+	test("salvage: pre-existing non-git dir is wiped and re-cloned", async () => {
+		const baseDir = "/root/.litus/repos";
+		const destPath = join(baseDir, "Foo", "Bar");
+		const existing = new Set<string>([destPath]);
+		const { deps, calls, removed } = mockDeps({
+			baseDir,
+			existing,
+			salvageRevParseFails: true,
+		});
+		const store = new ManagedRepoStore(deps);
+
+		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+
+		expect(removed).toContain(destPath);
+		const cloneCalls = calls.filter(
+			(c) => c.cmd[0] === "gh" || (c.cmd[0] === "git" && c.cmd[1] === "clone"),
+		);
+		expect(cloneCalls).toHaveLength(1);
 	});
 
 	test("waiter on in-flight clone emits waiter sequence and reused=true", async () => {

@@ -93,17 +93,20 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 				title: result.title,
 				infeasibleNotes: result.infeasibleNotes,
 			});
-			// Infeasible: no child workflows are created, so the initial acquire
-			// has no consumer to own it. Release the clone immediately.
+			// Infeasible: no child workflows will own the clone. Set committed so
+			// the `finally` release runs exactly once (here) — a second call would
+			// noop in the real store but still logs a call in tests and paints the
+			// intent less clearly.
 			if (resolved.managedRepo) {
 				await deps.managedRepoStore
 					.release(resolved.managedRepo.owner, resolved.managedRepo.repo)
 					.catch((relErr) => logger.warn(`[epic] infeasible release failed: ${relErr}`));
 			}
+			committed = true;
 			return;
 		}
 
-		const { workflows } = await createEpicWorkflows(result, repoDir, epicId);
+		const { workflows } = await createEpicWorkflows(result, repoDir, epicId, resolved.managedRepo);
 
 		// Defensive guard: if the analyzer produced zero specs without flagging
 		// the epic as infeasible (malformed JSON, future no-op code path, etc.),
@@ -124,26 +127,28 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			return;
 		}
 
-		// For a managed clone, refCount is at 1 (the initial acquire). Bring it up
-		// to N so each child workflow is counted as an independent consumer.
-		if (resolved.managedRepo && workflows.length > 1) {
-			await deps.managedRepoStore.bumpRefCount(
-				resolved.managedRepo.owner,
-				resolved.managedRepo.repo,
-				workflows.length - 1,
-			);
-		}
-
 		// Store the analysis duration on the first child workflow
-		if (workflows.length > 0) {
-			workflows[0].epicAnalysisMs = analysisMs;
-		}
+		workflows[0].epicAnalysisMs = analysisMs;
 
 		const workflowIds: string[] = [];
 
-		// Persist and register orchestrators for each workflow
-		for (const workflow of workflows) {
-			if (resolved.managedRepo) workflow.managedRepo = resolved.managedRepo;
+		// Persist and register orchestrators for each workflow.
+		//
+		// Bump the managed-repo refCount BEFORE save, per iteration, rather than
+		// once up front by (N-1). A mid-loop save failure then leaves the on-disk
+		// refCount equal to the number of successfully persisted workflows: the
+		// `finally` below releases the initial acquire (which covered this failing
+		// iteration's bump), and each persisted workflow later releases via its
+		// orchestrator. Up-front bumping was the cause of review-4 finding #1.
+		for (let i = 0; i < workflows.length; i++) {
+			const workflow = workflows[i];
+			if (i > 0 && resolved.managedRepo) {
+				await deps.managedRepoStore.bumpRefCount(
+					resolved.managedRepo.owner,
+					resolved.managedRepo.repo,
+					1,
+				);
+			}
 			await deps.sharedStore.save(workflow);
 
 			const orch = deps.createOrchestrator();

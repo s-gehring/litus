@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import type { ManagedRepoStore } from "../../src/managed-repo-store";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import type { ClientMessage } from "../../src/types";
 import { makeWorkflow } from "../helpers";
@@ -7,7 +8,17 @@ import { createMockWebSocket } from "../test-infra/mock-websocket";
 
 // ── Module mocks ──────────────────────────────────────────────────────
 
-let mockValidationResult: { valid: boolean; error?: string; effectivePath: string } = {
+type MockValidation = {
+	valid: boolean;
+	error?: string;
+	effectivePath: string;
+	kind?: "url" | "path";
+	owner?: string;
+	repo?: string;
+	code?: "non-github-url";
+};
+
+let mockValidationResult: MockValidation = {
 	valid: true,
 	effectivePath: "/mock/repo",
 };
@@ -195,6 +206,212 @@ describe("epic-handlers", () => {
 			mock.module("../../src/epic-analyzer", () => ({
 				analyzeEpic: async () => mockAnalyzeResult,
 			}));
+		});
+	});
+
+	describe("handleEpicStart — URL branch (managed-repo lifecycle)", () => {
+		// A tiny in-memory refcount tracker that matches the real store's
+		// acquire/bump/release arithmetic. Lets us assert the handler's invariant
+		// (refCount == persisted workflows) across success/failure paths.
+		function makeTrackedRepoStore() {
+			let refCount = 0;
+			const calls: { method: string; args: unknown[] }[] = [];
+			const store = {
+				async acquire(_sid: string, _url: string) {
+					calls.push({ method: "acquire", args: [_sid, _url] });
+					refCount += 1;
+					return { owner: "Foo", repo: "Bar", path: "/mock/clones/Foo/Bar", reused: false };
+				},
+				async release(owner: string, repo: string) {
+					calls.push({ method: "release", args: [owner, repo] });
+					if (refCount > 0) refCount -= 1;
+				},
+				async bumpRefCount(owner: string, repo: string, by: number) {
+					calls.push({ method: "bumpRefCount", args: [owner, repo, by] });
+					refCount += by;
+				},
+				async seedFromWorkflows() {},
+			} as unknown as ManagedRepoStore;
+			return { store, getRefCount: () => refCount, calls };
+		}
+
+		test("URL input with N=2 specs: bump(1) once, refCount ends at N after all saves succeed", async () => {
+			const { ws, deps } = setup();
+			mockValidationResult = {
+				valid: true,
+				effectivePath: "https://github.com/Foo/Bar.git",
+				kind: "url",
+				owner: "Foo",
+				repo: "Bar",
+			};
+			const wf1 = makeWorkflow({ epicDependencyStatus: "satisfied" });
+			const wf2 = makeWorkflow({ epicDependencyStatus: "satisfied" });
+			mockAnalyzeResult = {
+				title: "URL Epic",
+				specs: [
+					{ title: "Spec 1", specification: "S1" },
+					{ title: "Spec 2", specification: "S2" },
+				],
+			};
+			mockCreatedWorkflows = { workflows: [wf1, wf2], epicId: "epic-url-1" };
+
+			const { store, getRefCount, calls } = makeTrackedRepoStore();
+			deps.managedRepoStore = store;
+			deps.createOrchestrator = () =>
+				({
+					getEngine: () => ({ setWorkflow() {} }),
+					startPipelineFromWorkflow() {},
+				}) as unknown as PipelineOrchestrator;
+
+			await handleEpicStart(
+				ws,
+				{
+					type: "epic:start",
+					description: "A valid long description for URL",
+					targetRepository: "https://github.com/Foo/Bar.git",
+					autoStart: false,
+					submissionId: "sub-1",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls.filter((c) => c.method === "acquire")).toHaveLength(1);
+			expect(calls.filter((c) => c.method === "bumpRefCount")).toHaveLength(1);
+			expect(calls.filter((c) => c.method === "bumpRefCount")[0].args[2]).toBe(1);
+			expect(calls.filter((c) => c.method === "release")).toHaveLength(0);
+			expect(getRefCount()).toBe(2);
+		});
+
+		test("URL input with save throwing on iteration 1: refCount collapses to (persisted count)", async () => {
+			const { ws, deps } = setup();
+			mockValidationResult = {
+				valid: true,
+				effectivePath: "https://github.com/Foo/Bar.git",
+				kind: "url",
+				owner: "Foo",
+				repo: "Bar",
+			};
+			const wf1 = makeWorkflow({ epicDependencyStatus: "satisfied" });
+			const wf2 = makeWorkflow({ epicDependencyStatus: "satisfied" });
+			mockAnalyzeResult = {
+				title: "URL Epic Save Fail",
+				specs: [
+					{ title: "Spec 1", specification: "S1" },
+					{ title: "Spec 2", specification: "S2" },
+				],
+			};
+			mockCreatedWorkflows = { workflows: [wf1, wf2], epicId: "epic-save-fail" };
+
+			const { store, getRefCount, calls } = makeTrackedRepoStore();
+			deps.managedRepoStore = store;
+			deps.createOrchestrator = () =>
+				({
+					getEngine: () => ({ setWorkflow() {} }),
+					startPipelineFromWorkflow() {},
+				}) as unknown as PipelineOrchestrator;
+
+			// Save throws on iteration 1 (second workflow).
+			let saveCalls = 0;
+			deps.sharedStore.save = async () => {
+				saveCalls += 1;
+				if (saveCalls === 2) throw new Error("disk full");
+			};
+
+			await handleEpicStart(
+				ws,
+				{
+					type: "epic:start",
+					description: "A valid long description for URL save fail",
+					targetRepository: "https://github.com/Foo/Bar.git",
+					autoStart: false,
+					submissionId: "sub-2",
+				} as ClientMessage,
+				deps,
+			);
+
+			// acquire once, bump(1) once (for iter 1 before its save throws),
+			// release once (the initial acquire, from `finally`).
+			expect(calls.filter((c) => c.method === "acquire")).toHaveLength(1);
+			expect(calls.filter((c) => c.method === "bumpRefCount")).toHaveLength(1);
+			expect(calls.filter((c) => c.method === "release")).toHaveLength(1);
+			// One workflow persisted (wf1). refCount should equal the number of
+			// persisted workflows so each will eventually drive it to 0 via its
+			// orchestrator's release hook.
+			expect(getRefCount()).toBe(1);
+		});
+
+		test("URL input with analyzeEpic throwing: release called from finally, refCount 0", async () => {
+			const { ws, deps } = setup();
+			mockValidationResult = {
+				valid: true,
+				effectivePath: "https://github.com/Foo/Bar.git",
+				kind: "url",
+				owner: "Foo",
+				repo: "Bar",
+			};
+			const { store, getRefCount, calls } = makeTrackedRepoStore();
+			deps.managedRepoStore = store;
+
+			mock.module("../../src/epic-analyzer", () => ({
+				analyzeEpic: async () => {
+					throw new Error("boom");
+				},
+			}));
+			const { handleEpicStart: freshHandler } = await import("../../src/server/epic-handlers");
+
+			await freshHandler(
+				ws,
+				{
+					type: "epic:start",
+					description: "A valid long description for analyze fail",
+					targetRepository: "https://github.com/Foo/Bar.git",
+					autoStart: false,
+					submissionId: "sub-3",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls.filter((c) => c.method === "acquire")).toHaveLength(1);
+			expect(calls.filter((c) => c.method === "release")).toHaveLength(1);
+			expect(getRefCount()).toBe(0);
+
+			mock.module("../../src/epic-analyzer", () => ({
+				analyzeEpic: async () => mockAnalyzeResult,
+			}));
+		});
+
+		test("URL input with infeasible result: release called once, refCount 0", async () => {
+			const { ws, deps } = setup();
+			mockValidationResult = {
+				valid: true,
+				effectivePath: "https://github.com/Foo/Bar.git",
+				kind: "url",
+				owner: "Foo",
+				repo: "Bar",
+			};
+			mockAnalyzeResult = {
+				title: "Infeasible URL Epic",
+				specs: [],
+				infeasibleNotes: "Cannot because X",
+			};
+			const { store, getRefCount, calls } = makeTrackedRepoStore();
+			deps.managedRepoStore = store;
+
+			await handleEpicStart(
+				ws,
+				{
+					type: "epic:start",
+					description: "A valid long description for infeasible URL",
+					targetRepository: "https://github.com/Foo/Bar.git",
+					autoStart: false,
+					submissionId: "sub-4",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls.filter((c) => c.method === "acquire")).toHaveLength(1);
+			expect(calls.filter((c) => c.method === "release")).toHaveLength(1);
+			expect(getRefCount()).toBe(0);
 		});
 	});
 
