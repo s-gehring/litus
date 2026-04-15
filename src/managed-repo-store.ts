@@ -147,7 +147,9 @@ export class ManagedRepoStore {
 			});
 
 			if (decision.role === "deleted-wait") {
-				callbacks?.onProgress?.("resolving", "waiting for previous deletion to finish");
+				// Do not emit "resolving" here — the retry iteration emits it on the
+				// owner branch, and two coarse "resolving" steps with no intervening
+				// transition confuses the client's progress rendering.
 				await decision.promise.catch(() => undefined);
 				continue; // retry acquisition
 			}
@@ -171,11 +173,13 @@ export class ManagedRepoStore {
 					);
 					if (fetchResult.code !== 0) {
 						logger.warn(`[managed-repo] git fetch failed for ${key}: ${fetchResult.stderr}`);
+						callbacks?.onProgress?.("fetching", "warning: git fetch failed; using cached refs");
 					} else {
 						logger.info(`[managed-repo] action=fetch owner=${owner} repo=${repo}`);
 					}
 				} catch (err) {
 					logger.warn(`[managed-repo] git fetch errored for ${key}: ${err}`);
+					callbacks?.onProgress?.("fetching", "warning: git fetch failed; using cached refs");
 				}
 				callbacks?.onProgress?.("ready");
 				return { owner, repo, path: decision.path, reused: true };
@@ -309,6 +313,9 @@ export class ManagedRepoStore {
 				resolveDel = res;
 				rejectDel = rej;
 			});
+			// Prevent unhandled-rejection noise when no acquire is awaiting this
+			// promise (the failed-delete path is currently the only producer).
+			deletionPromise.catch(() => undefined);
 			this.states.set(key, {
 				kind: "deleting",
 				promise: deletionPromise,
@@ -337,12 +344,29 @@ export class ManagedRepoStore {
 			logger.info(`[managed-repo] action=delete owner=${owner} repo=${repo}`);
 		}
 
-		// Step 3: finalize under the lock
+		// Step 3: finalize under the lock. On failure (EBUSY/EACCES/EPERM) the
+		// on-disk clone dir still exists, so we restore a `ready` entry rather
+		// than dropping the state: a fresh `acquire` can then reuse the clone
+		// instead of trying to clone into a populated directory, and a future
+		// `release` can retry the delete.
 		await this.lockFor(key).run(async () => {
-			this.states.delete(key);
+			if (caught) {
+				this.states.set(key, {
+					kind: "ready",
+					path: next.path,
+					refCount: 1,
+					owner,
+					repo,
+				});
+			} else {
+				this.states.delete(key);
+			}
 		});
 
 		if (caught) {
+			logger.warn(
+				`[managed-repo] delete failed for ${owner}/${repo}; state restored to ready: ${caught}`,
+			);
 			next.rejectDel(caught);
 			throw caught;
 		}

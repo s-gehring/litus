@@ -124,7 +124,18 @@ export async function resolveTargetRepo(
 	const validation = await validateTargetRepository(targetRepository);
 
 	if (validation.kind === "url" && validation.valid) {
-		const sid = submissionId ?? "";
+		// The client keys its in-progress "Cloning…" modal by `submissionId`, so a
+		// URL-kind input without one would silently drop all `repo:clone-*`
+		// progress/error events (the client registers nothing at an empty key).
+		// Surface that as a user-visible error instead of a hang.
+		if (!submissionId) {
+			deps.sendTo(ws, {
+				type: "error",
+				message: "Missing submissionId — URL inputs require a client-generated submissionId.",
+			});
+			return null;
+		}
+		const sid = submissionId;
 		// Validator guarantees owner/repo are set when kind === "url" && valid.
 		const owner = validation.owner as string;
 		const repo = validation.repo as string;
@@ -184,10 +195,18 @@ export async function resolveTargetRepo(
 
 	if (!validation.valid) {
 		if (validation.code === "non-github-url") {
-			const sid = submissionId ?? "";
+			// Same reasoning as the URL branch above: without a submissionId the
+			// client would never see the clone-error event.
+			if (!submissionId) {
+				deps.sendTo(ws, {
+					type: "error",
+					message: "Missing submissionId — URL inputs require a client-generated submissionId.",
+				});
+				return null;
+			}
 			deps.sendTo(ws, {
 				type: "repo:clone-error",
-				submissionId: sid,
+				submissionId,
 				owner: "",
 				repo: "",
 				code: "non-github-url",

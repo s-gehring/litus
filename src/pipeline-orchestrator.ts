@@ -212,8 +212,12 @@ export class PipelineOrchestrator {
 			});
 	}
 
-	async startPipeline(specification: string, targetRepository: string): Promise<Workflow> {
-		const workflow = await this.engine.createWorkflow(specification, targetRepository);
+	async startPipeline(
+		specification: string,
+		targetRepository: string,
+		managedRepo: Workflow["managedRepo"] = null,
+	): Promise<Workflow> {
+		const workflow = await this.engine.createWorkflow(specification, targetRepository, managedRepo);
 		this.engine.transition(workflow.id, "running");
 
 		const branchCwd = targetRepository;

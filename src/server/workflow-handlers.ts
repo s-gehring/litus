@@ -20,8 +20,11 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 	let committed = false;
 	try {
 		const orch = deps.createOrchestrator();
-		const workflow = await orch.startPipeline(specification.trim(), resolved.path);
-		if (resolved.managedRepo) workflow.managedRepo = resolved.managedRepo;
+		const workflow = await orch.startPipeline(
+			specification.trim(),
+			resolved.path,
+			resolved.managedRepo ?? null,
+		);
 		deps.orchestrators.set(workflow.id, orch);
 		committed = true;
 

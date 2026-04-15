@@ -17,7 +17,11 @@ export class WorkflowEngine {
 		this.workflow = workflow;
 	}
 
-	async createWorkflow(specification: string, targetRepository: string): Promise<Workflow> {
+	async createWorkflow(
+		specification: string,
+		targetRepository: string,
+		managedRepo: Workflow["managedRepo"] = null,
+	): Promise<Workflow> {
 		const id = randomUUID();
 		const shortId = id.slice(0, 8);
 
@@ -75,7 +79,7 @@ export class WorkflowEngine {
 			activeWorkStartedAt: null,
 			feedbackEntries: [],
 			feedbackPreRunHead: null,
-			managedRepo: null,
+			managedRepo,
 			createdAt: now,
 			updatedAt: now,
 		};

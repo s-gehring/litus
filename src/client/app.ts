@@ -88,6 +88,18 @@ function connect(): void {
 		const dot = $("#connection-status");
 		dot.className = "status-dot disconnected";
 		dot.title = "Disconnected";
+
+		// Surface a readable error in any modal currently waiting on a clone —
+		// without this, a disconnect mid-clone leaves the user stuck on "Cloning…"
+		// with no way to recover short of reloading.
+		for (const [, handlers] of pendingCloneSubmissions) {
+			handlers.onError(
+				"disconnected",
+				"Lost connection to the server while cloning. Please try again once reconnected.",
+			);
+		}
+		pendingCloneSubmissions.clear();
+
 		scheduleReconnect();
 	};
 

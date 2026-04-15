@@ -280,6 +280,64 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 		await expect(store.release("Foo", "Bar")).resolves.toBeUndefined();
 	});
 
+	test("release on non-ENOENT rm failure re-installs ready state so a retry can delete", async () => {
+		const { deps } = mockDeps();
+		let attempts = 0;
+		deps.rm = async () => {
+			attempts += 1;
+			if (attempts === 1) {
+				const err = new Error("EBUSY") as NodeJS.ErrnoException;
+				err.code = "EBUSY";
+				throw err;
+			}
+			// Second attempt succeeds.
+		};
+		const store = new ManagedRepoStore(deps);
+		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+
+		let firstErr: unknown;
+		try {
+			await store.release("Foo", "Bar");
+		} catch (e) {
+			firstErr = e;
+		}
+		expect((firstErr as NodeJS.ErrnoException | undefined)?.code).toBe("EBUSY");
+
+		// State restored to ready(1) so a retry (or acquire+release) can finish the delete.
+		expect(store.getStateForTest("foo/bar")).toEqual({ kind: "ready", refCount: 1 });
+
+		await store.release("Foo", "Bar");
+		expect(store.getStateForTest("foo/bar")).toBeUndefined();
+		expect(attempts).toBe(2);
+	});
+
+	test("acquire after a failed release reuses the existing clone (no second clone)", async () => {
+		const { deps, calls } = mockDeps();
+		deps.rm = async () => {
+			const err = new Error("EACCES") as NodeJS.ErrnoException;
+			err.code = "EACCES";
+			throw err;
+		};
+		const store = new ManagedRepoStore(deps);
+		await store.acquire("s1", "https://github.com/Foo/Bar.git");
+		let releaseErr: unknown;
+		try {
+			await store.release("Foo", "Bar");
+		} catch (e) {
+			releaseErr = e;
+		}
+		expect((releaseErr as NodeJS.ErrnoException | undefined)?.code).toBe("EACCES");
+
+		// Re-acquiring should treat the surviving clone as a reuse, not attempt a fresh clone
+		// (which would fail because destPath already exists on disk).
+		const result = await store.acquire("s2", "https://github.com/Foo/Bar.git");
+		expect(result.reused).toBe(true);
+		const cloneCalls = calls.filter(
+			(c) => c.cmd[0] === "gh" || (c.cmd[0] === "git" && c.cmd[1] === "clone"),
+		);
+		expect(cloneCalls.length).toBe(1);
+	});
+
 	test("acquire during deleting waits, then starts a fresh clone (delete-wins)", async () => {
 		let resolveDelete!: () => void;
 		const deleteGate = new Promise<void>((r) => {
