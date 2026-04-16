@@ -1,35 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import { AlertQueue } from "../../src/alert-queue";
 import { AlertStore } from "../../src/alert-store";
+import { createAlertBroadcasters } from "../../src/server/alert-broadcast";
 import type { ServerMessage } from "../../src/types";
 import { withTempDir } from "../test-infra";
 
-// Mirrors the server.ts emitAlert / dismissAlertsWhere wiring so the
-// AlertQueue + broadcast contract is covered end-to-end without needing
-// to stand up a real HTTP/WebSocket server.
+// Uses the real `createAlertBroadcasters` helper from server.ts so a regression
+// in the emit/dismiss broadcast wiring would be caught here.
 function createHarness(queue: AlertQueue) {
 	const broadcasted: ServerMessage[] = [];
-	const broadcast = (msg: ServerMessage) => broadcasted.push(msg);
-
-	const emit = (input: Omit<import("../../src/types").Alert, "id" | "createdAt">) => {
-		const r = queue.emit(input);
-		if (!r) return null;
-		broadcast({ type: "alert:created", alert: r.alert });
-		if (r.evictedId) broadcast({ type: "alert:dismissed", alertIds: [r.evictedId] });
-		return r;
+	const broadcast = (msg: ServerMessage) => {
+		broadcasted.push(msg);
 	};
-
+	const { emitAlert, dismissAlertsWhere } = createAlertBroadcasters(queue, broadcast);
 	const dismissId = (id: string) => {
 		if (queue.dismiss(id)) broadcast({ type: "alert:dismissed", alertIds: [id] });
 	};
-
-	const dismissWhere = (filter: Parameters<AlertQueue["dismissWhere"]>[0]) => {
-		const removed = queue.dismissWhere(filter);
-		if (removed.length > 0) broadcast({ type: "alert:dismissed", alertIds: removed });
-		return removed;
-	};
-
-	return { emit, dismissId, dismissWhere, broadcasted, broadcast };
+	return { emit: emitAlert, dismissId, dismissWhere: dismissAlertsWhere, broadcasted, broadcast };
 }
 
 describe("alert lifecycle", () => {
@@ -43,7 +30,7 @@ describe("alert lifecycle", () => {
 			const h = createHarness(queue);
 
 			tick += 1;
-			const r1 = h.emit({
+			h.emit({
 				type: "workflow-finished",
 				title: "Finished",
 				description: "One done",
@@ -51,7 +38,6 @@ describe("alert lifecycle", () => {
 				epicId: null,
 				targetRoute: "/workflow/wf-1",
 			});
-			expect(r1).not.toBeNull();
 
 			tick += 1;
 			h.emit({
@@ -65,8 +51,7 @@ describe("alert lifecycle", () => {
 
 			expect(h.broadcasted.filter((m) => m.type === "alert:created")).toHaveLength(2);
 
-			// Give the fire-and-forget AlertStore.save calls time to flush.
-			await new Promise((r) => setTimeout(r, 30));
+			await queue.flush();
 			const onDisk = await store.load();
 			expect(onDisk).toHaveLength(2);
 
@@ -80,7 +65,7 @@ describe("alert lifecycle", () => {
 			const h2 = createHarness(reloaded);
 			h2.dismissId(firstId);
 			expect(h2.broadcasted).toEqual([{ type: "alert:dismissed", alertIds: [firstId] }]);
-			await new Promise((r) => setTimeout(r, 30));
+			await reloaded.flush();
 			expect((await store.load()).map((a) => a.id)).not.toContain(firstId);
 
 			// Auto-clear broadcast for question alerts.
@@ -93,10 +78,10 @@ describe("alert lifecycle", () => {
 				epicId: null,
 				targetRoute: "/workflow/wf-3",
 			});
-			const removed = h2.dismissWhere({ type: "question-asked", workflowId: "wf-3" });
-			expect(removed).toHaveLength(1);
+			h2.dismissWhere({ type: "question-asked", workflowId: "wf-3" });
 			const lastBroadcast = h2.broadcasted[h2.broadcasted.length - 1];
 			expect(lastBroadcast.type).toBe("alert:dismissed");
+			await reloaded.flush();
 		});
 	});
 
@@ -141,6 +126,7 @@ describe("alert lifecycle", () => {
 
 			const kinds = h.broadcasted.map((m) => m.type);
 			expect(kinds).toEqual(["alert:created", "alert:created", "alert:created", "alert:dismissed"]);
+			await queue.flush();
 		});
 	});
 });

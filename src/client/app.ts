@@ -433,6 +433,19 @@ function handleMessage(msg: ServerMessage): void {
 	}
 }
 
+function showMissingTargetToast(message: string): void {
+	showAlertToast({
+		id: `transient_${Date.now()}`,
+		type: "error",
+		title: "Alert target unavailable",
+		description: message,
+		workflowId: null,
+		epicId: null,
+		targetRoute: "",
+		createdAt: Date.now(),
+	});
+}
+
 function navigateToAlertTarget(alert: Alert): void {
 	hideAlertList();
 	const target = alert.targetRoute;
@@ -443,7 +456,7 @@ function navigateToAlertTarget(alert: Alert): void {
 		const wfId = workflowMatch[1];
 		const entry = stateManager.getWorkflows().get(wfId);
 		if (!entry) {
-			appendOutput(`Alert target workflow ${wfId} no longer exists`, "system");
+			showMissingTargetToast(`Workflow ${wfId} no longer exists`);
 			return;
 		}
 		if (appRouter) appRouter.navigate("/");
@@ -459,7 +472,7 @@ function navigateToAlertTarget(alert: Alert): void {
 		const hasEpic =
 			stateManager.getEpics().has(epicId) || stateManager.getEpicAggregates().has(epicId);
 		if (!hasEpic) {
-			appendOutput(`Alert target epic ${epicId} no longer exists`, "system");
+			showMissingTargetToast(`Epic ${epicId} no longer exists`);
 			return;
 		}
 		if (appRouter) appRouter.navigate("/");
@@ -583,8 +596,6 @@ function renderCards(): void {
 	const expandedId = stateManager.getExpandedId();
 
 	renderCardStrip(cardOrder, workflows, epics, epicAggregates, expandedId, expandItem);
-
-	updateFavicon(stateManager.getAlerts().size > 0);
 }
 
 function renderExpandedView(): void {
@@ -1272,11 +1283,6 @@ document.addEventListener("DOMContentLoaded", () => {
 			e.stopPropagation();
 			showAlertList();
 		});
-	}
-
-	// Close alert list on router navigation
-	if (appRouter) {
-		// router has no public event; close defensively whenever an expansion changes
 	}
 
 	connect();

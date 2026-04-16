@@ -14,8 +14,9 @@ interface Toast {
 let container: HTMLElement | null = null;
 let onClick: ClickHandler = () => {};
 const visible: Toast[] = [];
-let overflowCount = 0;
+const overflowQueue: Alert[] = [];
 let overflowEl: HTMLElement | null = null;
+let overflowTimer: ReturnType<typeof setTimeout> | null = null;
 
 function ensureContainer(): HTMLElement | null {
 	if (container) return container;
@@ -23,26 +24,44 @@ function ensureContainer(): HTMLElement | null {
 	return container;
 }
 
+function clearOverflow(): void {
+	overflowQueue.length = 0;
+	if (overflowTimer) {
+		clearTimeout(overflowTimer);
+		overflowTimer = null;
+	}
+	overflowEl?.remove();
+	overflowEl = null;
+}
+
 function removeToast(t: Toast): void {
 	clearTimeout(t.timer);
 	t.element.remove();
 	const idx = visible.indexOf(t);
 	if (idx >= 0) visible.splice(idx, 1);
+	// Promote the oldest overflowed alert into a real toast if there's room.
+	if (overflowQueue.length > 0 && visible.length < MAX_VISIBLE) {
+		const next = overflowQueue.shift();
+		if (next) showAlertToast(next);
+	}
+	renderOverflow();
 }
 
 function renderOverflow(): void {
 	if (!container) return;
-	if (overflowCount <= 0) {
-		overflowEl?.remove();
-		overflowEl = null;
+	if (overflowQueue.length <= 0) {
+		clearOverflow();
 		return;
 	}
 	if (!overflowEl) {
 		overflowEl = document.createElement("div");
 		overflowEl.className = "alert-toast alert-toast-overflow";
+		overflowEl.addEventListener("click", clearOverflow);
 		container.appendChild(overflowEl);
 	}
-	overflowEl.textContent = `+${overflowCount} more alert${overflowCount > 1 ? "s" : ""}`;
+	overflowEl.textContent = `+${overflowQueue.length} more alert${overflowQueue.length > 1 ? "s" : ""}`;
+	if (overflowTimer) clearTimeout(overflowTimer);
+	overflowTimer = setTimeout(clearOverflow, AUTO_DISMISS_MS);
 }
 
 function buildToastElement(alert: Alert): HTMLElement {
@@ -77,7 +96,7 @@ export function showAlertToast(alert: Alert): void {
 	if (!root) return;
 
 	if (visible.length >= MAX_VISIBLE) {
-		overflowCount++;
+		overflowQueue.push(alert);
 		renderOverflow();
 		return;
 	}
@@ -95,4 +114,9 @@ export function showAlertToast(alert: Alert): void {
 export function removeAlertToast(alertId: string): void {
 	const t = visible.find((v) => v.alert.id === alertId);
 	if (t) removeToast(t);
+	const idx = overflowQueue.findIndex((a) => a.id === alertId);
+	if (idx >= 0) {
+		overflowQueue.splice(idx, 1);
+		renderOverflow();
+	}
 }

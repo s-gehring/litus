@@ -14,6 +14,7 @@ import { createDefaultManagedRepoStore } from "./managed-repo-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
+import { createAlertBroadcasters } from "./server/alert-broadcast";
 import { handleAlertDismiss, handleAlertList } from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
 import { handleEpicCancel, handleEpicStart } from "./server/epic-handlers";
@@ -65,25 +66,9 @@ const orchestrators = new Map<string, PipelineOrchestrator>();
 // ── Epic analysis state ──────────────────────────────────
 const epicAnalysisRef: { current: EpicAnalysisProcess | null } = { current: null };
 
-function emitAlert(input: Omit<import("./types").Alert, "id" | "createdAt">): void {
-	const result = sharedAlertQueue.emit(input);
-	if (!result) return;
-	broadcast({ type: "alert:created", alert: result.alert });
-	if (result.evictedId) {
-		broadcast({ type: "alert:dismissed", alertIds: [result.evictedId] });
-	}
-}
-
-function dismissAlertsWhere(filter: {
-	type: import("./types").AlertType;
-	workflowId?: string;
-	epicId?: string;
-}): void {
-	const removed = sharedAlertQueue.dismissWhere(filter);
-	if (removed.length > 0) {
-		broadcast({ type: "alert:dismissed", alertIds: removed });
-	}
-}
+const { emitAlert, dismissAlertsWhere } = createAlertBroadcasters(sharedAlertQueue, (msg) =>
+	broadcast(msg),
+);
 
 function createCallbacks() {
 	return {
@@ -391,13 +376,20 @@ function cleanupChildren() {
 	sharedCliRunner.killAll();
 }
 process.on("exit", cleanupChildren);
-process.on("SIGINT", () => {
+async function gracefulExit(): Promise<void> {
 	cleanupChildren();
+	try {
+		await sharedAlertQueue.flush();
+	} catch {
+		// Errors are logged inside flush().
+	}
 	process.exit(0);
+}
+process.on("SIGINT", () => {
+	void gracefulExit();
 });
 process.on("SIGTERM", () => {
-	cleanupChildren();
-	process.exit(0);
+	void gracefulExit();
 });
 
 // Restore persisted alert queue on startup (fire-and-forget; initial WS

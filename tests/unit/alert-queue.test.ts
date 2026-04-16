@@ -43,8 +43,7 @@ describe("AlertQueue", () => {
 			expect(result?.alert.id).toMatch(/^alert_/);
 			expect(result?.evictedId).toBeNull();
 			expect(q.list()).toHaveLength(1);
-			// Give fire-and-forget save time to land
-			await new Promise((r) => setTimeout(r, 20));
+			await q.flush();
 			const reloaded = await store.load();
 			expect(reloaded).toHaveLength(1);
 		});
@@ -59,6 +58,7 @@ describe("AlertQueue", () => {
 			expect(q.emit(makeInput())).toBeNull();
 			clock.advance(2);
 			expect(q.emit(makeInput())).not.toBeNull();
+			await q.flush();
 		});
 	});
 
@@ -72,6 +72,7 @@ describe("AlertQueue", () => {
 			expect(
 				q.emit(makeInput({ workflowId: null, epicId: "ep1", type: "epic-finished" })),
 			).not.toBeNull();
+			await q.flush();
 		});
 	});
 
@@ -94,6 +95,7 @@ describe("AlertQueue", () => {
 			expect(r?.evictedId).toBe(firstId);
 			expect(q.list()).toHaveLength(3);
 			expect(q.list().map((a) => a.workflowId)).toEqual(["wf3", "wf2", "wf1"]);
+			await q.flush();
 		});
 	});
 
@@ -105,6 +107,7 @@ describe("AlertQueue", () => {
 			expect(q.dismiss(r?.alert.id ?? "")).toBe(true);
 			expect(q.list()).toHaveLength(0);
 			expect(q.dismiss("nope")).toBe(false);
+			await q.flush();
 		});
 	});
 
@@ -127,6 +130,7 @@ describe("AlertQueue", () => {
 				"error:wf1",
 				"question-asked:wf2",
 			]);
+			await q.flush();
 		});
 	});
 
@@ -139,13 +143,31 @@ describe("AlertQueue", () => {
 			q1.emit(makeInput({ workflowId: "wf1" }));
 			clock.advance(1);
 			q1.emit(makeInput({ workflowId: "wf2" }));
-			await new Promise((r) => setTimeout(r, 30));
+			await q1.flush();
 
 			const q2 = new AlertQueue(new AlertStore(dir), { now: clock.now });
 			await q2.loadFromDisk();
 			expect(q2.list()).toHaveLength(2);
 			// dedup map should suppress immediate duplicate of wf1 question-asked
 			expect(q2.emit(makeInput({ workflowId: "wf1" }))).toBeNull();
+			await q2.flush();
 		});
+	});
+
+	test("title/description truncated to declared caps", () => {
+		const clock = fakeClock();
+		const q = new AlertQueue(new AlertStore("/tmp/litus-alert-truncate-test"), { now: clock.now });
+		const longTitle = "t".repeat(200);
+		const longDesc = "d".repeat(800);
+		const r = q.emit({
+			type: "error",
+			title: longTitle,
+			description: longDesc,
+			workflowId: "wf",
+			epicId: null,
+			targetRoute: "/workflow/wf",
+		});
+		expect(r?.alert.title.length).toBe(120);
+		expect(r?.alert.description.length).toBe(500);
 	});
 });

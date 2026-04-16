@@ -5,6 +5,12 @@ import type { Alert, AlertType } from "./types";
 
 const MAX_ALERTS = 100;
 const DEDUP_WINDOW_MS = 5000;
+const MAX_TITLE_LEN = 120;
+const MAX_DESCRIPTION_LEN = 500;
+
+function truncate(value: string, max: number): string {
+	return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
 
 export interface AlertQueueOptions {
 	now?: () => number;
@@ -63,7 +69,13 @@ export class AlertQueue {
 			return null;
 		}
 
-		const alert: Alert = { ...input, id: makeAlertId(), createdAt: now };
+		const alert: Alert = {
+			...input,
+			title: truncate(input.title, MAX_TITLE_LEN),
+			description: truncate(input.description, MAX_DESCRIPTION_LEN),
+			id: makeAlertId(),
+			createdAt: now,
+		};
 
 		let evictedId: string | null = null;
 		if (this.alerts.length >= this.maxAlerts) {
@@ -99,10 +111,27 @@ export class AlertQueue {
 		return removed;
 	}
 
+	/**
+	 * Awaits the most recent pending persist. Useful for tests and graceful
+	 * shutdown paths where we want the on-disk snapshot to reflect the latest
+	 * mutation before the process exits.
+	 */
+	async flush(): Promise<void> {
+		if (this.pendingPersist) {
+			try {
+				await this.pendingPersist;
+			} catch {
+				// Errors are already logged by `persist`.
+			}
+		}
+	}
+
+	private pendingPersist: Promise<void> | null = null;
+
 	private persist(): void {
 		// Snapshot current state; persist fire-and-forget via AlertStore's own lock.
 		const snapshot = [...this.alerts];
-		this.store.save(snapshot).catch((err) => {
+		this.pendingPersist = this.store.save(snapshot).catch((err) => {
 			logger.error(`[alert-queue] Failed to persist alerts: ${err}`);
 		});
 	}

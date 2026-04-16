@@ -1647,7 +1647,8 @@ export class PipelineOrchestrator {
 		}
 
 		// Check epic dependencies — notify server to resolve dependent workflows
-		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
+		// and emit `epic-finished` when every sibling has reached a terminal state.
+		if (workflow.epicId) {
 			this.checkEpicDependencies(workflow).catch((err) => {
 				logger.error(`[pipeline] Failed to check epic dependencies: ${err}`);
 			});
@@ -1695,8 +1696,8 @@ export class PipelineOrchestrator {
 		const allTerminal =
 			epicWorkflows.length > 0 &&
 			epicWorkflows.every((w) => w.id === triggerWorkflow.id || terminal(w.status));
-		if (allTerminal && this.callbacks.onAlertEmit) {
-			this.callbacks.onAlertEmit({
+		if (allTerminal) {
+			this.callbacks.onAlertEmit?.({
 				type: "epic-finished",
 				title: "Epic finished",
 				description: triggerWorkflow.epicTitle || "Epic completed",
@@ -1859,7 +1860,7 @@ export class PipelineOrchestrator {
 		);
 
 		// Update epic dependency status for siblings if this workflow errored
-		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
+		if (workflow.epicId) {
 			this.checkEpicDependencies(workflow).catch((err) => {
 				logger.error(`[pipeline] Failed to check epic dependencies: ${err}`);
 			});
