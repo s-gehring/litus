@@ -633,11 +633,7 @@ export interface PipelineCallbacks {
 	 */
 	onAlertEmit?: (input: Omit<Alert, "id" | "createdAt">) => void;
 	/** Bulk-dismiss alerts matching a filter (used for auto-clearing question alerts). */
-	onAlertDismissWhere?: (filter: {
-		type: AlertType;
-		workflowId?: string;
-		epicId?: string;
-	}) => void;
+	onAlertDismissWhere?: (filter: { type: AlertType; workflowId?: string; epicId?: string }) => void;
 }
 
 // ── State change types ──────────────────────────────────

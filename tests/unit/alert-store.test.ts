@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { AlertStore } from "../../src/alert-store";
-import { withTempDir } from "../test-infra";
 import type { Alert } from "../../src/types";
+import { withTempDir } from "../test-infra";
 
 function sampleAlert(overrides: Partial<Alert> = {}): Alert {
 	return {
@@ -59,10 +59,7 @@ describe("AlertStore", () => {
 
 	test("load returns [] on missing version", async () => {
 		await withTempDir(async (dir) => {
-			writeFileSync(
-				join(dir, "alerts.json"),
-				JSON.stringify({ alerts: [sampleAlert()] }),
-			);
+			writeFileSync(join(dir, "alerts.json"), JSON.stringify({ alerts: [sampleAlert()] }));
 			const store = new AlertStore(dir);
 			expect(await store.load()).toEqual([]);
 		});

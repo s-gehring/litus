@@ -62,9 +62,7 @@ export class AlertStore {
 			}
 			if (!data || typeof data !== "object") return [];
 			if (data.version !== SCHEMA_VERSION) {
-				logger.warn(
-					`[alert-store] Unknown schema version ${data.version}; starting fresh`,
-				);
+				logger.warn(`[alert-store] Unknown schema version ${data.version}; starting fresh`);
 				return [];
 			}
 			if (!Array.isArray(data.alerts)) return [];

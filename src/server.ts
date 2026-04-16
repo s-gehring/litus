@@ -14,6 +14,7 @@ import { createDefaultManagedRepoStore } from "./managed-repo-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
+import { handleAlertDismiss, handleAlertList } from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
 import { handleEpicCancel, handleEpicStart } from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
@@ -263,6 +264,8 @@ router.register("config:reset", handleConfigReset);
 router.register("epic:start", handleEpicStart);
 router.register("epic:cancel", handleEpicCancel);
 router.register("purge:all", handlePurgeAll);
+router.register("alert:list", handleAlertList);
+router.register("alert:dismiss", handleAlertDismiss);
 
 // ── HTTP/WS server ──────────────────────────────────────
 async function listSubdirectories(parentDir: string): Promise<string[]> {

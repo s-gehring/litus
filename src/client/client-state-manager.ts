@@ -368,9 +368,7 @@ export class ClientStateManager {
 		return { scope: { entity: "global" }, action: "updated" };
 	}
 
-	private handleAlertCreated(
-		msg: Extract<ServerMessage, { type: "alert:created" }>,
-	): StateChange {
+	private handleAlertCreated(msg: Extract<ServerMessage, { type: "alert:created" }>): StateChange {
 		this.alerts.set(msg.alert.id, msg.alert);
 		return { scope: { entity: "global" }, action: "added" };
 	}

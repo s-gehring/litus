@@ -11,6 +11,12 @@ import {
 	type WorkflowState,
 } from "../types";
 import { ClientStateManager } from "./client-state-manager";
+import {
+	hideAlertList,
+	initAlertList,
+	refreshAlertList,
+	showAlertList,
+} from "./components/alert-list";
 import { initAlertToasts, removeAlertToast, showAlertToast } from "./components/alert-toast";
 import {
 	createConfigPageHandler,
@@ -407,24 +413,28 @@ function handleMessage(msg: ServerMessage): void {
 		case "alert:list": {
 			// Initial list: refresh badge only — do not spawn toasts retroactively.
 			renderAlertBell();
+			refreshAlertList();
 			break;
 		}
 
 		case "alert:created": {
 			showAlertToast(msg.alert);
 			renderAlertBell();
+			refreshAlertList();
 			break;
 		}
 
 		case "alert:dismissed": {
 			for (const id of msg.alertIds) removeAlertToast(id);
 			renderAlertBell();
+			refreshAlertList();
 			break;
 		}
 	}
 }
 
 function navigateToAlertTarget(alert: Alert): void {
+	hideAlertList();
 	const target = alert.targetRoute;
 	if (!target) return;
 	const workflowMatch = target.match(/^\/workflow\/(.+)$/);
@@ -458,9 +468,10 @@ function navigateToAlertTarget(alert: Alert): void {
 }
 
 function renderAlertBell(): void {
+	const count = stateManager.getAlerts().size;
+	updateFavicon(count > 0);
 	const btn = document.getElementById("btn-alert-bell");
 	if (!btn) return;
-	const count = stateManager.getAlerts().size;
 	const badge = btn.querySelector(".bell-count");
 	if (badge) {
 		if (count > 0) {
@@ -573,15 +584,7 @@ function renderCards(): void {
 
 	renderCardStrip(cardOrder, workflows, epics, epicAggregates, expandedId, expandItem);
 
-	let needsAttention = false;
-	for (const [, entry] of workflows) {
-		const s = entry.state.status;
-		if (s === "waiting_for_input" || s === "error") {
-			needsAttention = true;
-			break;
-		}
-	}
-	updateFavicon(needsAttention);
+	updateFavicon(stateManager.getAlerts().size > 0);
 }
 
 function renderExpandedView(): void {
@@ -1249,7 +1252,32 @@ document.addEventListener("DOMContentLoaded", () => {
 	// Timer update interval
 	setInterval(updateTimers, 1000);
 
-	initAlertToasts(navigateToAlertTarget);
+	initAlertToasts((alert) => {
+		navigateToAlertTarget(alert);
+	});
+
+	initAlertList({
+		getAlerts: () => stateManager.getAlerts(),
+		onDismiss: (id) => {
+			send({ type: "alert:dismiss", alertId: id });
+		},
+		onNavigate: (alert) => {
+			navigateToAlertTarget(alert);
+		},
+	});
+
+	const btnBell = document.getElementById("btn-alert-bell");
+	if (btnBell) {
+		btnBell.addEventListener("click", (e) => {
+			e.stopPropagation();
+			showAlertList();
+		});
+	}
+
+	// Close alert list on router navigation
+	if (appRouter) {
+		// router has no public event; close defensively whenever an expansion changes
+	}
 
 	connect();
 });

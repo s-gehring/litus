@@ -23,9 +23,7 @@ function createHarness(queue: AlertQueue) {
 		if (queue.dismiss(id)) broadcast({ type: "alert:dismissed", alertIds: [id] });
 	};
 
-	const dismissWhere = (
-		filter: Parameters<AlertQueue["dismissWhere"]>[0],
-	) => {
+	const dismissWhere = (filter: Parameters<AlertQueue["dismissWhere"]>[0]) => {
 		const removed = queue.dismissWhere(filter);
 		if (removed.length > 0) broadcast({ type: "alert:dismissed", alertIds: removed });
 		return removed;
@@ -142,12 +140,7 @@ describe("alert lifecycle", () => {
 			});
 
 			const kinds = h.broadcasted.map((m) => m.type);
-			expect(kinds).toEqual([
-				"alert:created",
-				"alert:created",
-				"alert:created",
-				"alert:dismissed",
-			]);
+			expect(kinds).toEqual(["alert:created", "alert:created", "alert:created", "alert:dismissed"]);
 		});
 	});
 });

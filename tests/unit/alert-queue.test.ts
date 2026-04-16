@@ -16,11 +16,13 @@ function fakeClock(start = 1_000_000) {
 	};
 }
 
-function makeInput(over: Partial<{
-	type: "question-asked" | "error" | "workflow-finished" | "pr-opened-manual" | "epic-finished";
-	workflowId: string | null;
-	epicId: string | null;
-}> = {}) {
+function makeInput(
+	over: Partial<{
+		type: "question-asked" | "error" | "workflow-finished" | "pr-opened-manual" | "epic-finished";
+		workflowId: string | null;
+		epicId: string | null;
+	}> = {},
+) {
 	return {
 		type: over.type ?? ("question-asked" as const),
 		title: "t",
@@ -67,7 +69,9 @@ describe("AlertQueue", () => {
 			expect(q.emit(makeInput({ type: "error" }))).not.toBeNull();
 			expect(q.emit(makeInput({ type: "question-asked" }))).not.toBeNull();
 			expect(q.emit(makeInput({ workflowId: "wf2" }))).not.toBeNull();
-			expect(q.emit(makeInput({ workflowId: null, epicId: "ep1", type: "epic-finished" }))).not.toBeNull();
+			expect(
+				q.emit(makeInput({ workflowId: null, epicId: "ep1", type: "epic-finished" })),
+			).not.toBeNull();
 		});
 	});
 

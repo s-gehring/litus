@@ -1691,8 +1691,7 @@ export class PipelineOrchestrator {
 		// Emit `epic-finished` when every workflow in the epic has reached a
 		// terminal state. Dedup on (type, epicId) in AlertQueue guarantees at-most-once.
 		const epicWorkflows = allWorkflows.filter((w) => w.epicId === triggerWorkflow.epicId);
-		const terminal = (s: WorkflowStatus) =>
-			s === "completed" || s === "error" || s === "cancelled";
+		const terminal = (s: WorkflowStatus) => s === "completed" || s === "error" || s === "cancelled";
 		const allTerminal =
 			epicWorkflows.length > 0 &&
 			epicWorkflows.every((w) => w.id === triggerWorkflow.id || terminal(w.status));
@@ -1889,12 +1888,7 @@ export class PipelineOrchestrator {
 		return workflow.epicId ? `/epic/${workflow.epicId}` : `/workflow/${workflow.id}`;
 	}
 
-	private emitAlert(
-		type: AlertType,
-		workflow: Workflow,
-		title: string,
-		description: string,
-	): void {
+	private emitAlert(type: AlertType, workflow: Workflow, title: string, description: string): void {
 		if (!this.callbacks.onAlertEmit) return;
 		this.callbacks.onAlertEmit({
 			type,

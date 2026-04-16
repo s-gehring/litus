@@ -55,9 +55,7 @@ export class AlertQueue {
 	 * 100-alert cap forced oldest-eviction. Returns null when suppressed by the
 	 * 5 s `(type, workflowId|epicId)` dedup window.
 	 */
-	emit(
-		input: Omit<Alert, "id" | "createdAt">,
-	): { alert: Alert; evictedId: string | null } | null {
+	emit(input: Omit<Alert, "id" | "createdAt">): { alert: Alert; evictedId: string | null } | null {
 		const now = this.now();
 		const key = dedupKey(input.type, input.workflowId, input.epicId);
 		const last = this.dedupKeys.get(key);
@@ -87,11 +85,7 @@ export class AlertQueue {
 		return true;
 	}
 
-	dismissWhere(filter: {
-		type: AlertType;
-		workflowId?: string;
-		epicId?: string;
-	}): string[] {
+	dismissWhere(filter: { type: AlertType; workflowId?: string; epicId?: string }): string[] {
 		const removed: string[] = [];
 		this.alerts = this.alerts.filter((a) => {
 			const match =
