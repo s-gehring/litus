@@ -627,6 +627,17 @@ export interface PipelineCallbacks {
 		status: EpicDependencyStatus,
 		blockingWorkflows: string[],
 	) => void;
+	/**
+	 * Request emission of an alert. Server wires this to
+	 * `alertQueue.emit` + broadcast. Dedup/cap/persistence are the queue's job.
+	 */
+	onAlertEmit?: (input: Omit<Alert, "id" | "createdAt">) => void;
+	/** Bulk-dismiss alerts matching a filter (used for auto-clearing question alerts). */
+	onAlertDismissWhere?: (filter: {
+		type: AlertType;
+		workflowId?: string;
+		epicId?: string;
+	}) => void;
 }
 
 // ── State change types ──────────────────────────────────

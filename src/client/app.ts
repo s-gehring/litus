@@ -1,5 +1,6 @@
 import { looksLikeGitUrl } from "../git-url";
 import {
+	type Alert,
 	type AutoMode,
 	type ClientMessage,
 	type EpicAggregatedState,
@@ -10,6 +11,7 @@ import {
 	type WorkflowState,
 } from "../types";
 import { ClientStateManager } from "./client-state-manager";
+import { initAlertToasts, removeAlertToast, showAlertToast } from "./components/alert-toast";
 import {
 	createConfigPageHandler,
 	hidePurgeProgress,
@@ -400,6 +402,72 @@ function handleMessage(msg: ServerMessage): void {
 			pendingCloneSubmissions.get(msg.submissionId)?.onError(msg.code, msg.message);
 			pendingCloneSubmissions.delete(msg.submissionId);
 			break;
+		}
+
+		case "alert:list": {
+			// Initial list: refresh badge only — do not spawn toasts retroactively.
+			renderAlertBell();
+			break;
+		}
+
+		case "alert:created": {
+			showAlertToast(msg.alert);
+			renderAlertBell();
+			break;
+		}
+
+		case "alert:dismissed": {
+			for (const id of msg.alertIds) removeAlertToast(id);
+			renderAlertBell();
+			break;
+		}
+	}
+}
+
+function navigateToAlertTarget(alert: Alert): void {
+	const target = alert.targetRoute;
+	if (!target) return;
+	const workflowMatch = target.match(/^\/workflow\/(.+)$/);
+	const epicMatch = target.match(/^\/epic\/(.+)$/);
+	if (workflowMatch) {
+		const wfId = workflowMatch[1];
+		const entry = stateManager.getWorkflows().get(wfId);
+		if (!entry) {
+			appendOutput(`Alert target workflow ${wfId} no longer exists`, "system");
+			return;
+		}
+		if (appRouter) appRouter.navigate("/");
+		expandItem(entry.state.epicId ? `${EPIC_CARD_PREFIX}${entry.state.epicId}` : wfId);
+		if (entry.state.epicId) {
+			stateManager.selectChild(wfId);
+			renderExpandedView();
+		}
+		return;
+	}
+	if (epicMatch) {
+		const epicId = epicMatch[1];
+		const hasEpic =
+			stateManager.getEpics().has(epicId) || stateManager.getEpicAggregates().has(epicId);
+		if (!hasEpic) {
+			appendOutput(`Alert target epic ${epicId} no longer exists`, "system");
+			return;
+		}
+		if (appRouter) appRouter.navigate("/");
+		expandItem(`${EPIC_CARD_PREFIX}${epicId}`);
+	}
+}
+
+function renderAlertBell(): void {
+	const btn = document.getElementById("btn-alert-bell");
+	if (!btn) return;
+	const count = stateManager.getAlerts().size;
+	const badge = btn.querySelector(".bell-count");
+	if (badge) {
+		if (count > 0) {
+			badge.textContent = String(count);
+			badge.classList.remove("hidden");
+		} else {
+			badge.classList.add("hidden");
 		}
 	}
 }
@@ -1180,6 +1248,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	// Timer update interval
 	setInterval(updateTimers, 1000);
+
+	initAlertToasts(navigateToAlertTarget);
 
 	connect();
 });

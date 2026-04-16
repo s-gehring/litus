@@ -35,6 +35,7 @@ import {
 import { routeAfterStep as computeRoute, shouldLoopReview } from "./step-router";
 import { Summarizer } from "./summarizer";
 import {
+	type AlertType,
 	type EffortLevel,
 	type FeedbackEntry,
 	type ModelConfig,
@@ -265,6 +266,7 @@ export class PipelineOrchestrator {
 		}
 
 		this.engine.clearQuestion(workflowId);
+		this.clearQuestionAlert(workflowId);
 		const step = workflow.steps[workflow.currentStepIndex];
 
 		// Append the user's answer to step output so it is visible and persisted
@@ -534,6 +536,7 @@ export class PipelineOrchestrator {
 		this.summarizer.cleanup(workflowId);
 		this.resetStepState();
 		this.engine.clearQuestion(workflowId);
+		this.clearQuestionAlert(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
 
@@ -1326,6 +1329,14 @@ export class PipelineOrchestrator {
 		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
+
+		const summary = question.content.slice(0, 200);
+		this.emitAlert(
+			"question-asked",
+			workflow,
+			"Question awaiting answer",
+			`${workflow.summary || workflow.specification.slice(0, 60)} — ${summary}`,
+		);
 	}
 
 	private advanceAfterStep(workflowId: string): void {
@@ -1361,7 +1372,18 @@ export class PipelineOrchestrator {
 
 		if (step.name === STEP.COMMIT_PUSH_PR) {
 			const url = extractPrUrl(step.output);
-			if (url) workflow.prUrl = url;
+			if (url) {
+				const firstPr = !workflow.prUrl;
+				workflow.prUrl = url;
+				if (firstPr && configStore.get().autoMode === "manual") {
+					this.emitAlert(
+						"pr-opened-manual",
+						workflow,
+						"PR opened — ready to review",
+						`${workflow.summary || workflow.specification.slice(0, 80)} — ${url}`,
+					);
+				}
+			}
 		}
 
 		// After specify completes, detect the feature branch and rename
@@ -1615,6 +1637,15 @@ export class PipelineOrchestrator {
 		// consumer finishes.
 		this.releaseManagedRepoIfAny(workflow);
 
+		if (!workflow.epicId) {
+			this.emitAlert(
+				"workflow-finished",
+				workflow,
+				"Workflow finished",
+				workflow.summary || workflow.specification.slice(0, 120),
+			);
+		}
+
 		// Check epic dependencies — notify server to resolve dependent workflows
 		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
 			this.checkEpicDependencies(workflow).catch((err) => {
@@ -1655,6 +1686,25 @@ export class PipelineOrchestrator {
 			await this.store.save(sibling);
 
 			this.callbacks.onEpicDependencyUpdate?.(sibling.id, depStatus.status, depStatus.blocking);
+		}
+
+		// Emit `epic-finished` when every workflow in the epic has reached a
+		// terminal state. Dedup on (type, epicId) in AlertQueue guarantees at-most-once.
+		const epicWorkflows = allWorkflows.filter((w) => w.epicId === triggerWorkflow.epicId);
+		const terminal = (s: WorkflowStatus) =>
+			s === "completed" || s === "error" || s === "cancelled";
+		const allTerminal =
+			epicWorkflows.length > 0 &&
+			epicWorkflows.every((w) => w.id === triggerWorkflow.id || terminal(w.status));
+		if (allTerminal && this.callbacks.onAlertEmit) {
+			this.callbacks.onAlertEmit({
+				type: "epic-finished",
+				title: "Epic finished",
+				description: triggerWorkflow.epicTitle || "Epic completed",
+				workflowId: null,
+				epicId: triggerWorkflow.epicId,
+				targetRoute: `/epic/${triggerWorkflow.epicId}`,
+			});
 		}
 	}
 
@@ -1801,6 +1851,14 @@ export class PipelineOrchestrator {
 		// alongside completed/cancelled as a terminal state that must release.
 		this.releaseManagedRepoIfAny(workflow);
 
+		const shortError = error.length > 200 ? `${error.slice(0, 197)}...` : error;
+		this.emitAlert(
+			"error",
+			workflow,
+			"Workflow error",
+			`${workflow.summary || workflow.specification.slice(0, 60)} — ${shortError}`,
+		);
+
 		// Update epic dependency status for siblings if this workflow errored
 		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
 			this.checkEpicDependencies(workflow).catch((err) => {
@@ -1825,6 +1883,31 @@ export class PipelineOrchestrator {
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.sessionId = sessionId;
 		this.persistWorkflow(workflow);
+	}
+
+	private workflowTargetRoute(workflow: Workflow): string {
+		return workflow.epicId ? `/epic/${workflow.epicId}` : `/workflow/${workflow.id}`;
+	}
+
+	private emitAlert(
+		type: AlertType,
+		workflow: Workflow,
+		title: string,
+		description: string,
+	): void {
+		if (!this.callbacks.onAlertEmit) return;
+		this.callbacks.onAlertEmit({
+			type,
+			title,
+			description,
+			workflowId: workflow.id,
+			epicId: workflow.epicId,
+			targetRoute: this.workflowTargetRoute(workflow),
+		});
+	}
+
+	private clearQuestionAlert(workflowId: string): void {
+		this.callbacks.onAlertDismissWhere?.({ type: "question-asked", workflowId });
 	}
 
 	private persistWorkflow(workflow: Workflow): void {

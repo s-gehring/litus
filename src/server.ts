@@ -64,6 +64,26 @@ const orchestrators = new Map<string, PipelineOrchestrator>();
 // ── Epic analysis state ──────────────────────────────────
 const epicAnalysisRef: { current: EpicAnalysisProcess | null } = { current: null };
 
+function emitAlert(input: Omit<import("./types").Alert, "id" | "createdAt">): void {
+	const result = sharedAlertQueue.emit(input);
+	if (!result) return;
+	broadcast({ type: "alert:created", alert: result.alert });
+	if (result.evictedId) {
+		broadcast({ type: "alert:dismissed", alertIds: [result.evictedId] });
+	}
+}
+
+function dismissAlertsWhere(filter: {
+	type: import("./types").AlertType;
+	workflowId?: string;
+	epicId?: string;
+}): void {
+	const removed = sharedAlertQueue.dismissWhere(filter);
+	if (removed.length > 0) {
+		broadcast({ type: "alert:dismissed", alertIds: removed });
+	}
+}
+
 function createCallbacks() {
 	return {
 		onStepChange: (
@@ -127,6 +147,8 @@ function createCallbacks() {
 
 			broadcastWorkflowState(dependentWorkflowId);
 		},
+		onAlertEmit: emitAlert,
+		onAlertDismissWhere: dismissAlertsWhere,
 	};
 }
 
