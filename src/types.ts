@@ -500,6 +500,7 @@ export type ServerMessage =
 	| { type: "config:error"; errors: ConfigValidationError[] }
 	| { type: "purge:progress"; step: string; current: number; total: number }
 	| { type: "purge:complete"; warnings: string[] }
+	| { type: "purge:error"; message: string; warnings: string[] }
 	| {
 			type: "repo:clone-start";
 			submissionId: string;

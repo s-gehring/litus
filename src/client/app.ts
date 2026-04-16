@@ -335,6 +335,15 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "purge:error": {
+			hidePurgeProgress();
+			appendOutput(`Purge aborted: ${msg.message}`, "error");
+			if (msg.warnings.length > 0) {
+				appendOutput(`Partial warnings before abort: ${msg.warnings.join("; ")}`, "error");
+			}
+			break;
+		}
+
 		case "config:state": {
 			updateConfigPage(msg.config, msg.warnings);
 			syncAutoModeToggle(msg.config.autoMode);

@@ -159,6 +159,8 @@ export class ClientStateManager {
 				return { scope: { entity: "none" }, action: "updated" };
 			case "purge:complete":
 				return this.handlePurgeComplete();
+			case "purge:error":
+				return { scope: { entity: "none" }, action: "updated" };
 			case "config:state":
 				return this.handleConfigState(msg);
 			case "config:error":
