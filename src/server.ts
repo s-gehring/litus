@@ -1,4 +1,6 @@
 import type { ServerWebSocket } from "bun";
+import { AlertQueue } from "./alert-queue";
+import { AlertStore } from "./alert-store";
 import { AuditLogger } from "./audit-logger";
 import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
@@ -54,6 +56,7 @@ const sharedCliRunner = new CLIRunner();
 const sharedSummarizer = new Summarizer();
 const sharedAuditLogger = new AuditLogger();
 const managedRepoStore = createDefaultManagedRepoStore();
+const sharedAlertQueue = new AlertQueue(new AlertStore());
 
 // WorkflowManager: holds one PipelineOrchestrator per active workflow
 const orchestrators = new Map<string, PipelineOrchestrator>();
@@ -212,6 +215,7 @@ const deps: HandlerDeps = {
 	sharedSummarizer,
 	configStore,
 	managedRepoStore,
+	alertQueue: sharedAlertQueue,
 	epicAnalysisRef,
 	createOrchestrator,
 	broadcastWorkflowState,
@@ -331,6 +335,7 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 				if (epics.length > 0) {
 					sendTo(ws, { type: "epic:list", epics });
 				}
+				sendTo(ws, { type: "alert:list", alerts: sharedAlertQueue.list() });
 			},
 			message(ws: ServerWebSocket<WsData>, message: string | Buffer) {
 				router.dispatch(ws, message, deps);
@@ -368,6 +373,13 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
 	cleanupChildren();
 	process.exit(0);
+});
+
+// Restore persisted alert queue on startup (fire-and-forget; initial WS
+// `alert:list` messages sent before this resolves will just report an empty
+// list — correct behavior for a fresh process).
+sharedAlertQueue.loadFromDisk().catch((err) => {
+	logger.error(`[startup] Failed to load alert queue: ${err}`);
 });
 
 // Restore persisted workflows on startup

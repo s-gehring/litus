@@ -459,6 +459,34 @@ export type WorkflowState = Omit<Workflow, "steps" | "feedbackPreRunHead"> & {
 	steps: Omit<PipelineStep, "sessionId" | "prompt" | "pid">[];
 };
 
+// ── Alert types ──────────────────────────────────────────
+
+export type AlertType =
+	| "question-asked"
+	| "pr-opened-manual"
+	| "workflow-finished"
+	| "epic-finished"
+	| "error";
+
+export interface Alert {
+	/** Stable identifier, e.g. `alert_<ulid>`. Generated server-side at emit time. */
+	id: string;
+	/** Category of event. Drives dedup key and (client-side) icon/label choice. */
+	type: AlertType;
+	/** Short human-readable title shown in the toast and list row. */
+	title: string;
+	/** One-line description; may embed the error message or question summary. */
+	description: string;
+	/** Originating workflow id, or null for epic-finished alerts. */
+	workflowId: string | null;
+	/** Originating epic id when the alert stems from an epic or an epic-owned workflow. */
+	epicId: string | null;
+	/** Client-side route target (e.g. `/workflow/<id>` or `/epic/<id>`). */
+	targetRoute: string;
+	/** Epoch ms at server-side emission time. Used for sort order and eviction. */
+	createdAt: number;
+}
+
 // Server → Client messages
 export type ServerMessage =
 	| { type: "workflow:state"; workflow: WorkflowState | null }
@@ -538,6 +566,9 @@ export type ServerMessage =
 			message: string;
 	  }
 	| { type: "log"; text: string }
+	| { type: "alert:list"; alerts: Alert[] }
+	| { type: "alert:created"; alert: Alert }
+	| { type: "alert:dismissed"; alertIds: string[] }
 	| { type: "error"; message: string };
 
 // Individual tool usage from CLI stream event
@@ -645,4 +676,6 @@ export type ClientMessage =
 	| { type: "config:get" }
 	| { type: "config:save"; config: DeepPartial<AppConfig> }
 	| { type: "config:reset"; key?: string }
+	| { type: "alert:list" }
+	| { type: "alert:dismiss"; alertId: string }
 	| { type: "purge:all" };

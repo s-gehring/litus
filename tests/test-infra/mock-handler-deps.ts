@@ -1,4 +1,6 @@
 import type { ServerWebSocket } from "bun";
+import { AlertQueue } from "../../src/alert-queue";
+import { AlertStore } from "../../src/alert-store";
 import type { ManagedRepoStore } from "../../src/managed-repo-store";
 import type { HandlerDeps, WsData } from "../../src/server/handler-types";
 import type { ServerMessage, Workflow, WorkflowState } from "../../src/types";
@@ -57,6 +59,7 @@ export function createMockHandlerDeps(overrides?: Partial<HandlerDeps>): MockHan
 		sharedSummarizer: {} as unknown as HandlerDeps["sharedSummarizer"],
 		configStore: mockConfigStore.mock as unknown as HandlerDeps["configStore"],
 		managedRepoStore: createMockManagedRepoStore(),
+		alertQueue: overrides?.alertQueue ?? new AlertQueue(new AlertStore("/tmp/litus-test-alerts")),
 		epicAnalysisRef: { current: null },
 		createOrchestrator: (() => {
 			throw new Error("createOrchestrator not mocked");

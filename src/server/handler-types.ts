@@ -1,4 +1,5 @@
 import type { ServerWebSocket } from "bun";
+import type { AlertQueue } from "../alert-queue";
 import type { AuditLogger } from "../audit-logger";
 import type { CLIRunner } from "../cli-runner";
 import type { ConfigStore } from "../config-store";
@@ -25,6 +26,7 @@ export interface HandlerDeps {
 	sharedSummarizer: Summarizer;
 	configStore: ConfigStore;
 	managedRepoStore: ManagedRepoStore;
+	alertQueue: AlertQueue;
 	epicAnalysisRef: { current: EpicAnalysisProcess | null };
 	createOrchestrator: () => PipelineOrchestrator;
 	broadcastWorkflowState: (workflowId: string) => void;
