@@ -1,6 +1,6 @@
 import { rm as fsRm, stat as fsStat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { AsyncLock } from "./async-lock";
 import { gitSpawn } from "./git-logger";
 import { canonicalKey, parseGitHubUrl } from "./git-url";
@@ -346,6 +346,38 @@ export class ManagedRepoStore {
 				);
 			}
 			current.refCount += by;
+		});
+	}
+
+	/**
+	 * If `path` points at a currently-ready managed clone's folder, bump its
+	 * refCount by 1 and return its owner/repo so the caller can attach it to
+	 * the workflow record. Returns null otherwise.
+	 *
+	 * Used by the workflow-start flow when a path input (e.g. the client's
+	 * "last target repo" prefill) resolves to a folder that is actually a
+	 * managed clone — without this, the second workflow would not participate
+	 * in refcounting and releasing the first workflow would delete the folder
+	 * out from under the second one.
+	 */
+	async tryAttachByPath(path: string): Promise<{ owner: string; repo: string } | null> {
+		// Extract <owner>/<repo> from <baseDir>/<owner>/<repo>. Any other shape
+		// (unrelated path, nested deeper, outside baseDir) → not a managed clone.
+		const rel = relative(this.deps.baseDir, path);
+		if (!rel || rel.startsWith("..") || isAbsolute(rel)) return null;
+		const parts = rel.split(/[\\/]/).filter(Boolean);
+		if (parts.length !== 2) return null;
+		const [owner, repo] = parts;
+		const key = canonicalKey(owner, repo);
+		return this.lockFor(key).run(async () => {
+			const current = this.states.get(key);
+			// Attach only to a ready entry. "cloning" means the canonical acquire
+			// flow owns lifecycle already; "deleting" means the folder is on its
+			// way out and must not gain new holders.
+			if (!current || current.kind !== "ready") return null;
+			if (current.path !== path) return null;
+			current.refCount += 1;
+			return { owner: current.owner, repo: current.repo };
 		});
 	}
 

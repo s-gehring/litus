@@ -13,6 +13,9 @@ function createMockManagedRepoStore(): ManagedRepoStore {
 		async release() {},
 		async bumpRefCount() {},
 		async seedFromWorkflows() {},
+		async tryAttachByPath() {
+			return null;
+		},
 	} as unknown as ManagedRepoStore;
 }
 
