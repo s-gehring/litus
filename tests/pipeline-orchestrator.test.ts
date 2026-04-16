@@ -1215,6 +1215,48 @@ describe("PipelineOrchestrator", () => {
 			// extraEnv is the 5th argument (index 4)
 			expect(lastCall[4]).toEqual({ SPECIFY_FEATURE: "021-my-feature" });
 		});
+
+		test("pause during in-flight classifyWithHaiku does not advance paused workflow", async () => {
+			await startAndFlush("test");
+			const wf = getWf(engine);
+
+			// Arrange: the current step will look like a question candidate, but classify
+			// returns a controllable deferred promise so we can pause mid-flight.
+			const question: Question = {
+				id: "q1",
+				content: "Does this compile?",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+
+			let resolveClassify: ((v: boolean) => void) | null = null;
+			qd.classifyWithHaiku.mockImplementationOnce(
+				() =>
+					new Promise<boolean>((resolve) => {
+						resolveClassify = resolve;
+					}),
+			);
+
+			// CLI completes → handleStepComplete starts classifyWithHaiku
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 0));
+
+			// User pauses before classify resolves
+			orchestrator.pause("test-wf-id");
+			expect(wf.status).toBe("paused");
+			const pausedStepIndex = wf.currentStepIndex;
+			const startCallsBeforeClassify = cli._startCalls.length;
+
+			// Classify resolves as "not a question" → would previously advance
+			if (!resolveClassify) throw new Error("classify promise not captured");
+			(resolveClassify as (v: boolean) => void)(false);
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Assert: workflow stays paused, no new CLI started, step index unchanged
+			expect(wf.status).toBe("paused");
+			expect(wf.currentStepIndex).toBe(pausedStepIndex);
+			expect(cli._startCalls.length).toBe(startCallsBeforeClassify);
+		});
 	});
 
 	describe("feature branch detection after specify", () => {
