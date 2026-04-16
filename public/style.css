@@ -1581,6 +1581,22 @@ body::-webkit-scrollbar-track {
   color: var(--text-dim);
 }
 
+.modal-field-hint {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  opacity: 0.75;
+  margin-top: -2px;
+}
+
+.modal-field-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
 .modal-field input,
 .modal-field textarea {
   width: 100%;

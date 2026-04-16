@@ -385,6 +385,77 @@ describe("ManagedRepoStore — US3 (release + seed)", () => {
 		expect(r.path).toContain("foo");
 	});
 
+	test("tryAttachByPath bumps refCount and returns owner/repo for a managed-clone path", async () => {
+		// Scenario: workflow A was submitted via URL (refcounted). The client
+		// prefills workflow B's target-repo with A's clone path; B arrives as
+		// a path input. tryAttachByPath promotes B to a managed reference so
+		// A's later release does not destroy B's working directory.
+		const baseDir = "/root/.litus/repos";
+		const { deps } = mockDeps({ baseDir });
+		const store = new ManagedRepoStore(deps);
+		const acq = await store.acquire("https://github.com/Foo/Bar.git");
+
+		const attached = await store.tryAttachByPath(acq.path);
+		expect(attached).toEqual({ owner: "foo", repo: "bar" });
+		expect(store.getStateForTest("foo/bar")).toEqual({ kind: "ready", refCount: 2 });
+	});
+
+	test("tryAttachByPath returns null for a path outside baseDir", async () => {
+		const baseDir = "/root/.litus/repos";
+		const { deps } = mockDeps({ baseDir });
+		const store = new ManagedRepoStore(deps);
+		await store.acquire("https://github.com/Foo/Bar.git");
+		const attached = await store.tryAttachByPath("/some/other/path");
+		expect(attached).toBeNull();
+	});
+
+	test("tryAttachByPath returns null when no state entry exists", async () => {
+		const baseDir = "/root/.litus/repos";
+		const { deps } = mockDeps({ baseDir });
+		const store = new ManagedRepoStore(deps);
+		const attached = await store.tryAttachByPath(join(baseDir, "foo", "bar"));
+		expect(attached).toBeNull();
+	});
+
+	test("tryAttachByPath does not attach to a deleting entry", async () => {
+		let resolveDelete!: () => void;
+		const deleteGate = new Promise<void>((r) => {
+			resolveDelete = r;
+		});
+		const baseDir = "/root/.litus/repos";
+		const { deps } = mockDeps({ baseDir });
+		deps.rm = async () => {
+			await deleteGate;
+		};
+		const store = new ManagedRepoStore(deps);
+		const acq = await store.acquire("https://github.com/Foo/Bar.git");
+		const releasePromise = store.release("Foo", "Bar");
+		// State is now "deleting" — must not hand out new references.
+		const attached = await store.tryAttachByPath(acq.path);
+		expect(attached).toBeNull();
+		resolveDelete();
+		await releasePromise;
+	});
+
+	test("attached workflow's release completes the delete when primary already released", async () => {
+		// End-to-end: A acquires, B attaches, A releases (refCount=1), B
+		// releases (refCount=0 → delete). This is the original bug scenario
+		// where aborting A used to destroy B's working directory.
+		const { deps, removed } = mockDeps();
+		const store = new ManagedRepoStore(deps);
+		const acq = await store.acquire("https://github.com/Foo/Bar.git");
+		const attached = await store.tryAttachByPath(acq.path);
+		expect(attached).not.toBeNull();
+
+		await store.release("Foo", "Bar"); // A aborts — must NOT delete yet
+		expect(removed).toEqual([]);
+		expect(store.getStateForTest("foo/bar")).toEqual({ kind: "ready", refCount: 1 });
+
+		await store.release("Foo", "Bar"); // B terminates — now delete
+		expect(removed).toContain(acq.path);
+		expect(store.getStateForTest("foo/bar")).toBeUndefined();
+	});
+
 	test("seedFromWorkflows seeds ready(refCount=N) for non-terminal workflows whose clone dir exists", async () => {
 		const baseDir = "/root/.litus/repos";
 		// Acquire canonicalises owner/repo to lowercase, so on-disk dirs

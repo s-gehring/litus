@@ -218,5 +218,14 @@ export async function resolveTargetRepo(
 		return null;
 	}
 
+	// A path input that points at a currently-managed clone (e.g. the client
+	// prefilled the previous workflow's `targetRepository`, which for a
+	// URL-submitted workflow is the clone path under ~/.litus/repos) must
+	// participate in refcounting. Otherwise the first workflow's release
+	// would delete the folder this new workflow is about to work inside.
+	const attached = await deps.managedRepoStore.tryAttachByPath(validation.effectivePath);
+	if (attached) {
+		return { path: validation.effectivePath, managedRepo: attached };
+	}
 	return { path: validation.effectivePath, managedRepo: null };
 }

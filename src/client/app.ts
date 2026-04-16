@@ -877,6 +877,21 @@ function openFeedbackPanel(wf: WorkflowState): void {
 	});
 }
 
+function createRepoHint(): HTMLDivElement {
+	const hint = document.createElement("div");
+	hint.className = "modal-field-hint";
+	hint.appendChild(document.createTextNode("Folder path (e.g. "));
+	const pathCode = document.createElement("code");
+	pathCode.textContent = "~/git/my-repo";
+	hint.appendChild(pathCode);
+	hint.appendChild(document.createTextNode(") or GitHub URL (e.g. "));
+	const urlCode = document.createElement("code");
+	urlCode.textContent = "https://github.com/user/repo";
+	hint.appendChild(urlCode);
+	hint.appendChild(document.createTextNode(")"));
+	return hint;
+}
+
 function openSpecModal(): void {
 	const content = document.createElement("div");
 
@@ -888,6 +903,7 @@ function openSpecModal(): void {
 	const repoPicker = createFolderPicker("~/git");
 	repoPicker.setValue(stateManager.getLastTargetRepo());
 	repoField.appendChild(repoPicker.element);
+	repoField.appendChild(createRepoHint());
 
 	const specField = document.createElement("div");
 	specField.className = "modal-field";
@@ -982,6 +998,7 @@ function openEpicModal(): void {
 	const repoPicker = createFolderPicker("~/git");
 	repoPicker.setValue(stateManager.getLastTargetRepo());
 	repoField.appendChild(repoPicker.element);
+	repoField.appendChild(createRepoHint());
 
 	const descField = document.createElement("div");
 	descField.className = "modal-field";
