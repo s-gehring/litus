@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { readFileSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuditLogger } from "../src/audit-logger";
 import type { AuditEvent } from "../src/types";
 
-const TEST_AUDIT_DIR = join(homedir(), ".litus", "audit-test");
+const TEST_AUDIT_DIR = join(tmpdir(), "litus-audit-test");
 
 function readEvents(pipelineName: string): AuditEvent[] {
 	const filePath = join(TEST_AUDIT_DIR, `${pipelineName}.jsonl`);
@@ -119,7 +119,7 @@ describe("default audit directory", () => {
 // T022 — US4: custom auditDir config
 describe("custom auditDir config", () => {
 	it("respects AuditConfig.auditDir override and writes to the specified directory", () => {
-		const customDir = join(homedir(), ".litus", "audit-test-custom");
+		const customDir = join(tmpdir(), "litus-audit-test-custom");
 		const logger = new AuditLogger({ auditDir: customDir });
 		expect(logger.auditDir).toBe(customDir);
 

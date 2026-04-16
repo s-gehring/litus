@@ -59,7 +59,7 @@ TypeScript: Enforced by Biome (`bunx biome ci .`)
   happened. No long explanations.
 - DO NOT COMMIT ANYTHING THAT IS GITIGNORED!! No git add -f
 - Every github action must be SHA pinned
-- Do not create bullet points for "Test Plan" on opening pull requests.
+- Do NOT create a "Test Plan" when opening pull requests.
 - In pull requests always contain three sections:
     - Changes made (from a user perspective, but might also include technical details for the reviewer)
     - Bugs fixed that were already present before the branch opened
