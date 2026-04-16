@@ -20,6 +20,7 @@ import {
 import { buildFeedbackContext } from "./feedback-injector";
 import { gitSpawn } from "./git-logger";
 import { logger } from "./logger";
+import type { ManagedRepoStore } from "./managed-repo-store";
 import {
 	mergePr as defaultMergePr,
 	resolveConflicts as defaultResolveConflicts,
@@ -72,6 +73,7 @@ export interface PipelineDeps {
 	summarizer?: Summarizer;
 	auditLogger?: AuditLogger;
 	workflowStore?: WorkflowStore;
+	managedRepoStore?: ManagedRepoStore;
 	mergePr?: typeof defaultMergePr;
 	resolveConflicts?: typeof defaultResolveConflicts;
 	syncRepo?: typeof defaultSyncRepo;
@@ -119,6 +121,7 @@ export class PipelineOrchestrator {
 	private summarizer: Summarizer;
 	private auditLogger: AuditLogger;
 	private store: WorkflowStore;
+	private managedRepoStore: ManagedRepoStore | null;
 	private callbacks: PipelineCallbacks;
 	private assistantTextBuffer = "";
 	private currentAuditRunId: string | null = null;
@@ -145,6 +148,7 @@ export class PipelineOrchestrator {
 		this.summarizer = deps?.summarizer ?? new Summarizer();
 		this.auditLogger = deps?.auditLogger ?? new AuditLogger();
 		this.store = deps?.workflowStore ?? new WorkflowStore();
+		this.managedRepoStore = deps?.managedRepoStore ?? null;
 		this.mergePrFn = deps?.mergePr ?? defaultMergePr;
 		this.resolveConflictsFn = deps?.resolveConflicts ?? defaultResolveConflicts;
 		this.syncRepoFn = deps?.syncRepo ?? defaultSyncRepo;
@@ -208,8 +212,12 @@ export class PipelineOrchestrator {
 			});
 	}
 
-	async startPipeline(specification: string, targetRepository: string): Promise<Workflow> {
-		const workflow = await this.engine.createWorkflow(specification, targetRepository);
+	async startPipeline(
+		specification: string,
+		targetRepository: string,
+		managedRepo: Workflow["managedRepo"] = null,
+	): Promise<Workflow> {
+		const workflow = await this.engine.createWorkflow(specification, targetRepository, managedRepo);
 		this.engine.transition(workflow.id, "running");
 
 		const branchCwd = targetRepository;
@@ -583,6 +591,11 @@ export class PipelineOrchestrator {
 		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
+
+		// If this workflow cloned from a URL, release the managed-repo refcount so the
+		// clone is cleaned up once it has no remaining consumers. sync-repo (which is
+		// the release hook for normal completion) does not run on cancel.
+		this.releaseManagedRepoIfAny(workflow);
 
 		// Update epic dependency status for siblings if this workflow was cancelled
 		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
@@ -1542,6 +1555,35 @@ export class PipelineOrchestrator {
 			});
 	}
 
+	/**
+	 * Release the managed clone's refcount (if this workflow was cloned from a URL).
+	 * Idempotent: clears `workflow.managedRepo` after release so retry-then-error
+	 * paths (error → running → error) and any other double-entry into a terminal
+	 * handler cannot double-release. Also keeps restart-time `seedFromWorkflows`
+	 * self-consistent — a workflow whose refcount has already been released will
+	 * not be re-counted if it somehow survives as a non-terminal record on disk.
+	 *
+	 * INVARIANT — caller contract: the workflow MUST have already been transitioned
+	 * to a terminal state (completed/cancelled/error) AND that state MUST have
+	 * been persisted before this method is invoked. Both `persistWorkflow` here
+	 * and `managedRepoStore.release` are fire-and-forget; the ordering that makes
+	 * this safe is: terminal-state-save happens in the caller → this method's
+	 * two async operations fire → a crash between them leaves a terminal record
+	 * on disk (which `seedFromWorkflows` filters out). Move the release earlier
+	 * in the lifecycle only if you also move the terminal persist earlier.
+	 */
+	private releaseManagedRepoIfAny(workflow: Workflow): void {
+		if (!workflow.managedRepo || !this.managedRepoStore) return;
+		const { owner, repo } = workflow.managedRepo;
+		workflow.managedRepo = null;
+		this.persistWorkflow(workflow);
+		this.managedRepoStore.release(owner, repo).catch((err) => {
+			logger.warn(
+				`[pipeline] managed-repo release failed for ${owner}/${repo}: ${toErrorMessage(err)}`,
+			);
+		});
+	}
+
 	private completeWorkflow(workflow: Workflow): void {
 		if (this.currentAuditRunId) {
 			this.auditLogger.endRun(this.currentAuditRunId, {
@@ -1556,6 +1598,11 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.callbacks.onComplete(workflow.id);
 		this.callbacks.onStateChange(workflow.id);
+
+		// For URL-sourced workflows, the sync-repo step has already removed the worktree.
+		// Release the managed-repo refcount so the clone is cleaned up when the last
+		// consumer finishes.
+		this.releaseManagedRepoIfAny(workflow);
 
 		// Check epic dependencies — notify server to resolve dependent workflows
 		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
@@ -1737,6 +1784,11 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.callbacks.onError(workflowId, error);
 		this.callbacks.onStateChange(workflowId);
+
+		// Release managed-repo refcount on errored workflows so the clone is
+		// eventually cleaned up. data-model.md §"Clone Consumer" lists errored
+		// alongside completed/cancelled as a terminal state that must release.
+		this.releaseManagedRepoIfAny(workflow);
 
 		// Update epic dependency status for siblings if this workflow errored
 		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {

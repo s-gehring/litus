@@ -1,3 +1,4 @@
+import { looksLikeGitUrl } from "../git-url";
 import {
 	type AutoMode,
 	type ClientMessage,
@@ -16,7 +17,7 @@ import {
 	updateConfigPage,
 	updatePurgeProgress,
 } from "./components/config-page";
-import { createModal } from "./components/creation-modal";
+import { createModal, type Modal } from "./components/creation-modal";
 import { createDashboardHandler } from "./components/dashboard-handler";
 import { renderEpicTree } from "./components/epic-tree";
 import { updateFavicon } from "./components/favicon";
@@ -88,6 +89,18 @@ function connect(): void {
 		const dot = $("#connection-status");
 		dot.className = "status-dot disconnected";
 		dot.title = "Disconnected";
+
+		// Surface a readable error in any modal currently waiting on a clone —
+		// without this, a disconnect mid-clone leaves the user stuck on "Cloning…"
+		// with no way to recover short of reloading.
+		for (const [, handlers] of pendingCloneSubmissions) {
+			handlers.onError(
+				"disconnected",
+				"Lost connection to the server while cloning. Please try again once reconnected.",
+			);
+		}
+		pendingCloneSubmissions.clear();
+
 		scheduleReconnect();
 	};
 
@@ -322,6 +335,15 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "purge:error": {
+			hidePurgeProgress();
+			appendOutput(`Purge aborted: ${msg.message}`, "error");
+			if (msg.warnings.length > 0) {
+				appendOutput(`Partial warnings before abort: ${msg.warnings.join("; ")}`, "error");
+			}
+			break;
+		}
+
 		case "config:state": {
 			updateConfigPage(msg.config, msg.warnings);
 			syncAutoModeToggle(msg.config.autoMode);
@@ -349,7 +371,91 @@ function handleMessage(msg: ServerMessage): void {
 			appendOutput(`Error: ${msg.message}`, "error");
 			break;
 		}
+
+		case "repo:clone-start": {
+			pendingCloneSubmissions.get(msg.submissionId)?.onStart(msg.owner, msg.repo, msg.reused);
+			break;
+		}
+
+		case "repo:clone-progress": {
+			pendingCloneSubmissions.get(msg.submissionId)?.onProgress(msg.step, msg.message);
+			break;
+		}
+
+		case "repo:clone-complete": {
+			// Guard against duplicate/late events: if the entry is already gone
+			// (user dismissed the modal, or a prior clone-complete fired), skip
+			// onComplete — calling modal.hide() on an already-hidden modal is
+			// tolerated by the browser but not part of the contract.
+			const handlers = pendingCloneSubmissions.get(msg.submissionId);
+			if (!handlers) break;
+			// onComplete calls modal.hide(), which is wrapped to delete the
+			// entry — no explicit delete needed here.
+			handlers.onComplete();
+			break;
+		}
+
+		case "repo:clone-error": {
+			// onError leaves the modal open (inline error), so delete explicitly.
+			pendingCloneSubmissions.get(msg.submissionId)?.onError(msg.code, msg.message);
+			pendingCloneSubmissions.delete(msg.submissionId);
+			break;
+		}
 	}
+}
+
+interface PendingCloneHandlers {
+	onStart: (owner: string, repo: string, reused: boolean) => void;
+	onProgress: (step: string, message?: string) => void;
+	onComplete: () => void;
+	onError: (code: string, message: string) => void;
+}
+
+const pendingCloneSubmissions = new Map<string, PendingCloneHandlers>();
+
+/**
+ * Wire a modal to a pending clone submission: renders status, disables the
+ * form, and ensures the map entry is cleaned up on any modal close (so late
+ * clone-progress events from a dismissed modal don't act on a detached DOM).
+ */
+function attachCloneSubmission(
+	modal: Modal,
+	cloneStatus: HTMLElement,
+	errorEl: HTMLElement,
+	setFormDisabled: (disabled: boolean) => void,
+	submissionId: string,
+): void {
+	cloneStatus.textContent = "Preparing clone…";
+	cloneStatus.classList.remove("hidden");
+	setFormDisabled(true);
+
+	pendingCloneSubmissions.set(submissionId, {
+		onStart: (owner, repo, reused) => {
+			cloneStatus.textContent = reused
+				? `Reusing existing clone ${owner}/${repo}…`
+				: `Cloning ${owner}/${repo}…`;
+		},
+		onProgress: (step, message) => {
+			cloneStatus.textContent = message ? `${step}: ${message}` : `${step}…`;
+		},
+		onComplete: () => {
+			modal.hide();
+		},
+		onError: (_code, message) => {
+			cloneStatus.classList.add("hidden");
+			setFormDisabled(false);
+			errorEl.textContent = message;
+			errorEl.classList.remove("hidden");
+		},
+	});
+
+	// Ensure the pending entry is removed even if the user closes the modal
+	// (escape/overlay click/close button) before the clone completes.
+	const origHide = modal.hide;
+	modal.hide = () => {
+		pendingCloneSubmissions.delete(submissionId);
+		origHide();
+	};
 }
 
 function expandItem(id: string): void {
@@ -810,6 +916,20 @@ function openSpecModal(): void {
 
 	const modal = createModal("New Specification", content);
 
+	const cloneStatus = document.createElement("div");
+	cloneStatus.className = "modal-clone-status hidden";
+	content.appendChild(cloneStatus);
+
+	function setFormDisabled(disabled: boolean) {
+		specInput.disabled = disabled;
+		btnStart.disabled = disabled;
+		repoPicker.element
+			.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button")
+			.forEach((el) => {
+				el.disabled = disabled;
+			});
+	}
+
 	function submit() {
 		const spec = specInput.value.trim();
 		if (!spec) {
@@ -819,6 +939,19 @@ function openSpecModal(): void {
 		}
 		errorEl.classList.add("hidden");
 		const targetRepo = repoPicker.getValue();
+
+		if (targetRepo && looksLikeGitUrl(targetRepo)) {
+			const submissionId = crypto.randomUUID();
+			attachCloneSubmission(modal, cloneStatus, errorEl, setFormDisabled, submissionId);
+			send({
+				type: "workflow:start",
+				specification: spec,
+				targetRepository: targetRepo,
+				submissionId,
+			});
+			return;
+		}
+
 		send({
 			type: "workflow:start",
 			specification: spec,
@@ -881,6 +1014,21 @@ function openEpicModal(): void {
 
 	const modal = createModal("New Epic", content);
 
+	const cloneStatus = document.createElement("div");
+	cloneStatus.className = "modal-clone-status hidden";
+	content.appendChild(cloneStatus);
+
+	function setFormDisabled(disabled: boolean) {
+		descInput.disabled = disabled;
+		btnCreateStart.disabled = disabled;
+		btnCreate.disabled = disabled;
+		repoPicker.element
+			.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button")
+			.forEach((el) => {
+				el.disabled = disabled;
+			});
+	}
+
 	function submitEpic(autoStart: boolean) {
 		const desc = descInput.value.trim();
 		if (desc.length < 10) {
@@ -890,6 +1038,20 @@ function openEpicModal(): void {
 		}
 		errorEl.classList.add("hidden");
 		const targetRepo = repoPicker.getValue();
+
+		if (targetRepo && looksLikeGitUrl(targetRepo)) {
+			const submissionId = crypto.randomUUID();
+			attachCloneSubmission(modal, cloneStatus, errorEl, setFormDisabled, submissionId);
+			send({
+				type: "epic:start",
+				description: desc,
+				autoStart,
+				targetRepository: targetRepo,
+				submissionId,
+			});
+			return;
+		}
+
 		send({
 			type: "epic:start",
 			description: desc,

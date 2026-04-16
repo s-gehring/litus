@@ -8,6 +8,7 @@ import { EpicStore } from "./epic-store";
 import { recoverInterruptedFeedbackImplementer } from "./feedback-implementer";
 import { setGitLogCallback } from "./git-logger";
 import { logger } from "./logger";
+import { createDefaultManagedRepoStore } from "./managed-repo-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -52,6 +53,7 @@ const sharedEpicStore = new EpicStore();
 const sharedCliRunner = new CLIRunner();
 const sharedSummarizer = new Summarizer();
 const sharedAuditLogger = new AuditLogger();
+const managedRepoStore = createDefaultManagedRepoStore();
 
 // WorkflowManager: holds one PipelineOrchestrator per active workflow
 const orchestrators = new Map<string, PipelineOrchestrator>();
@@ -133,6 +135,7 @@ function createOrchestrator(): PipelineOrchestrator {
 		summarizer: sharedSummarizer,
 		auditLogger: sharedAuditLogger,
 		workflowStore: sharedStore,
+		managedRepoStore,
 	});
 }
 
@@ -208,6 +211,7 @@ const deps: HandlerDeps = {
 	sharedCliRunner,
 	sharedSummarizer,
 	configStore,
+	managedRepoStore,
 	epicAnalysisRef,
 	createOrchestrator,
 	broadcastWorkflowState,
@@ -370,6 +374,11 @@ process.on("SIGTERM", () => {
 (async () => {
 	try {
 		const allWorkflows = await sharedStore.loadAll();
+
+		// Seed the managed-repo refcount from non-terminal workflows so the clone
+		// directory isn't deleted while a workflow still depends on it.
+		await managedRepoStore.seedFromWorkflows(allWorkflows);
+
 		let restoredCount = 0;
 
 		for (const workflow of allWorkflows) {
@@ -427,6 +436,21 @@ process.on("SIGTERM", () => {
 						runningStep.pid = null;
 					}
 					workflow.status = "error";
+					// seedFromWorkflows above installed a ready(refCount=N) entry
+					// that counted this workflow as a live consumer. Now that we've
+					// force-transitioned it to error without running the normal
+					// teardown, drain its refcount so the seeded entry drops to the
+					// true number of consumers (and the clone is eventually deleted
+					// when the others finish).
+					if (workflow.managedRepo) {
+						const { owner, repo } = workflow.managedRepo;
+						workflow.managedRepo = null;
+						await managedRepoStore
+							.release(owner, repo)
+							.catch((err) =>
+								logger.warn(`[startup] managed-repo release failed for ${owner}/${repo}: ${err}`),
+							);
+					}
 					workflow.updatedAt = new Date().toISOString();
 					await sharedStore.save(workflow);
 				}

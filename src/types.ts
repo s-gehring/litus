@@ -449,6 +449,7 @@ export interface Workflow {
 	 * iteration is in flight.
 	 */
 	feedbackPreRunHead: string | null;
+	managedRepo: { owner: string; repo: string } | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -499,6 +500,43 @@ export type ServerMessage =
 	| { type: "config:error"; errors: ConfigValidationError[] }
 	| { type: "purge:progress"; step: string; current: number; total: number }
 	| { type: "purge:complete"; warnings: string[] }
+	| { type: "purge:error"; message: string; warnings: string[] }
+	| {
+			type: "repo:clone-start";
+			submissionId: string;
+			owner: string;
+			repo: string;
+			reused: boolean;
+	  }
+	| {
+			type: "repo:clone-progress";
+			submissionId: string;
+			owner: string;
+			repo: string;
+			step: "resolving" | "cloning" | "fetching" | "ready";
+			message?: string;
+	  }
+	| {
+			type: "repo:clone-complete";
+			submissionId: string;
+			owner: string;
+			repo: string;
+			path: string;
+	  }
+	| {
+			type: "repo:clone-error";
+			submissionId: string;
+			owner: string;
+			repo: string;
+			code:
+				| "non-github-url"
+				| "clone-failed"
+				| "auth-required"
+				| "not-found"
+				| "network"
+				| "unknown";
+			message: string;
+	  }
 	| { type: "log"; text: string }
 	| { type: "error"; message: string };
 
@@ -581,14 +619,25 @@ export type StateChangeListener = (change: StateChange, msg: ServerMessage) => v
 
 // Client → Server messages
 export type ClientMessage =
-	| { type: "workflow:start"; specification: string; targetRepository?: string }
+	| {
+			type: "workflow:start";
+			specification: string;
+			targetRepository?: string;
+			submissionId?: string;
+	  }
 	| { type: "workflow:answer"; workflowId: string; questionId: string; answer: string }
 	| { type: "workflow:skip"; workflowId: string; questionId: string }
 	| { type: "workflow:pause"; workflowId: string }
 	| { type: "workflow:resume"; workflowId: string }
 	| { type: "workflow:abort"; workflowId: string }
 	| { type: "workflow:retry"; workflowId: string }
-	| { type: "epic:start"; description: string; targetRepository?: string; autoStart: boolean }
+	| {
+			type: "epic:start";
+			description: string;
+			targetRepository?: string;
+			autoStart: boolean;
+			submissionId?: string;
+	  }
 	| { type: "epic:cancel" }
 	| { type: "workflow:start-existing"; workflowId: string }
 	| { type: "workflow:force-start"; workflowId: string }

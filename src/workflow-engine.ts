@@ -17,7 +17,11 @@ export class WorkflowEngine {
 		this.workflow = workflow;
 	}
 
-	async createWorkflow(specification: string, targetRepository: string): Promise<Workflow> {
+	async createWorkflow(
+		specification: string,
+		targetRepository: string,
+		managedRepo: Workflow["managedRepo"] = null,
+	): Promise<Workflow> {
 		const id = randomUUID();
 		const shortId = id.slice(0, 8);
 
@@ -75,6 +79,7 @@ export class WorkflowEngine {
 			activeWorkStartedAt: null,
 			feedbackEntries: [],
 			feedbackPreRunHead: null,
+			managedRepo,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -207,6 +212,7 @@ export async function createEpicWorkflows(
 	result: EpicAnalysisResult,
 	targetRepository: string,
 	epicId?: string,
+	managedRepo: Workflow["managedRepo"] = null,
 ): Promise<{ workflows: Workflow[]; epicId: string }> {
 	if (!epicId) epicId = randomUUID();
 	const tempIdToWorkflowId = new Map<string, string>();
@@ -216,7 +222,7 @@ export async function createEpicWorkflows(
 	if (result.specs.length === 1) {
 		const spec = result.specs[0];
 		const engine = new WorkflowEngine();
-		const workflow = await engine.createWorkflow(spec.description, targetRepository);
+		const workflow = await engine.createWorkflow(spec.description, targetRepository, managedRepo);
 		workflow.epicId = epicId;
 		workflow.epicTitle = result.title;
 		workflow.epicDependencies = [];
@@ -229,7 +235,7 @@ export async function createEpicWorkflows(
 	// First pass: create all workflows to get real IDs
 	for (const spec of result.specs) {
 		const engine = new WorkflowEngine();
-		const workflow = await engine.createWorkflow(spec.description, targetRepository);
+		const workflow = await engine.createWorkflow(spec.description, targetRepository, managedRepo);
 		workflow.epicId = epicId;
 		workflow.epicTitle = result.title;
 		workflow.summary = spec.title;
