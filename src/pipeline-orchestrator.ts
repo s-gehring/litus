@@ -1332,6 +1332,17 @@ export class PipelineOrchestrator {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 
+		// An async callback (classifyWithHaiku in handleStepComplete, gatherAllFailureLogs,
+		// resolveConflicts, syncRepo, etc.) can resolve after the user has paused or
+		// cancelled the workflow. Advancing in that case would silently start the next
+		// step and override the user's intent to stop.
+		if (workflow.status !== "running") {
+			logger.info(
+				`[pipeline] advanceAfterStep skipped for workflow ${workflowId}: status=${workflow.status}`,
+			);
+			return;
+		}
+
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.status = "completed";
 		step.completedAt = new Date().toISOString();
