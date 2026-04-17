@@ -234,6 +234,41 @@ export function updateBranchInfo(workflow: WorkflowState | null): void {
 	}
 }
 
+export function updateActiveModelPanel(workflow: WorkflowState | null): void {
+	const panel = $("#active-model-panel");
+	if (!panel) return;
+
+	const invocation = workflow?.activeInvocation ?? null;
+	panel.classList.remove("paused");
+
+	// Hide the panel entirely when there's no workflow context (e.g. epic tree
+	// view). The "no model in use" text is only meaningful while a single
+	// workflow is selected.
+	if (!workflow) {
+		panel.classList.add("hidden");
+		panel.classList.remove("empty");
+		panel.textContent = "";
+		return;
+	}
+
+	panel.classList.remove("hidden");
+
+	if (!invocation) {
+		panel.textContent = "no model in use";
+		panel.classList.add("empty");
+		return;
+	}
+
+	panel.classList.remove("empty");
+	const effortLabel = invocation.effort ?? "default";
+	let text = `${invocation.model} · ${effortLabel} effort`;
+	if (workflow?.status === "paused") {
+		text += " — paused, not live";
+		panel.classList.add("paused");
+	}
+	panel.textContent = text;
+}
+
 export function updateUserInput(text: string): void {
 	const el = $("#user-input");
 	if (!el) return;

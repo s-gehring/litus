@@ -712,8 +712,12 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		const prompt = buildFeedbackPrompt(configStore.get(), workflow, latest.text, workflow.prUrl);
-		this.runStep(workflow, prompt, cwd);
+		const config = configStore.get();
+		const prompt = buildFeedbackPrompt(config, workflow, latest.text, workflow.prUrl);
+		// Feedback-implementer is a substantive main AI step (research R2). Use the
+		// same model/effort as the regular implement step so the active-model panel
+		// accurately reflects what's running.
+		this.runStep(workflow, prompt, cwd, config.models.implement, config.efforts.implement);
 	}
 
 	/**
@@ -1211,6 +1215,19 @@ export class PipelineOrchestrator {
 			worktreePath: cwd,
 		};
 
+		if (step && model && model.trim() !== "") {
+			workflow.activeInvocation = {
+				model,
+				effort: effort ?? null,
+				stepName: step.name,
+				startedAt: new Date().toISOString(),
+				role: "main",
+			};
+			workflow.updatedAt = new Date().toISOString();
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflow.id);
+		}
+
 		this.stepRunner.startStep(
 			stepWorkflow,
 			this.buildStepCallbacks(workflow.id),
@@ -1250,6 +1267,14 @@ export class PipelineOrchestrator {
 	private handleStepComplete(workflowId: string): void {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
+
+		// Clear + broadcast immediately so the panel can't lag behind an async
+		// question-classifier (Haiku) or a downstream startStep. SC-002 requires
+		// the panel to reflect reality within 1s; the Haiku round-trip can exceed
+		// that, so we fire onStateChange here rather than waiting for the next
+		// branch to broadcast.
+		workflow.activeInvocation = null;
+		this.callbacks.onStateChange(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
 
@@ -1750,6 +1775,9 @@ export class PipelineOrchestrator {
 	private handleStepError(workflowId: string, error: string): void {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
+
+		workflow.activeInvocation = null;
+		this.callbacks.onStateChange(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
 
