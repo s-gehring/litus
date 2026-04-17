@@ -112,6 +112,19 @@ export class AlertQueue {
 	}
 
 	/**
+	 * Drop every alert and reset the dedup window. Returns the IDs that were
+	 * cleared so the caller can broadcast `alert:dismissed` to live clients.
+	 * Used by the purge flow so purged state does not resurrect on reconnect.
+	 */
+	clearAll(): string[] {
+		const ids = this.alerts.map((a) => a.id);
+		this.alerts = [];
+		this.dedupKeys.clear();
+		this.persist();
+		return ids;
+	}
+
+	/**
 	 * Awaits the most recent pending persist. Useful for tests and graceful
 	 * shutdown paths where we want the on-disk snapshot to reflect the latest
 	 * mutation before the process exits.

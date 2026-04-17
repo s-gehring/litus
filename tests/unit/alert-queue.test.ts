@@ -170,4 +170,41 @@ describe("AlertQueue", () => {
 		expect(r?.alert.title.length).toBe(120);
 		expect(r?.alert.description.length).toBe(500);
 	});
+
+	test("clearAll drops every alert, resets dedup, persists empty list", async () => {
+		await withTempDir(async (dir) => {
+			const clock = fakeClock();
+			const store = new AlertStore(dir);
+			const q = new AlertQueue(store, { now: clock.now, dedupWindowMs: 0 });
+			clock.advance(1);
+			const a = q.emit(makeInput({ workflowId: "wf1" }));
+			clock.advance(1);
+			const b = q.emit(makeInput({ workflowId: "wf2" }));
+
+			if (!a || !b) throw new Error("emit returned null");
+			const cleared = q.clearAll();
+			expect(new Set(cleared)).toEqual(new Set([a.alert.id, b.alert.id]));
+			expect(q.list()).toHaveLength(0);
+
+			await q.flush();
+			expect(await store.load()).toEqual([]);
+
+			// Dedup cleared: same (type, wf) emits again at the same instant.
+			const reemit = q.emit(makeInput({ workflowId: "wf1" }));
+			expect(reemit).not.toBeNull();
+			await q.flush();
+		});
+	});
+
+	test("clearAll on empty queue returns [] and still persists empty list", async () => {
+		await withTempDir(async (dir) => {
+			const clock = fakeClock();
+			const store = new AlertStore(dir);
+			const q = new AlertQueue(store, { now: clock.now });
+			const cleared = q.clearAll();
+			expect(cleared).toEqual([]);
+			await q.flush();
+			expect(await store.load()).toEqual([]);
+		});
+	});
 });

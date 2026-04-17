@@ -36,6 +36,17 @@ export class WorkflowStore {
 		});
 	}
 
+	/**
+	 * Resolve once every write that was issued before this call has been
+	 * committed to disk. Used by readers that need read-after-write consistency
+	 * (e.g. epic-finished detection) without having to thread the save promise
+	 * through every caller of the fire-and-forget `persistWorkflow`.
+	 */
+	async waitForPendingWrites(): Promise<void> {
+		const pending = Array.from(this.writeLocks.values());
+		await Promise.all(pending);
+	}
+
 	/** Serialize writes per workflow ID so concurrent saves don't race. */
 	private async withWriteLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
 		const prev = this.writeLocks.get(id) ?? Promise.resolve();

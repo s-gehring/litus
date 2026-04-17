@@ -205,6 +205,7 @@ function createFakeWorkflowStore() {
 		loadAll: mock(async (): Promise<Workflow[]> => []),
 		loadIndex: mock(async () => []),
 		remove: mock(async () => {}),
+		waitForPendingWrites: mock(async () => {}),
 	};
 }
 
@@ -2804,6 +2805,50 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			expect(alertCalls().some((a) => a.type === "epic-finished" && a.epicId === "epic-1")).toBe(
 				true,
 			);
+		});
+
+		test("checkEpicDependencies waits for pending writes before loading siblings (race fix)", async () => {
+			// If a sibling's save is in flight when we loadAll, it can appear as
+			// "running" on disk and we'd miss the epic-finished emit. The fix
+			// awaits `waitForPendingWrites` before `loadAll`; this test asserts
+			// that ordering by checking `waitForPendingWrites` is called first.
+			await startAndFlush("test");
+			const wf = getWf(engine);
+			wf.epicId = "epic-1";
+
+			const callOrder: string[] = [];
+			store.waitForPendingWrites.mockImplementationOnce(async () => {
+				callOrder.push("waitForPendingWrites");
+			});
+			store.loadAll.mockImplementationOnce(async () => {
+				callOrder.push("loadAll");
+				return [wf];
+			});
+
+			// biome-ignore lint/suspicious/noExplicitAny: private access for focused test
+			await (orchestrator as any).checkEpicDependencies(wf);
+
+			expect(callOrder).toEqual(["waitForPendingWrites", "loadAll"]);
+		});
+
+		test("handleStepError dismisses pending question-asked alert", async () => {
+			await startAndFlush("test");
+			const wf = getWf(engine);
+			// Simulate a pending question; handleStepError should clear it so
+			// the user is not left with an alert pointing at a dead workflow.
+			wf.pendingQuestion = {
+				id: "q1",
+				content: "?",
+				detectedAt: new Date().toISOString(),
+			};
+			// biome-ignore lint/suspicious/noExplicitAny: private access for focused test
+			(orchestrator as any).handleStepError(wf.id, "boom");
+			const dismiss = callbacks.onAlertDismissWhere as unknown as { mock: { calls: unknown[][] } };
+			const dismissedQuestion = dismiss.mock.calls.some((c) => {
+				const f = c[0] as { type: string; workflowId?: string };
+				return f.type === "question-asked" && f.workflowId === wf.id;
+			});
+			expect(dismissedQuestion).toBe(true);
 		});
 	});
 });

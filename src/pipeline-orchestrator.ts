@@ -1658,6 +1658,11 @@ export class PipelineOrchestrator {
 	private async checkEpicDependencies(triggerWorkflow: Workflow): Promise<void> {
 		if (!triggerWorkflow.epicId) return;
 
+		// Wait for in-flight saves (trigger's own persist, and any sibling whose
+		// completeWorkflow/handleStepError queued a save before this call) to
+		// settle. Otherwise loadAll can read a sibling as still "running" and we
+		// miss the `epic-finished` alert on simultaneous sibling completion.
+		await this.store.waitForPendingWrites();
 		const allWorkflows = await this.store.loadAll();
 		const siblings = allWorkflows.filter(
 			(w) => w.epicId === triggerWorkflow.epicId && w.id !== triggerWorkflow.id,
@@ -1840,6 +1845,12 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		this.tryTransition(workflowId, "error");
+
+		// Drop any outstanding question-asked alert: the workflow is terminal
+		// and the question panel is hidden, so a lingering alert would navigate
+		// the user to a dead-end (FR-013 parity for the error path).
+		this.engine.clearQuestion(workflowId);
+		this.clearQuestionAlert(workflowId);
 
 		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);

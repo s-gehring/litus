@@ -144,7 +144,7 @@ export const handlePurgeAll: MessageHandler = async (_ws, _data, deps) => {
 			}
 		}
 
-		// 4. Wipe persistence: workflows, epics, audit logs
+		// 4. Wipe persistence: workflows, epics, audit logs, alerts
 		deps.broadcast({
 			type: "purge:progress",
 			step: "Deleting persistence files",
@@ -154,6 +154,10 @@ export const handlePurgeAll: MessageHandler = async (_ws, _data, deps) => {
 		await deps.sharedStore.removeAll();
 		await deps.sharedEpicStore.removeAll();
 		deps.sharedAuditLogger.removeAll();
+		const clearedAlertIds = deps.alertQueue.clearAll();
+		if (clearedAlertIds.length > 0) {
+			deps.broadcast({ type: "alert:dismissed", alertIds: clearedAlertIds });
+		}
 		completedOps++;
 
 		logger.info(
