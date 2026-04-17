@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AlertQueue } from "../../src/alert-queue";
+import { AlertStore } from "../../src/alert-store";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import type { ClientMessage, Workflow } from "../../src/types";
 import { makeWorkflow } from "../helpers";
@@ -175,6 +177,66 @@ describe("purge-handlers", () => {
 			expect(errMsg).toBeTruthy();
 			expect((errMsg as { message: string }).message).toContain("boom");
 			expect(broadcastedMessages.some((m) => m.type === "purge:complete")).toBe(false);
+		});
+
+		test("clears the alert queue and broadcasts alert:dismissed for live clients", async () => {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handlePurgeAll>[0];
+
+			// Real AlertQueue over a temp directory so we also verify the
+			// persisted `alerts.json` is empty after purge — a stale file would
+			// resurrect "purged" alerts on the next server restart.
+			const alertDir = mkdtempSync(join(tmpdir(), "purge-alerts-"));
+			const store = new AlertStore(alertDir);
+			const alertQueue = new AlertQueue(store, { dedupWindowMs: 0 });
+			try {
+				const a = alertQueue.emit({
+					type: "workflow-finished",
+					title: "A",
+					description: "",
+					workflowId: "wf-a",
+					epicId: null,
+					targetRoute: "/workflow/wf-a",
+				});
+				const b = alertQueue.emit({
+					type: "error",
+					title: "B",
+					description: "",
+					workflowId: "wf-b",
+					epicId: null,
+					targetRoute: "/workflow/wf-b",
+				});
+				await alertQueue.flush();
+				expect(alertQueue.list()).toHaveLength(2);
+
+				const { deps, broadcastedMessages } = createMockHandlerDeps({ alertQueue });
+
+				await handlePurgeAll(mockWs, { type: "purge:all" } as ClientMessage, deps);
+
+				expect(alertQueue.list()).toHaveLength(0);
+				await alertQueue.flush();
+				expect(await store.load()).toEqual([]);
+
+				if (!a || !b) throw new Error("emit returned null");
+				const dismissed = broadcastedMessages.find((m) => m.type === "alert:dismissed");
+				expect(dismissed).toBeTruthy();
+				expect(new Set((dismissed as { alertIds: string[] }).alertIds)).toEqual(
+					new Set([a.alert.id, b.alert.id]),
+				);
+			} finally {
+				rmSync(alertDir, { recursive: true, force: true });
+			}
+		});
+
+		test("no alert:dismissed broadcast when the queue was already empty", async () => {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handlePurgeAll>[0];
+
+			const { deps, broadcastedMessages } = createMockHandlerDeps();
+			await handlePurgeAll(mockWs, { type: "purge:all" } as ClientMessage, deps);
+
+			expect(broadcastedMessages.some((m) => m.type === "alert:dismissed")).toBe(false);
+			expect(broadcastedMessages.some((m) => m.type === "purge:complete")).toBe(true);
 		});
 
 		test("recovers when gitSpawn throws synchronously (e.g. ENOENT)", async () => {

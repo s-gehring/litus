@@ -1,4 +1,5 @@
 import type {
+	Alert,
 	EpicAggregatedState,
 	EpicClientState,
 	OutputEntry,
@@ -14,6 +15,7 @@ import { computeEpicAggregatedState } from "./epic-aggregation";
 export class ClientStateManager {
 	private workflows = new Map<string, WorkflowClientState>();
 	private epics = new Map<string, EpicClientState>();
+	private alerts = new Map<string, Alert>();
 	private epicAggregates = new Map<string, EpicAggregatedState>();
 	private cardOrder: string[] = [];
 	private expandedId: string | null = null;
@@ -45,6 +47,10 @@ export class ClientStateManager {
 
 	getEpicAggregates(): ReadonlyMap<string, EpicAggregatedState> {
 		return this.epicAggregates;
+	}
+
+	getAlerts(): ReadonlyMap<string, Alert> {
+		return this.alerts;
 	}
 
 	getCardOrder(): readonly string[] {
@@ -155,6 +161,12 @@ export class ClientStateManager {
 				return this.handleEpicError(msg);
 			case "epic:dependency-update":
 				return this.handleEpicDependencyUpdate(msg);
+			case "alert:list":
+				return this.handleAlertList(msg);
+			case "alert:created":
+				return this.handleAlertCreated(msg);
+			case "alert:dismissed":
+				return this.handleAlertDismissed(msg);
 			case "purge:progress":
 				return { scope: { entity: "none" }, action: "updated" };
 			case "purge:complete":
@@ -350,10 +362,29 @@ export class ClientStateManager {
 		return { scope: { entity: "workflow", id: msg.workflowId }, action: "updated" };
 	}
 
+	private handleAlertList(msg: Extract<ServerMessage, { type: "alert:list" }>): StateChange {
+		this.alerts.clear();
+		for (const a of msg.alerts) this.alerts.set(a.id, a);
+		return { scope: { entity: "global" }, action: "updated" };
+	}
+
+	private handleAlertCreated(msg: Extract<ServerMessage, { type: "alert:created" }>): StateChange {
+		this.alerts.set(msg.alert.id, msg.alert);
+		return { scope: { entity: "global" }, action: "added" };
+	}
+
+	private handleAlertDismissed(
+		msg: Extract<ServerMessage, { type: "alert:dismissed" }>,
+	): StateChange {
+		for (const id of msg.alertIds) this.alerts.delete(id);
+		return { scope: { entity: "global" }, action: "removed" };
+	}
+
 	private handlePurgeComplete(): StateChange {
 		this.workflows.clear();
 		this.epics.clear();
 		this.epicAggregates.clear();
+		this.alerts.clear();
 		this.cardOrder.length = 0;
 		this.expandedId = null;
 		this.expandedEpicId = null;

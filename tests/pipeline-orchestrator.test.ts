@@ -205,6 +205,7 @@ function createFakeWorkflowStore() {
 		loadAll: mock(async (): Promise<Workflow[]> => []),
 		loadIndex: mock(async () => []),
 		remove: mock(async () => {}),
+		waitForPendingWrites: mock(async () => {}),
 	};
 }
 
@@ -217,6 +218,8 @@ function makeCallbacks(): PipelineCallbacks {
 		onError: mock(() => {}),
 		onStateChange: mock(() => {}),
 		onEpicDependencyUpdate: mock(() => {}),
+		onAlertEmit: mock(() => {}),
+		onAlertDismissWhere: mock(() => {}),
 	};
 }
 
@@ -2640,6 +2643,212 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			expect(wf.currentStepIndex).toBe(mergeIdx);
 			expect(wf.steps[mergeIdx].status).toBe("paused");
 			expect(wf.status).toBe("paused");
+		});
+	});
+
+	// Alert emissions (FR-002 … FR-007, FR-013)
+	describe("alert emissions", () => {
+		function alertCalls(): Array<{
+			type: string;
+			workflowId: string | null;
+			epicId: string | null;
+		}> {
+			const m = callbacks.onAlertEmit as unknown as { mock: { calls: unknown[][] } };
+			return m.mock.calls.map((c) => {
+				const input = c[0] as { type: string; workflowId: string | null; epicId: string | null };
+				return { type: input.type, workflowId: input.workflowId, epicId: input.epicId };
+			});
+		}
+
+		test("question-asked emits alert when pipeline pauses (manual mode)", async () => {
+			await startAndFlush("test");
+			const question: Question = {
+				id: "q1",
+				content: "Should I use React?",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+			expect(alertCalls().some((a) => a.type === "question-asked")).toBe(true);
+		});
+
+		test("question-asked NOT emitted in full-auto mode (FR-003)", async () => {
+			configStore.save({ autoMode: "full-auto" });
+			await startAndFlush("test");
+			const question: Question = {
+				id: "q1",
+				content: "Should I use React?",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+			expect(alertCalls().some((a) => a.type === "question-asked")).toBe(false);
+		});
+
+		test("answering a question dismisses the question-asked alert (FR-013)", async () => {
+			await startAndFlush("test");
+			cli.getLastCallbacks().onSessionId("sess-1");
+			const question: Question = {
+				id: "q1",
+				content: "?",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+			orchestrator.answerQuestion("test-wf-id", "q1", "yes");
+			const dismiss = callbacks.onAlertDismissWhere as unknown as { mock: { calls: unknown[][] } };
+			const dismissed = dismiss.mock.calls.some((c) => {
+				const f = c[0] as { type: string; workflowId?: string };
+				return f.type === "question-asked" && f.workflowId === "test-wf-id";
+			});
+			expect(dismissed).toBe(true);
+		});
+
+		test("pr-opened-manual emits only in manual mode on first PR URL (FR-004)", async () => {
+			configStore.save({ autoMode: "manual" });
+			await startAndFlush("test");
+
+			// Advance through specify..implement-review to reach commit-push-pr (index 8)
+			// setup(0) auto-completed; specify(1) running.
+			for (let i = 0; i < 5; i++) cli.getLastCallbacks().onComplete();
+			// review(6) → implement-review(7)
+			cli.getLastCallbacks().onComplete();
+			rc._pushClassifyResult("minor");
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			const wf = getWf(engine);
+			expect(wf.steps[wf.currentStepIndex].name).toBe("commit-push-pr");
+
+			// Commit step emits PR URL in output
+			cli.getLastCallbacks().onOutput("PR opened at https://github.com/owner/repo/pull/42");
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(alertCalls().some((a) => a.type === "pr-opened-manual")).toBe(true);
+		});
+
+		test("pr-opened-manual NOT emitted in normal mode", async () => {
+			configStore.save({ autoMode: "normal" });
+			await startAndFlush("test");
+			for (let i = 0; i < 5; i++) cli.getLastCallbacks().onComplete();
+			cli.getLastCallbacks().onComplete();
+			rc._pushClassifyResult("minor");
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+			cli.getLastCallbacks().onOutput("PR opened at https://github.com/o/r/pull/42");
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+			expect(alertCalls().some((a) => a.type === "pr-opened-manual")).toBe(false);
+		});
+
+		test("workflow-finished emits on completion when workflow is not part of an epic (FR-005)", async () => {
+			await startAndFlush("test");
+			const wf = getWf(engine);
+			wf.prUrl = "https://github.com/o/r/pull/1";
+			// Directly drive completion via the internal helper by simulating terminal route.
+			// Simpler: invoke completeWorkflow path by setting status.
+			// biome-ignore lint/suspicious/noExplicitAny: private access for focused test
+			(orchestrator as any).completeWorkflow(wf);
+			expect(
+				alertCalls().some((a) => a.type === "workflow-finished" && a.workflowId === wf.id),
+			).toBe(true);
+		});
+
+		test("workflow-finished NOT emitted for child of an epic (FR-006 guard)", async () => {
+			await startAndFlush("test");
+			const wf = getWf(engine);
+			wf.epicId = "epic-1";
+			wf.epicTitle = "My Epic";
+			// biome-ignore lint/suspicious/noExplicitAny: private access for focused test
+			(orchestrator as any).completeWorkflow(wf);
+			await new Promise((r) => setTimeout(r, 20));
+			expect(alertCalls().some((a) => a.type === "workflow-finished")).toBe(false);
+		});
+
+		test("error alert emitted on handleStepError (FR-007)", async () => {
+			await startAndFlush("test");
+			const wf = getWf(engine);
+			// biome-ignore lint/suspicious/noExplicitAny: private access for focused test
+			(orchestrator as any).handleStepError(wf.id, "something blew up");
+			expect(alertCalls().some((a) => a.type === "error" && a.workflowId === wf.id)).toBe(true);
+		});
+
+		test("epic-finished emits when all siblings terminal, independent of onEpicDependencyUpdate", async () => {
+			await startAndFlush("test");
+			const wf = getWf(engine);
+			wf.epicId = "epic-1";
+			wf.epicTitle = "Finish me";
+
+			const siblingTerminal: Workflow = {
+				...wf,
+				id: "sibling",
+				status: "completed" as WorkflowStatus,
+				epicDependencies: [],
+			};
+			store.loadAll.mockImplementationOnce(async () => [wf, siblingTerminal]);
+
+			// Drop onEpicDependencyUpdate to prove the emit is independent.
+			const depCb = callbacks.onEpicDependencyUpdate;
+			callbacks.onEpicDependencyUpdate = undefined;
+
+			// biome-ignore lint/suspicious/noExplicitAny: private access for focused test
+			await (orchestrator as any).checkEpicDependencies(wf);
+
+			callbacks.onEpicDependencyUpdate = depCb;
+			expect(alertCalls().some((a) => a.type === "epic-finished" && a.epicId === "epic-1")).toBe(
+				true,
+			);
+		});
+
+		test("checkEpicDependencies waits for pending writes before loading siblings (race fix)", async () => {
+			// If a sibling's save is in flight when we loadAll, it can appear as
+			// "running" on disk and we'd miss the epic-finished emit. The fix
+			// awaits `waitForPendingWrites` before `loadAll`; this test asserts
+			// that ordering by checking `waitForPendingWrites` is called first.
+			await startAndFlush("test");
+			const wf = getWf(engine);
+			wf.epicId = "epic-1";
+
+			const callOrder: string[] = [];
+			store.waitForPendingWrites.mockImplementationOnce(async () => {
+				callOrder.push("waitForPendingWrites");
+			});
+			store.loadAll.mockImplementationOnce(async () => {
+				callOrder.push("loadAll");
+				return [wf];
+			});
+
+			// biome-ignore lint/suspicious/noExplicitAny: private access for focused test
+			await (orchestrator as any).checkEpicDependencies(wf);
+
+			expect(callOrder).toEqual(["waitForPendingWrites", "loadAll"]);
+		});
+
+		test("handleStepError dismisses pending question-asked alert", async () => {
+			await startAndFlush("test");
+			const wf = getWf(engine);
+			// Simulate a pending question; handleStepError should clear it so
+			// the user is not left with an alert pointing at a dead workflow.
+			wf.pendingQuestion = {
+				id: "q1",
+				content: "?",
+				detectedAt: new Date().toISOString(),
+			};
+			// biome-ignore lint/suspicious/noExplicitAny: private access for focused test
+			(orchestrator as any).handleStepError(wf.id, "boom");
+			const dismiss = callbacks.onAlertDismissWhere as unknown as { mock: { calls: unknown[][] } };
+			const dismissedQuestion = dismiss.mock.calls.some((c) => {
+				const f = c[0] as { type: string; workflowId?: string };
+				return f.type === "question-asked" && f.workflowId === wf.id;
+			});
+			expect(dismissedQuestion).toBe(true);
 		});
 	});
 });
