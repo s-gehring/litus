@@ -2,6 +2,25 @@ import { configStore } from "./config-store";
 import { defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
 import type { MergeResult } from "./types";
 
+/**
+ * Outcome of an in-worktree conflict-resolution attempt. The orchestrator
+ * branches on `kind` to decide whether to consume a `mergeCycle.attempt` and
+ * loop back through CI, or to retry `gh pr merge` without consuming an attempt.
+ *
+ * - `resolved`: Claude was dispatched against tree-level conflicts and
+ *   produced new commits that advanced the feature-branch tip.
+ * - `clean-auto-merge`: `git merge origin/master` completed without conflict
+ *   (fast-forward or auto-merge commit); the safety net pushed the result.
+ *   No Claude session was spawned.
+ * - `already-up-to-date`: `git merge origin/master` reported "Already up to
+ *   date." — the local tree already contains master, so the GitHub-reported
+ *   conflict cannot be resolved from this side. No Claude was spawned.
+ */
+export type ConflictResolutionResult =
+	| { kind: "resolved" }
+	| { kind: "clean-auto-merge" }
+	| { kind: "already-up-to-date" };
+
 const PR_NUMBER_REGEX = /\/pull\/(\d+)$/;
 const REPO_REGEX = /github\.com\/([^/]+\/[^/]+)\//;
 
@@ -173,12 +192,26 @@ async function ensureCommittedAndPushed(
 	}
 }
 
+function classifyMergeOutcome(
+	exitCode: number,
+	stdout: string,
+	stderr: string,
+): ConflictResolutionResult["kind"] | "unknown-failure" {
+	const combined = `${stdout}\n${stderr}`;
+	if (exitCode === 0) {
+		if (/already up to date/i.test(stdout)) return "already-up-to-date";
+		return "clean-auto-merge";
+	}
+	if (/CONFLICT|Automatic merge failed/i.test(combined)) return "resolved";
+	return "unknown-failure";
+}
+
 export async function resolveConflicts(
 	worktreePath: string,
 	specSummary: string,
 	onOutput: (msg: string) => void,
 	runner?: SpawnLike,
-): Promise<void> {
+): Promise<ConflictResolutionResult> {
 	const spawn = runner?.spawn ?? defaultSpawn();
 
 	// Fetch and merge master
@@ -196,7 +229,33 @@ export async function resolveConflicts(
 		stdout: "pipe",
 		stderr: "pipe",
 	});
-	await mergeProc.exited;
+	const mergeCode = await mergeProc.exited;
+	const mergeStdout = await readStream(mergeProc.stdout);
+	const mergeStderr = await readStream(mergeProc.stderr);
+	const outcome = classifyMergeOutcome(mergeCode, mergeStdout, mergeStderr);
+
+	if (outcome === "unknown-failure") {
+		throw new Error(
+			`git merge origin/master failed: ${mergeStderr.trim() || mergeStdout.trim() || `exit code ${mergeCode}`}`,
+		);
+	}
+
+	if (outcome === "already-up-to-date") {
+		onOutput(
+			"Local tree already contains origin/master — no conflicts to resolve in the worktree. Skipping Claude dispatch.",
+		);
+		// Safety net is still useful: it is a no-op when the tree is clean and
+		// remote matches local, but surfaces any drift we may have missed.
+		await ensureCommittedAndPushed(worktreePath, onOutput, spawn as SpawnLike["spawn"]);
+		return { kind: "already-up-to-date" };
+	}
+
+	if (outcome === "clean-auto-merge") {
+		onOutput("git merge origin/master completed without conflicts — skipping Claude dispatch.");
+		await ensureCommittedAndPushed(worktreePath, onOutput, spawn as SpawnLike["spawn"]);
+		onOutput("Auto-merge complete, changes pushed");
+		return { kind: "clean-auto-merge" };
+	}
 
 	// Build conflict resolution prompt and run Claude CLI
 	const config = configStore.get();
@@ -236,4 +295,5 @@ export async function resolveConflicts(
 	await ensureCommittedAndPushed(worktreePath, onOutput, spawn as SpawnLike["spawn"]);
 
 	onOutput("Conflict resolution complete, changes pushed");
+	return { kind: "resolved" };
 }

@@ -3,6 +3,7 @@ import type { MonitorResult } from "../src/ci-monitor";
 import type { CLICallbacks } from "../src/cli-runner";
 import { configStore, DEFAULT_CONFIG } from "../src/config-store";
 import { type PipelineCallbacks, PipelineOrchestrator } from "../src/pipeline-orchestrator";
+import type { ConflictResolutionResult } from "../src/pr-merger";
 import type {
 	MergeResult,
 	Question,
@@ -42,8 +43,15 @@ const mockMergePr = mock(
 	},
 );
 
+let resolveConflictsResult: ConflictResolutionResult = { kind: "resolved" };
 const mockResolveConflicts = mock(
-	async (_cwd: string, _specSummary: string, _onOutput: (msg: string) => void): Promise<void> => {},
+	async (
+		_cwd: string,
+		_specSummary: string,
+		_onOutput: (msg: string) => void,
+	): Promise<ConflictResolutionResult> => {
+		return resolveConflictsResult;
+	},
 );
 
 let syncRepoResult: SyncResult = {
@@ -251,6 +259,7 @@ describe("Merge & Sync Pipeline Routing", () => {
 		rc = createFakeReviewClassifier();
 
 		mergePrResult = { merged: true, alreadyMerged: false, conflict: false, error: null };
+		resolveConflictsResult = { kind: "resolved" };
 		syncRepoResult = { pulled: true, skipped: false, worktreeRemoved: true, warning: null };
 		mockMergePr.mockClear();
 		mockResolveConflicts.mockClear();
@@ -405,6 +414,55 @@ describe("Merge & Sync Pipeline Routing", () => {
 		expect(mockMergePr).toHaveBeenCalledTimes(2);
 		expect(mockSyncRepo).toHaveBeenCalledTimes(1);
 		expect(wf.status).toBe("completed");
+	});
+
+	test("already-up-to-date from resolveConflicts retries merge without consuming mergeCycle.attempt", async () => {
+		// First gh pr merge: conflict. resolveConflicts reports already-up-to-date.
+		// Retry gh pr merge: succeeds. mergeCycle.attempt must not advance past 1.
+		mockMergePr.mockImplementationOnce(async () => ({
+			merged: false,
+			alreadyMerged: false,
+			conflict: true,
+			error: null,
+		}));
+		mockMergePr.mockImplementationOnce(async () => ({
+			merged: true,
+			alreadyMerged: false,
+			conflict: false,
+			error: null,
+		}));
+		resolveConflictsResult = { kind: "already-up-to-date" };
+
+		const wf = await advanceToMonitorCi();
+		monitorResultResolve({ passed: true, timedOut: false, results: [] });
+		await new Promise((r) => setTimeout(r, 60));
+
+		expect(mockResolveConflicts).toHaveBeenCalledTimes(1);
+		// Attempt was initialized to 1 on entry; already-up-to-date path does NOT
+		// increment it.
+		expect(wf.mergeCycle.attempt).toBe(1);
+		// mergePr called twice: once for the initial attempt, once for the retry.
+		expect(mockMergePr).toHaveBeenCalledTimes(2);
+		expect(wf.status).toBe("completed");
+	});
+
+	test("already-up-to-date followed by a second conflict surfaces an error", async () => {
+		// Both gh pr merge attempts report conflict; resolveConflicts is
+		// already-up-to-date — no sane resolution exists locally.
+		mergePrResult = { merged: false, alreadyMerged: false, conflict: true, error: null };
+		resolveConflictsResult = { kind: "already-up-to-date" };
+
+		const wf = await advanceToMonitorCi();
+		monitorResultResolve({ passed: true, timedOut: false, results: [] });
+		await new Promise((r) => setTimeout(r, 60));
+
+		expect(wf.status).toBe("error");
+		const mergePrIndex = wf.steps.findIndex((s) => s.name === "merge-pr");
+		expect(wf.steps[mergePrIndex].error).toContain(
+			"GitHub continues to report a merge conflict",
+		);
+		expect(mockMergePr).toHaveBeenCalledTimes(2);
+		expect(wf.mergeCycle.attempt).toBe(1);
 	});
 
 	test("merge cycle exhausted after maxAttempts transitions to error", async () => {
