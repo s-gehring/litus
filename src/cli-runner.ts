@@ -4,8 +4,112 @@ import { join } from "node:path";
 import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
 import { logger } from "./logger";
-import { cleanEnv, readStream } from "./spawn-utils";
+import { cleanEnv, defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
 import { DELTA_FLUSH_TIMEOUT_MS, type EffortLevel, type ToolUsage, type Workflow } from "./types";
+
+export interface OneShotStreamResult {
+	exitCode: number;
+	stderr: string;
+}
+
+/**
+ * Run Claude with `--output-format stream-json` and forward human-readable
+ * text (assistant text blocks and content_block_delta events) through
+ * `onOutput` as it streams. Intended for fire-and-forget invocations that are
+ * not bound to a workflow lifecycle (e.g. the conflict-resolution dispatch in
+ * `pr-merger.ts`).
+ *
+ * The heavyweight `CLIRunner.start` path is tied to a `Workflow` — it tracks
+ * sessions, audits events, and maintains an idle-timeout registry. This helper
+ * shares the same stream-json parsing conventions but skips that bookkeeping.
+ * Reading stdout/stderr to completion is mandatory: otherwise the OS pipe
+ * buffer can fill and block a long-running Claude session.
+ */
+export async function streamClaudeOneShot(
+	args: string[],
+	cwd: string,
+	onOutput: (msg: string) => void,
+	spawn: SpawnLike["spawn"] = defaultSpawn(),
+): Promise<OneShotStreamResult> {
+	const proc = spawn(args, {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+		env: cleanEnv(),
+		windowsHide: true,
+	});
+
+	const stdout = proc.stdout;
+	if (stdout && typeof stdout !== "number") {
+		const reader = (stdout as ReadableStream<Uint8Array>).getReader();
+		const decoder = new TextDecoder();
+		let buffer = "";
+		let deltaBuffer = "";
+		let assistantSentLen = 0;
+		const flushDelta = () => {
+			if (deltaBuffer) {
+				onOutput(deltaBuffer);
+				deltaBuffer = "";
+			}
+		};
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				buffer += decoder.decode(value, { stream: true });
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+				for (const line of lines) {
+					if (!line.trim()) continue;
+					try {
+						const event = JSON.parse(line) as CLIStreamEvent;
+						if (event.type === "assistant" && event.message?.content) {
+							flushDelta();
+							let currentText = "";
+							for (const block of event.message.content) {
+								if (block.type === "text" && block.text) currentText += block.text;
+							}
+							if (currentText.length < assistantSentLen) assistantSentLen = 0;
+							const unsent = currentText.slice(assistantSentLen);
+							if (unsent) {
+								onOutput(unsent);
+								assistantSentLen = currentText.length;
+							}
+						} else if (event.type === "content_block_delta" && event.delta?.text) {
+							deltaBuffer += event.delta.text;
+						} else if (event.type === "result" && typeof event.result === "string") {
+							flushDelta();
+							const trimmed = event.result.trim();
+							if (trimmed) onOutput(trimmed);
+						}
+					} catch {
+						// Non-JSON line — surface as raw output.
+						onOutput(line);
+					}
+				}
+			}
+			if (buffer.trim()) {
+				try {
+					const event = JSON.parse(buffer) as CLIStreamEvent;
+					if (event.type === "assistant" && event.message?.content) {
+						for (const block of event.message.content) {
+							if (block.type === "text" && block.text) onOutput(block.text);
+						}
+					}
+				} catch {
+					onOutput(buffer);
+				}
+			}
+		} catch (err) {
+			logger.warn(`[cli-runner] streamClaudeOneShot read error: ${toErrorMessage(err)}`);
+		}
+		flushDelta();
+	}
+
+	const exitCode = await proc.exited;
+	const stderr = await readStream(proc.stderr);
+	return { exitCode, stderr: stderr.trim() };
+}
 
 export function isProcessAlive(pid: number): boolean {
 	try {

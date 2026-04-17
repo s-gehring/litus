@@ -1,3 +1,4 @@
+import { streamClaudeOneShot } from "./cli-runner";
 import { configStore } from "./config-store";
 import { defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
 import type { MergeResult } from "./types";
@@ -123,10 +124,7 @@ export async function mergePr(
 
 const MERGE_CONFLICT_COMMIT_MSG = "chore: resolve merge conflicts with master";
 
-async function readGitHead(
-	cwd: string,
-	spawn: SpawnLike["spawn"],
-): Promise<string | null> {
+async function readGitHead(cwd: string, spawn: SpawnLike["spawn"]): Promise<string | null> {
 	const proc = spawn(["git", "rev-parse", "HEAD"], {
 		cwd,
 		stdout: "pipe",
@@ -300,16 +298,14 @@ export async function resolveConflicts(
 	const preClaudeHead = await readGitHead(worktreePath, spawn as SpawnLike["spawn"]);
 
 	onOutput("Dispatching Claude CLI to resolve conflicts...");
-	const claudeProc = spawn(conflictArgs, {
-		cwd: worktreePath,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
-
-	const claudeCode = await claudeProc.exited;
+	const { exitCode: claudeCode, stderr: claudeStderr } = await streamClaudeOneShot(
+		conflictArgs,
+		worktreePath,
+		onOutput,
+		spawn as SpawnLike["spawn"],
+	);
 	if (claudeCode !== 0) {
-		const stderr = await readStream(claudeProc.stderr);
-		throw new Error(`Conflict resolution failed: ${stderr.trim() || `exit code ${claudeCode}`}`);
+		throw new Error(`Conflict resolution failed: ${claudeStderr || `exit code ${claudeCode}`}`);
 	}
 
 	// Safety net: ensure all changes are committed and pushed

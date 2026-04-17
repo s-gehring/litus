@@ -254,6 +254,35 @@ describe("pr-merger", () => {
 			expect(calls[6]).toEqual(["git", "rev-parse", "HEAD"]);
 		});
 
+		test("forwards Claude stream-json assistant text through onOutput", async () => {
+			// The Claude process (call 4) emits two stream-json events: one assistant
+			// text block and one content_block_delta. Both should reach onOutput.
+			const assistantEvent = JSON.stringify({
+				type: "assistant",
+				message: {
+					content: [{ type: "text", text: "Resolving conflict in src/foo.ts\n" }],
+				},
+			});
+			const deltaEvent = JSON.stringify({
+				type: "content_block_delta",
+				delta: { text: "Committed merge resolution.\n" },
+			});
+			const { spawn } = makeSpawn({
+				2: { exit: 1, stdout: "CONFLICT (content): Merge conflict in file.ts\n" },
+				3: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+				4: { exit: 0, stdout: `${assistantEvent}\n${deltaEvent}\n` },
+				7: { stdout: "bbbbbbb0000000000000000000000000000000000\n" },
+			});
+			const outputs: string[] = [];
+			await resolveConflicts("/tmp/worktree", "feature summary", (msg) => outputs.push(msg), {
+				spawn,
+			});
+
+			const joined = outputs.join("\n");
+			expect(joined).toContain("Resolving conflict in src/foo.ts");
+			expect(joined).toContain("Committed merge resolution.");
+		});
+
 		test("throws when HEAD did not advance after Claude ran (Claude aborted the merge)", async () => {
 			// Pre- and post-Claude HEAD snapshots return the same SHA → Claude
 			// produced no new commits. This must surface loud instead of looping.

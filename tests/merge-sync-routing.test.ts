@@ -458,9 +458,7 @@ describe("Merge & Sync Pipeline Routing", () => {
 
 		expect(wf.status).toBe("error");
 		const mergePrIndex = wf.steps.findIndex((s) => s.name === "merge-pr");
-		expect(wf.steps[mergePrIndex].error).toContain(
-			"GitHub continues to report a merge conflict",
-		);
+		expect(wf.steps[mergePrIndex].error).toContain("GitHub continues to report a merge conflict");
 		expect(mockMergePr).toHaveBeenCalledTimes(2);
 		expect(wf.mergeCycle.attempt).toBe(1);
 	});
