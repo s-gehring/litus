@@ -189,7 +189,7 @@ Set \`prDescriptionUpdate\` to \`null\` when no PR description update was attemp
 		ciPollIntervalMs: 15_000,
 		activitySummaryIntervalMs: 15_000,
 		rateLimitBackoffMs: 60_000,
-		maxCiLogLength: 50_000,
+		maxCiLogLength: 200_000,
 		maxClientOutputLines: 5_000,
 		epicTimeoutMs: 900_000,
 		cliIdleTimeoutMs: 600_000,
