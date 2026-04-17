@@ -1215,7 +1215,11 @@ export class PipelineOrchestrator {
 			worktreePath: cwd,
 		};
 
-		if (step && model && model.trim() !== "") {
+		// Set activeInvocation whenever the caller intends an AI-driven step
+		// (model param provided, even if empty — empty means "Claude Code default").
+		// Steps like SETUP / MERGE_PR / SYNC_REPO pass model === undefined and
+		// correctly don't populate the panel.
+		if (step && model !== undefined) {
 			workflow.activeInvocation = {
 				model,
 				effort: effort ?? null,

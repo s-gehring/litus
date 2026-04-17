@@ -273,7 +273,8 @@ export function updateActiveModelPanel(mode: ActiveModelPanelMode): void {
 
 	panel.classList.remove("empty");
 	const effortLabel = invocation.effort ?? "default";
-	let text = `${invocation.model} · ${effortLabel} effort`;
+	const modelLabel = invocation.model.trim() || "default";
+	let text = `${modelLabel} · ${effortLabel} effort`;
 	if (workflow.status === "paused") {
 		text += " — paused, not live";
 		panel.classList.add("paused");

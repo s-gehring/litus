@@ -236,8 +236,14 @@ describe("workflow-active-invocation integration", () => {
 		cb.onComplete();
 		await new Promise((r) => setTimeout(r, 0));
 
+		// handleStepComplete clears and broadcasts (activeInvocation: null), then
+		// advances to the next step. runStep for clarify repopulates activeInvocation
+		// with the clarify model (empty string = "default"). Either way the panel
+		// reflects what is currently live — it should never stay null while a main
+		// step is actually running.
 		const state = latestWorkflowState(broadcasts);
-		expect(state?.activeInvocation).toBeNull();
+		expect(state?.activeInvocation).not.toBeNull();
+		expect(state?.activeInvocation?.stepName).toBe("clarify");
 	});
 
 	test("pausing mid-step preserves activeInvocation via the real pause() path", async () => {
@@ -280,7 +286,10 @@ describe("workflow-active-invocation integration", () => {
 		cb.onComplete();
 		await new Promise((r) => setTimeout(r, 0));
 
+		// After specify completes the orchestrator advances to clarify and
+		// runStep repopulates activeInvocation for the next main step.
 		const final = latestWorkflowState(broadcasts);
-		expect(final?.activeInvocation).toBeNull();
+		expect(final?.activeInvocation).not.toBeNull();
+		expect(final?.activeInvocation?.stepName).toBe("clarify");
 	});
 });

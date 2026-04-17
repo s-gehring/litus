@@ -237,9 +237,10 @@ describe("PipelineOrchestrator.activeInvocation", () => {
 		cb.onComplete();
 		await new Promise((r) => setTimeout(r, 0));
 
-		// After complete, either activeInvocation is null OR a subsequent step set a new one
-		// (with no model configured for clarify, it stays null).
-		expect(wf.activeInvocation).toBeNull();
+		// After specify completes, the orchestrator advances to clarify and
+		// runStep repopulates activeInvocation for the next main step.
+		expect(wf.activeInvocation).not.toBeNull();
+		expect(wf.activeInvocation?.stepName).toBe("clarify");
 	});
 
 	test("handleStepError clears activeInvocation to null", async () => {
@@ -265,8 +266,9 @@ describe("PipelineOrchestrator.activeInvocation", () => {
 		expect(wf.status).toBe("cancelled");
 	});
 
-	test("a step with no configured model leaves activeInvocation === null", async () => {
-		// Clear the specify model so no activeInvocation is set.
+	test("a step with empty-string configured model still populates activeInvocation (UI shows 'default')", async () => {
+		// Empty model means "use Claude Code default" — the panel should still
+		// reflect that a main AI step is running, not show "No model in use".
 		configStore.save({
 			autoMode: "normal",
 			models: { ...DEFAULT_CONFIG.models, specify: "" },
@@ -276,6 +278,8 @@ describe("PipelineOrchestrator.activeInvocation", () => {
 		const wf = getWf(engine);
 		expect(wf.steps[1].name).toBe("specify");
 		expect(wf.steps[1].status).toBe("running");
-		expect(wf.activeInvocation).toBeNull();
+		expect(wf.activeInvocation).not.toBeNull();
+		expect(wf.activeInvocation?.model).toBe("");
+		expect(wf.activeInvocation?.stepName).toBe("specify");
 	});
 });
