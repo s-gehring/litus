@@ -1,6 +1,7 @@
 import { looksLikeGitUrl } from "../git-url";
 import {
 	type Alert,
+	type AppConfig,
 	type AutoMode,
 	type ClientMessage,
 	type EpicAggregatedState,
@@ -45,6 +46,8 @@ import {
 	appendToolIcons,
 	clearOutput,
 	renderOutputEntries,
+	setDefaultModelDisplayName,
+	updateActiveModelPanel,
 	updateBranchInfo,
 	updateDetailActions,
 	updateEpicStatus,
@@ -67,6 +70,7 @@ let appRouter: Router | null = null;
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let currentAutoMode: AutoMode = "normal";
+let latestConfig: AppConfig | null = null;
 
 function getWsUrl(): string {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -352,14 +356,18 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "default-model:info": {
+			setDefaultModelDisplayName(msg.modelInfo ? msg.modelInfo.displayName : null);
+			renderExpandedView();
+			break;
+		}
+
 		case "config:state": {
 			updateConfigPage(msg.config, msg.warnings);
 			syncAutoModeToggle(msg.config.autoMode);
-			const prevMode = currentAutoMode;
 			currentAutoMode = msg.config.autoMode;
-			if (prevMode !== currentAutoMode) {
-				renderExpandedView();
-			}
+			latestConfig = msg.config;
+			renderExpandedView();
 			break;
 		}
 
@@ -598,6 +606,18 @@ function renderCards(): void {
 	renderCardStrip(cardOrder, workflows, epics, epicAggregates, expandedId, expandItem);
 }
 
+function updateActiveModelPanelForEpic(epic: EpicClientState): void {
+	if (epic.status !== "analyzing" || !latestConfig) {
+		updateActiveModelPanel({ kind: "hidden" });
+		return;
+	}
+	updateActiveModelPanel({
+		kind: "epic-analysis",
+		model: latestConfig.models.epicDecomposition,
+		effort: latestConfig.efforts.epicDecomposition,
+	});
+}
+
 function renderExpandedView(): void {
 	const expandedId = stateManager.getExpandedId();
 	const expandedEpicId = stateManager.getExpandedEpicId();
@@ -627,6 +647,7 @@ function renderExpandedView(): void {
 		hideFeedbackPanel();
 		updateWorkflowStatus(null);
 		updateBranchInfo(null);
+		updateActiveModelPanel({ kind: "hidden" });
 		renderPipelineSteps(null);
 		updateSummary("");
 		updateFlavor("");
@@ -644,6 +665,7 @@ function renderExpandedView(): void {
 		if (detailArea) detailArea.classList.remove("hidden");
 
 		updateEpicStatus(epic.status);
+		updateActiveModelPanelForEpic(epic);
 		renderPipelineSteps(null);
 		updateSummary(epic.title || epic.description);
 		updateStepSummary("");
@@ -710,6 +732,12 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 	statusBadge.className = `status-badge ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
 
 	updateBranchInfo(null);
+	const epicDataForPanel = epics.get(agg.epicId);
+	if (epicDataForPanel) {
+		updateActiveModelPanelForEpic(epicDataForPanel);
+	} else {
+		updateActiveModelPanel({ kind: "hidden" });
+	}
 	renderPipelineSteps(null);
 	updateSummary(`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`);
 	updateStepSummary("");
@@ -837,6 +865,7 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	// Render status, pipeline, summary
 	updateWorkflowStatus(wf);
 	updateBranchInfo(wf);
+	updateActiveModelPanel({ kind: "workflow", workflow: wf });
 	renderPipelineSteps(wf, selectedStepIndex, selectStep);
 	if (wf.summary) updateSummary(wf.summary);
 	updateStepSummary(wf.stepSummary ?? "");

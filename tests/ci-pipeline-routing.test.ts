@@ -103,6 +103,7 @@ function createFakeEngine() {
 				activeWorkStartedAt: null,
 				feedbackEntries: [],
 				feedbackPreRunHead: null,
+				activeInvocation: null,
 				managedRepo: null,
 				createdAt: now,
 				updatedAt: now,

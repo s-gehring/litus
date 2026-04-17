@@ -413,6 +413,18 @@ export interface FeedbackEntry {
 	outcome: FeedbackOutcome | null;
 }
 
+// AI invocation role — "main" is substantive step work; "helper" is admin/classification
+export type AIInvocationRole = "main" | "helper";
+
+// Currently running main AI invocation for a workflow (null when none)
+export interface ActiveAIInvocation {
+	model: string;
+	effort: EffortLevel | null;
+	stepName: PipelineStepName;
+	startedAt: string;
+	role: "main";
+}
+
 // Workflow entity (extended with pipeline fields)
 export interface Workflow {
 	id: string;
@@ -449,6 +461,7 @@ export interface Workflow {
 	 * iteration is in flight.
 	 */
 	feedbackPreRunHead: string | null;
+	activeInvocation: ActiveAIInvocation | null;
 	managedRepo: { owner: string; repo: string } | null;
 	createdAt: string;
 	updatedAt: string;
@@ -525,6 +538,10 @@ export type ServerMessage =
 			blockingWorkflows: string[];
 	  }
 	| { type: "config:state"; config: AppConfig; warnings?: ConfigWarning[] }
+	| {
+			type: "default-model:info";
+			modelInfo: { modelId: string; displayName: string } | null;
+	  }
 	| { type: "config:error"; errors: ConfigValidationError[] }
 	| { type: "purge:progress"; step: string; current: number; total: number }
 	| { type: "purge:complete"; warnings: string[] }

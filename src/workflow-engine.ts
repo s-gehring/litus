@@ -79,6 +79,7 @@ export class WorkflowEngine {
 			activeWorkStartedAt: null,
 			feedbackEntries: [],
 			feedbackPreRunHead: null,
+			activeInvocation: null,
 			managedRepo,
 			createdAt: now,
 			updatedAt: now,
@@ -105,6 +106,15 @@ export class WorkflowEngine {
 		// Start timer when entering "running"
 		if (newStatus === "running") {
 			w.activeWorkStartedAt = now.toISOString();
+		}
+
+		if (
+			newStatus === "idle" ||
+			newStatus === "completed" ||
+			newStatus === "cancelled" ||
+			newStatus === "error"
+		) {
+			w.activeInvocation = null;
 		}
 
 		w.status = newStatus;

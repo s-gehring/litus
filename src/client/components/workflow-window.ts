@@ -234,6 +234,74 @@ export function updateBranchInfo(workflow: WorkflowState | null): void {
 	}
 }
 
+export type ActiveModelPanelMode =
+	| { kind: "hidden" }
+	| { kind: "workflow"; workflow: WorkflowState }
+	| { kind: "epic-analysis"; model: string; effort: string | null };
+
+function capitalize(value: string): string {
+	if (!value) return value;
+	return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+let defaultModelDisplayName: string | null = null;
+
+export function setDefaultModelDisplayName(name: string | null): void {
+	defaultModelDisplayName = name && name.trim() ? name.trim() : null;
+}
+
+function formatModelEffort(model: string, effort: string | null): string {
+	const trimmed = model.trim();
+	const isDefault = !trimmed || trimmed.toLowerCase() === "default";
+	let modelLabel: string;
+	if (isDefault) {
+		modelLabel = defaultModelDisplayName ? `Default (${defaultModelDisplayName})` : "Default";
+	} else {
+		modelLabel = capitalize(trimmed);
+	}
+	const effortLabel = capitalize(effort ?? "default");
+	return `Model: ${modelLabel} - Effort: ${effortLabel}`;
+}
+
+export function updateActiveModelPanel(mode: ActiveModelPanelMode): void {
+	const panel = $("#active-model-panel");
+	if (!panel) return;
+
+	panel.classList.remove("paused");
+
+	if (mode.kind === "hidden") {
+		panel.classList.add("hidden");
+		panel.classList.remove("empty");
+		panel.textContent = "";
+		return;
+	}
+
+	panel.classList.remove("hidden");
+
+	if (mode.kind === "epic-analysis") {
+		panel.classList.remove("empty");
+		panel.textContent = formatModelEffort(mode.model, mode.effort);
+		return;
+	}
+
+	const { workflow } = mode;
+	const invocation = workflow.activeInvocation;
+
+	if (!invocation) {
+		panel.textContent = "No model in use";
+		panel.classList.add("empty");
+		return;
+	}
+
+	panel.classList.remove("empty");
+	let text = formatModelEffort(invocation.model, invocation.effort);
+	if (workflow.status === "paused") {
+		text += " — paused, not live";
+		panel.classList.add("paused");
+	}
+	panel.textContent = text;
+}
+
 export function updateUserInput(text: string): void {
 	const el = $("#user-input");
 	if (!el) return;

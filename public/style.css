@@ -740,6 +740,24 @@ header h1 {
   overflow-x: auto;
 }
 
+.active-model-panel {
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-family: monospace;
+}
+
+.active-model-panel.empty {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.active-model-panel.paused {
+  opacity: 0.5;
+}
+
 .pipeline-step {
   display: flex;
   align-items: center;

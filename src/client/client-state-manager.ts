@@ -175,6 +175,8 @@ export class ClientStateManager {
 				return { scope: { entity: "none" }, action: "updated" };
 			case "config:state":
 				return this.handleConfigState(msg);
+			case "default-model:info":
+				return { scope: { entity: "none" }, action: "updated" };
 			case "config:error":
 				return { scope: { entity: "config" }, action: "updated" };
 			case "log":

@@ -123,6 +123,65 @@ describe("WorkflowEngine", () => {
 		});
 	});
 
+	describe("transition clears activeInvocation on terminal states (CR-2)", () => {
+		function seedActive(): void {
+			const current = engine.getWorkflow();
+			if (!current) throw new Error("no workflow");
+			current.activeInvocation = {
+				model: "claude-opus-4-7",
+				effort: "high",
+				stepName: "specify",
+				startedAt: new Date().toISOString(),
+				role: "main",
+			};
+		}
+
+		test("running → completed clears activeInvocation", async () => {
+			const w = await engine.createWorkflow("t", "/tmp/r");
+			engine.transition(w.id, "running");
+			seedActive();
+			engine.transition(w.id, "completed");
+			expect(engine.getWorkflow()?.activeInvocation).toBeNull();
+		});
+
+		test("running → error clears activeInvocation", async () => {
+			const w = await engine.createWorkflow("t", "/tmp/r");
+			engine.transition(w.id, "running");
+			seedActive();
+			engine.transition(w.id, "error");
+			expect(engine.getWorkflow()?.activeInvocation).toBeNull();
+		});
+
+		test("running → waiting_for_input → cancelled clears activeInvocation", async () => {
+			const w = await engine.createWorkflow("t", "/tmp/r");
+			engine.transition(w.id, "running");
+			seedActive();
+			engine.transition(w.id, "waiting_for_input");
+			// waiting_for_input is not a terminal state — value must persist.
+			expect(engine.getWorkflow()?.activeInvocation).not.toBeNull();
+			engine.transition(w.id, "cancelled");
+			expect(engine.getWorkflow()?.activeInvocation).toBeNull();
+		});
+
+		test("running → paused preserves activeInvocation", async () => {
+			const w = await engine.createWorkflow("t", "/tmp/r");
+			engine.transition(w.id, "running");
+			seedActive();
+			engine.transition(w.id, "paused");
+			expect(engine.getWorkflow()?.activeInvocation).not.toBeNull();
+			expect(engine.getWorkflow()?.activeInvocation?.model).toBe("claude-opus-4-7");
+		});
+
+		test("paused → running preserves activeInvocation", async () => {
+			const w = await engine.createWorkflow("t", "/tmp/r");
+			engine.transition(w.id, "running");
+			seedActive();
+			engine.transition(w.id, "paused");
+			engine.transition(w.id, "running");
+			expect(engine.getWorkflow()?.activeInvocation).not.toBeNull();
+		});
+	});
+
 	describe("invalid transitions", () => {
 		test("idle → completed throws", async () => {
 			const w = await engine.createWorkflow("test", "/tmp/test-repo");
