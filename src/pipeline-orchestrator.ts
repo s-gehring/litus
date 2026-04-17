@@ -1531,6 +1531,45 @@ export class PipelineOrchestrator {
 		}
 	}
 
+	/**
+	 * Handle the case where `resolveConflicts` reported that the local tree
+	 * already contained origin/master but `gh pr merge` had still reported a
+	 * conflict. Typically this is stale GitHub mergeability state: retry the
+	 * merge exactly once without consuming a `mergeCycle.attempt`, and surface
+	 * a diagnostic error if it still reports a conflict.
+	 */
+	private retryMergeAfterAlreadyUpToDate(workflow: Workflow): void {
+		if (!workflow.prUrl) {
+			this.handleStepError(workflow.id, "No PR URL found — cannot retry merge");
+			return;
+		}
+		const cwd = requireWorktreePath(workflow);
+		this.handleStepOutput(
+			workflow.id,
+			"Local tree already up-to-date with master, but GitHub reported a conflict. Retrying merge in case mergeability state was stale.",
+		);
+		this.mergePrFn(workflow.prUrl, cwd, (msg) => this.handleStepOutput(workflow.id, msg))
+			.then((retryResult) => {
+				const latest = this.getActiveWorkflow(workflow.id);
+				if (!latest || latest.status !== "running") return;
+				if (retryResult.merged || retryResult.alreadyMerged) {
+					this.advanceAfterStep(workflow.id);
+					return;
+				}
+				if (retryResult.conflict) {
+					this.handleStepError(
+						workflow.id,
+						"GitHub continues to report a merge conflict even though the local branch already contains origin/master. Resolve the PR manually or investigate squash-merge path-level conflicts.",
+					);
+					return;
+				}
+				this.handleStepError(workflow.id, retryResult.error || "PR merge retry failed");
+			})
+			.catch((err) => {
+				this.handleStepError(workflow.id, `PR merge retry failed: ${toErrorMessage(err)}`);
+			});
+	}
+
 	private routeBackToMonitor(workflow: Workflow): void {
 		workflow.ciCycle.attempt++;
 		workflow.ciCycle.monitorStartedAt = null;
@@ -1601,7 +1640,7 @@ export class PipelineOrchestrator {
 			this.resolveConflictsFn(cwd, workflow.summary || workflow.specification, (msg) =>
 				this.handleStepOutput(workflow.id, msg),
 			)
-				.then(() => {
+				.then((resolution) => {
 					// Re-check status: the user may have paused while conflict resolution ran.
 					// Without this guard, routeBackToMonitor would start a fresh CI polling
 					// session with a new AbortController that pause() cannot reach.
@@ -1610,6 +1649,10 @@ export class PipelineOrchestrator {
 						logger.info(
 							`[pipeline] conflict-resolution continuation skipped for workflow ${workflowId}: status=${current?.status ?? "missing"}`,
 						);
+						return;
+					}
+					if (resolution?.kind === "already-up-to-date") {
+						this.retryMergeAfterAlreadyUpToDate(current);
 						return;
 					}
 					current.mergeCycle.attempt++;

@@ -1,6 +1,26 @@
+import { streamClaudeOneShot } from "./cli-runner";
 import { configStore } from "./config-store";
 import { defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
 import type { MergeResult } from "./types";
+
+/**
+ * Outcome of an in-worktree conflict-resolution attempt. The orchestrator
+ * branches on `kind` to decide whether to consume a `mergeCycle.attempt` and
+ * loop back through CI, or to retry `gh pr merge` without consuming an attempt.
+ *
+ * - `resolved`: Claude was dispatched against tree-level conflicts and
+ *   produced new commits that advanced the feature-branch tip.
+ * - `clean-auto-merge`: `git merge origin/master` completed without conflict
+ *   (fast-forward or auto-merge commit); the safety net pushed the result.
+ *   No Claude session was spawned.
+ * - `already-up-to-date`: `git merge origin/master` reported "Already up to
+ *   date." — the local tree already contains master, so the GitHub-reported
+ *   conflict cannot be resolved from this side. No Claude was spawned.
+ */
+export type ConflictResolutionResult =
+	| { kind: "resolved" }
+	| { kind: "clean-auto-merge" }
+	| { kind: "already-up-to-date" };
 
 const PR_NUMBER_REGEX = /\/pull\/(\d+)$/;
 const REPO_REGEX = /github\.com\/([^/]+\/[^/]+)\//;
@@ -104,6 +124,18 @@ export async function mergePr(
 
 const MERGE_CONFLICT_COMMIT_MSG = "chore: resolve merge conflicts with master";
 
+async function readGitHead(cwd: string, spawn: SpawnLike["spawn"]): Promise<string | null> {
+	const proc = spawn(["git", "rev-parse", "HEAD"], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const code = await proc.exited;
+	if (code !== 0) return null;
+	const out = (await readStream(proc.stdout)).trim();
+	return out || null;
+}
+
 async function ensureCommittedAndPushed(
 	cwd: string,
 	onOutput: (msg: string) => void,
@@ -158,6 +190,16 @@ async function ensureCommittedAndPushed(
 	const pushProc = spawn(["git", "push"], { cwd, stdout: "pipe", stderr: "pipe" });
 	const pushCode = await pushProc.exited;
 	if (pushCode !== 0) {
+		// Refresh remote-tracking refs so --force-with-lease compares against
+		// the actual remote tip, not a stale one captured at session start.
+		onOutput(`[git] git fetch origin | cwd=${cwd}`);
+		const refreshProc = spawn(["git", "fetch", "origin"], {
+			cwd,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		await refreshProc.exited;
+
 		// Force-push needed after amend
 		onOutput(`[git] git push --force-with-lease | cwd=${cwd}`);
 		const forcePushProc = spawn(["git", "push", "--force-with-lease"], {
@@ -173,17 +215,33 @@ async function ensureCommittedAndPushed(
 	}
 }
 
+function classifyMergeOutcome(
+	exitCode: number,
+	stdout: string,
+	stderr: string,
+): ConflictResolutionResult["kind"] | "unknown-failure" {
+	const combined = `${stdout}\n${stderr}`;
+	if (exitCode === 0) {
+		if (/already up to date/i.test(stdout)) return "already-up-to-date";
+		return "clean-auto-merge";
+	}
+	if (/CONFLICT|Automatic merge failed/i.test(combined)) return "resolved";
+	return "unknown-failure";
+}
+
 export async function resolveConflicts(
 	worktreePath: string,
 	specSummary: string,
 	onOutput: (msg: string) => void,
 	runner?: SpawnLike,
-): Promise<void> {
+): Promise<ConflictResolutionResult> {
 	const spawn = runner?.spawn ?? defaultSpawn();
 
-	// Fetch and merge master
-	onOutput(`[git] git fetch origin master | cwd=${worktreePath}`);
-	const fetchProc = spawn(["git", "fetch", "origin", "master"], {
+	// Refresh every remote-tracking ref, not just master: the force-with-lease
+	// fallback in ensureCommittedAndPushed relies on origin/<current-branch>
+	// being current, otherwise the lease can accept a stale view of the remote.
+	onOutput(`[git] git fetch origin | cwd=${worktreePath}`);
+	const fetchProc = spawn(["git", "fetch", "origin"], {
 		cwd: worktreePath,
 		stdout: "pipe",
 		stderr: "pipe",
@@ -196,7 +254,33 @@ export async function resolveConflicts(
 		stdout: "pipe",
 		stderr: "pipe",
 	});
-	await mergeProc.exited;
+	const mergeCode = await mergeProc.exited;
+	const mergeStdout = await readStream(mergeProc.stdout);
+	const mergeStderr = await readStream(mergeProc.stderr);
+	const outcome = classifyMergeOutcome(mergeCode, mergeStdout, mergeStderr);
+
+	if (outcome === "unknown-failure") {
+		throw new Error(
+			`git merge origin/master failed: ${mergeStderr.trim() || mergeStdout.trim() || `exit code ${mergeCode}`}`,
+		);
+	}
+
+	if (outcome === "already-up-to-date") {
+		onOutput(
+			"Local tree already contains origin/master — no conflicts to resolve in the worktree. Skipping Claude dispatch.",
+		);
+		// Safety net is still useful: it is a no-op when the tree is clean and
+		// remote matches local, but surfaces any drift we may have missed.
+		await ensureCommittedAndPushed(worktreePath, onOutput, spawn as SpawnLike["spawn"]);
+		return { kind: "already-up-to-date" };
+	}
+
+	if (outcome === "clean-auto-merge") {
+		onOutput("git merge origin/master completed without conflicts — skipping Claude dispatch.");
+		await ensureCommittedAndPushed(worktreePath, onOutput, spawn as SpawnLike["spawn"]);
+		onOutput("Auto-merge complete, changes pushed");
+		return { kind: "clean-auto-merge" };
+	}
 
 	// Build conflict resolution prompt and run Claude CLI
 	const config = configStore.get();
@@ -219,21 +303,38 @@ export async function resolveConflicts(
 		conflictArgs.push("--model", model);
 	}
 
-	onOutput("Dispatching Claude CLI to resolve conflicts...");
-	const claudeProc = spawn(conflictArgs, {
-		cwd: worktreePath,
-		stdout: "pipe",
-		stderr: "pipe",
-	});
+	// Snapshot HEAD so we can detect a silently-aborted Claude session (one that
+	// ran `git merge --abort` or equivalent, leaving the tip unchanged). Without
+	// this check the merge-pr step would quietly route back to monitor-ci and
+	// loop forever until mergeCycle.maxAttempts is exhausted.
+	const preClaudeHead = await readGitHead(worktreePath, spawn as SpawnLike["spawn"]);
 
-	const claudeCode = await claudeProc.exited;
+	onOutput("Dispatching Claude CLI to resolve conflicts...");
+	const { exitCode: claudeCode, stderr: claudeStderr } = await streamClaudeOneShot(
+		conflictArgs,
+		worktreePath,
+		onOutput,
+		spawn as SpawnLike["spawn"],
+	);
 	if (claudeCode !== 0) {
-		const stderr = await readStream(claudeProc.stderr);
-		throw new Error(`Conflict resolution failed: ${stderr.trim() || `exit code ${claudeCode}`}`);
+		throw new Error(`Conflict resolution failed: ${claudeStderr || `exit code ${claudeCode}`}`);
 	}
 
 	// Safety net: ensure all changes are committed and pushed
 	await ensureCommittedAndPushed(worktreePath, onOutput, spawn as SpawnLike["spawn"]);
 
-	onOutput("Conflict resolution complete, changes pushed");
+	const postClaudeHead = await readGitHead(worktreePath, spawn as SpawnLike["spawn"]);
+	if (preClaudeHead && postClaudeHead && preClaudeHead === postClaudeHead) {
+		throw new Error(
+			"Conflict resolution produced no new commits — Claude likely aborted the merge. " +
+				"Resolve the conflict manually, or update the merge-conflict prompt.",
+		);
+	}
+
+	onOutput(
+		postClaudeHead
+			? `Conflict resolution complete, pushed commit ${postClaudeHead.slice(0, 7)}`
+			: "Conflict resolution complete, changes pushed",
+	);
+	return { kind: "resolved" };
 }
