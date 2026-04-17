@@ -239,6 +239,17 @@ export type ActiveModelPanelMode =
 	| { kind: "workflow"; workflow: WorkflowState }
 	| { kind: "epic-analysis"; model: string; effort: string | null };
 
+function capitalize(value: string): string {
+	if (!value) return value;
+	return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatModelEffort(model: string, effort: string | null): string {
+	const modelLabel = capitalize(model.trim() || "default");
+	const effortLabel = capitalize(effort ?? "default");
+	return `Model: ${modelLabel} - Effort: ${effortLabel}`;
+}
+
 export function updateActiveModelPanel(mode: ActiveModelPanelMode): void {
 	const panel = $("#active-model-panel");
 	if (!panel) return;
@@ -256,9 +267,7 @@ export function updateActiveModelPanel(mode: ActiveModelPanelMode): void {
 
 	if (mode.kind === "epic-analysis") {
 		panel.classList.remove("empty");
-		const effortLabel = mode.effort ?? "default";
-		const modelLabel = mode.model.trim() || "default";
-		panel.textContent = `${modelLabel} · ${effortLabel} effort`;
+		panel.textContent = formatModelEffort(mode.model, mode.effort);
 		return;
 	}
 
@@ -272,9 +281,7 @@ export function updateActiveModelPanel(mode: ActiveModelPanelMode): void {
 	}
 
 	panel.classList.remove("empty");
-	const effortLabel = invocation.effort ?? "default";
-	const modelLabel = invocation.model.trim() || "default";
-	let text = `${modelLabel} · ${effortLabel} effort`;
+	let text = formatModelEffort(invocation.model, invocation.effort);
 	if (workflow.status === "paused") {
 		text += " — paused, not live";
 		panel.classList.add("paused");
