@@ -234,17 +234,18 @@ export function updateBranchInfo(workflow: WorkflowState | null): void {
 	}
 }
 
-export function updateActiveModelPanel(workflow: WorkflowState | null): void {
+export type ActiveModelPanelMode =
+	| { kind: "hidden" }
+	| { kind: "workflow"; workflow: WorkflowState }
+	| { kind: "epic-analysis"; model: string; effort: string | null };
+
+export function updateActiveModelPanel(mode: ActiveModelPanelMode): void {
 	const panel = $("#active-model-panel");
 	if (!panel) return;
 
-	const invocation = workflow?.activeInvocation ?? null;
 	panel.classList.remove("paused");
 
-	// Hide the panel entirely when there's no workflow context (e.g. epic tree
-	// view). The "no model in use" text is only meaningful while a single
-	// workflow is selected.
-	if (!workflow) {
+	if (mode.kind === "hidden") {
 		panel.classList.add("hidden");
 		panel.classList.remove("empty");
 		panel.textContent = "";
@@ -253,8 +254,19 @@ export function updateActiveModelPanel(workflow: WorkflowState | null): void {
 
 	panel.classList.remove("hidden");
 
+	if (mode.kind === "epic-analysis") {
+		panel.classList.remove("empty");
+		const effortLabel = mode.effort ?? "default";
+		const modelLabel = mode.model.trim() || "default";
+		panel.textContent = `${modelLabel} · ${effortLabel} effort`;
+		return;
+	}
+
+	const { workflow } = mode;
+	const invocation = workflow.activeInvocation;
+
 	if (!invocation) {
-		panel.textContent = "no model in use";
+		panel.textContent = "No model in use";
 		panel.classList.add("empty");
 		return;
 	}
@@ -262,7 +274,7 @@ export function updateActiveModelPanel(workflow: WorkflowState | null): void {
 	panel.classList.remove("empty");
 	const effortLabel = invocation.effort ?? "default";
 	let text = `${invocation.model} · ${effortLabel} effort`;
-	if (workflow?.status === "paused") {
+	if (workflow.status === "paused") {
 		text += " — paused, not live";
 		panel.classList.add("paused");
 	}
