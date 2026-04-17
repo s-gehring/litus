@@ -12,6 +12,7 @@ const LIFECYCLE_STEPS = [
 		error: null,
 		startedAt: null,
 		completedAt: null,
+		history: [],
 	},
 	{
 		name: "clarify" as const,
@@ -21,6 +22,7 @@ const LIFECYCLE_STEPS = [
 		error: null,
 		startedAt: null,
 		completedAt: null,
+		history: [],
 	},
 ];
 

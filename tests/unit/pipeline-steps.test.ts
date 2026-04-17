@@ -18,6 +18,7 @@ function makeStep(
 		error: null,
 		startedAt: null,
 		completedAt: null,
+		history: [],
 	};
 }
 

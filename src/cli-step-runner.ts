@@ -1,5 +1,55 @@
 import type { CLICallbacks, CLIRunner } from "./cli-runner";
-import type { EffortLevel, PipelineStep, ToolUsage, Workflow } from "./types";
+import type {
+	EffortLevel,
+	PipelineStep,
+	PipelineStepRun,
+	PipelineStepStatus,
+	ToolUsage,
+	Workflow,
+} from "./types";
+
+// Map a live step's status to the subset allowed in an archived `PipelineStepRun`.
+// Exhaustive switch surfaces future additions to `PipelineStepStatus` at the
+// schema-change site.
+function archivedStatusFor(status: PipelineStepStatus): PipelineStepRun["status"] {
+	switch (status) {
+		case "completed":
+		case "error":
+			return status;
+		case "pending":
+		case "running":
+		case "waiting_for_input":
+		case "paused":
+			return "paused";
+	}
+}
+
+// Archive the prior run (if any) and reset the live fields to a clean state.
+// Shared by `CLIStepRunner.resetStep` and `recoverInterruptedFeedbackImplementer`
+// so every archive path goes through one codepath (research.md R1).
+export function archiveAndResetStep(
+	step: PipelineStep,
+	status: "running" | "pending" = "running",
+): void {
+	if (step.startedAt !== null) {
+		const run: PipelineStepRun = {
+			runNumber: step.history.length + 1,
+			status: archivedStatusFor(step.status),
+			output: step.output,
+			error: step.error,
+			startedAt: step.startedAt,
+			completedAt: step.completedAt,
+		};
+		step.history.push(run);
+	}
+	step.status = status;
+	step.startedAt = status === "running" ? new Date().toISOString() : null;
+	step.output = "";
+	step.error = null;
+	step.sessionId = null;
+	step.pid = null;
+	step.completedAt = null;
+}
 
 export interface StepCallbackHandlers {
 	onOutput: (workflowId: string, text: string) => void;
@@ -29,13 +79,7 @@ export class CLIStepRunner {
 	}
 
 	resetStep(step: PipelineStep, status: "running" | "pending" = "running"): void {
-		step.status = status;
-		step.startedAt = status === "running" ? new Date().toISOString() : null;
-		step.output = "";
-		step.error = null;
-		step.sessionId = null;
-		step.pid = null;
-		step.completedAt = null;
+		archiveAndResetStep(step, status);
 	}
 
 	startStep(

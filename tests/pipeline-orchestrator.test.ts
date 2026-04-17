@@ -48,6 +48,7 @@ function createFakeEngine() {
 					startedAt: null,
 					completedAt: null,
 					pid: null,
+					history: [],
 				})),
 				currentStepIndex: 0,
 				reviewCycle: {
@@ -2868,6 +2869,25 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 		});
 	});
 
+	// FR-006: handleStepOutput actually invokes enforceStepOutputCap.
+	// If a future refactor deletes or bypasses that call, this asserts the
+	// wiring so the bug is caught before shipping.
+	describe("step output cap wiring (FR-006)", () => {
+		test("handleStepOutput applies the configured cap to step.output", async () => {
+			// biome-ignore lint/suspicious/noExplicitAny: override private cap field for test
+			(orchestrator as any).maxStepOutputChars = 20;
+			await startAndFlush("test");
+			const wf = getWf(engine);
+
+			// Drive a chunk of synthetic output > cap through the CLI callback wired
+			// to handleStepOutput. Each onOutput appends `${text}\n` → 100+1 chars.
+			cli.getLastCallbacks().onOutput("x".repeat(100));
+
+			const step = wf.steps[wf.currentStepIndex];
+			expect(step.output.length).toBeLessThanOrEqual(20);
+		});
+	});
+
 	// Alert emissions (FR-002 … FR-007, FR-013)
 	describe("alert emissions", () => {
 		function alertCalls(): Array<{
@@ -3101,6 +3121,7 @@ function makeCallbacksWorkflowForRecovery(): Workflow {
 			startedAt: null,
 			completedAt: null,
 			pid: null,
+			history: [],
 		})),
 		currentStepIndex: 0,
 		reviewCycle: {

@@ -175,6 +175,105 @@ describe("resetStep", () => {
 		runner.resetStep(step, "pending");
 		expect(step.startedAt).toBeNull();
 	});
+
+	test("archives prior run into history when step previously ran", () => {
+		const runner = new CLIStepRunner(makeMockCLIRunner() as CLIRunner);
+		const startedAt = "2026-04-18T12:00:00.000Z";
+		const completedAt = "2026-04-18T12:05:00.000Z";
+		const step = makePipelineStep({
+			status: "completed",
+			output: "first run output",
+			error: null,
+			startedAt,
+			completedAt,
+		});
+
+		runner.resetStep(step, "pending");
+		expect(step.history).toHaveLength(1);
+		expect(step.history[0]).toEqual({
+			runNumber: 1,
+			status: "completed",
+			output: "first run output",
+			error: null,
+			startedAt,
+			completedAt,
+		});
+		expect(step.output).toBe("");
+		expect(step.error).toBeNull();
+		expect(step.startedAt).toBeNull();
+		expect(step.completedAt).toBeNull();
+	});
+
+	test("does not archive when step never ran (startedAt === null)", () => {
+		const runner = new CLIStepRunner(makeMockCLIRunner() as CLIRunner);
+		const step = makePipelineStep({ status: "pending", startedAt: null });
+
+		runner.resetStep(step);
+		expect(step.history).toHaveLength(0);
+	});
+
+	test("maps non-terminal live status to 'paused' when archiving", () => {
+		const runner = new CLIStepRunner(makeMockCLIRunner() as CLIRunner);
+		const step = makePipelineStep({
+			status: "running",
+			output: "partial",
+			startedAt: "2026-04-18T12:00:00.000Z",
+		});
+
+		runner.resetStep(step, "pending");
+		expect(step.history[0].status).toBe("paused");
+	});
+
+	test("runNumber increments across repeated resets", () => {
+		const runner = new CLIStepRunner(makeMockCLIRunner() as CLIRunner);
+		const step = makePipelineStep({
+			status: "completed",
+			output: "run 1",
+			startedAt: "2026-04-18T12:00:00.000Z",
+			completedAt: "2026-04-18T12:01:00.000Z",
+		});
+		runner.resetStep(step, "pending");
+
+		// Second run
+		step.status = "error";
+		step.output = "run 2";
+		step.startedAt = "2026-04-18T12:02:00.000Z";
+		step.completedAt = "2026-04-18T12:03:00.000Z";
+		runner.resetStep(step, "pending");
+
+		expect(step.history).toHaveLength(2);
+		expect(step.history[0].runNumber).toBe(1);
+		expect(step.history[1].runNumber).toBe(2);
+		expect(step.history[1].status).toBe("error");
+		expect(step.history[1].output).toBe("run 2");
+	});
+
+	test("archives errored runs across all repeatable step IDs", () => {
+		const runner = new CLIStepRunner(makeMockCLIRunner() as CLIRunner);
+		const repeatableStepNames = [
+			"implement",
+			"implement-review",
+			"monitor-ci",
+			"merge-pr",
+			"feedback-implementer",
+			"review",
+		] as const;
+		for (const name of repeatableStepNames) {
+			const step = makePipelineStep({
+				name,
+				status: "error",
+				output: `${name} output`,
+				error: `${name} error`,
+				startedAt: "2026-04-18T12:00:00.000Z",
+				completedAt: "2026-04-18T12:01:00.000Z",
+			});
+			runner.resetStep(step, "pending");
+			expect(step.history).toHaveLength(1);
+			expect(step.history[0].status).toBe("error");
+			expect(step.history[0].output).toBe(`${name} output`);
+			expect(step.history[0].error).toBe(`${name} error`);
+		}
+	});
 });
 
 // ── startStep / resumeStep / killProcess ───────────────────

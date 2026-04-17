@@ -247,7 +247,7 @@ function capitalize(value: string): string {
 let defaultModelDisplayName: string | null = null;
 
 export function setDefaultModelDisplayName(name: string | null): void {
-	defaultModelDisplayName = name && name.trim() ? name.trim() : null;
+	defaultModelDisplayName = name?.trim() ? name.trim() : null;
 }
 
 function formatModelEffort(model: string, effort: string | null): string {

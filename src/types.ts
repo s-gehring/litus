@@ -244,6 +244,19 @@ export type PipelineStepStatus =
 	| "completed"
 	| "error";
 
+// Archived run of a repeatable pipeline step. Created when `resetStep` is
+// called on a step that already ran (`startedAt != null`). Immutable once
+// appended; the only mutation is whole-entry removal when the global per-step
+// output cap is exceeded.
+export interface PipelineStepRun {
+	runNumber: number;
+	status: "completed" | "error" | "paused";
+	output: string;
+	error: string | null;
+	startedAt: string;
+	completedAt: string | null;
+}
+
 // Pipeline step entity
 export interface PipelineStep {
 	name: PipelineStepName;
@@ -256,6 +269,7 @@ export interface PipelineStep {
 	startedAt: string | null;
 	completedAt: string | null;
 	pid: number | null;
+	history: PipelineStepRun[];
 }
 
 // Lightweight metadata for fast workflow listing without loading full state
