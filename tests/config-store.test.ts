@@ -682,6 +682,26 @@ describe("T022: new defaults include efforts section", () => {
 	});
 });
 
+// ── mergeConflictResolution prompt guardrails ────────────────────────────
+describe("default mergeConflictResolution prompt forbids abort paths", () => {
+	test("prompt explicitly forbids abort/reset commands and requires a new commit", () => {
+		const prompt = DEFAULT_CONFIG.prompts.mergeConflictResolution;
+		// Abort/reset shortcuts must be explicitly forbidden — losing the
+		// in-progress merge is the root cause of the "no-op conflict loop" bug.
+		expect(prompt).toContain("git merge --abort");
+		expect(prompt).toContain("git reset --hard");
+		expect(prompt).toContain("git rebase --abort");
+		// Must explicitly instruct completing the merge with a new commit.
+		expect(prompt.toLowerCase()).toContain("new commit");
+		// Force-pushing from inside Claude is explicitly off-limits — the
+		// wrapper handles lease-safe force push if required.
+		expect(prompt.toLowerCase()).toContain("do not force-push");
+		// A pull --rebase fallback must be documented so a push rejection does
+		// not leave Claude stranded without a recovery path.
+		expect(prompt).toContain("git pull --rebase");
+	});
+});
+
 // ── Disk write failure propagation ───────────────────────────────────────
 describe("save returns _disk error when writeToDisk fails", () => {
 	let dir: string;

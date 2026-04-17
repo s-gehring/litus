@@ -77,16 +77,22 @@ Output ONLY valid JSON, nothing else.
 
 Specification:
 \${specification}`,
-		mergeConflictResolution: `The feature branch has merge conflicts with master. Resolve all merge conflicts in this repository.
+		mergeConflictResolution: `The feature branch has an in-progress merge with origin/master. Your job is to COMPLETE the merge by resolving conflicts and creating a new commit. Do NOT abandon or abort the merge under any circumstance.
 
 Feature summary: \${specSummary}
 
+Hard rules:
+- DO NOT run: git merge --abort, git reset --hard, git rebase --abort, git checkout -- <path>, or any other command that discards the in-progress merge. Aborting the merge will cause the pipeline to loop indefinitely.
+- The session MUST end with a NEW commit whose parent is the pre-merge HEAD (i.e. completing the merge). If you cannot resolve a conflict, explain why in a final comment and still complete the merge — leaving unresolved markers is better than aborting.
+- DO NOT force-push. The wrapper handles forced updates via --force-with-lease after you exit.
+
 Steps:
-1. Find all files with conflict markers (<<<<<<< / ======= / >>>>>>>)
-2. Resolve each conflict by keeping the correct combination of both sides
+1. Find all files with conflict markers (<<<<<<< / ======= / >>>>>>>). Use grep -n to list them.
+2. Resolve each conflict by keeping the correct combination of both sides. Prefer changes that preserve the feature's intent while honoring master's changes.
 3. Run: git add .
 4. Run: git commit -m "chore: resolve merge conflicts with master"
-5. Run: git push`,
+5. Run: git push.
+6. If git push is rejected because the remote branch moved, run: git pull --rebase, then git push again. If it is still rejected, stop and exit — the wrapper will force-push with --force-with-lease.`,
 		ciFixInstruction: `The following CI checks failed on PR \${prUrl}:
 
 \${logSections}
