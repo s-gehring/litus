@@ -190,10 +190,10 @@ const COMMAND_LIKE_FIELDS = new Set([
 ]);
 
 // Fields treated as "Write body" (file content being written): ~15-line cap.
+// Edit's old_string/new_string fall through to COMMAND_LIKE_FIELDS above.
 const WRITE_BODY_FIELDS: Record<string, Set<string>> = {
 	Write: new Set(["content"]),
 	write_file: new Set(["content"]),
-	Edit: new Set(), // Edit uses old/new_string caps above
 };
 
 function capFor(toolName: string, fieldKey: string): number | null {

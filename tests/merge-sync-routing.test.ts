@@ -273,9 +273,7 @@ describe("Merge & Sync Pipeline Routing", () => {
 			cliRunner: cli,
 			questionDetector: {
 				appendFinalizedMessage: () => {},
-				hasFinalizedContent: () => false,
 				detectFromFinalized: () => null,
-				detect: () => null,
 				classifyWithHaiku: mock(async () => false),
 				reset: mock(() => {}),
 			},

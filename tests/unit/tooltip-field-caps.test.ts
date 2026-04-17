@@ -100,4 +100,19 @@ describe("formatToolInput", () => {
 		const out = formatToolInput("Read", { file_path: hugePath });
 		expect(out).toContain(hugePath);
 	});
+
+	test("non-string values are pretty-printed as JSON so the line cap can fire", () => {
+		// Regression guard: if the JSON.stringify pretty-print indent is dropped,
+		// a 20-entry object would render as a single line and `abbreviateField`
+		// could never truncate it by line count. Here we pass a nested object
+		// large enough to exceed the writeBody cap once pretty-printed.
+		const nested: Record<string, number> = {};
+		for (let i = 0; i < 20; i++) nested[`key${i}`] = i;
+		const out = formatToolInput("Write", { file_path: "/tmp/z", content: nested });
+		// Pretty-printed JSON places each field on its own line — assert we see
+		// the multi-line shape, not a single-line dump.
+		expect(out).toContain('"key0": 0');
+		expect(out.split("\n").length).toBeGreaterThan(TOOLTIP_FIELD_CAPS.writeBody);
+		expect(out).toContain("more line");
+	});
 });
