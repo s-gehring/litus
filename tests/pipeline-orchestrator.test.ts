@@ -48,6 +48,7 @@ function createFakeEngine() {
 					startedAt: null,
 					completedAt: null,
 					pid: null,
+					history: [],
 				})),
 				currentStepIndex: 0,
 				reviewCycle: {
@@ -3101,6 +3102,7 @@ function makeCallbacksWorkflowForRecovery(): Workflow {
 			startedAt: null,
 			completedAt: null,
 			pid: null,
+			history: [],
 		})),
 		currentStepIndex: 0,
 		reviewCycle: {

@@ -50,6 +50,7 @@ export class WorkflowEngine {
 				startedAt: null,
 				completedAt: null,
 				pid: null,
+				history: [],
 			})),
 			currentStepIndex: 0,
 			prUrl: null,

@@ -53,6 +53,7 @@ export function makePipelineStep(overrides?: Partial<PipelineStep>): PipelineSte
 		startedAt: null,
 		completedAt: null,
 		pid: null,
+		history: [],
 		...overrides,
 	};
 }

@@ -227,6 +227,7 @@ describe("PipelineStep shape", () => {
 			startedAt: null,
 			completedAt: null,
 			pid: null,
+			history: [],
 		};
 		expect(step.name).toBe("specify");
 		expect(step.status).toBe("pending");
@@ -595,6 +596,7 @@ describe("Pipeline Step Progression", () => {
 			startedAt: "2026-04-06T00:00:00Z",
 			completedAt: null,
 			pid: 12345,
+			history: [],
 		};
 		expect(step.name).toBe("implement");
 		expect(step.pid).toBe(12345);

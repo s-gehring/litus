@@ -29,6 +29,7 @@ export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 			startedAt: null,
 			completedAt: null,
 			pid: null,
+			history: [],
 		})),
 		currentStepIndex: 0,
 		reviewCycle: {
