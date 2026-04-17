@@ -38,6 +38,7 @@ import {
 	appendToolIcons,
 	clearOutput,
 	renderOutputEntries,
+	setDefaultModelDisplayName,
 	updateActiveModelPanel,
 	updateBranchInfo,
 	updateDetailActions,
@@ -344,6 +345,12 @@ function handleMessage(msg: ServerMessage): void {
 			if (msg.warnings.length > 0) {
 				appendOutput(`Partial warnings before abort: ${msg.warnings.join("; ")}`, "error");
 			}
+			break;
+		}
+
+		case "default-model:info": {
+			setDefaultModelDisplayName(msg.modelInfo ? msg.modelInfo.displayName : null);
+			renderExpandedView();
 			break;
 		}
 

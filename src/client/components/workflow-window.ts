@@ -244,8 +244,21 @@ function capitalize(value: string): string {
 	return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+let defaultModelDisplayName: string | null = null;
+
+export function setDefaultModelDisplayName(name: string | null): void {
+	defaultModelDisplayName = name && name.trim() ? name.trim() : null;
+}
+
 function formatModelEffort(model: string, effort: string | null): string {
-	const modelLabel = capitalize(model.trim() || "default");
+	const trimmed = model.trim();
+	const isDefault = !trimmed || trimmed.toLowerCase() === "default";
+	let modelLabel: string;
+	if (isDefault) {
+		modelLabel = defaultModelDisplayName ? `Default (${defaultModelDisplayName})` : "Default";
+	} else {
+		modelLabel = capitalize(trimmed);
+	}
 	const effortLabel = capitalize(effort ?? "default");
 	return `Model: ${modelLabel} - Effort: ${effortLabel}`;
 }

@@ -510,6 +510,10 @@ export type ServerMessage =
 			blockingWorkflows: string[];
 	  }
 	| { type: "config:state"; config: AppConfig; warnings?: ConfigWarning[] }
+	| {
+			type: "default-model:info";
+			modelInfo: { modelId: string; displayName: string } | null;
+	  }
 	| { type: "config:error"; errors: ConfigValidationError[] }
 	| { type: "purge:progress"; step: string; current: number; total: number }
 	| { type: "purge:complete"; warnings: string[] }

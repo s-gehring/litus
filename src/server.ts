@@ -2,6 +2,11 @@ import type { ServerWebSocket } from "bun";
 import { AuditLogger } from "./audit-logger";
 import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
+import {
+	getDefaultModelInfo,
+	initializeDefaultModelInfo,
+	onDefaultModelInfoChange,
+} from "./default-model-info";
 import { computeDependencyStatus } from "./dependency-resolver";
 import type { EpicAnalysisProcess } from "./epic-analyzer";
 import { EpicStore } from "./epic-store";
@@ -327,6 +332,10 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 				ws.subscribe(WS_TOPIC);
 				const workflows = await getAllWorkflowStates();
 				sendTo(ws, { type: "workflow:list", workflows });
+				sendTo(ws, {
+					type: "default-model:info",
+					modelInfo: getDefaultModelInfo(),
+				});
 				const epics = await sharedEpicStore.loadAll();
 				if (epics.length > 0) {
 					sendTo(ws, { type: "epic:list", epics });
@@ -354,6 +363,13 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 		logger.warn(`Port ${port} in use, trying ${port + 1}...`);
 	}
 }
+
+// Detect the default model so the UI can show "Default (Opus 4.7)" rather
+// than a bare "Default". Runs async; listeners broadcast when the result lands.
+onDefaultModelInfoChange((info) => {
+	broadcast({ type: "default-model:info", modelInfo: info });
+});
+initializeDefaultModelInfo();
 
 // Kill all child CLI processes on exit so they don't outlive the server.
 // This covers graceful shutdown, Ctrl+C, and SIGTERM.
