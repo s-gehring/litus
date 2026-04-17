@@ -152,6 +152,11 @@ export interface CLICallbacks {
 	onError: (error: string) => void;
 	onSessionId: (sessionId: string) => void;
 	onPid?: (pid: number) => void;
+	// Fires only on `assistant` events carrying the full message content —
+	// partial `content_block_delta` fragments are intentionally excluded, so
+	// the question detector sees a stable finalized view and cannot duplicate
+	// a question that spans multiple deltas.
+	onAssistantMessage?: (text: string) => void;
 }
 
 interface RunningProcess {
@@ -486,6 +491,7 @@ export class CLIRunner {
 			for (const block of event.message.content) {
 				if (block.type === "text" && block.text) {
 					entry.callbacks.onOutput(block.text);
+					entry.callbacks.onAssistantMessage?.(block.text);
 				} else if (block.type === "tool_use" && block.name) {
 					toolUsages.push({ name: block.name, input: block.input });
 				}

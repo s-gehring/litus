@@ -155,7 +155,6 @@ export class PipelineOrchestrator {
 	private store: WorkflowStore;
 	private managedRepoStore: ManagedRepoStore | null;
 	private callbacks: PipelineCallbacks;
-	private assistantTextBuffer = "";
 	private currentAuditRunId: string | null = null;
 	private pipelineName: string | null = null;
 	private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1300,8 +1299,6 @@ export class PipelineOrchestrator {
 		this.callbacks.onOutput(workflowId, text);
 		this.persistDebounced(workflow);
 
-		this.assistantTextBuffer += `${text}\n`;
-
 		this.summarizer.maybeSummarize(workflowId, text, (stepSummary) => {
 			try {
 				this.engine.updateStepSummary(workflowId, stepSummary);
@@ -1350,7 +1347,11 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		const candidate = this.questionDetector.detect(this.assistantTextBuffer);
+		// Detect only from the finalized-assistant buffer — partial deltas can
+		// synthesize or duplicate a question (the bug this branch fixes). The
+		// modern CLI always emits an `assistant` event at block boundaries, so
+		// failing closed is safer than a fallback to the known-broken path.
+		const candidate = this.questionDetector.detectFromFinalized();
 		if (candidate) {
 			this.questionDetector
 				.classifyWithHaiku(candidate.content)
@@ -2074,9 +2075,8 @@ export class PipelineOrchestrator {
 		});
 	}
 
-	/** Reset assistant text buffer and question detector state between steps. */
+	/** Reset question detector state between steps. */
 	private resetStepState(): void {
-		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
 	}
 
@@ -2109,6 +2109,7 @@ export class PipelineOrchestrator {
 			onSessionId: (wfId, sessionId) => this.handleSessionId(wfId, sessionId),
 			onPid: (wfId, pid) => this.handlePid(wfId, pid),
 			onTools: (tools) => this.callbacks.onTools(workflowId, tools),
+			onAssistantMessage: (_wfId, text) => this.questionDetector.appendFinalizedMessage(text),
 		});
 	}
 

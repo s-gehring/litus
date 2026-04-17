@@ -79,25 +79,165 @@ export function updateEpicStatus(status: EpicStatus): void {
 	if (prLink) prLink.classList.add("hidden");
 }
 
+function pinThinkingIndicatorToTail(log: HTMLElement): void {
+	const el = log.querySelector(".thinking-indicator");
+	if (el && el !== log.lastElementChild) log.appendChild(el);
+}
+
 export function appendOutput(text: string, type: "normal" | "error" | "system" = "normal"): void {
 	const log = $("#output-log");
 	const line = document.createElement("div");
 	line.className = `output-line ${type}`;
 	line.textContent = text;
 	log.appendChild(line);
+	pinThinkingIndicatorToTail(log);
 	log.scrollTop = log.scrollHeight;
 }
 
-function formatToolInput(input: Record<string, unknown>): string {
+// Thinking indicator: small animated marker at the tail of the active step's
+// output while LLM tokens are streaming. A hide debounce absorbs sub-second
+// tool-call gaps so the indicator does not flicker during tool use.
+
+const THINKING_HIDE_DEBOUNCE_MS = 400;
+let thinkingHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+function getOrCreateThinkingIndicator(): HTMLElement {
+	const log = $("#output-log");
+	let el = log.querySelector<HTMLElement>(".thinking-indicator");
+	if (!el) {
+		el = document.createElement("div");
+		el.className = "thinking-indicator";
+		el.setAttribute("aria-label", "Agent is thinking");
+		el.innerHTML =
+			'<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
+		log.appendChild(el);
+	} else {
+		// Always keep the indicator pinned at the tail so new output lines
+		// push it down rather than orphaning it mid-log.
+		log.appendChild(el);
+	}
+	return el;
+}
+
+export function showThinkingIndicator(): void {
+	if (thinkingHideTimer) {
+		clearTimeout(thinkingHideTimer);
+		thinkingHideTimer = null;
+	}
+	const el = getOrCreateThinkingIndicator();
+	el.classList.add("visible");
+	const log = $("#output-log");
+	log.scrollTop = log.scrollHeight;
+}
+
+export function scheduleHideThinkingIndicator(): void {
+	if (thinkingHideTimer) clearTimeout(thinkingHideTimer);
+	thinkingHideTimer = setTimeout(() => {
+		thinkingHideTimer = null;
+		removeThinkingIndicator();
+	}, THINKING_HIDE_DEBOUNCE_MS);
+}
+
+export function removeThinkingIndicator(): void {
+	if (thinkingHideTimer) {
+		clearTimeout(thinkingHideTimer);
+		thinkingHideTimer = null;
+	}
+	const log = $("#output-log");
+	const el = log.querySelector(".thinking-indicator");
+	if (el) el.remove();
+}
+
+// Per-field tooltip line caps. Typical content must never be abbreviated;
+// caps only kick in for outliers.
+
+export const TOOLTIP_FIELD_CAPS: {
+	commandOrArgument: number;
+	writeBody: number;
+} = {
+	commandOrArgument: 30,
+	writeBody: 15,
+};
+
+export interface AbbreviationResult {
+	text: string;
+	truncated: boolean;
+	remaining: number;
+}
+
+export function abbreviateField(content: string, cap: number | null): AbbreviationResult {
+	if (cap === null) return { text: content, truncated: false, remaining: 0 };
+	const lines = content.split("\n");
+	if (lines.length <= cap) return { text: content, truncated: false, remaining: 0 };
+	const kept = lines.slice(0, cap).join("\n");
+	const remaining = lines.length - cap;
+	return {
+		text: `${kept}\n… (${remaining} more line${remaining === 1 ? "" : "s"})`,
+		truncated: true,
+		remaining,
+	};
+}
+
+// Fields treated as "command/argument" (natural-language or code payload):
+// apply the generous ~30-line cap.
+const COMMAND_LIKE_FIELDS = new Set([
+	"command",
+	"pattern",
+	"query",
+	"prompt",
+	"old_string",
+	"new_string",
+]);
+
+// Fields treated as "Write body" (file content being written): ~15-line cap.
+const WRITE_BODY_FIELDS: Record<string, Set<string>> = {
+	Write: new Set(["content"]),
+	write_file: new Set(["content"]),
+	Edit: new Set(), // Edit uses old/new_string caps above
+};
+
+function capFor(toolName: string, fieldKey: string): number | null {
+	if (WRITE_BODY_FIELDS[toolName]?.has(fieldKey)) return TOOLTIP_FIELD_CAPS.writeBody;
+	if (COMMAND_LIKE_FIELDS.has(fieldKey)) return TOOLTIP_FIELD_CAPS.commandOrArgument;
+	return null; // uncapped (paths, metadata, etc.)
+}
+
+export function formatToolInput(toolName: string, input: Record<string, unknown>): string {
 	const lines: string[] = [];
 	for (const [key, value] of Object.entries(input)) {
 		if (value === undefined || value === null) continue;
-		let display = typeof value === "string" ? value : JSON.stringify(value);
-		// Truncate long values
-		if (display.length > 120) display = `${display.slice(0, 117)}...`;
-		lines.push(`${key}: ${display}`);
+		const raw = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+		const { text } = abbreviateField(raw, capFor(toolName, key));
+		lines.push(`${key}: ${text}`);
 	}
 	return lines.join("\n");
+}
+
+function positionTooltip(anchor: HTMLElement, tooltip: HTMLElement): void {
+	// Position tooltips relative to the viewport so clipping ancestors cannot
+	// hide them, and flip/shift to stay inside the window. When neither side
+	// fits, pick the side with more space and clamp to the window edge.
+	const vw = window.innerWidth;
+	const vh = window.innerHeight;
+	const anchorRect = anchor.getBoundingClientRect();
+
+	tooltip.style.left = "0px";
+	tooltip.style.top = "0px";
+	tooltip.style.maxWidth = `${Math.min(400, vw - 8)}px`;
+
+	const tipRect = tooltip.getBoundingClientRect();
+	const gap = 6;
+	const spaceBelow = vh - anchorRect.bottom - gap;
+	const spaceAbove = anchorRect.top - gap;
+	const placeBelow = tipRect.height <= spaceBelow || spaceBelow >= spaceAbove;
+	let top = placeBelow ? anchorRect.bottom + gap : anchorRect.top - gap - tipRect.height;
+	top = Math.max(4, Math.min(top, vh - tipRect.height - 4));
+
+	let left = anchorRect.left + anchorRect.width / 2 - tipRect.width / 2;
+	left = Math.max(4, Math.min(left, vw - tipRect.width - 4));
+
+	tooltip.style.left = `${left}px`;
+	tooltip.style.top = `${top}px`;
 }
 
 function renderToolIcons(tools: ToolUsage[]): HTMLDivElement {
@@ -119,9 +259,21 @@ function renderToolIcons(tools: ToolUsage[]): HTMLDivElement {
 		tooltip.className = "tool-tooltip";
 		let tooltipText = mapping.label;
 		if (usage.input && Object.keys(usage.input).length > 0) {
-			tooltipText += `\n${formatToolInput(usage.input)}`;
+			tooltipText += `\n${formatToolInput(usage.name, usage.input)}`;
 		}
 		tooltip.textContent = tooltipText;
+
+		const show = () => {
+			tooltip.classList.add("visible");
+			positionTooltip(badge, tooltip);
+		};
+		const hide = () => {
+			tooltip.classList.remove("visible");
+		};
+		wrapper.addEventListener("mouseenter", show);
+		wrapper.addEventListener("focusin", show);
+		wrapper.addEventListener("mouseleave", hide);
+		wrapper.addEventListener("focusout", hide);
 
 		wrapper.appendChild(badge);
 		wrapper.appendChild(tooltip);
@@ -130,16 +282,28 @@ function renderToolIcons(tools: ToolUsage[]): HTMLDivElement {
 	return row;
 }
 
+function lastNonSystemLine(log: HTMLElement): HTMLElement | null {
+	// Iterate explicitly: `:last-of-type` binds to the tag name, so a pinned
+	// thinking-indicator div at the tail would mask the last `.output-line`.
+	const lines = log.querySelectorAll<HTMLElement>(".output-line");
+	const last = lines.item(lines.length - 1);
+	if (last && !last.classList.contains("system")) return last;
+	return null;
+}
+
 export function appendToolIcons(tools: ToolUsage[]): void {
 	const log = $("#output-log");
-	// Attach to the last .output-line, or create a minimal one if none exists
-	let lastLine = log.querySelector(".output-line:last-of-type") as HTMLElement | null;
-	if (!lastLine) {
-		lastLine = document.createElement("div");
-		lastLine.className = "output-line normal";
-		log.appendChild(lastLine);
+	// Never attach tool icons to an italic step-header (.system) line — they'd
+	// inherit the italic styling. Start a fresh normal line when the last
+	// existing line is a system/header line.
+	let target = lastNonSystemLine(log);
+	if (!target) {
+		target = document.createElement("div");
+		target.className = "output-line normal";
+		log.appendChild(target);
 	}
-	lastLine.appendChild(renderToolIcons(tools));
+	target.appendChild(renderToolIcons(tools));
+	pinThinkingIndicatorToTail(log);
 	log.scrollTop = log.scrollHeight;
 }
 
@@ -152,14 +316,15 @@ export function renderOutputEntries(entries: OutputEntry[]): void {
 			line.textContent = entry.text;
 			log.appendChild(line);
 		} else {
-			// tools entry: attach to the last output-line
-			let lastLine = log.querySelector(".output-line:last-of-type") as HTMLElement | null;
-			if (!lastLine) {
-				lastLine = document.createElement("div");
-				lastLine.className = "output-line normal";
-				log.appendChild(lastLine);
+			// Attach to the last non-system output-line so tool icons never
+			// inherit italic styling from a step header.
+			let target = lastNonSystemLine(log);
+			if (!target) {
+				target = document.createElement("div");
+				target.className = "output-line normal";
+				log.appendChild(target);
 			}
-			lastLine.appendChild(renderToolIcons(entry.tools));
+			target.appendChild(renderToolIcons(entry.tools));
 		}
 	}
 	log.scrollTop = log.scrollHeight;
@@ -167,6 +332,10 @@ export function renderOutputEntries(entries: OutputEntry[]): void {
 
 export function clearOutput(): void {
 	const log = $("#output-log");
+	if (thinkingHideTimer) {
+		clearTimeout(thinkingHideTimer);
+		thinkingHideTimer = null;
+	}
 	log.replaceChildren();
 }
 

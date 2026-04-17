@@ -51,8 +51,11 @@ import {
 	appendOutput,
 	appendToolIcons,
 	clearOutput,
+	removeThinkingIndicator,
 	renderOutputEntries,
+	scheduleHideThinkingIndicator,
 	setDefaultModelDisplayName,
+	showThinkingIndicator,
 	updateActiveModelPanel,
 	updateBranchInfo,
 	updateDetailActions,
@@ -239,6 +242,19 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "workflow:state": {
 			if (!msg.workflow) break;
+			// Terminal transitions must hide the indicator immediately (bypassing
+			// the debounce) so it cannot become stuck-on.
+			const status = msg.workflow.status;
+			if (
+				expandedId === msg.workflow.id &&
+				(status === "completed" ||
+					status === "error" ||
+					status === "cancelled" ||
+					status === "paused" ||
+					status === "waiting_for_input")
+			) {
+				removeThinkingIndicator();
+			}
 			renderCards();
 			if (expandedId === msg.workflow.id) {
 				renderExpandedView();
@@ -258,6 +274,10 @@ function handleMessage(msg: ServerMessage): void {
 				selectedStepIndex === entry.state.currentStepIndex
 			) {
 				appendOutput(msg.text);
+				if (entry.state.status === "running") {
+					showThinkingIndicator();
+					scheduleHideThinkingIndicator();
+				}
 			}
 			break;
 		}
@@ -270,6 +290,10 @@ function handleMessage(msg: ServerMessage): void {
 				(expandedId === msg.workflowId || selectedChildId === msg.workflowId) &&
 				selectedStepIndex === entry.state.currentStepIndex
 			) {
+				// Tool-call gap: schedule a debounced hide so sub-second gaps are
+				// absorbed by the minimum-visible window and the indicator does
+				// not flicker. Sustained gaps exceed the debounce and hide.
+				scheduleHideThinkingIndicator();
 				appendToolIcons(msg.tools);
 			}
 			break;
@@ -286,6 +310,10 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "workflow:step-change": {
 			if (change.scope.entity === "none") break;
+			// Step-change resets the output pane; drop any lingering indicator.
+			if (expandedId === msg.workflowId || selectedChildId === msg.workflowId) {
+				removeThinkingIndicator();
+			}
 			renderCards();
 			if (expandedId === msg.workflowId || selectedChildId === msg.workflowId) {
 				if (wasWatchingRunning) {

@@ -474,10 +474,9 @@ header h1 {
 
 .tool-tooltip {
   display: none;
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  position: fixed;
+  top: 0;
+  left: 0;
   background: #1e1e2e;
   color: #cdd6f4;
   border: 1px solid rgba(74, 158, 255, 0.3);
@@ -485,17 +484,50 @@ header h1 {
   padding: 6px 10px;
   font-size: 0.75rem;
   line-height: 1.4;
-  white-space: pre;
+  white-space: pre-wrap;
   max-width: 400px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   z-index: 1000;
   pointer-events: none;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
-.tool-icon-wrapper:hover .tool-tooltip {
+.tool-tooltip.visible {
   display: block;
+}
+
+/* ── Thinking indicator (US1 / FR-006) ─────────────────── */
+
+.thinking-indicator {
+  display: none;
+  padding: 4px 0;
+}
+
+.thinking-indicator.visible {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.thinking-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim, #888);
+  opacity: 0.3;
+  animation: thinking-pulse 1.2s infinite ease-in-out;
+}
+
+.thinking-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes thinking-pulse {
+  0%, 80%, 100% { opacity: 0.3; }
+  40% { opacity: 1; }
 }
 
 /* Question panel — overlaps the output area from below */

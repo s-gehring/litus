@@ -162,10 +162,18 @@ function createFakeCliRunner() {
 
 function createFakeQuestionDetector() {
 	const detectResults: Array<Question | null> = [];
+	let finalized = "";
 	return {
 		detect: (_text: string): Question | null => detectResults.shift() ?? null,
+		appendFinalizedMessage: (text: string) => {
+			finalized += `${text}\n`;
+		},
+		hasFinalizedContent: () => finalized.trim().length > 0,
+		detectFromFinalized: (): Question | null => detectResults.shift() ?? null,
 		classifyWithHaiku: mock((_text: string) => Promise.resolve(false)),
-		reset: mock(() => {}),
+		reset: mock(() => {
+			finalized = "";
+		}),
 		_pushDetectResult: (r: Question | null) => detectResults.push(r),
 	};
 }

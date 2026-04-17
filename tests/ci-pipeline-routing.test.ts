@@ -221,6 +221,9 @@ describe("CI Pipeline Routing", () => {
 			engine: engine as never,
 			cliRunner: cli as never,
 			questionDetector: {
+				appendFinalizedMessage: () => {},
+				hasFinalizedContent: () => false,
+				detectFromFinalized: () => null,
 				detect: () => null,
 				classifyWithHaiku: async () => false,
 				reset: () => {},
@@ -637,6 +640,9 @@ describe("CI Pipeline Routing", () => {
 				engine: localEngine as never,
 				cliRunner: localCli as never,
 				questionDetector: {
+					appendFinalizedMessage: () => {},
+					hasFinalizedContent: () => false,
+					detectFromFinalized: () => null,
 					detect: () => null,
 					classifyWithHaiku: async () => false,
 					reset: () => {},

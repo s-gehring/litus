@@ -58,6 +58,7 @@ export interface StepCallbackHandlers {
 	onSessionId: (workflowId: string, sessionId: string) => void;
 	onPid: (workflowId: string, pid: number) => void;
 	onTools: (tools: ToolUsage[]) => void;
+	onAssistantMessage?: (workflowId: string, text: string) => void;
 }
 
 export class CLIStepRunner {
@@ -75,6 +76,9 @@ export class CLIStepRunner {
 			onError: (error) => handlers.onError(workflowId, error),
 			onSessionId: (sessionId) => handlers.onSessionId(workflowId, sessionId),
 			onPid: (pid) => handlers.onPid(workflowId, pid),
+			onAssistantMessage: handlers.onAssistantMessage
+				? (text) => handlers.onAssistantMessage?.(workflowId, text)
+				: undefined,
 		};
 	}
 

@@ -18,6 +18,21 @@ const QUESTION_INDICATORS = [
 
 export class QuestionDetector {
 	private pendingClassification = false;
+	// Finalized-only accumulator (FR-008, FR-009): only assistant messages
+	// whose finalized form has arrived are appended here. Partial streaming
+	// deltas never reach this buffer, so a question that is streamed across
+	// partials and then finalized is detected exactly once from its final
+	// form. Mirrors the deduplication pattern applied to the Specify step.
+	private finalizedBuffer = "";
+
+	appendFinalizedMessage(text: string): void {
+		if (!text) return;
+		this.finalizedBuffer += `${text}\n`;
+	}
+
+	detectFromFinalized(): Question | null {
+		return this.detect(this.finalizedBuffer);
+	}
 
 	/**
 	 * Pre-filter: checks if text contains positive question indicators.
@@ -79,5 +94,6 @@ export class QuestionDetector {
 
 	reset(): void {
 		this.pendingClassification = false;
+		this.finalizedBuffer = "";
 	}
 }
