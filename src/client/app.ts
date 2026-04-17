@@ -820,10 +820,23 @@ function selectStep(index: number): void {
 
 	clearOutput();
 
-	if (
-		index === wf.currentStepIndex &&
-		(wf.status === "running" || wf.status === "waiting_for_input")
-	) {
+	// Render archived prior runs first (FR-001/FR-003). Each gets a system-styled
+	// header with run #, start time, and final status; followed by its output
+	// and error block, if any. The live/stored current-run render follows.
+	for (const run of step.history) {
+		const startedAt = new Date(run.startedAt);
+		const formattedStart = Number.isNaN(startedAt.getTime())
+			? run.startedAt
+			: startedAt.toLocaleString();
+		appendOutput(`── Run ${run.runNumber} · ${formattedStart} · ${run.status} ──`, "system");
+		if (run.output) appendOutput(run.output);
+		if (run.error) appendOutput(`Error: ${run.error}`, "error");
+	}
+
+	const isLive =
+		index === wf.currentStepIndex && (wf.status === "running" || wf.status === "waiting_for_input");
+
+	if (isLive) {
 		// Show live accumulated output, fall back to persisted step.output after restart
 		if (entry.outputLines.length > 0) {
 			renderOutputEntries(entry.outputLines);
@@ -834,7 +847,7 @@ function selectStep(index: number): void {
 		// Show stored step output
 		if (step.output) appendOutput(step.output);
 		if (step.error) appendOutput(`Error: ${step.error}`, "error");
-	} else {
+	} else if (step.history.length === 0) {
 		appendOutput("No output yet", "system");
 	}
 
