@@ -171,6 +171,7 @@ describe("PipelineOrchestrator.activeInvocation", () => {
 			cliRunner: cli,
 			questionDetector: {
 				detect: () => null,
+				detectFromFinalized: () => null,
 				classifyWithHaiku: async () => false,
 				reset: () => {},
 			},
