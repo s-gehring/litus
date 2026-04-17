@@ -77,6 +77,8 @@ export interface PipelineDeps {
 	managedRepoStore?: ManagedRepoStore;
 	mergePr?: typeof defaultMergePr;
 	resolveConflicts?: typeof defaultResolveConflicts;
+	/** Overrides the PR-URL discovery path in `runMonitorCi`. Test-only hook. */
+	discoverPrUrl?: (workflow: Workflow) => Promise<string | null>;
 	syncRepo?: typeof defaultSyncRepo;
 	runSetupChecks?: (targetDir: string) => Promise<SetupResult>;
 	ensureSpeckitSkills?: typeof defaultEnsureSpeckitSkills;
@@ -141,9 +143,8 @@ export class PipelineOrchestrator {
 		this.engine = deps?.engine ?? new WorkflowEngine();
 		this.cliRunner = deps?.cliRunner ?? new CLIRunner();
 		this.stepRunner = new CLIStepRunner(this.cliRunner);
-		this.ciMonitor = new CIMonitorCoordinator(startMonitoring, (workflow) =>
-			this.discoverPrUrl(workflow),
-		);
+		const discoverPrUrlFn = deps?.discoverPrUrl ?? ((w: Workflow) => this.discoverPrUrl(w));
+		this.ciMonitor = new CIMonitorCoordinator(startMonitoring, discoverPrUrlFn);
 		this.questionDetector = deps?.questionDetector ?? new QuestionDetector();
 		this.reviewClassifier = deps?.reviewClassifier ?? new ReviewClassifier();
 		this.summarizer = deps?.summarizer ?? new Summarizer();
@@ -1065,13 +1066,23 @@ export class PipelineOrchestrator {
 			this.ciMonitor
 				.discoverPrUrl(workflow)
 				.then((url) => {
+					// The user may have paused while discoverPrUrl awaited. Without this
+					// guard we would start a fresh CI polling session whose AbortController
+					// the prior pause() cannot reach.
+					const current = this.getActiveWorkflow(workflow.id);
+					if (!current || current.status !== "running") {
+						logger.info(
+							`[pipeline] discoverPrUrl continuation skipped for workflow ${workflow.id}: status=${current?.status ?? "missing"}`,
+						);
+						return;
+					}
 					if (!url) {
 						this.handleStepError(workflow.id, "No PR URL found — cannot monitor CI checks");
 						return;
 					}
-					workflow.prUrl = url;
-					this.persistWorkflow(workflow);
-					this.startCiMonitoring(workflow);
+					current.prUrl = url;
+					this.persistWorkflow(current);
+					this.startCiMonitoring(current);
 				})
 				.catch((err) => {
 					this.handleStepError(workflow.id, `Failed to discover PR URL: ${toErrorMessage(err)}`);
@@ -1559,6 +1570,16 @@ export class PipelineOrchestrator {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 
+		// If the user paused/cancelled while mergePr was in-flight, do not advance
+		// or route back to monitor-ci. Otherwise the async merge completion would
+		// silently restart the pipeline behind a paused workflow status.
+		if (workflow.status !== "running") {
+			logger.info(
+				`[pipeline] handleMergeResult skipped for workflow ${workflowId}: status=${workflow.status}`,
+			);
+			return;
+		}
+
 		if (result.merged || result.alreadyMerged) {
 			// Success — advance to sync-repo
 			this.advanceAfterStep(workflowId);
@@ -1581,8 +1602,18 @@ export class PipelineOrchestrator {
 				this.handleStepOutput(workflow.id, msg),
 			)
 				.then(() => {
-					workflow.mergeCycle.attempt++;
-					this.routeBackToMonitor(workflow);
+					// Re-check status: the user may have paused while conflict resolution ran.
+					// Without this guard, routeBackToMonitor would start a fresh CI polling
+					// session with a new AbortController that pause() cannot reach.
+					const current = this.getActiveWorkflow(workflowId);
+					if (!current || current.status !== "running") {
+						logger.info(
+							`[pipeline] conflict-resolution continuation skipped for workflow ${workflowId}: status=${current?.status ?? "missing"}`,
+						);
+						return;
+					}
+					current.mergeCycle.attempt++;
+					this.routeBackToMonitor(current);
 				})
 				.catch((err) => {
 					this.handleStepError(workflowId, `Conflict resolution failed: ${toErrorMessage(err)}`);
