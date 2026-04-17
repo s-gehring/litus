@@ -1,4 +1,6 @@
 import type { ServerWebSocket } from "bun";
+import { AlertQueue } from "./alert-queue";
+import { AlertStore } from "./alert-store";
 import { AuditLogger } from "./audit-logger";
 import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
@@ -17,6 +19,8 @@ import { createDefaultManagedRepoStore } from "./managed-repo-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
+import { createAlertBroadcasters } from "./server/alert-broadcast";
+import { handleAlertDismiss, handleAlertList } from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
 import { handleEpicCancel, handleEpicStart } from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
@@ -59,12 +63,17 @@ const sharedCliRunner = new CLIRunner();
 const sharedSummarizer = new Summarizer();
 const sharedAuditLogger = new AuditLogger();
 const managedRepoStore = createDefaultManagedRepoStore();
+const sharedAlertQueue = new AlertQueue(new AlertStore());
 
 // WorkflowManager: holds one PipelineOrchestrator per active workflow
 const orchestrators = new Map<string, PipelineOrchestrator>();
 
 // ── Epic analysis state ──────────────────────────────────
 const epicAnalysisRef: { current: EpicAnalysisProcess | null } = { current: null };
+
+const { emitAlert, dismissAlertsWhere } = createAlertBroadcasters(sharedAlertQueue, (msg) =>
+	broadcast(msg),
+);
 
 function createCallbacks() {
 	return {
@@ -129,6 +138,8 @@ function createCallbacks() {
 
 			broadcastWorkflowState(dependentWorkflowId);
 		},
+		onAlertEmit: emitAlert,
+		onAlertDismissWhere: dismissAlertsWhere,
 	};
 }
 
@@ -217,6 +228,7 @@ const deps: HandlerDeps = {
 	sharedSummarizer,
 	configStore,
 	managedRepoStore,
+	alertQueue: sharedAlertQueue,
 	epicAnalysisRef,
 	createOrchestrator,
 	broadcastWorkflowState,
@@ -242,6 +254,8 @@ router.register("config:reset", handleConfigReset);
 router.register("epic:start", handleEpicStart);
 router.register("epic:cancel", handleEpicCancel);
 router.register("purge:all", handlePurgeAll);
+router.register("alert:list", handleAlertList);
+router.register("alert:dismiss", handleAlertDismiss);
 
 // ── HTTP/WS server ──────────────────────────────────────
 async function listSubdirectories(parentDir: string): Promise<string[]> {
@@ -340,6 +354,7 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 				if (epics.length > 0) {
 					sendTo(ws, { type: "epic:list", epics });
 				}
+				sendTo(ws, { type: "alert:list", alerts: sharedAlertQueue.list() });
 			},
 			message(ws: ServerWebSocket<WsData>, message: string | Buffer) {
 				router.dispatch(ws, message, deps);
@@ -377,13 +392,27 @@ function cleanupChildren() {
 	sharedCliRunner.killAll();
 }
 process.on("exit", cleanupChildren);
-process.on("SIGINT", () => {
+async function gracefulExit(): Promise<void> {
 	cleanupChildren();
+	try {
+		await sharedAlertQueue.flush();
+	} catch {
+		// Errors are logged inside flush().
+	}
 	process.exit(0);
+}
+process.on("SIGINT", () => {
+	void gracefulExit();
 });
 process.on("SIGTERM", () => {
-	cleanupChildren();
-	process.exit(0);
+	void gracefulExit();
+});
+
+// Restore persisted alert queue on startup (fire-and-forget; initial WS
+// `alert:list` messages sent before this resolves will just report an empty
+// list — correct behavior for a fresh process).
+sharedAlertQueue.loadFromDisk().catch((err) => {
+	logger.error(`[startup] Failed to load alert queue: ${err}`);
 });
 
 // Restore persisted workflows on startup

@@ -1,5 +1,6 @@
 import { looksLikeGitUrl } from "../git-url";
 import {
+	type Alert,
 	type AppConfig,
 	type AutoMode,
 	type ClientMessage,
@@ -11,6 +12,13 @@ import {
 	type WorkflowState,
 } from "../types";
 import { ClientStateManager } from "./client-state-manager";
+import {
+	hideAlertList,
+	initAlertList,
+	refreshAlertList,
+	showAlertList,
+} from "./components/alert-list";
+import { initAlertToasts, removeAlertToast, showAlertToast } from "./components/alert-toast";
 import {
 	createConfigPageHandler,
 	hidePurgeProgress,
@@ -409,6 +417,90 @@ function handleMessage(msg: ServerMessage): void {
 			pendingCloneSubmissions.delete(msg.submissionId);
 			break;
 		}
+
+		case "alert:list": {
+			// Initial list: refresh badge only — do not spawn toasts retroactively.
+			renderAlertBell();
+			refreshAlertList();
+			break;
+		}
+
+		case "alert:created": {
+			showAlertToast(msg.alert);
+			renderAlertBell();
+			refreshAlertList();
+			break;
+		}
+
+		case "alert:dismissed": {
+			for (const id of msg.alertIds) removeAlertToast(id);
+			renderAlertBell();
+			refreshAlertList();
+			break;
+		}
+	}
+}
+
+function showMissingTargetToast(message: string): void {
+	showAlertToast({
+		id: `transient_${Date.now()}`,
+		type: "error",
+		title: "Alert target unavailable",
+		description: message,
+		workflowId: null,
+		epicId: null,
+		targetRoute: "",
+		createdAt: Date.now(),
+	});
+}
+
+function navigateToAlertTarget(alert: Alert): void {
+	hideAlertList();
+	const target = alert.targetRoute;
+	if (!target) return;
+	const workflowMatch = target.match(/^\/workflow\/(.+)$/);
+	const epicMatch = target.match(/^\/epic\/(.+)$/);
+	if (workflowMatch) {
+		const wfId = workflowMatch[1];
+		const entry = stateManager.getWorkflows().get(wfId);
+		if (!entry) {
+			showMissingTargetToast(`Workflow ${wfId} no longer exists`);
+			return;
+		}
+		if (appRouter) appRouter.navigate("/");
+		expandItem(entry.state.epicId ? `${EPIC_CARD_PREFIX}${entry.state.epicId}` : wfId);
+		if (entry.state.epicId) {
+			stateManager.selectChild(wfId);
+			renderExpandedView();
+		}
+		return;
+	}
+	if (epicMatch) {
+		const epicId = epicMatch[1];
+		const hasEpic =
+			stateManager.getEpics().has(epicId) || stateManager.getEpicAggregates().has(epicId);
+		if (!hasEpic) {
+			showMissingTargetToast(`Epic ${epicId} no longer exists`);
+			return;
+		}
+		if (appRouter) appRouter.navigate("/");
+		expandItem(`${EPIC_CARD_PREFIX}${epicId}`);
+	}
+}
+
+function renderAlertBell(): void {
+	const count = stateManager.getAlerts().size;
+	updateFavicon(count > 0);
+	const btn = document.getElementById("btn-alert-bell");
+	if (!btn) return;
+	const badge = btn.querySelector(".bell-count");
+	if (badge) {
+		if (count > 0) {
+			badge.textContent = String(count);
+			badge.classList.remove("hidden");
+		} else {
+			badge.classList.add("hidden");
+		}
 	}
 }
 
@@ -512,16 +604,6 @@ function renderCards(): void {
 	const expandedId = stateManager.getExpandedId();
 
 	renderCardStrip(cardOrder, workflows, epics, epicAggregates, expandedId, expandItem);
-
-	let needsAttention = false;
-	for (const [, entry] of workflows) {
-		const s = entry.state.status;
-		if (s === "waiting_for_input" || s === "error") {
-			needsAttention = true;
-			break;
-		}
-	}
-	updateFavicon(needsAttention);
 }
 
 function updateActiveModelPanelForEpic(epic: EpicClientState): void {
@@ -1209,6 +1291,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	// Timer update interval
 	setInterval(updateTimers, 1000);
+
+	initAlertToasts((alert) => {
+		navigateToAlertTarget(alert);
+	});
+
+	initAlertList({
+		getAlerts: () => stateManager.getAlerts(),
+		onDismiss: (id) => {
+			send({ type: "alert:dismiss", alertId: id });
+		},
+		onNavigate: (alert) => {
+			navigateToAlertTarget(alert);
+		},
+	});
+
+	const btnBell = document.getElementById("btn-alert-bell");
+	if (btnBell) {
+		btnBell.addEventListener("click", (e) => {
+			e.stopPropagation();
+			showAlertList();
+		});
+	}
 
 	connect();
 });

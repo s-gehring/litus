@@ -19,6 +19,7 @@ export interface MockWorkflowStore {
 		loadIndex(): Promise<WorkflowIndexEntry[]>;
 		remove(id: string): Promise<void>;
 		removeAll(): Promise<void>;
+		waitForPendingWrites(): Promise<void>;
 	};
 	tracker: CallTracker;
 	seedWorkflow(workflow: Workflow): void;
@@ -68,6 +69,9 @@ export function createMockWorkflowStore(): MockWorkflowStore {
 		async removeAll(): Promise<void> {
 			tracker.calls.push({ method: "removeAll", args: [] });
 			workflows.clear();
+		},
+		async waitForPendingWrites(): Promise<void> {
+			tracker.calls.push({ method: "waitForPendingWrites", args: [] });
 		},
 	};
 
