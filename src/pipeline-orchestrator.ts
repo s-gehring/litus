@@ -40,6 +40,7 @@ import {
 	type FeedbackEntry,
 	type ModelConfig,
 	type PipelineCallbacks,
+	type PipelineStep,
 	type PipelineStepName,
 	type Question,
 	type SetupResult,
@@ -87,9 +88,36 @@ export interface PipelineDeps {
 	getGitHead?: (cwd: string) => Promise<string | null>;
 	/** Returns new commit SHAs in `preRunHead..HEAD` order. Overridable in tests. */
 	detectNewCommits?: (preRunHead: string, cwd: string) => Promise<string[]>;
+	/** Override per-step output cap (default `MAX_STEP_OUTPUT_CHARS`). Test-only. */
+	maxStepOutputChars?: number;
 }
 
 const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
+
+// Per-step budget spanning archived runs + current run. When combined length
+// of `sum(history[*].output)` + `step.output` exceeds this, the oldest history
+// entry is dropped wholesale; repeated overflow drops further entries; only
+// when history is empty do we head-truncate `step.output`.
+export const MAX_STEP_OUTPUT_CHARS = 1_000_000;
+
+/**
+ * Enforce the per-step output cap across `step.history[*].output` + `step.output`.
+ * Mutates `step` in place. Exported for unit testing; orchestrator calls this
+ * after each output append.
+ */
+export function enforceStepOutputCap(
+	step: Pick<PipelineStep, "history" | "output">,
+	cap: number = MAX_STEP_OUTPUT_CHARS,
+): void {
+	let historyLen = step.history.reduce((n, h) => n + h.output.length, 0);
+	while (step.history.length > 0 && historyLen + step.output.length > cap) {
+		const dropped = step.history.shift();
+		if (dropped) historyLen -= dropped.output.length;
+	}
+	if (step.output.length > cap) {
+		step.output = step.output.slice(step.output.length - cap);
+	}
+}
 
 function requireWorktreePath(workflow: Workflow): string {
 	if (!workflow.worktreePath) {
@@ -138,6 +166,7 @@ export class PipelineOrchestrator {
 	private checkoutMasterFn: (cwd: string) => Promise<{ code: number; stderr: string }>;
 	private getGitHeadFn: (cwd: string) => Promise<string | null>;
 	private detectNewCommitsFn: (preRunHead: string, cwd: string) => Promise<string[]>;
+	private maxStepOutputChars: number;
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -176,6 +205,7 @@ export class PipelineOrchestrator {
 				}
 			});
 		this.detectNewCommitsFn = deps?.detectNewCommits ?? detectNewCommits;
+		this.maxStepOutputChars = deps?.maxStepOutputChars ?? MAX_STEP_OUTPUT_CHARS;
 		this.callbacks = callbacks;
 	}
 
@@ -1262,6 +1292,7 @@ export class PipelineOrchestrator {
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.output += `${text}\n`;
+		enforceStepOutputCap(step, this.maxStepOutputChars);
 		workflow.updatedAt = new Date().toISOString();
 
 		this.engine.updateLastOutput(workflowId, text);
