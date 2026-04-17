@@ -1,5 +1,9 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { configStore } from "./config-store";
 import { gitSpawn } from "./git-logger";
+import { logger } from "./logger";
 import { extractRepoFromUrl } from "./pr-merger";
 import type { CiCheckResult, CiFailureLog } from "./types";
 
@@ -66,11 +70,48 @@ export async function gatherAllFailureLogs(
 	return logs;
 }
 
-export function buildFixPrompt(prUrl: string, failureLogs: CiFailureLog[]): string {
-	const logSections = failureLogs
+const CI_FIX_PROMPT_DIR = join(tmpdir(), "litus-ci-fix-prompts");
+
+function writeFailureLogFile(failureLogs: CiFailureLog[]): string {
+	const body = failureLogs
 		.map((log) => `### ${log.checkName} (run ${log.runId})\n\`\`\`\n${log.logs}\n\`\`\``)
 		.join("\n\n");
 
+	mkdirSync(CI_FIX_PROMPT_DIR, { recursive: true });
+	const fileName = `ci-fix-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.md`;
+	const filePath = join(CI_FIX_PROMPT_DIR, fileName);
+	writeFileSync(filePath, body, "utf8");
+	logger.info(`[ci-fixer] Wrote CI failure logs to ${filePath} (${body.length} chars)`);
+	return filePath;
+}
+
+export function buildFixPrompt(prUrl: string, failureLogs: CiFailureLog[]): string {
 	const promptTemplate = configStore.get().prompts.ciFixInstruction;
+	const repo = extractRepoFromUrl(prUrl) ?? "<unknown-repo>";
+
+	let logSections: string;
+	if (failureLogs.length === 0) {
+		logSections =
+			"No failure logs were captured for this cycle. Inspect the PR checks directly (e.g. `gh pr checks " +
+			`${prUrl}\`) to determine what failed before attempting a fix.`;
+	} else {
+		const filePath = writeFailureLogFile(failureLogs);
+		const sources = failureLogs
+			.map(
+				(log) =>
+					`- ${log.checkName} (run ${log.runId}) — fetched via \`gh run view ${log.runId} --log-failed --repo ${repo}\``,
+			)
+			.join("\n");
+
+		logSections = `The full CI failure logs are too large to embed inline and have been written to a temp file on this machine:
+
+${filePath}
+
+Read that file first — it contains one fenced \`\`\` block per failing check with the complete output of \`gh run view <run-id> --log-failed\` for PR ${prUrl}.
+
+Log sources (one section per run in the file):
+${sources}`;
+	}
+
 	return promptTemplate.replaceAll("${prUrl}", prUrl).replaceAll("${logSections}", logSections);
 }
