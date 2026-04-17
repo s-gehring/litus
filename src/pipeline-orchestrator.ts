@@ -1559,6 +1559,16 @@ export class PipelineOrchestrator {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 
+		// If the user paused/cancelled while mergePr was in-flight, do not advance
+		// or route back to monitor-ci. Otherwise the async merge completion would
+		// silently restart the pipeline behind a paused workflow status.
+		if (workflow.status !== "running") {
+			logger.info(
+				`[pipeline] handleMergeResult skipped for workflow ${workflowId}: status=${workflow.status}`,
+			);
+			return;
+		}
+
 		if (result.merged || result.alreadyMerged) {
 			// Success — advance to sync-repo
 			this.advanceAfterStep(workflowId);
@@ -1581,8 +1591,18 @@ export class PipelineOrchestrator {
 				this.handleStepOutput(workflow.id, msg),
 			)
 				.then(() => {
-					workflow.mergeCycle.attempt++;
-					this.routeBackToMonitor(workflow);
+					// Re-check status: the user may have paused while conflict resolution ran.
+					// Without this guard, routeBackToMonitor would start a fresh CI polling
+					// session with a new AbortController that pause() cannot reach.
+					const current = this.getActiveWorkflow(workflowId);
+					if (!current || current.status !== "running") {
+						logger.info(
+							`[pipeline] conflict-resolution continuation skipped for workflow ${workflowId}: status=${current?.status ?? "missing"}`,
+						);
+						return;
+					}
+					current.mergeCycle.attempt++;
+					this.routeBackToMonitor(current);
 				})
 				.catch((err) => {
 					this.handleStepError(workflowId, `Conflict resolution failed: ${toErrorMessage(err)}`);
