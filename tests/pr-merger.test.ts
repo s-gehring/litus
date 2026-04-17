@@ -226,26 +226,49 @@ describe("pr-merger", () => {
 
 		test("dispatches git fetch, git merge, and Claude CLI in order when merge reports conflicts", async () => {
 			// Merge (call 2) exits non-zero and writes a CONFLICT marker → Claude path.
+			// Call 3 is the pre-Claude HEAD snapshot; call 7 is the post-safety-net
+			// HEAD snapshot. They must differ so the no-new-commits guard passes.
 			const { calls, spawn } = makeSpawn({
 				2: {
 					exit: 1,
 					stdout: "Auto-merging file.ts\nCONFLICT (content): Merge conflict in file.ts\n",
 					stderr: "",
 				},
+				3: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+				7: { stdout: "bbbbbbb0000000000000000000000000000000000\n" },
 			});
 			const result = await resolveConflicts("/tmp/worktree", "feature summary", () => {}, {
 				spawn,
 			});
 
 			expect(result.kind).toBe("resolved");
-			expect(calls.length).toBe(5);
+			expect(calls.length).toBe(7);
 			expect(calls[0]).toEqual(["git", "fetch", "origin", "master"]);
 			expect(calls[1]).toEqual(["git", "merge", "origin/master"]);
-			expect(calls[2][0]).toBe("claude");
-			expect(calls[2]).toContain("-p");
+			expect(calls[2]).toEqual(["git", "rev-parse", "HEAD"]);
+			expect(calls[3][0]).toBe("claude");
+			expect(calls[3]).toContain("-p");
 			// Safety net: ensureCommittedAndPushed checks status then pushes
-			expect(calls[3]).toEqual(["git", "status", "--porcelain"]);
-			expect(calls[4]).toEqual(["git", "push"]);
+			expect(calls[4]).toEqual(["git", "status", "--porcelain"]);
+			expect(calls[5]).toEqual(["git", "push"]);
+			expect(calls[6]).toEqual(["git", "rev-parse", "HEAD"]);
+		});
+
+		test("throws when HEAD did not advance after Claude ran (Claude aborted the merge)", async () => {
+			// Pre- and post-Claude HEAD snapshots return the same SHA → Claude
+			// produced no new commits. This must surface loud instead of looping.
+			const { spawn } = makeSpawn({
+				2: {
+					exit: 1,
+					stdout: "CONFLICT (content): Merge conflict in file.ts\n",
+				},
+				3: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+				7: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+			});
+			const promise = resolveConflicts("/tmp/worktree", "feature summary", () => {}, {
+				spawn,
+			});
+			expect(promise).rejects.toThrow("no new commits");
 		});
 
 		test("short-circuits to already-up-to-date when merge prints 'Already up to date.'", async () => {
@@ -309,16 +332,18 @@ describe("pr-merger", () => {
 					exit: 1,
 					stdout: "CONFLICT (content): Merge conflict in file.ts\n",
 				},
-				4: { stdout: " M file.ts\n" }, // git status --porcelain → dirty
-				5: { stdout: "chore: resolve merge conflicts with master\n" }, // last log
+				3: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+				5: { stdout: " M file.ts\n" }, // git status --porcelain → dirty
+				6: { stdout: "chore: resolve merge conflicts with master\n" }, // last log
+				10: { stdout: "bbbbbbb0000000000000000000000000000000000\n" },
 			});
 			await resolveConflicts("/tmp/worktree", "feature summary", () => {}, { spawn });
 
-			// fetch, merge, claude, status, log, add, amend, push
-			expect(calls.length).toBe(8);
-			expect(calls[5]).toEqual(["git", "add", "."]);
-			expect(calls[6]).toEqual(["git", "commit", "--amend", "--no-edit"]);
-			expect(calls[7]).toEqual(["git", "push"]);
+			// fetch, merge, pre-head, claude, status, log, add, amend, push, post-head
+			expect(calls.length).toBe(10);
+			expect(calls[6]).toEqual(["git", "add", "."]);
+			expect(calls[7]).toEqual(["git", "commit", "--amend", "--no-edit"]);
+			expect(calls[8]).toEqual(["git", "push"]);
 		});
 
 		test("creates new commit when last commit is not merge-conflict commit", async () => {
@@ -327,27 +352,30 @@ describe("pr-merger", () => {
 					exit: 1,
 					stdout: "CONFLICT (content): Merge conflict in file.ts\n",
 				},
-				4: { stdout: " M file.ts\n" },
-				5: { stdout: "feat: some other commit\n" },
+				3: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+				5: { stdout: " M file.ts\n" },
+				6: { stdout: "feat: some other commit\n" },
+				10: { stdout: "bbbbbbb0000000000000000000000000000000000\n" },
 			});
 			await resolveConflicts("/tmp/worktree", "feature summary", () => {}, { spawn });
 
-			// fetch, merge, claude, status, log, add, commit, push
-			expect(calls.length).toBe(8);
-			expect(calls[5]).toEqual(["git", "add", "."]);
-			expect(calls[6]).toEqual([
+			// fetch, merge, pre-head, claude, status, log, add, commit, push, post-head
+			expect(calls.length).toBe(10);
+			expect(calls[6]).toEqual(["git", "add", "."]);
+			expect(calls[7]).toEqual([
 				"git",
 				"commit",
 				"-m",
 				"chore: resolve merge conflicts with master",
 			]);
-			expect(calls[7]).toEqual(["git", "push"]);
+			expect(calls[8]).toEqual(["git", "push"]);
 		});
 
 		test("throws when Claude CLI exits with non-zero code", async () => {
 			const { spawn } = makeSpawn({
 				2: { exit: 1, stdout: "CONFLICT (content): Merge conflict in file.ts\n" },
-				3: { exit: 1, stderr: "Claude error output" },
+				3: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+				4: { exit: 1, stderr: "Claude error output" },
 			});
 			const promise = resolveConflicts("/tmp/worktree", "feature summary", () => {}, {
 				spawn,

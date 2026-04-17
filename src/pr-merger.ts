@@ -123,6 +123,21 @@ export async function mergePr(
 
 const MERGE_CONFLICT_COMMIT_MSG = "chore: resolve merge conflicts with master";
 
+async function readGitHead(
+	cwd: string,
+	spawn: SpawnLike["spawn"],
+): Promise<string | null> {
+	const proc = spawn(["git", "rev-parse", "HEAD"], {
+		cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const code = await proc.exited;
+	if (code !== 0) return null;
+	const out = (await readStream(proc.stdout)).trim();
+	return out || null;
+}
+
 async function ensureCommittedAndPushed(
 	cwd: string,
 	onOutput: (msg: string) => void,
@@ -278,6 +293,12 @@ export async function resolveConflicts(
 		conflictArgs.push("--model", model);
 	}
 
+	// Snapshot HEAD so we can detect a silently-aborted Claude session (one that
+	// ran `git merge --abort` or equivalent, leaving the tip unchanged). Without
+	// this check the merge-pr step would quietly route back to monitor-ci and
+	// loop forever until mergeCycle.maxAttempts is exhausted.
+	const preClaudeHead = await readGitHead(worktreePath, spawn as SpawnLike["spawn"]);
+
 	onOutput("Dispatching Claude CLI to resolve conflicts...");
 	const claudeProc = spawn(conflictArgs, {
 		cwd: worktreePath,
@@ -294,6 +315,18 @@ export async function resolveConflicts(
 	// Safety net: ensure all changes are committed and pushed
 	await ensureCommittedAndPushed(worktreePath, onOutput, spawn as SpawnLike["spawn"]);
 
-	onOutput("Conflict resolution complete, changes pushed");
+	const postClaudeHead = await readGitHead(worktreePath, spawn as SpawnLike["spawn"]);
+	if (preClaudeHead && postClaudeHead && preClaudeHead === postClaudeHead) {
+		throw new Error(
+			"Conflict resolution produced no new commits — Claude likely aborted the merge. " +
+				"Resolve the conflict manually, or update the merge-conflict prompt.",
+		);
+	}
+
+	onOutput(
+		postClaudeHead
+			? `Conflict resolution complete, pushed commit ${postClaudeHead.slice(0, 7)}`
+			: "Conflict resolution complete, changes pushed",
+	);
 	return { kind: "resolved" };
 }
