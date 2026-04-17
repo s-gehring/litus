@@ -1,3 +1,4 @@
+import { archiveAndResetStep } from "./cli-step-runner";
 import { buildFeedbackContext } from "./feedback-injector";
 import { gitSpawn } from "./git-logger";
 import { logger } from "./logger";
@@ -184,14 +185,10 @@ export function recoverInterruptedFeedbackImplementer(workflow: Workflow): void 
 	}
 	const fiIdx = workflow.steps.findIndex((s) => s.name === STEP.FEEDBACK_IMPLEMENTER);
 	if (fiIdx >= 0) {
-		const fiStep = workflow.steps[fiIdx];
-		fiStep.status = "pending";
-		fiStep.sessionId = null;
-		fiStep.output = "";
-		fiStep.error = null;
-		fiStep.startedAt = null;
-		fiStep.completedAt = null;
-		fiStep.pid = null;
+		// Share the single archive-and-clear codepath with CLIStepRunner.resetStep
+		// (research.md R1). An interrupted FI run archives as "paused" via the
+		// status-mapping in archivedStatusFor.
+		archiveAndResetStep(workflow.steps[fiIdx], "pending");
 	}
 	const mergeIdx = workflow.steps.findIndex((s) => s.name === STEP.MERGE_PR);
 	if (mergeIdx >= 0) {
