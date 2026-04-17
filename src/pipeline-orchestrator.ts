@@ -1065,13 +1065,23 @@ export class PipelineOrchestrator {
 			this.ciMonitor
 				.discoverPrUrl(workflow)
 				.then((url) => {
+					// The user may have paused while discoverPrUrl awaited. Without this
+					// guard we would start a fresh CI polling session whose AbortController
+					// the prior pause() cannot reach.
+					const current = this.getActiveWorkflow(workflow.id);
+					if (!current || current.status !== "running") {
+						logger.info(
+							`[pipeline] discoverPrUrl continuation skipped for workflow ${workflow.id}: status=${current?.status ?? "missing"}`,
+						);
+						return;
+					}
 					if (!url) {
 						this.handleStepError(workflow.id, "No PR URL found — cannot monitor CI checks");
 						return;
 					}
-					workflow.prUrl = url;
-					this.persistWorkflow(workflow);
-					this.startCiMonitoring(workflow);
+					current.prUrl = url;
+					this.persistWorkflow(current);
+					this.startCiMonitoring(current);
 				})
 				.catch((err) => {
 					this.handleStepError(workflow.id, `Failed to discover PR URL: ${toErrorMessage(err)}`);
