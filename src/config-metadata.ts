@@ -98,7 +98,7 @@ export const NUMERIC_SETTING_META: NumericSettingMeta[] = [
 		label: "Max CI Log Length",
 		description: "Maximum characters of CI log to include in fix prompt",
 		min: 1_000,
-		defaultValue: 50_000,
+		defaultValue: 200_000,
 		unit: "chars",
 	},
 	{
