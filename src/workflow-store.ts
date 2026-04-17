@@ -83,6 +83,7 @@ export class WorkflowStore {
 			// Migration: backfill feedbackEntries for pre-feedback workflows
 			if (!Array.isArray(data.feedbackEntries)) data.feedbackEntries = [];
 			if (data.feedbackPreRunHead === undefined) data.feedbackPreRunHead = null;
+			if (data.activeInvocation === undefined) data.activeInvocation = null;
 			if (data.managedRepo === undefined) data.managedRepo = null;
 			return data as Workflow;
 		} catch {
