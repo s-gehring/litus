@@ -77,6 +77,8 @@ export interface PipelineDeps {
 	managedRepoStore?: ManagedRepoStore;
 	mergePr?: typeof defaultMergePr;
 	resolveConflicts?: typeof defaultResolveConflicts;
+	/** Overrides the PR-URL discovery path in `runMonitorCi`. Test-only hook. */
+	discoverPrUrl?: (workflow: Workflow) => Promise<string | null>;
 	syncRepo?: typeof defaultSyncRepo;
 	runSetupChecks?: (targetDir: string) => Promise<SetupResult>;
 	ensureSpeckitSkills?: typeof defaultEnsureSpeckitSkills;
@@ -141,9 +143,8 @@ export class PipelineOrchestrator {
 		this.engine = deps?.engine ?? new WorkflowEngine();
 		this.cliRunner = deps?.cliRunner ?? new CLIRunner();
 		this.stepRunner = new CLIStepRunner(this.cliRunner);
-		this.ciMonitor = new CIMonitorCoordinator(startMonitoring, (workflow) =>
-			this.discoverPrUrl(workflow),
-		);
+		const discoverPrUrlFn = deps?.discoverPrUrl ?? ((w: Workflow) => this.discoverPrUrl(w));
+		this.ciMonitor = new CIMonitorCoordinator(startMonitoring, discoverPrUrlFn);
 		this.questionDetector = deps?.questionDetector ?? new QuestionDetector();
 		this.reviewClassifier = deps?.reviewClassifier ?? new ReviewClassifier();
 		this.summarizer = deps?.summarizer ?? new Summarizer();

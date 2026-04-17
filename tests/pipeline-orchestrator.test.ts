@@ -1407,6 +1407,81 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.mergeCycle.attempt).toBe(attemptBefore);
 			expect(wf.ciCycle.monitorStartedAt).toBe(monitorStartedAtBefore);
 		});
+
+		test("pause during in-flight discoverPrUrl does not start CI monitoring", async () => {
+			// Race scenario: monitor-ci has no prUrl yet, so runMonitorCi calls
+			// discoverPrUrl. The user pauses while the lookup is in-flight. When
+			// discoverPrUrl later resolves with a URL, the .then() must re-check
+			// workflow status and NOT call startCiMonitoring — otherwise a fresh
+			// AbortController is minted that pause() no longer has a handle to.
+			const discoverDeferred = Promise.withResolvers<string | null>();
+			const discoverPrUrlFn = mock(() => discoverDeferred.promise);
+
+			// biome-ignore lint/suspicious/noExplicitAny: test DI
+			const deps: Record<string, any> = {
+				engine,
+				cliRunner: cli,
+				questionDetector: qd,
+				reviewClassifier: rc,
+				summarizer,
+				auditLogger,
+				workflowStore: store,
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: async () => "pre-run-head-sha",
+				detectNewCommits: async () => detectNewCommitsResult,
+				discoverPrUrl: discoverPrUrlFn,
+			};
+			orchestrator = new PipelineOrchestrator(callbacks, deps);
+
+			// Seed at monitor-ci paused, with no prUrl so runMonitorCi takes the
+			// discovery path on resume. Wrapped in an IIFE-returning helper so the
+			// narrowed "paused" literal type on `status` widens back to WorkflowStatus
+			// before we later assert it becomes "running".
+			const seed = async (): Promise<Workflow> => {
+				await orchestrator.startPipeline("test", "/tmp/test-repo");
+				await new Promise((r) => setTimeout(r, 0));
+				const w = getWf(engine);
+				w.worktreePath = "/tmp/test-worktree";
+				w.summary = "test summary";
+				w.prUrl = null;
+				const mi = w.steps.findIndex((s) => s.name === "monitor-ci");
+				for (let i = 0; i < mi; i++) w.steps[i].status = "completed";
+				w.currentStepIndex = mi;
+				w.steps[mi].status = "paused";
+				w.status = "paused";
+				return w;
+			};
+			const wf = await seed();
+			const monitorIdx = wf.currentStepIndex;
+
+			// Resume → runMonitorCi → discoverPrUrl (deferred, in-flight)
+			orchestrator.resume(wf.id);
+			await new Promise((r) => setTimeout(r, 0));
+			expect(discoverPrUrlFn).toHaveBeenCalledTimes(1);
+			expect(wf.status).toBe("running");
+
+			// User pauses while discovery is still pending
+			orchestrator.pause(wf.id);
+			expect(wf.status).toBe("paused");
+			const monitorStartedAtBefore = wf.ciCycle.monitorStartedAt;
+
+			// Discovery finally resolves with a URL
+			discoverDeferred.resolve("https://github.com/owner/repo/pull/99");
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Must stay paused; no prUrl assignment, no CI monitoring kicked off.
+			expect(wf.status).toBe("paused");
+			expect(wf.currentStepIndex).toBe(monitorIdx);
+			expect(wf.prUrl).toBeNull();
+			expect(wf.ciCycle.monitorStartedAt).toBe(monitorStartedAtBefore);
+		});
 	});
 
 	describe("feature branch detection after specify", () => {
