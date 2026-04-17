@@ -1261,6 +1261,152 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.currentStepIndex).toBe(pausedStepIndex);
 			expect(cli._startCalls.length).toBe(startCallsBeforeClassify);
 		});
+
+		// Seeds a workflow paused at merge-pr so we can exercise runMergePr via resume().
+		async function seedAtMergePrPaused(o: PipelineOrchestrator): Promise<Workflow> {
+			await o.startPipeline("test", "/tmp/test-repo");
+			await new Promise((r) => setTimeout(r, 0));
+			const wf = getWf(engine);
+			wf.prUrl = "https://github.com/owner/repo/pull/42";
+			wf.worktreePath = "/tmp/test-worktree";
+			wf.summary = "test summary";
+			const mergeIdx = wf.steps.findIndex((s) => s.name === "merge-pr");
+			for (let i = 0; i < mergeIdx; i++) wf.steps[i].status = "completed";
+			wf.currentStepIndex = mergeIdx;
+			wf.steps[mergeIdx].status = "paused";
+			wf.status = "paused";
+			return wf;
+		}
+
+		test("pause during in-flight mergePr discards the merge result (no CI restart)", async () => {
+			// Race scenario: the user clicks Pause while mergePr is still awaiting.
+			// When mergePr later resolves with a conflict, handleMergeResult must NOT
+			// start conflict resolution or route back to monitor-ci — otherwise a fresh
+			// CI-polling session spins up that pause() no longer has a handle to.
+			const mergeDeferred = Promise.withResolvers<{
+				merged: boolean;
+				alreadyMerged: boolean;
+				conflict: boolean;
+				error?: string;
+			}>();
+			const mergePrFn = mock(() => mergeDeferred.promise);
+			const resolveConflictsFn = mock(async () => {});
+
+			// biome-ignore lint/suspicious/noExplicitAny: test DI
+			const deps: Record<string, any> = {
+				engine,
+				cliRunner: cli,
+				questionDetector: qd,
+				reviewClassifier: rc,
+				summarizer,
+				auditLogger,
+				workflowStore: store,
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: async () => "pre-run-head-sha",
+				detectNewCommits: async () => detectNewCommitsResult,
+				mergePr: mergePrFn,
+				resolveConflicts: resolveConflictsFn,
+			};
+			orchestrator = new PipelineOrchestrator(callbacks, deps);
+
+			const wf = await seedAtMergePrPaused(orchestrator);
+			const mergeIdx = wf.currentStepIndex;
+
+			// Resume triggers runMergePr → mergePrFn (deferred, in-flight)
+			orchestrator.resume(wf.id);
+			await new Promise((r) => setTimeout(r, 0));
+			expect(mergePrFn).toHaveBeenCalledTimes(1);
+			expect(wf.status).toBe("running");
+
+			// User pauses while merge is still pending
+			orchestrator.pause(wf.id);
+			expect(wf.status).toBe("paused");
+			const attemptBefore = wf.mergeCycle.attempt;
+			const monitorStartedAtBefore = wf.ciCycle.monitorStartedAt;
+
+			// Merge eventually reports a conflict
+			mergeDeferred.resolve({ merged: false, alreadyMerged: false, conflict: true });
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Nothing further should have happened: no conflict resolution, no route back,
+			// no fresh CI monitoring.
+			expect(resolveConflictsFn).not.toHaveBeenCalled();
+			expect(wf.status).toBe("paused");
+			expect(wf.currentStepIndex).toBe(mergeIdx);
+			expect(wf.mergeCycle.attempt).toBe(attemptBefore);
+			expect(wf.ciCycle.monitorStartedAt).toBe(monitorStartedAtBefore);
+		});
+
+		test("pause during in-flight conflict resolution does not route back to monitor-ci", async () => {
+			// Race scenario: mergePr resolves with a conflict while the workflow is still
+			// running, so resolveConflicts starts. The user then pauses. When conflict
+			// resolution resolves, the .then() must re-check workflow status and NOT
+			// call routeBackToMonitor — this is the exact path that previously restarted
+			// CI polling behind a paused workflow.
+			const conflictDeferred = Promise.withResolvers<void>();
+			const mergePrFn = mock(async () => ({
+				merged: false,
+				alreadyMerged: false,
+				conflict: true,
+			}));
+			const resolveConflictsFn = mock(() => conflictDeferred.promise);
+
+			// biome-ignore lint/suspicious/noExplicitAny: test DI
+			const deps: Record<string, any> = {
+				engine,
+				cliRunner: cli,
+				questionDetector: qd,
+				reviewClassifier: rc,
+				summarizer,
+				auditLogger,
+				workflowStore: store,
+				runSetupChecks: async () => ({
+					passed: true,
+					checks: [],
+					requiredFailures: [],
+					optionalWarnings: [],
+				}),
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: async () => "pre-run-head-sha",
+				detectNewCommits: async () => detectNewCommitsResult,
+				mergePr: mergePrFn,
+				resolveConflicts: resolveConflictsFn,
+			};
+			orchestrator = new PipelineOrchestrator(callbacks, deps);
+
+			const wf = await seedAtMergePrPaused(orchestrator);
+			const mergeIdx = wf.currentStepIndex;
+
+			// Resume → mergePr resolves with conflict → resolveConflicts starts (in-flight)
+			orchestrator.resume(wf.id);
+			await new Promise((r) => setTimeout(r, 20));
+			expect(resolveConflictsFn).toHaveBeenCalledTimes(1);
+			expect(wf.status).toBe("running");
+
+			// User pauses while conflict resolution is still in-flight
+			orchestrator.pause(wf.id);
+			expect(wf.status).toBe("paused");
+			const attemptBefore = wf.mergeCycle.attempt;
+			const monitorStartedAtBefore = wf.ciCycle.monitorStartedAt;
+
+			// Conflict resolution finally resolves
+			conflictDeferred.resolve();
+			await new Promise((r) => setTimeout(r, 20));
+
+			// Must stay paused at merge-pr, with no routing back to monitor-ci.
+			expect(wf.status).toBe("paused");
+			expect(wf.currentStepIndex).toBe(mergeIdx);
+			expect(wf.mergeCycle.attempt).toBe(attemptBefore);
+			expect(wf.ciCycle.monitorStartedAt).toBe(monitorStartedAtBefore);
+		});
 	});
 
 	describe("feature branch detection after specify", () => {
