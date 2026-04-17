@@ -37,6 +37,7 @@ import {
 	appendToolIcons,
 	clearOutput,
 	renderOutputEntries,
+	updateActiveModelPanel,
 	updateBranchInfo,
 	updateDetailActions,
 	updateEpicStatus,
@@ -545,6 +546,7 @@ function renderExpandedView(): void {
 		hideFeedbackPanel();
 		updateWorkflowStatus(null);
 		updateBranchInfo(null);
+		updateActiveModelPanel(null);
 		renderPipelineSteps(null);
 		updateSummary("");
 		updateFlavor("");
@@ -628,6 +630,7 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 	statusBadge.className = `status-badge ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
 
 	updateBranchInfo(null);
+	updateActiveModelPanel(null);
 	renderPipelineSteps(null);
 	updateSummary(`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`);
 	updateStepSummary("");
@@ -755,6 +758,7 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	// Render status, pipeline, summary
 	updateWorkflowStatus(wf);
 	updateBranchInfo(wf);
+	updateActiveModelPanel(wf);
 	renderPipelineSteps(wf, selectedStepIndex, selectStep);
 	if (wf.summary) updateSummary(wf.summary);
 	updateStepSummary(wf.stepSummary ?? "");
