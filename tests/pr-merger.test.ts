@@ -243,7 +243,7 @@ describe("pr-merger", () => {
 
 			expect(result.kind).toBe("resolved");
 			expect(calls.length).toBe(7);
-			expect(calls[0]).toEqual(["git", "fetch", "origin", "master"]);
+			expect(calls[0]).toEqual(["git", "fetch", "origin"]);
 			expect(calls[1]).toEqual(["git", "merge", "origin/master"]);
 			expect(calls[2]).toEqual(["git", "rev-parse", "HEAD"]);
 			expect(calls[3][0]).toBe("claude");
@@ -314,7 +314,7 @@ describe("pr-merger", () => {
 			expect(calls.every((c) => c[0] !== "claude")).toBe(true);
 			// Safety net still runs (status + push), even though it is a no-op.
 			expect(calls).toEqual([
-				["git", "fetch", "origin", "master"],
+				["git", "fetch", "origin"],
 				["git", "merge", "origin/master"],
 				["git", "status", "--porcelain"],
 				["git", "push"],
@@ -334,7 +334,7 @@ describe("pr-merger", () => {
 			expect(calls.every((c) => c[0] !== "claude")).toBe(true);
 			// Safety net runs, pushing the auto-merge commit.
 			expect(calls).toEqual([
-				["git", "fetch", "origin", "master"],
+				["git", "fetch", "origin"],
 				["git", "merge", "origin/master"],
 				["git", "status", "--porcelain"],
 				["git", "push"],
@@ -398,6 +398,29 @@ describe("pr-merger", () => {
 				"chore: resolve merge conflicts with master",
 			]);
 			expect(calls[8]).toEqual(["git", "push"]);
+		});
+
+		test("refreshes remote-tracking refs before force-with-lease when first push fails", async () => {
+			// Conflict path; first `git push` (call 9) fails → fetch + force-push
+			// must run before the lease comparison. Sequence:
+			// 1 fetch, 2 merge, 3 pre-head, 4 claude, 5 status (dirty), 6 log,
+			// 7 add, 8 commit, 9 push (fail), 10 fetch, 11 force-push, 12 post-head
+			const { calls, spawn } = makeSpawn({
+				2: { exit: 1, stdout: "CONFLICT (content): Merge conflict in file.ts\n" },
+				3: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+				5: { stdout: " M file.ts\n" },
+				6: { stdout: "chore: resolve merge conflicts with master\n" },
+				9: { exit: 1, stderr: "rejected: fetch first\n" }, // git push fails
+				12: { stdout: "bbbbbbb0000000000000000000000000000000000\n" },
+			});
+			await resolveConflicts("/tmp/worktree", "feature summary", () => {}, { spawn });
+
+			expect(calls.length).toBe(12);
+			expect(calls[8]).toEqual(["git", "push"]);
+			// Fetch MUST land between the failed push and the force-with-lease,
+			// otherwise the lease compares against stale tracking refs.
+			expect(calls[9]).toEqual(["git", "fetch", "origin"]);
+			expect(calls[10]).toEqual(["git", "push", "--force-with-lease"]);
 		});
 
 		test("throws when Claude CLI exits with non-zero code", async () => {

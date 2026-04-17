@@ -190,6 +190,16 @@ async function ensureCommittedAndPushed(
 	const pushProc = spawn(["git", "push"], { cwd, stdout: "pipe", stderr: "pipe" });
 	const pushCode = await pushProc.exited;
 	if (pushCode !== 0) {
+		// Refresh remote-tracking refs so --force-with-lease compares against
+		// the actual remote tip, not a stale one captured at session start.
+		onOutput(`[git] git fetch origin | cwd=${cwd}`);
+		const refreshProc = spawn(["git", "fetch", "origin"], {
+			cwd,
+			stdout: "pipe",
+			stderr: "pipe",
+		});
+		await refreshProc.exited;
+
 		// Force-push needed after amend
 		onOutput(`[git] git push --force-with-lease | cwd=${cwd}`);
 		const forcePushProc = spawn(["git", "push", "--force-with-lease"], {
@@ -227,9 +237,11 @@ export async function resolveConflicts(
 ): Promise<ConflictResolutionResult> {
 	const spawn = runner?.spawn ?? defaultSpawn();
 
-	// Fetch and merge master
-	onOutput(`[git] git fetch origin master | cwd=${worktreePath}`);
-	const fetchProc = spawn(["git", "fetch", "origin", "master"], {
+	// Refresh every remote-tracking ref, not just master: the force-with-lease
+	// fallback in ensureCommittedAndPushed relies on origin/<current-branch>
+	// being current, otherwise the lease can accept a stale view of the remote.
+	onOutput(`[git] git fetch origin | cwd=${worktreePath}`);
+	const fetchProc = spawn(["git", "fetch", "origin"], {
 		cwd: worktreePath,
 		stdout: "pipe",
 		stderr: "pipe",
