@@ -600,8 +600,9 @@ export class PipelineOrchestrator {
 		// the release hook for normal completion) does not run on cancel.
 		this.releaseManagedRepoIfAny(workflow);
 
-		// Update epic dependency status for siblings if this workflow was cancelled
-		if (workflow.epicId && this.callbacks.onEpicDependencyUpdate) {
+		// Update epic dependency status for siblings if this workflow was cancelled,
+		// and emit `epic-finished` when every sibling has reached a terminal state.
+		if (workflow.epicId) {
 			this.checkEpicDependencies(workflow).catch((err) => {
 				logger.error(`[pipeline] Failed to check epic dependencies: ${err}`);
 			});
@@ -1896,19 +1897,19 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 	}
 
-	private workflowTargetRoute(workflow: Workflow): string {
-		return workflow.epicId ? `/epic/${workflow.epicId}` : `/workflow/${workflow.id}`;
-	}
-
 	private emitAlert(type: AlertType, workflow: Workflow, title: string, description: string): void {
 		if (!this.callbacks.onAlertEmit) return;
+		// Always route to the specific workflow — the client's workflow-route
+		// handler drills into the epic and auto-selects the child, so
+		// `/workflow/<id>` gives one-click navigation whether or not the
+		// workflow belongs to an epic.
 		this.callbacks.onAlertEmit({
 			type,
 			title,
 			description,
 			workflowId: workflow.id,
 			epicId: workflow.epicId,
-			targetRoute: this.workflowTargetRoute(workflow),
+			targetRoute: `/workflow/${workflow.id}`,
 		});
 	}
 

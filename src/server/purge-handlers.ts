@@ -155,6 +155,10 @@ export const handlePurgeAll: MessageHandler = async (_ws, _data, deps) => {
 		await deps.sharedEpicStore.removeAll();
 		deps.sharedAuditLogger.removeAll();
 		const clearedAlertIds = deps.alertQueue.clearAll();
+		// Purge has strong "gone for good" semantics — wait for the empty-list
+		// write to flush so a crash between here and disk sync won't resurrect
+		// purged alerts on next startup via `loadFromDisk`.
+		await deps.alertQueue.flush();
 		if (clearedAlertIds.length > 0) {
 			deps.broadcast({ type: "alert:dismissed", alertIds: clearedAlertIds });
 		}
