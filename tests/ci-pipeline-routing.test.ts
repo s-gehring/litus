@@ -356,6 +356,7 @@ describe("CI Pipeline Routing", () => {
 	});
 
 	test("max attempts reached → workflow errors", async () => {
+		configStore.save({ limits: { ciFixMaxAttempts: 3 } });
 		const wf = getWf(engine);
 		wf.prUrl = "https://github.com/owner/repo/pull/42";
 		wf.ciCycle.attempt = 3;
@@ -381,6 +382,66 @@ describe("CI Pipeline Routing", () => {
 
 		expect(wf.status).toBe("error");
 		expect(wf.steps[monitorIndex].error).toContain("3 fix attempts");
+	});
+
+	test("config change to ciFixMaxAttempts reflects on next monitor result", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+		// Workflow was created with maxAttempts=3 and has already used them all.
+		wf.ciCycle.attempt = 3;
+		wf.ciCycle.maxAttempts = 3;
+
+		// User raises the limit mid-workflow.
+		configStore.save({ limits: { ciFixMaxAttempts: 10 } });
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const fixIndex = wf.steps.findIndex((s) => s.name === "fix-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		monitorResultResolve({
+			passed: false,
+			timedOut: false,
+			results: [{ name: "build", state: "COMPLETED", bucket: "fail", link: "" }],
+		});
+		await new Promise((r) => setTimeout(r, 10));
+
+		// With the new limit (10), attempt=3 is no longer exhausted — route to fix-ci.
+		expect(wf.ciCycle.maxAttempts).toBe(10);
+		expect(wf.currentStepIndex).toBe(fixIndex);
+		expect(wf.status).toBe("running");
+	});
+
+	test("retry after exhausted attempts resets budget and picks up new config", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+		wf.ciCycle.attempt = 3;
+		wf.ciCycle.maxAttempts = 3;
+		wf.ciCycle.monitorStartedAt = new Date().toISOString();
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		wf.currentStepIndex = monitorIndex;
+		wf.steps[monitorIndex].status = "error";
+		wf.steps[monitorIndex].error = "CI checks still failing after 3 fix attempts";
+		wf.status = "error";
+
+		configStore.save({ limits: { ciFixMaxAttempts: 10 } });
+
+		mockStartMonitoring.mockClear();
+		await orchestrator.retryStep("test-wf-id");
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.ciCycle.attempt).toBe(0);
+		expect(wf.ciCycle.maxAttempts).toBe(10);
+		expect(wf.steps[monitorIndex].error).toBeNull();
+		expect(wf.status as string).toBe("running");
+		expect(mockStartMonitoring).toHaveBeenCalledTimes(1);
 	});
 
 	test("timeout → treated as failure and routes appropriately", async () => {
@@ -535,6 +596,7 @@ describe("CI Pipeline Routing", () => {
 	});
 
 	test("timeout at max attempts → workflow errors with timeout message", async () => {
+		configStore.save({ limits: { ciFixMaxAttempts: 3 } });
 		const wf = getWf(engine);
 		wf.prUrl = "https://github.com/owner/repo/pull/42";
 		wf.ciCycle.attempt = 3;
