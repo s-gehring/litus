@@ -45,26 +45,6 @@ async function runCmd(
 	}
 }
 
-const SPECKIT_INIT_NAMES = ["clarify", "implement", "plan", "specify", "tasks"];
-
-async function populateSpeckitSkills(targetDir: string): Promise<void> {
-	// Pre-populate the skill stubs that `ensureSpeckitSkills` looks for so
-	// `hasSpeckitSkills` returns true and the orchestrator never shells out
-	// to `uvx specify init` (which would require network access and violate
-	// hermetic isolation — SC-004).
-	const skillsDir = join(targetDir, ".claude", "skills");
-	await mkdir(skillsDir, { recursive: true });
-	for (const name of SPECKIT_INIT_NAMES) {
-		const dir = join(skillsDir, `speckit-${name}`);
-		await mkdir(dir, { recursive: true });
-		await writeFile(
-			join(dir, "SKILL.md"),
-			`# speckit-${name} (e2e stub)\n\nPlaceholder installed by the E2E harness.\n`,
-			"utf8",
-		);
-	}
-}
-
 async function initTargetRepo(dir: string, originDir: string): Promise<void> {
 	await mkdir(dir, { recursive: true });
 	// Use a neutral identity so `git commit` works without relying on user config.
@@ -76,7 +56,16 @@ async function initTargetRepo(dir: string, originDir: string): Promise<void> {
 	};
 	await runCmd("git", ["init", "-b", "master"], dir, env);
 	await writeFile(join(dir, "README.md"), "# E2E Target Repo\n", "utf8");
-	await populateSpeckitSkills(dir);
+	// Satisfy optional gitignore setup checks so the orchestrator doesn't
+	// pause on warnings in manual autoMode. Entries must match
+	// GITIGNORE_ENTRIES in src/setup-checker.ts. `.claude` must be present
+	// AND untracked, so we write .gitignore before anything that would
+	// create .claude/ contents.
+	await writeFile(join(dir, ".gitignore"), "specs/\n.worktrees\n.claude\n.specify\n", "utf8");
+	// The speckit skills are installed into the worktree at runtime by the
+	// `uvx` fake (tests/e2e/fakes/uvx.ts); we don't seed them in the target
+	// repo because `.claude` must remain untracked to satisfy the gitignore
+	// check above.
 	await runCmd("git", ["add", "-A"], dir, env);
 	await runCmd("git", ["commit", "-m", "chore: initial commit"], dir, env);
 
