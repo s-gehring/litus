@@ -26,6 +26,21 @@ describe("EffortLevel validation accepts xhigh", () => {
 		expect(store.get().efforts.implement).toBe("xhigh");
 	});
 
+	test("writing xhigh validates for every effort key, not just implement", () => {
+		const store = new ConfigStore(join(dir, "config.json"));
+		const effortKeys = Object.keys(store.get().efforts) as Array<
+			keyof ReturnType<typeof store.get>["efforts"]
+		>;
+		// Sanity guard so the test does not silently become a no-op if the
+		// config shape is ever reshaped.
+		expect(effortKeys.length).toBeGreaterThan(1);
+		for (const key of effortKeys) {
+			const result = store.save({ efforts: { [key]: "xhigh" } });
+			expect(result.errors).toEqual([]);
+			expect(store.get().efforts[key]).toBe("xhigh");
+		}
+	});
+
 	test("writing each canonical level validates successfully", () => {
 		const store = new ConfigStore(join(dir, "config.json"));
 		for (const level of ["low", "medium", "high", "xhigh", "max"] as const) {

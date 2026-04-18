@@ -74,4 +74,31 @@ describe("backToEpicLabel", () => {
 		});
 		expect(backToEpicLabel("epic-both", mgr)).toBe("Aggregate Title");
 	});
+
+	test("composed label used by the DOM matches prefix + resolved title", () => {
+		// Pins the contract that renderBackToEpicButton concatenates these two
+		// pieces verbatim. A future refactor moving the composition (e.g. into
+		// backToEpicLabel itself) would be caught here instead of only surfacing
+		// via the integration test's final DOM assertion.
+		const mgr = new ClientStateManager();
+		mgr.handleMessage({
+			type: "workflow:list",
+			workflows: [
+				makeWorkflowState({
+					id: "child-1",
+					epicId: "epic-42",
+					epicTitle: "Dark mode initiative",
+					status: "completed",
+				}),
+			],
+		});
+		const composed = BACK_TO_EPIC_PREFIX + backToEpicLabel("epic-42", mgr);
+		expect(composed).toBe("\u2190 Back to Dark mode initiative");
+	});
+
+	test("composed label uses the literal 'epic' fallback when nothing is known", () => {
+		const mgr = new ClientStateManager();
+		const composed = BACK_TO_EPIC_PREFIX + backToEpicLabel("missing", mgr);
+		expect(composed).toBe("\u2190 Back to epic");
+	});
 });

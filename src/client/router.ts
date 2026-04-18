@@ -78,6 +78,13 @@ export class Router {
 		return this._currentMatch;
 	}
 
+	/**
+	 * @param container  The element route handlers mount their content into.
+	 * @param fallbackPath  Path used when `navigate()` is called with an
+	 * unresolved path. The route for this pattern must be registered before
+	 * `start()` is called — otherwise `start()` throws. If you need a different
+	 * default, register a handler for it first, then pass that path here.
+	 */
 	constructor(container: HTMLElement, fallbackPath = "/") {
 		this.container = container;
 		this.fallbackPath = fallbackPath;
@@ -105,6 +112,10 @@ export class Router {
 	 * whose pattern resolves the path (literal > parametric > fallback). Calling
 	 * with the current path is a no-op. `opts.replace` swaps `pushState` for
 	 * `replaceState` so the current history entry is overwritten.
+	 *
+	 * If `path` does not resolve to any registered route, the router falls back
+	 * to `fallbackPath`. `start()` throws up-front when `fallbackPath` is not
+	 * registered, so this method never silently drops a navigation in practice.
 	 */
 	navigate(path: string, opts?: NavigateOptions): void {
 		const resolved = this.resolve(path);
@@ -154,13 +165,24 @@ export class Router {
 	/**
 	 * Resolve the current pathname, mount the matching handler, and subscribe
 	 * to `popstate` so browser back/forward re-resolves against the same table.
+	 * Throws if `fallbackPath` is not a registered route: that rule keeps
+	 * `navigate()` from silently no-op-ing on unknown paths later.
 	 */
 	start(): void {
+		if (!this.resolve(this.fallbackPath)) {
+			throw new Error(
+				`Router.start() called before fallbackPath was registered: ${this.fallbackPath}`,
+			);
+		}
 		const path = this.getPathname();
 		this.navigate(path, { replace: true });
 
 		this.popstateHandler = () => {
 			const newPath = this.getPathname();
+			// Reset `_currentPath` so same-path popstate (e.g. manual history
+			// manipulation that lands back on the current pathname) remounts the
+			// handler instead of no-op-ing. Browser back/forward means
+			// "re-enter this view", even when the path happens to match.
 			this._currentPath = null;
 			this.navigate(newPath, { replace: true });
 		};

@@ -38,6 +38,7 @@ import {
 import { getAnswer } from "./components/question-panel";
 import { EPIC_CARD_PREFIX } from "./components/status-maps";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
+import { workflowCreatedTarget } from "./components/workflow-created-route";
 import { createWorkflowDetailHandler } from "./components/workflow-detail-handler";
 import { appendOutput, setDefaultModelDisplayName } from "./components/workflow-window";
 import { $ } from "./dom";
@@ -211,9 +212,8 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "workflow:created": {
 			renderCards();
-			if (!msg.workflow.epicId && appRouter?.currentPath !== "/config") {
-				appRouter?.navigate(`/workflow/${msg.workflow.id}`);
-			}
+			const target = workflowCreatedTarget(msg.workflow, appRouter?.currentPath ?? null);
+			if (target) appRouter?.navigate(target);
 			break;
 		}
 
@@ -806,7 +806,11 @@ document.addEventListener("DOMContentLoaded", () => {
 		);
 		appRouter.register(
 			"/config",
-			createConfigPageHandler(send, (path) => appRouter?.navigate(path)),
+			createConfigPageHandler(
+				send,
+				(path) => appRouter?.navigate(path),
+				() => latestConfig,
+			),
 		);
 		appRouter.start();
 		// Render cards once the router is ready so highlights pick up the current path.

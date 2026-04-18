@@ -305,7 +305,7 @@ describe("Router", () => {
 
 	describe("start", () => {
 		test("mounts route matching current URL", () => {
-			const router = new TestRouter(container);
+			const router = new TestRouter(container, "/page");
 			router.setTestPathname("/page");
 			const handler = makeHandler();
 			router.register("/page", handler);
@@ -314,7 +314,7 @@ describe("Router", () => {
 		});
 
 		test("uses replaceState (no duplicate history entry)", () => {
-			const router = new TestRouter(container);
+			const router = new TestRouter(container, "/page");
 			router.setTestPathname("/page");
 			router.register("/page", makeHandler());
 			router.start();
@@ -346,7 +346,7 @@ describe("Router", () => {
 
 	describe("popstate", () => {
 		test("mounts correct handler on popstate event", () => {
-			const router = new TestRouter(container);
+			const router = new TestRouter(container, "/a");
 			const handlerA = makeHandler();
 			const handlerB = makeHandler();
 			router.register("/a", handlerA);
@@ -365,6 +365,50 @@ describe("Router", () => {
 
 			expect(handlerB.unmounted).toBe(1);
 			expect(handlerA.mounted).toBe(2);
+		});
+
+		test("same-path popstate remounts the current handler", () => {
+			// Contract: browser back/forward means "re-enter this view" even when
+			// the pathname happens to match currentPath. navigate()'s normal
+			// same-path no-op is intentionally bypassed for popstate by resetting
+			// _currentPath inside the popstate handler.
+			const router = new TestRouter(container, "/a");
+			const handler = makeHandler();
+			router.register("/a", handler);
+
+			router.setTestPathname("/a");
+			router.start();
+			expect(handler.mounted).toBe(1);
+			expect(handler.unmounted).toBe(0);
+
+			// Pop back to the same path we are already on.
+			router.setTestPathname("/a");
+			window.dispatchEvent(new PopStateEvent("popstate"));
+
+			expect(handler.unmounted).toBe(1);
+			expect(handler.mounted).toBe(2);
+		});
+	});
+
+	describe("start() fallback validation", () => {
+		test("throws when fallbackPath is not registered", () => {
+			const router = new TestRouter(container, "/");
+			router.setTestPathname("/anything");
+			expect(() => router.start()).toThrow(/fallbackPath/);
+		});
+
+		test("does not throw when the default fallbackPath is registered", () => {
+			const router = new TestRouter(container, "/");
+			router.register("/", makeHandler());
+			router.setTestPathname("/");
+			expect(() => router.start()).not.toThrow();
+		});
+
+		test("does not throw when a custom fallbackPath is registered", () => {
+			const router = new TestRouter(container, "/home");
+			router.register("/home", makeHandler());
+			router.setTestPathname("/home");
+			expect(() => router.start()).not.toThrow();
 		});
 	});
 

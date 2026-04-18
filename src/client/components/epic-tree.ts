@@ -162,32 +162,21 @@ export function renderSvgConnectors(nodes: TreeNode[], edges: TreeEdge[]): SVGSV
 	return svg;
 }
 
-export function renderTreeNode(
-	node: TreeNode,
-	workflow: WorkflowState,
-	onClick: (workflowId: string) => void,
-): HTMLElement {
-	const el = document.createElement("div");
-	el.className = "tree-node";
-	el.style.left = `${node.x}px`;
-	el.style.top = `${node.y}px`;
-	el.style.width = `${NODE_WIDTH}px`;
-	el.style.height = `${NODE_HEIGHT}px`;
-	el.dataset.workflowId = node.workflowId;
+function buildTreeNodeChildren(workflow: WorkflowState): Node[] {
+	const children: Node[] = [];
 
 	const badge = document.createElement("span");
 	badge.className = `card-status ${STATUS_CLASSES[workflow.status] || "card-status-idle"}`;
 	badge.textContent = STATUS_LABELS[workflow.status] || workflow.status;
-	el.appendChild(badge);
+	children.push(badge);
 
 	const title = document.createElement("span");
 	title.className = "tree-node-title";
 	const titleText = workflow.summary || workflow.specification;
 	title.textContent = titleText;
 	title.title = titleText;
-	el.appendChild(title);
+	children.push(title);
 
-	// Info row: step name (left) + working time (right)
 	const isActive = workflow.status === "running" || workflow.status === "waiting_for_input";
 	const hasTimer = workflow.activeWorkMs > 0 || workflow.activeWorkStartedAt;
 	if (isActive || hasTimer) {
@@ -215,7 +204,27 @@ export function renderTreeNode(
 			);
 		}
 
-		el.appendChild(infoRow);
+		children.push(infoRow);
+	}
+
+	return children;
+}
+
+export function renderTreeNode(
+	node: TreeNode,
+	workflow: WorkflowState,
+	onClick: (workflowId: string) => void,
+): HTMLElement {
+	const el = document.createElement("div");
+	el.className = "tree-node";
+	el.style.left = `${node.x}px`;
+	el.style.top = `${node.y}px`;
+	el.style.width = `${NODE_WIDTH}px`;
+	el.style.height = `${NODE_HEIGHT}px`;
+	el.dataset.workflowId = node.workflowId;
+
+	for (const child of buildTreeNodeChildren(workflow)) {
+		el.appendChild(child);
 	}
 
 	el.addEventListener("click", (e) => {
@@ -282,6 +291,36 @@ export function renderTreeNode(
 	});
 
 	return el;
+}
+
+/**
+ * In-place refresh of a single tree node's visual state (status badge,
+ * summary, current step, timer). Only the node's contents are replaced — the
+ * mouseenter/mouseleave highlight listeners attached in `renderTreeNode`
+ * remain on the outer element, so dependency hover behaviour is preserved.
+ *
+ * Returns `true` when a node with the given `workflowId` was found and
+ * updated, `false` otherwise. The caller should fall back to a full
+ * `renderEpicTree(...)` pass when this returns `false` (e.g. when the
+ * workflow joined the epic after the tree was last rendered).
+ */
+export function updateEpicTreeRow(
+	container: HTMLElement,
+	workflowId: string,
+	workflow: WorkflowState,
+): boolean {
+	// Scan `.tree-node` children directly rather than relying on CSS attribute
+	// selector escaping — keeps the lookup safe for any workflow id shape.
+	let nodeEl: HTMLElement | null = null;
+	for (const candidate of container.querySelectorAll<HTMLElement>(".tree-node")) {
+		if (candidate.dataset.workflowId === workflowId) {
+			nodeEl = candidate;
+			break;
+		}
+	}
+	if (!nodeEl) return false;
+	nodeEl.replaceChildren(...buildTreeNodeChildren(workflow));
+	return true;
 }
 
 export function renderEpicTree(

@@ -1,6 +1,7 @@
 import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "../../config-metadata";
 import type { AppConfig, ClientMessage, ConfigWarning } from "../../types";
 import type { RouteHandler } from "../router";
+import { showFullPageLayout } from "./detail-layout";
 import { EFFORT_LEVELS_ORDER, formatEffortLabel } from "./effort-label";
 
 // Module-level send reference
@@ -584,19 +585,24 @@ function createConfigPage(
 export function createConfigPageHandler(
 	send: (msg: ClientMessage) => void,
 	navigate: (path: string) => void,
+	getLatestConfig: () => AppConfig | null,
 ): RouteHandler {
 	return {
 		mount(container: HTMLElement) {
-			const cardStrip = container.querySelector<HTMLElement>("#card-strip");
-			const welcomeArea = container.querySelector<HTMLElement>("#welcome-area");
-			const detailArea = container.querySelector<HTMLElement>("#detail-area");
-			if (cardStrip) cardStrip.classList.add("hidden");
-			if (welcomeArea) welcomeArea.classList.add("hidden");
-			if (detailArea) detailArea.classList.add("hidden");
+			// Layout chrome is owned by detail-layout.ts — the config page fills
+			// `#app-content` entirely, so every sibling container is hidden while
+			// it is mounted.
+			showFullPageLayout();
 
 			const page = createConfigPage(send, navigate);
 			container.appendChild(page);
-			send({ type: "config:get" });
+
+			// The initial config is fetched once on WebSocket open (see
+			// app.ts#onopen) and subsequent changes arrive as `config:state`
+			// broadcasts. Rather than re-requesting on every mount, populate the
+			// form from the cached AppConfig the app layer already owns.
+			const cached = getLatestConfig();
+			if (cached) updateConfigPage(cached);
 		},
 		unmount() {
 			if (pageRoot) {

@@ -102,6 +102,12 @@ describe("alertDisplayLabel", () => {
 		expect(alertDisplayLabel(alert, mgr)).toBe("");
 	});
 
+	test("returns empty string for an epic-only alert whose epicId is unknown", () => {
+		const mgr = new ClientStateManager();
+		const alert = makeAlert({ epicId: "epic-unknown" });
+		expect(alertDisplayLabel(alert, mgr)).toBe("");
+	});
+
 	test("falls through to epic title when workflowId is set but unknown", () => {
 		const mgr = new ClientStateManager();
 		mgr.handleMessage({

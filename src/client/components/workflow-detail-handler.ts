@@ -247,7 +247,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 	function doSelectStep(index: number): void {
 		if (!currentWorkflowId) return;
 		const state = deps.getState();
-		state.selectStep(index);
+		state.selectStepFor(currentWorkflowId, index);
 
 		const entry = state.getWorkflows().get(currentWorkflowId);
 		if (!entry) return;
@@ -316,11 +316,19 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 			currentWorkflowId = match.params.id ?? null;
 			showDetailLayout();
 			const state = deps.getState();
-			// Select the step corresponding to the workflow's current activity so
-			// re-entering /workflow/:id lands on the live step, not the first step.
-			state.selectStep(
-				state.getWorkflows().get(currentWorkflowId ?? "")?.state.currentStepIndex ?? 0,
-			);
+			const wf = state.getWorkflows().get(currentWorkflowId ?? "")?.state;
+			// Re-entry step selection:
+			//  1. If the user previously viewed *this same* workflow and picked a
+			//     step, restore it (as long as the step still exists).
+			//  2. Otherwise — first visit, or coming from a different workflow —
+			//     land on the live step, not step 0.
+			const previousIndex = currentWorkflowId
+				? state.getSelectedStepIndexFor(currentWorkflowId)
+				: null;
+			const inRange =
+				previousIndex != null && wf && previousIndex >= 0 && previousIndex < wf.steps.length;
+			const targetIndex = inRange ? (previousIndex as number) : (wf?.currentStepIndex ?? 0);
+			if (currentWorkflowId) state.selectStepFor(currentWorkflowId, targetIndex);
 			renderFull();
 		},
 		unmount() {
@@ -372,7 +380,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 					const state = deps.getState();
 					const entry = state.getWorkflows().get(currentWorkflowId);
 					if (entry) {
-						state.selectStep(msg.currentStepIndex);
+						state.selectStepFor(currentWorkflowId, msg.currentStepIndex);
 						renderFull();
 					}
 					deps.fetchArtifacts(currentWorkflowId);

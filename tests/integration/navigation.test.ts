@@ -105,7 +105,11 @@ function makeRouter(send: (m: ClientMessage) => void): {
 	);
 	router.register(
 		"/config",
-		createConfigPageHandler(send, (p) => router.navigate(p)),
+		createConfigPageHandler(
+			send,
+			(p) => router.navigate(p),
+			() => null,
+		),
 	);
 	return { router, container };
 }

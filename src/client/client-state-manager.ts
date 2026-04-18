@@ -22,6 +22,11 @@ export class ClientStateManager {
 	private expandedEpicId: string | null = null;
 	private selectedChildId: string | null = null;
 	private selectedStepIndex: number | null = null;
+	// Which workflow the current `selectedStepIndex` belongs to. Lets the
+	// workflow-detail handler preserve a user's chosen step when they leave and
+	// come back to the same workflow, while still resetting when they switch to
+	// a different one.
+	private selectedStepWorkflowId: string | null = null;
 	private maxOutputLines = 5000;
 	private listener: StateChangeListener | null = null;
 
@@ -73,30 +78,41 @@ export class ClientStateManager {
 		return this.selectedStepIndex;
 	}
 
+	/**
+	 * Returns the step index the user has most recently selected while viewing
+	 * `workflowId`, or `null` if the current selection is unset or belongs to a
+	 * different workflow. Callers use this to decide whether to restore a prior
+	 * selection on re-entry versus auto-selecting the live step.
+	 */
+	getSelectedStepIndexFor(workflowId: string): number | null {
+		if (this.selectedStepWorkflowId !== workflowId) return null;
+		return this.selectedStepIndex;
+	}
+
 	expandItem(id: string): void {
 		if (id.startsWith(EPIC_CARD_PREFIX)) {
 			const epicId = id.slice(EPIC_CARD_PREFIX.length);
 			if (this.expandedEpicId === epicId && !this.selectedChildId) {
 				this.expandedEpicId = null;
 				this.expandedId = null;
-				this.selectedStepIndex = null;
+				this.resetStepSelection();
 			} else {
 				this.expandedEpicId = epicId;
 				this.selectedChildId = null;
 				this.expandedId = id;
-				this.selectedStepIndex = null;
+				this.resetStepSelection();
 			}
 		} else {
 			if (this.expandedId === id) {
 				this.expandedId = null;
 				this.expandedEpicId = null;
 				this.selectedChildId = null;
-				this.selectedStepIndex = null;
+				this.resetStepSelection();
 			} else {
 				this.expandedId = id;
 				this.expandedEpicId = null;
 				this.selectedChildId = null;
-				this.selectedStepIndex = null;
+				this.resetStepSelection();
 			}
 		}
 	}
@@ -107,11 +123,26 @@ export class ClientStateManager {
 		} else {
 			this.selectedChildId = workflowId;
 		}
+		this.resetStepSelection();
+	}
+
+	private resetStepSelection(): void {
 		this.selectedStepIndex = null;
+		this.selectedStepWorkflowId = null;
 	}
 
 	selectStep(index: number): void {
 		this.selectedStepIndex = index;
+	}
+
+	/**
+	 * Record a step selection and bind it to the workflow the user is currently
+	 * viewing. Pair with `getSelectedStepIndexFor` to preserve the selection
+	 * across unmount/remount of the same workflow.
+	 */
+	selectStepFor(workflowId: string, index: number): void {
+		this.selectedStepIndex = index;
+		this.selectedStepWorkflowId = workflowId;
 	}
 
 	getLastTargetRepo(): string {
@@ -391,7 +422,7 @@ export class ClientStateManager {
 		this.expandedId = null;
 		this.expandedEpicId = null;
 		this.selectedChildId = null;
-		this.selectedStepIndex = null;
+		this.resetStepSelection();
 		return { scope: { entity: "global" }, action: "cleared" };
 	}
 

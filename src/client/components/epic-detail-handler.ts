@@ -11,7 +11,7 @@ import { $ } from "../dom";
 import { renderMarkdown } from "../render-markdown";
 import type { RouteHandler, RouteMatch } from "../router";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
-import { renderEpicTree } from "./epic-tree";
+import { renderEpicTree, updateEpicTreeRow } from "./epic-tree";
 import { renderPipelineSteps } from "./pipeline-steps";
 import { EPIC_AGG_STATUS_CLASSES } from "./status-maps";
 import {
@@ -219,8 +219,17 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 					break;
 				}
 				case "workflow:state": {
-					// A child workflow state changed — tree might need an update.
-					if (msg.workflow?.epicId === currentEpicId) renderFull();
+					// A child workflow state changed. Try a surgical in-place row
+					// update first — that avoids redrawing every sibling on every
+					// streaming broadcast — and fall back to a full re-render only
+					// when the target node is not already in the DOM (e.g. the
+					// workflow just joined the epic).
+					if (msg.workflow?.epicId !== currentEpicId) break;
+					const treeContainer = document.querySelector<HTMLElement>(".epic-tree-container");
+					if (treeContainer && updateEpicTreeRow(treeContainer, msg.workflow.id, msg.workflow)) {
+						break;
+					}
+					renderFull();
 					break;
 				}
 				case "workflow:list":
