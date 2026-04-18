@@ -60,6 +60,20 @@ async function main() {
 		process.exit(0);
 	}
 
+	// Short-circuit the default-model detection probe. The server runs
+	// `claude -p "Respond with ONLY a single JSON object..."` at startup to
+	// identify which Claude model is currently active. This is a side-channel
+	// call, not part of the scripted pipeline sequence, and must not consume
+	// a scenario slot.
+	const pIdx = argv.indexOf("-p");
+	const promptArg = pIdx >= 0 ? (argv[pIdx + 1] ?? "") : "";
+	if (promptArg.startsWith("Respond with ONLY a single JSON object")) {
+		process.stdout.write(
+			`${JSON.stringify({ modelId: "claude-e2e-fake", displayName: "E2E Fake" })}\n`,
+		);
+		process.exit(0);
+	}
+
 	const outputFormat = readOutputFormat(argv);
 	const { scenario, path } = loadScenario();
 	const counterFile = process.env.LITUS_E2E_COUNTER;
