@@ -48,7 +48,9 @@
 			"tests/**/*.ts",
 			"tests/**/*.js",
 			"tests/**/*.json",
-			"biome.json"
+			"biome.json",
+			"!tests/e2e/test-results",
+			"!tests/e2e/playwright-report"
 		],
 		"ignoreUnknown": true
 	}
