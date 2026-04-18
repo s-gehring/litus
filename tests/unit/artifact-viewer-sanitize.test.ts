@@ -21,9 +21,12 @@ describe("artifact viewer markdown sanitization (FR-008)", () => {
 		// on the raw output would miss.
 		const container = document.createElement("div");
 		container.innerHTML = out;
+		const dangerousSchemes = ["javascript:", "data:", "vbscript:"];
 		for (const anchor of Array.from(container.querySelectorAll("a"))) {
 			const href = (anchor.getAttribute("href") ?? "").trim().toLowerCase();
-			expect(href.startsWith("javascript:")).toBe(false);
+			for (const scheme of dangerousSchemes) {
+				expect(href.startsWith(scheme)).toBe(false);
+			}
 		}
 		expect(out.toLowerCase()).not.toContain("javascript:");
 	});
