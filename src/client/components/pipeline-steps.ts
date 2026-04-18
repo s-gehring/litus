@@ -1,5 +1,11 @@
-import type { PipelineStepStatus, WorkflowState } from "../../types";
+import type {
+	ArtifactDescriptor,
+	PipelineStepName,
+	PipelineStepStatus,
+	WorkflowState,
+} from "../../types";
 import { $ } from "../dom";
+import { openArtifactViewer } from "./artifact-viewer";
 
 const STATUS_CLASS: Record<PipelineStepStatus, string> = {
 	pending: "step-pending",
@@ -10,10 +16,74 @@ const STATUS_CLASS: Record<PipelineStepStatus, string> = {
 	error: "step-error",
 };
 
+export interface PipelineStepsArtifactContext {
+	workflowId: string;
+	byStep: Map<PipelineStepName, ArtifactDescriptor[]>;
+}
+
+function openDropdown(
+	anchor: HTMLElement,
+	items: ArtifactDescriptor[],
+	onSelect: (descriptor: ArtifactDescriptor) => void,
+): void {
+	// Close any existing
+	for (const el of document.querySelectorAll(".artifact-dropdown")) el.remove();
+	const menu = document.createElement("div");
+	menu.className = "artifact-dropdown";
+	const rect = anchor.getBoundingClientRect();
+	menu.style.position = "fixed";
+	menu.style.top = `${rect.bottom + 4}px`;
+	menu.style.left = `${rect.left}px`;
+	for (const d of items) {
+		const btn = document.createElement("button");
+		btn.className = "artifact-dropdown-item";
+		btn.textContent = d.displayLabel;
+		btn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			menu.remove();
+			onSelect(d);
+		});
+		menu.appendChild(btn);
+	}
+	document.body.appendChild(menu);
+	const dismiss = (e: MouseEvent) => {
+		if (!menu.contains(e.target as Node)) {
+			menu.remove();
+			document.removeEventListener("mousedown", dismiss);
+		}
+	};
+	setTimeout(() => document.addEventListener("mousedown", dismiss), 0);
+}
+
+function renderArtifactAffordance(
+	workflowId: string,
+	descriptors: ArtifactDescriptor[],
+): HTMLButtonElement {
+	const btn = document.createElement("button");
+	btn.type = "button";
+	btn.className = "artifact-affordance";
+	const label = descriptors[0]?.affordanceLabel ?? "View artifact";
+	btn.textContent = descriptors.length > 1 ? `${label}s ▾` : label;
+	btn.title = label;
+	btn.setAttribute("aria-label", label);
+	btn.addEventListener("click", (e) => {
+		e.stopPropagation();
+		if (descriptors.length === 1) {
+			openArtifactViewer({ workflowId, descriptor: descriptors[0], triggerEl: btn });
+			return;
+		}
+		openDropdown(btn, descriptors, (descriptor) => {
+			openArtifactViewer({ workflowId, descriptor, triggerEl: btn });
+		});
+	});
+	return btn;
+}
+
 export function renderPipelineSteps(
 	workflow: WorkflowState | null,
 	selectedIndex?: number | null,
 	onStepClick?: (index: number) => void,
+	artifacts?: PipelineStepsArtifactContext | null,
 ): void {
 	const container = $("#pipeline-steps");
 	if (!container) return;
@@ -61,6 +131,14 @@ export function renderPipelineSteps(
 			badge.className = "review-badge";
 			badge.textContent = `${workflow.ciCycle.attempt}/${workflow.ciCycle.maxAttempts}`;
 			el.appendChild(badge);
+		}
+
+		// Artifact affordance (only when ≥1 descriptor exists for this step)
+		if (artifacts) {
+			const descriptors = artifacts.byStep.get(step.name);
+			if (descriptors && descriptors.length > 0) {
+				el.appendChild(renderArtifactAffordance(artifacts.workflowId, descriptors));
+			}
 		}
 
 		container.appendChild(el);

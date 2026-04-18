@@ -2,10 +2,13 @@ import { looksLikeGitUrl } from "../git-url";
 import {
 	type Alert,
 	type AppConfig,
+	type ArtifactDescriptor,
+	type ArtifactListResponse,
 	type AutoMode,
 	type ClientMessage,
 	type EpicAggregatedState,
 	type EpicClientState,
+	type PipelineStepName,
 	type ServerMessage,
 	STEP,
 	type WorkflowClientState,
@@ -37,7 +40,10 @@ import {
 	showFeedbackPanel,
 } from "./components/feedback-panel";
 import { createFolderPicker } from "./components/folder-picker";
-import { renderPipelineSteps } from "./components/pipeline-steps";
+import {
+	type PipelineStepsArtifactContext,
+	renderPipelineSteps,
+} from "./components/pipeline-steps";
 import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
 import { EPIC_AGG_STATUS_CLASSES, EPIC_CARD_PREFIX } from "./components/status-maps";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
@@ -64,6 +70,47 @@ import { renderMarkdown } from "./render-markdown";
 import { Router } from "./router";
 
 const stateManager = new ClientStateManager();
+
+// Per-workflow cache of artifacts grouped by step, populated by fetchWorkflowArtifacts.
+const artifactsByWorkflow = new Map<string, Map<PipelineStepName, ArtifactDescriptor[]>>();
+
+function getArtifactContext(workflowId: string): PipelineStepsArtifactContext | null {
+	const byStep = artifactsByWorkflow.get(workflowId);
+	if (!byStep) return null;
+	return { workflowId, byStep };
+}
+
+async function fetchWorkflowArtifacts(workflowId: string): Promise<void> {
+	try {
+		const res = await fetch(`/api/workflows/${encodeURIComponent(workflowId)}/artifacts`, {
+			cache: "no-store",
+		});
+		if (!res.ok) return;
+		const body = (await res.json()) as ArtifactListResponse;
+		const byStep = new Map<PipelineStepName, ArtifactDescriptor[]>();
+		for (const item of body.items) {
+			const arr = byStep.get(item.step) ?? [];
+			arr.push(item);
+			byStep.set(item.step, arr);
+		}
+		artifactsByWorkflow.set(workflowId, byStep);
+		const expandedId = stateManager.getExpandedId();
+		const selectedChildId = stateManager.getSelectedChildId();
+		if (expandedId === workflowId || selectedChildId === workflowId) {
+			const entry = stateManager.getWorkflows().get(workflowId);
+			if (entry) {
+				renderPipelineSteps(
+					entry.state,
+					stateManager.getSelectedStepIndex(),
+					selectStep,
+					getArtifactContext(workflowId),
+				);
+			}
+		}
+	} catch (err) {
+		console.warn("fetchWorkflowArtifacts failed", err);
+	}
+}
 
 let appRouter: Router | null = null;
 
@@ -246,10 +293,17 @@ function handleMessage(msg: ServerMessage): void {
 				} else {
 					const entry = workflows.get(msg.workflowId);
 					if (entry) {
-						renderPipelineSteps(entry.state, stateManager.getSelectedStepIndex(), selectStep);
+						renderPipelineSteps(
+							entry.state,
+							stateManager.getSelectedStepIndex(),
+							selectStep,
+							getArtifactContext(msg.workflowId),
+						);
 					}
 				}
 			}
+			// A step change often means a new artifact just appeared on disk.
+			void fetchWorkflowArtifacts(msg.workflowId);
 			break;
 		}
 
@@ -852,7 +906,12 @@ function selectStep(index: number): void {
 	}
 
 	// Re-render pipeline steps to update selected state
-	renderPipelineSteps(wf, stateManager.getSelectedStepIndex(), selectStep);
+	renderPipelineSteps(
+		wf,
+		stateManager.getSelectedStepIndex(),
+		selectStep,
+		getArtifactContext(wf.id),
+	);
 }
 
 function autoSelectStep(wf: WorkflowState): void {
@@ -879,7 +938,10 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	updateWorkflowStatus(wf);
 	updateBranchInfo(wf);
 	updateActiveModelPanel({ kind: "workflow", workflow: wf });
-	renderPipelineSteps(wf, selectedStepIndex, selectStep);
+	renderPipelineSteps(wf, selectedStepIndex, selectStep, getArtifactContext(wf.id));
+	if (!artifactsByWorkflow.has(wf.id)) {
+		void fetchWorkflowArtifacts(wf.id);
+	}
 	if (wf.summary) updateSummary(wf.summary);
 	updateStepSummary(wf.stepSummary ?? "");
 	updateFlavor(wf.flavor ?? "");

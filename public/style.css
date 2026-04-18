@@ -1866,3 +1866,108 @@ body::-webkit-scrollbar-track {
   line-height: 1;
 }
 .alert-list-dismiss:hover { opacity: 1; color: var(--accent-red, #e94560); }
+
+/* Artifact affordance on pipeline step rows */
+.artifact-affordance {
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.artifact-affordance:hover {
+  background: var(--accent-blue);
+  color: #fff;
+  border-color: var(--accent-blue);
+}
+
+.artifact-dropdown {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  min-width: 200px;
+  z-index: 9999;
+  padding: 4px 0;
+}
+.artifact-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.85rem;
+}
+.artifact-dropdown-item:hover {
+  background: var(--surface-2);
+}
+
+/* Artifact viewer modal */
+.artifact-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+.artifact-modal {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-width: min(960px, 90vw);
+  max-height: 85vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  outline: none;
+}
+.artifact-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.artifact-modal-title {
+  flex: 1;
+  font-weight: 600;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+.artifact-modal-download {
+  text-decoration: none;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+}
+.artifact-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 6px;
+}
+.artifact-modal-body {
+  padding: 16px 20px;
+  overflow: auto;
+  flex: 1;
+  line-height: 1.5;
+}
+.artifact-modal-unavailable {
+  color: var(--text-dim);
+  font-style: italic;
+  text-align: center;
+  padding: 40px 20px;
+}
+body.artifact-modal-open { overflow: hidden; }

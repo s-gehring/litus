@@ -1,7 +1,16 @@
+import { basename } from "node:path";
 import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
-import { type ClientMessage, STEP } from "../types";
-import type { MessageHandler } from "./handler-types";
+import { type ClientMessage, STEP, type Workflow } from "../types";
+import {
+	getSpecsRoot,
+	getWorkflowBranch,
+	listArtifacts,
+	lookupArtifact,
+	resolveArtifactPath,
+	sanitizeBranchForFilename,
+} from "../workflow-artifacts";
+import type { HandlerDeps, MessageHandler } from "./handler-types";
 import { resolveTargetRepo, validateTextInput, withOrchestrator } from "./handler-types";
 
 export const handleStart: MessageHandler = async (ws, data, deps) => {
@@ -202,6 +211,103 @@ export const handleFeedback: MessageHandler = withOrchestrator((ws, data, deps, 
 		});
 	}
 });
+
+// ── HTTP artifact handlers ──────────────────────────────
+
+async function loadWorkflow(
+	workflowId: string,
+	deps: Pick<HandlerDeps, "orchestrators" | "sharedStore">,
+): Promise<Workflow | null> {
+	const orch = deps.orchestrators.get(workflowId);
+	const live = orch?.getEngine().getWorkflow();
+	if (live) return live;
+	return deps.sharedStore.load(workflowId);
+}
+
+function jsonError(status: number, code: string): Response {
+	return new Response(JSON.stringify({ error: code }), {
+		status,
+		headers: { "Content-Type": "application/json" },
+	});
+}
+
+export async function handleArtifactList(
+	workflowId: string,
+	deps: Pick<HandlerDeps, "orchestrators" | "sharedStore">,
+): Promise<Response> {
+	const workflow = await loadWorkflow(workflowId, deps);
+	if (!workflow) return jsonError(404, "workflow_not_found");
+	const response = listArtifacts(workflow);
+	return Response.json(response);
+}
+
+async function resolveArtifactAbsolutePath(
+	workflowId: string,
+	artifactId: string,
+	deps: Pick<HandlerDeps, "orchestrators" | "sharedStore">,
+): Promise<
+	| { kind: "ok"; absPath: string; workflow: Workflow; basename: string }
+	| { kind: "error"; response: Response }
+> {
+	const entry = lookupArtifact(artifactId);
+	if (!entry || entry.workflowId !== workflowId) {
+		return { kind: "error", response: jsonError(404, "artifact_unavailable") };
+	}
+	const workflow = await loadWorkflow(workflowId, deps);
+	if (!workflow) {
+		return { kind: "error", response: jsonError(404, "workflow_not_found") };
+	}
+	const specsRoot = getSpecsRoot(workflow);
+	if (!specsRoot) {
+		return { kind: "error", response: jsonError(404, "artifact_unavailable") };
+	}
+	const absPath = resolveArtifactPath(specsRoot, entry.relPath);
+	if (!absPath) {
+		return { kind: "error", response: jsonError(400, "invalid_artifact") };
+	}
+	const file = Bun.file(absPath);
+	if (!(await file.exists())) {
+		return { kind: "error", response: jsonError(404, "artifact_unavailable") };
+	}
+	return { kind: "ok", absPath, workflow, basename: basename(entry.relPath) };
+}
+
+export async function handleArtifactContent(
+	workflowId: string,
+	artifactId: string,
+	deps: Pick<HandlerDeps, "orchestrators" | "sharedStore">,
+): Promise<Response> {
+	const resolved = await resolveArtifactAbsolutePath(workflowId, artifactId, deps);
+	if (resolved.kind === "error") return resolved.response;
+	const bytes = await Bun.file(resolved.absPath).arrayBuffer();
+	return new Response(bytes, {
+		headers: {
+			"Content-Type": "text/markdown; charset=utf-8",
+			"Cache-Control": "no-store",
+		},
+	});
+}
+
+export async function handleArtifactDownload(
+	workflowId: string,
+	artifactId: string,
+	deps: Pick<HandlerDeps, "orchestrators" | "sharedStore">,
+): Promise<Response> {
+	const resolved = await resolveArtifactAbsolutePath(workflowId, artifactId, deps);
+	if (resolved.kind === "error") return resolved.response;
+	const branch = getWorkflowBranch(resolved.workflow);
+	const sanitized = sanitizeBranchForFilename(branch);
+	const filename = sanitized ? `${sanitized}-${resolved.basename}` : resolved.basename;
+	const encoded = encodeURIComponent(filename);
+	const bytes = await Bun.file(resolved.absPath).arrayBuffer();
+	return new Response(bytes, {
+		headers: {
+			"Content-Type": "text/markdown; charset=utf-8",
+			"Cache-Control": "no-store",
+			"Content-Disposition": `attachment; filename="${filename}"; filename*=UTF-8''${encoded}`,
+		},
+	});
+}
 
 export const handleForceStart: MessageHandler = withOrchestrator((ws, data, deps, orch) => {
 	const msg = data as ClientMessage & { type: "workflow:force-start" };

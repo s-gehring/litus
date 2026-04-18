@@ -30,6 +30,9 @@ import { broadcastPersistedWorkflowState } from "./server/workflow-broadcaster";
 import {
 	handleAbort,
 	handleAnswer,
+	handleArtifactContent,
+	handleArtifactDownload,
+	handleArtifactList,
 	handleFeedback,
 	handleForceStart,
 	handlePause,
@@ -307,6 +310,27 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 					}
 				}
 				return Response.json({ status: "ok", activeWorkflows });
+			}
+
+			// ── Artifact endpoints ───────────────────────────────
+			if (req.method === "GET") {
+				const artifactMatch = url.pathname.match(
+					/^\/api\/workflows\/([^/]+)\/artifacts(?:\/([^/]+)\/(content|download))?$/,
+				);
+				if (artifactMatch) {
+					const workflowId = decodeURIComponent(artifactMatch[1]);
+					const artifactId = artifactMatch[2] ? decodeURIComponent(artifactMatch[2]) : undefined;
+					const action = artifactMatch[3];
+					if (!artifactId) {
+						return await handleArtifactList(workflowId, deps);
+					}
+					if (action === "content") {
+						return await handleArtifactContent(workflowId, artifactId, deps);
+					}
+					if (action === "download") {
+						return await handleArtifactDownload(workflowId, artifactId, deps);
+					}
+				}
 			}
 
 			if (url.pathname === "/api/suggest-folders" && req.method === "GET") {

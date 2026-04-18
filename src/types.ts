@@ -486,6 +486,26 @@ export type WorkflowState = Omit<Workflow, "steps" | "feedbackPreRunHead"> & {
 	steps: Omit<PipelineStep, "sessionId" | "prompt" | "pid">[];
 };
 
+// ── Artifact types ───────────────────────────────────────
+
+export interface ArtifactDescriptor {
+	id: string;
+	step: PipelineStepName;
+	displayLabel: string;
+	affordanceLabel: string;
+	relPath: string;
+	sizeBytes: number;
+	lastModified: string;
+	exists: true;
+	runOrdinal: number | null;
+}
+
+export interface ArtifactListResponse {
+	workflowId: string;
+	branch: string;
+	items: ArtifactDescriptor[];
+}
+
 // ── Alert types ──────────────────────────────────────────
 
 export type AlertType =
