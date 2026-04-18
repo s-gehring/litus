@@ -27,6 +27,7 @@ import {
 } from "./components/config-page";
 import { createModal, type Modal } from "./components/creation-modal";
 import { createDashboardHandler } from "./components/dashboard-handler";
+import { epicCreatedTarget } from "./components/epic-created-route";
 import { createEpicDetailHandler } from "./components/epic-detail-handler";
 import { updateFavicon } from "./components/favicon";
 import { showFeedbackPanel } from "./components/feedback-panel";
@@ -48,6 +49,10 @@ const stateManager = new ClientStateManager();
 
 // Per-workflow cache of artifacts grouped by step, populated by fetchWorkflowArtifacts.
 const artifactsByWorkflow = new Map<string, Map<PipelineStepName, ArtifactDescriptor[]>>();
+// Tracks in-flight artifact fetches so a burst of `workflow:state` / `workflow:list`
+// broadcasts during the first request's async window doesn't spawn parallel
+// duplicates. Cleared when the request resolves (success or failure).
+const artifactsFetchInFlight = new Set<string>();
 
 function getArtifactContext(workflowId: string): PipelineStepsArtifactContext | null {
 	const byStep = artifactsByWorkflow.get(workflowId);
@@ -56,6 +61,8 @@ function getArtifactContext(workflowId: string): PipelineStepsArtifactContext | 
 }
 
 async function fetchWorkflowArtifacts(workflowId: string): Promise<void> {
+	if (artifactsFetchInFlight.has(workflowId)) return;
+	artifactsFetchInFlight.add(workflowId);
 	try {
 		const res = await fetch(`/api/workflows/${encodeURIComponent(workflowId)}/artifacts`, {
 			cache: "no-store",
@@ -75,17 +82,22 @@ async function fetchWorkflowArtifacts(workflowId: string): Promise<void> {
 				renderPipelineSteps(
 					entry.state,
 					stateManager.getSelectedStepIndex(),
-					() => {
-						/* re-selection is handled by the workflow-detail handler */
-					},
+					(index) => workflowDetailSelectStep?.(index),
 					getArtifactContext(workflowId),
 				);
 			}
 		}
 	} catch (err) {
 		console.warn("fetchWorkflowArtifacts failed", err);
+	} finally {
+		artifactsFetchInFlight.delete(workflowId);
 	}
 }
+
+// Bridge so `fetchWorkflowArtifacts`'s re-render of the pipeline strip can
+// dispatch step clicks back into the workflow-detail handler instead of a
+// no-op. Set while the handler is mounted; cleared on unmount.
+let workflowDetailSelectStep: ((index: number) => void) | null = null;
 
 let appRouter: Router | null = null;
 
@@ -233,9 +245,8 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "epic:created": {
 			renderCards();
-			if (appRouter?.currentPath !== "/config") {
-				appRouter?.navigate(`/epic/${msg.epicId}`);
-			}
+			const target = epicCreatedTarget(msg.epicId, appRouter?.currentPath ?? null);
+			if (target) appRouter?.navigate(target);
 			break;
 		}
 
@@ -793,6 +804,9 @@ document.addEventListener("DOMContentLoaded", () => {
 				send,
 				navigate: (path) => appRouter?.navigate(path),
 				openFeedbackPanel,
+				setSelectStep: (cb) => {
+					workflowDetailSelectStep = cb;
+				},
 			}),
 		);
 		appRouter.register(

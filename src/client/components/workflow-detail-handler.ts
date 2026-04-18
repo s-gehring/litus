@@ -46,6 +46,14 @@ export interface WorkflowDetailDeps {
 	send: (msg: ClientMessage) => void;
 	navigate: (path: string) => void;
 	openFeedbackPanel: (wf: WorkflowState) => void;
+	/**
+	 * Optional bridge so out-of-band re-renders of the pipeline-steps strip
+	 * (today: the async `fetchWorkflowArtifacts` resolution in app.ts) can
+	 * dispatch step clicks back into this handler's `doSelectStep` instead of
+	 * relying on a no-op click handler. Called with the handler's internal
+	 * selector on mount, and with `null` on unmount.
+	 */
+	setSelectStep?: (selectStep: ((index: number) => void) | null) => void;
 }
 
 export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHandler {
@@ -229,7 +237,21 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		lastBackButtonEpicId = epicId;
 	}
 
+	/**
+	 * Pick the step to display. Respects any valid selection the user has
+	 * already made for this workflow (including the one `mount()` restores from
+	 * `ClientStateManager.getSelectedStepIndexFor`); otherwise falls back to
+	 * the live step for in-progress workflows or the last non-pending step for
+	 * terminal ones.
+	 */
 	function autoSelectStep(wf: WorkflowState): void {
+		if (currentWorkflowId) {
+			const existing = deps.getState().getSelectedStepIndexFor(currentWorkflowId);
+			if (existing != null && existing >= 0 && existing < wf.steps.length) {
+				doSelectStep(existing);
+				return;
+			}
+		}
 		if (wf.status === "running" || wf.status === "waiting_for_input" || wf.status === "paused") {
 			doSelectStep(wf.currentStepIndex);
 		} else if (wf.steps.length > 0) {
@@ -329,10 +351,12 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 				previousIndex != null && wf && previousIndex >= 0 && previousIndex < wf.steps.length;
 			const targetIndex = inRange ? (previousIndex as number) : (wf?.currentStepIndex ?? 0);
 			if (currentWorkflowId) state.selectStepFor(currentWorkflowId, targetIndex);
+			deps.setSelectStep?.(doSelectStep);
 			renderFull();
 		},
 		unmount() {
 			currentWorkflowId = null;
+			deps.setSelectStep?.(null);
 			hideLayout();
 		},
 		onMessage(msg: ServerMessage) {

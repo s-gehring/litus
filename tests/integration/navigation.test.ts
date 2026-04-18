@@ -6,7 +6,7 @@ import { createDashboardHandler } from "../../src/client/components/dashboard-ha
 import { createEpicDetailHandler } from "../../src/client/components/epic-detail-handler";
 import { createWorkflowDetailHandler } from "../../src/client/components/workflow-detail-handler";
 import { Router } from "../../src/client/router";
-import type { ClientMessage } from "../../src/types";
+import type { ClientMessage, PipelineStepName } from "../../src/types";
 import { makeWorkflowState } from "../helpers";
 
 // Reproduces the #app-content children from public/index.html.
@@ -232,6 +232,111 @@ describe("single-view navigation invariants", () => {
 		expect(document.querySelector(".config-page")).toBeNull();
 		expect(isVisible("detail-area")).toBe(true);
 		expect(isVisible("card-strip")).toBe(true);
+	});
+});
+
+describe("workflow-detail step-selection persists across remount", () => {
+	let sendSpy: ReturnType<typeof mock>;
+	let activeRouter: TestRouter | null = null;
+
+	beforeEach(() => {
+		document.body.innerHTML = BASE_DOM;
+		sendSpy = mock(() => {});
+	});
+
+	afterEach(() => {
+		activeRouter?.destroy();
+		activeRouter = null;
+		document.body.innerHTML = "";
+	});
+
+	test("re-entering a workflow restores the previously selected step", () => {
+		const container = document.getElementById("app-content") as HTMLElement;
+		const router = new TestRouter(container, "/");
+		activeRouter = router;
+
+		const stateManager = new ClientStateManager();
+		// Five-step running workflow with currentStepIndex=3. Steps 0..3 are
+		// non-pending (so they are clickable by `renderPipelineSteps`), step 4
+		// is pending.
+		const steps = (
+			[
+				{ name: "setup", displayName: "Setup", status: "completed" },
+				{ name: "specify", displayName: "Specifying", status: "completed" },
+				{ name: "clarify", displayName: "Clarifying", status: "completed" },
+				{ name: "plan", displayName: "Planning", status: "running" },
+				{ name: "tasks", displayName: "Generating Tasks", status: "pending" },
+			] satisfies ReadonlyArray<{
+				name: PipelineStepName;
+				displayName: string;
+				status: "pending" | "running" | "completed" | "failed" | "skipped";
+			}>
+		).map((s) => ({
+			...s,
+			output: "",
+			outputLog: [],
+			error: null,
+			startedAt: null,
+			completedAt: null,
+			history: [],
+		}));
+		stateManager.handleMessage({
+			type: "workflow:list",
+			workflows: [
+				makeWorkflowState({
+					id: "wf-restore",
+					status: "running",
+					currentStepIndex: 3,
+					steps,
+				}),
+			],
+		});
+
+		router.register("/", createDashboardHandler());
+		router.register(
+			"/workflow/:id",
+			createWorkflowDetailHandler({
+				getState: () => stateManager,
+				getAutoMode: () => "normal",
+				getArtifactContext: () => null,
+				fetchArtifacts: () => {},
+				send: sendSpy,
+				navigate: (p) => router.navigate(p),
+				openFeedbackPanel: () => {},
+			}),
+		);
+		router.register(
+			"/config",
+			createConfigPageHandler(
+				sendSpy,
+				(p) => router.navigate(p),
+				() => null,
+			),
+		);
+
+		router.setTestPath("/workflow/wf-restore");
+		router.start();
+
+		// Initial mount lands on the live step (currentStepIndex=3).
+		expect(stateManager.getSelectedStepIndex()).toBe(3);
+		const stepEls = () => container.querySelectorAll<HTMLElement>("#pipeline-steps .pipeline-step");
+		expect(stepEls()[3].classList.contains("step-selected")).toBe(true);
+
+		// Simulate a user click on step 1 (historic step, non-pending → clickable).
+		stepEls()[1].click();
+		expect(stateManager.getSelectedStepIndex()).toBe(1);
+		expect(stepEls()[1].classList.contains("step-selected")).toBe(true);
+
+		// Navigate away to /config, then back to the workflow. The restored
+		// selection must survive the full mount → renderFull → autoSelectStep
+		// path, not just the selectStepFor() write in mount().
+		router.navigate("/config");
+		router.navigate("/workflow/wf-restore");
+
+		expect(stateManager.getSelectedStepIndex()).toBe(1);
+		const after = container.querySelectorAll<HTMLElement>("#pipeline-steps .pipeline-step");
+		expect(after[1].classList.contains("step-selected")).toBe(true);
+		expect(after[3].classList.contains("step-selected")).toBe(false);
 	});
 });
 
