@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,16 +26,22 @@ async function runCmd(
 	cwd: string,
 	extraEnv: Record<string, string> = {},
 ): Promise<void> {
-	const proc = Bun.spawn([cmd, ...args], {
+	const proc = spawn(cmd, args, {
 		cwd,
-		env: { ...process.env, ...extraEnv } as Record<string, string>,
-		stdout: "pipe",
-		stderr: "pipe",
+		env: { ...process.env, ...extraEnv } as NodeJS.ProcessEnv,
+		stdio: ["ignore", "pipe", "pipe"],
+		shell: false,
 	});
-	const code = await proc.exited;
+	let stderr = "";
+	proc.stderr.on("data", (chunk: Buffer) => {
+		stderr += chunk.toString("utf8");
+	});
+	const code: number = await new Promise((resolveExit, rejectExit) => {
+		proc.on("error", rejectExit);
+		proc.on("close", (c) => resolveExit(c ?? 0));
+	});
 	if (code !== 0) {
-		const err = await new Response(proc.stderr as ReadableStream).text();
-		throw new Error(`${cmd} ${args.join(" ")} failed (${code}): ${err}`);
+		throw new Error(`${cmd} ${args.join(" ")} failed (${code}): ${stderr}`);
 	}
 }
 

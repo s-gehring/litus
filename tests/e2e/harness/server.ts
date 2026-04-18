@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { open } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildPathWithFakes } from "./fakes-path";
@@ -44,11 +45,14 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProce
 		PORT: "0",
 	};
 
-	const proc = Bun.spawn(["bun", "run", resolve(opts.repoRoot, "src/server.ts")], {
+	const proc = spawn("bun", ["run", resolve(opts.repoRoot, "src/server.ts")], {
 		cwd: opts.repoRoot,
 		env,
-		stdout: "pipe",
-		stderr: "pipe",
+		stdio: ["ignore", "pipe", "pipe"],
+		shell: false,
+	});
+	const exitedPromise = new Promise<number>((resolveExit) => {
+		proc.on("close", (c) => resolveExit(c ?? 0));
 	});
 
 	let baseUrl = "";
@@ -76,16 +80,12 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProce
 			}
 		};
 
-		const pipe = async (stream: ReadableStream<Uint8Array>) => {
-			const reader = stream.getReader();
-			const decoder = new TextDecoder();
+		const pipe = (stream: NodeJS.ReadableStream) => {
 			let pending = "";
-			while (true) {
-				const { value, done } = await reader.read();
-				if (done) return;
-				const text = decoder.decode(value, { stream: true });
+			stream.on("data", (chunk: Buffer | string) => {
+				const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
 				logStream.write(text);
-				if (resolved) continue;
+				if (resolved) return;
 				pending += text;
 				let nl = pending.indexOf("\n");
 				while (nl >= 0) {
@@ -95,11 +95,11 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProce
 				}
 				// Also try whatever's buffered — the marker may land before a newline.
 				tryMatch(pending);
-			}
+			});
 		};
 
-		void pipe(proc.stdout);
-		void pipe(proc.stderr);
+		pipe(proc.stdout);
+		pipe(proc.stderr);
 	});
 
 	const url = await readyPromise;
@@ -113,8 +113,8 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProce
 		} catch {
 			// ignore
 		}
-		const exited = Promise.race([
-			proc.exited,
+		await Promise.race([
+			exitedPromise,
 			new Promise<void>((r) => setTimeout(r, 5000)).then(() => {
 				try {
 					proc.kill("SIGKILL");
@@ -123,7 +123,7 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProce
 				}
 			}),
 		]);
-		await exited;
+		await exitedPromise;
 		try {
 			await logStream.end();
 			await logFile.close();
