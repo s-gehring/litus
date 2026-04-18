@@ -210,7 +210,7 @@ Set \`prDescriptionUpdate\` to \`null\` when no PR description update was attemp
 	autoMode: "normal",
 	limits: {
 		reviewCycleMaxIterations: 16,
-		ciFixMaxAttempts: 3,
+		ciFixMaxAttempts: 10,
 		mergeMaxAttempts: 3,
 		maxJsonRetries: 2,
 	},

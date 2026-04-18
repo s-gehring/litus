@@ -42,7 +42,7 @@ export const NUMERIC_SETTING_META: NumericSettingMeta[] = [
 		label: "CI Fix Max Attempts",
 		description: "Maximum number of CI fix attempts before giving up",
 		min: 1,
-		defaultValue: 3,
+		defaultValue: 10,
 		unit: "attempts",
 	},
 	{
