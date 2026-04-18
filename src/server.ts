@@ -395,7 +395,7 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 	const port = BASE_PORT + i;
 	try {
 		server = startServer(port);
-		logger.info(`Litus running at http://localhost:${port}`);
+		logger.info(`Litus running at http://localhost:${server.port}`);
 		break;
 	} catch (err) {
 		if (i === MAX_PORT_RETRIES - 1) throw err;
