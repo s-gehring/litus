@@ -66,10 +66,40 @@ export function openArtifactViewer(opts: OpenArtifactOptions): void {
 		}
 	}
 
+	function getTabbable(): HTMLElement[] {
+		const sel =
+			'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+		return Array.from(dialog.querySelectorAll<HTMLElement>(sel)).filter(
+			(el) => !el.hasAttribute("disabled") && el.tabIndex !== -1,
+		);
+	}
+
 	function onKeydown(e: KeyboardEvent): void {
 		if (e.key === "Escape") {
 			e.preventDefault();
 			close();
+			return;
+		}
+		if (e.key !== "Tab") return;
+		const focusable = getTabbable();
+		if (focusable.length === 0) {
+			e.preventDefault();
+			dialog.focus();
+			return;
+		}
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		const active = document.activeElement as HTMLElement | null;
+		if (e.shiftKey) {
+			if (active === first || !dialog.contains(active)) {
+				e.preventDefault();
+				last.focus();
+			}
+		} else {
+			if (active === last || !dialog.contains(active)) {
+				e.preventDefault();
+				first.focus();
+			}
 		}
 	}
 

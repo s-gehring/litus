@@ -12,7 +12,8 @@ interface ArtifactLookupEntry {
 
 // Module-global so minted artifact IDs stay resolvable across HTTP request
 // handlers within a single server process (both list and content/download
-// endpoints read from this map).
+// endpoints read from this map). Entries are never evicted: acceptable for a
+// single-user local app; re-mints are idempotent (same id for same inputs).
 const ARTIFACT_LOOKUP = new Map<string, ArtifactLookupEntry>();
 
 export function mintArtifactId(
@@ -117,7 +118,7 @@ function scanReviewFiles(specsRoot: string): ReviewFile[] {
 		const m = name.match(/^code-review-(\d+)\.md$/);
 		if (m) {
 			const n = parseInt(m[1], 10);
-			if (Number.isFinite(n) && n >= 1) files.push({ ordinal: n, name });
+			if (n >= 1) files.push({ ordinal: n, name });
 		}
 	}
 	files.sort((a, b) => a.ordinal - b.ordinal);
@@ -169,7 +170,7 @@ function completedImplementReviewRuns(workflow: Workflow): number {
 	const impl = workflow.steps.find((s) => s.name === "implement-review");
 	if (!impl) return 0;
 	const current = impl.status === "completed" ? 1 : 0;
-	return impl.history.length + current;
+	return impl.history.filter((h) => h.status === "completed").length + current;
 }
 
 function clarifyHasRun(workflow: Workflow): boolean {
@@ -183,7 +184,7 @@ export function listArtifacts(workflow: Workflow): ArtifactListResponse {
 	const branch = getWorkflowBranch(workflow);
 	const specsRoot = getSpecsRoot(workflow);
 	if (!specsRoot || !existsSync(specsRoot)) {
-		return { workflowId: workflow.id, branch: branch ?? "", items: [] };
+		return { workflowId: workflow.id, branch, items: [] };
 	}
 
 	const items: ArtifactDescriptor[] = [];

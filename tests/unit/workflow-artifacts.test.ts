@@ -142,6 +142,49 @@ describe("workflow-artifacts: step mapping and discovery", () => {
 		});
 	});
 
+	test("implement-review history entries with non-completed status do not count", async () => {
+		await withTempDir(async (dir) => {
+			seedSpecs(dir, "feat", {
+				"code-review.md": "r1",
+				"code-review-2.md": "r2",
+				"code-review-3.md": "r3",
+			});
+			const wf = makeWorkflow({
+				id: "wf-4b",
+				worktreePath: dir,
+				featureBranch: "feat",
+			});
+			const impl = wf.steps.find((s) => s.name === "implement-review");
+			if (!impl) throw new Error("missing implement-review step");
+			impl.status = "completed";
+			// One errored run + one completed run in history, plus the current
+			// completed status: historical error must NOT be paired.
+			impl.history = [
+				{
+					runNumber: 1,
+					status: "error",
+					output: "",
+					error: "boom",
+					startedAt: new Date().toISOString(),
+					completedAt: new Date().toISOString(),
+				},
+				{
+					runNumber: 2,
+					status: "completed",
+					output: "",
+					error: null,
+					startedAt: new Date().toISOString(),
+					completedAt: new Date().toISOString(),
+				},
+			];
+
+			const res = listArtifacts(wf);
+			const impls = res.items.filter((i) => i.step === "implement-review");
+			expect(impls.length).toBe(2);
+			expect(impls.map((i) => i.runOrdinal)).toEqual([1, 2]);
+		});
+	});
+
 	test("empty list when worktreePath missing or specs dir absent", async () => {
 		await withTempDir(async (dir) => {
 			const wf = makeWorkflow({

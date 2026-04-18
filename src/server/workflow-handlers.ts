@@ -279,11 +279,12 @@ export async function handleArtifactContent(
 ): Promise<Response> {
 	const resolved = await resolveArtifactAbsolutePath(workflowId, artifactId, deps);
 	if (resolved.kind === "error") return resolved.response;
-	const bytes = await Bun.file(resolved.absPath).arrayBuffer();
-	return new Response(bytes, {
+	const file = Bun.file(resolved.absPath);
+	return new Response(file.stream(), {
 		headers: {
 			"Content-Type": "text/markdown; charset=utf-8",
 			"Cache-Control": "no-store",
+			"Content-Length": String(file.size),
 		},
 	});
 }
@@ -299,12 +300,17 @@ export async function handleArtifactDownload(
 	const sanitized = sanitizeBranchForFilename(branch);
 	const filename = sanitized ? `${sanitized}-${resolved.basename}` : resolved.basename;
 	const encoded = encodeURIComponent(filename);
-	const bytes = await Bun.file(resolved.absPath).arrayBuffer();
-	return new Response(bytes, {
+	// Escape backslash and double-quote in the quoted-string fallback; the
+	// basename comes from server-controlled sources today, but the invariant
+	// isn't locally visible, so harden the quoting rather than rely on it.
+	const quoted = filename.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+	const file = Bun.file(resolved.absPath);
+	return new Response(file.stream(), {
 		headers: {
 			"Content-Type": "text/markdown; charset=utf-8",
 			"Cache-Control": "no-store",
-			"Content-Disposition": `attachment; filename="${filename}"; filename*=UTF-8''${encoded}`,
+			"Content-Length": String(file.size),
+			"Content-Disposition": `attachment; filename="${quoted}"; filename*=UTF-8''${encoded}`,
 		},
 	});
 }

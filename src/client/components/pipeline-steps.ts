@@ -30,26 +30,52 @@ function openDropdown(
 	for (const el of document.querySelectorAll(".artifact-dropdown")) el.remove();
 	const menu = document.createElement("div");
 	menu.className = "artifact-dropdown";
+	menu.setAttribute("role", "menu");
 	const rect = anchor.getBoundingClientRect();
 	menu.style.position = "fixed";
 	menu.style.top = `${rect.bottom + 4}px`;
 	menu.style.left = `${rect.left}px`;
+	const buttons: HTMLButtonElement[] = [];
 	for (const d of items) {
 		const btn = document.createElement("button");
+		btn.type = "button";
 		btn.className = "artifact-dropdown-item";
+		btn.setAttribute("role", "menuitem");
 		btn.textContent = d.displayLabel;
 		btn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			menu.remove();
+			document.removeEventListener("keydown", onKey);
 			onSelect(d);
 		});
 		menu.appendChild(btn);
+		buttons.push(btn);
 	}
 	document.body.appendChild(menu);
+	const onKey = (e: KeyboardEvent) => {
+		if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Escape") return;
+		if (e.key === "Escape") {
+			menu.remove();
+			document.removeEventListener("keydown", onKey);
+			anchor.focus();
+			return;
+		}
+		e.preventDefault();
+		const active = document.activeElement as HTMLElement | null;
+		const idx = buttons.findIndex((b) => b === active);
+		const next =
+			e.key === "ArrowDown"
+				? buttons[(idx + 1 + buttons.length) % buttons.length]
+				: buttons[(idx - 1 + buttons.length) % buttons.length];
+		next?.focus();
+	};
+	document.addEventListener("keydown", onKey);
+	buttons[0]?.focus();
 	const dismiss = (e: MouseEvent) => {
 		if (!menu.contains(e.target as Node)) {
 			menu.remove();
 			document.removeEventListener("mousedown", dismiss);
+			document.removeEventListener("keydown", onKey);
 		}
 	};
 	setTimeout(() => document.addEventListener("mousedown", dismiss), 0);
