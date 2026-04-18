@@ -99,6 +99,15 @@ export class WorkflowStore {
 			// Migration: backfill per-step history for pre-history workflows
 			for (const step of data.steps) {
 				if (!Array.isArray(step.history)) step.history = [];
+				// Migration: synthesize outputLog for pre-outputLog steps (text-only fallback)
+				if (!Array.isArray(step.outputLog)) {
+					step.outputLog = step.output ? [{ kind: "text", text: step.output }] : [];
+				}
+				for (const run of step.history) {
+					if (!Array.isArray(run.outputLog)) {
+						run.outputLog = run.output ? [{ kind: "text", text: run.output }] : [];
+					}
+				}
 			}
 			return data as Workflow;
 		} catch {

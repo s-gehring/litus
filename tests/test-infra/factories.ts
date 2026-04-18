@@ -49,6 +49,7 @@ export function makePipelineStep(overrides?: Partial<PipelineStep>): PipelineSte
 		prompt: "/speckit-implement",
 		sessionId: null,
 		output: "",
+		outputLog: [],
 		error: null,
 		startedAt: null,
 		completedAt: null,

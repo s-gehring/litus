@@ -892,25 +892,30 @@ function selectStep(index: number): void {
 			? run.startedAt
 			: startedAt.toLocaleString();
 		appendOutput(`── Run ${run.runNumber} · ${formattedStart} · ${run.status} ──`, "system");
-		if (run.output) appendOutput(run.output);
+		if (run.outputLog && run.outputLog.length > 0) {
+			renderOutputEntries(run.outputLog);
+		} else if (run.output) {
+			appendOutput(run.output);
+		}
 		if (run.error) appendOutput(`Error: ${run.error}`, "error");
 	}
 
-	const isLive =
-		index === wf.currentStepIndex && (wf.status === "running" || wf.status === "waiting_for_input");
+	const isCurrentStep = index === wf.currentStepIndex;
+	const isLive = isCurrentStep && (wf.status === "running" || wf.status === "waiting_for_input");
 
-	if (isLive) {
-		// Show live accumulated output, fall back to persisted step.output after restart
-		if (entry.outputLines.length > 0) {
-			renderOutputEntries(entry.outputLines);
-		} else if (step.output) {
-			appendOutput(step.output);
-		}
+	// Prefer in-memory outputLines when viewing the current step — it is the
+	// live streaming buffer with tool icons interleaved. Otherwise use the
+	// server-persisted step.outputLog (survives pause and page reload).
+	if (isCurrentStep && entry.outputLines.length > 0) {
+		renderOutputEntries(entry.outputLines);
+		if (!isLive && step.error) appendOutput(`Error: ${step.error}`, "error");
+	} else if (step.outputLog && step.outputLog.length > 0) {
+		renderOutputEntries(step.outputLog);
+		if (!isLive && step.error) appendOutput(`Error: ${step.error}`, "error");
 	} else if (step.output || step.error) {
-		// Show stored step output
 		if (step.output) appendOutput(step.output);
 		if (step.error) appendOutput(`Error: ${step.error}`, "error");
-	} else if (step.history.length === 0) {
+	} else if (!isLive && step.history.length === 0) {
 		appendOutput("No output yet", "system");
 	}
 

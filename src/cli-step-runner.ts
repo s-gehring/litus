@@ -36,6 +36,7 @@ export function archiveAndResetStep(
 			runNumber: step.history.length + 1,
 			status: archivedStatusFor(step.status),
 			output: step.output,
+			outputLog: step.outputLog,
 			error: step.error,
 			startedAt: step.startedAt,
 			completedAt: step.completedAt,
@@ -45,6 +46,7 @@ export function archiveAndResetStep(
 	step.status = status;
 	step.startedAt = status === "running" ? new Date().toISOString() : null;
 	step.output = "";
+	step.outputLog = [];
 	step.error = null;
 	step.sessionId = null;
 	step.pid = null;

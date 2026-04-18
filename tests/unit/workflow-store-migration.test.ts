@@ -48,6 +48,7 @@ describe("WorkflowStore: history migration on load", () => {
 				runNumber: 1,
 				status: "completed",
 				output: "prior run output",
+				outputLog: [{ kind: "text", text: "prior run output" }],
 				error: null,
 				startedAt: "2026-04-18T10:00:00.000Z",
 				completedAt: "2026-04-18T10:01:00.000Z",

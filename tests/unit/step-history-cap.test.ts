@@ -7,6 +7,7 @@ function makeRun(output: string, runNumber: number): PipelineStepRun {
 		runNumber,
 		status: "completed",
 		output,
+		outputLog: output ? [{ kind: "text", text: output }] : [],
 		error: null,
 		startedAt: "2026-04-18T12:00:00.000Z",
 		completedAt: "2026-04-18T12:01:00.000Z",
@@ -18,6 +19,7 @@ describe("enforceStepOutputCap", () => {
 		const step = {
 			history: [makeRun("a".repeat(100), 1)],
 			output: "b".repeat(100),
+			outputLog: [{ kind: "text" as const, text: "b".repeat(100) }],
 		};
 		enforceStepOutputCap(step, 1000);
 		expect(step.history).toHaveLength(1);
@@ -28,6 +30,7 @@ describe("enforceStepOutputCap", () => {
 		const step = {
 			history: [makeRun("aaaaa", 1), makeRun("bbbbb", 2)],
 			output: "c".repeat(8),
+			outputLog: [{ kind: "text" as const, text: "c".repeat(8) }],
 		};
 		enforceStepOutputCap(step, 15);
 		// total was 5+5+8=18, over 15 → drop run 1 (len 5) → 5+8=13 ≤ 15
@@ -40,6 +43,7 @@ describe("enforceStepOutputCap", () => {
 		const step = {
 			history: [makeRun("aaaaa", 1), makeRun("bbbbb", 2), makeRun("ccccc", 3)],
 			output: "d".repeat(10),
+			outputLog: [{ kind: "text" as const, text: "d".repeat(10) }],
 		};
 		enforceStepOutputCap(step, 12);
 		// 5+5+5+10=25 over 12 → drop 1 → 5+5+10=20 → drop 2 → 5+10=15 → drop 3 → 10 ≤ 12
@@ -51,6 +55,7 @@ describe("enforceStepOutputCap", () => {
 		const step = {
 			history: [] as PipelineStepRun[],
 			output: "abcdefghij", // 10 chars
+			outputLog: [{ kind: "text" as const, text: "abcdefghij" }],
 		};
 		enforceStepOutputCap(step, 4);
 		expect(step.history).toHaveLength(0);
@@ -62,6 +67,7 @@ describe("enforceStepOutputCap", () => {
 		const step = {
 			history: [makeRun("x".repeat(100), 1)],
 			output: "live".repeat(10), // 40 chars
+			outputLog: [{ kind: "text" as const, text: "live".repeat(10) }],
 		};
 		enforceStepOutputCap(step, 50);
 		expect(step.history).toHaveLength(0);

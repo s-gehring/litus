@@ -407,10 +407,16 @@ export class ClientStateManager {
 		if (existing) {
 			existing.state = wfState;
 		} else {
+			// Seed outputLines from the current step's persisted log so the output
+			// window shows full history (text + tool icons) right after page reload,
+			// before any incremental workflow:output/workflow:tools events arrive.
+			const currentStep = wfState.steps[wfState.currentStepIndex];
+			const seed = currentStep?.outputLog ? [...currentStep.outputLog] : [];
 			this.workflows.set(wfState.id, {
 				state: wfState,
-				outputLines: [],
+				outputLines: seed,
 			});
+			this.trimOutput(seed);
 			if (!this.cardOrder.includes(wfState.id)) {
 				this.cardOrder.push(wfState.id);
 			}
