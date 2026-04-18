@@ -1,7 +1,10 @@
-import { delimiter, resolve } from "node:path";
+import { delimiter, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 export function fakesDir(): string {
-	return resolve(import.meta.dir, "..", "fakes");
+	return resolve(HERE, "..", "fakes");
 }
 
 export function buildPathWithFakes(existingPath: string | undefined): string {

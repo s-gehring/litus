@@ -1,10 +1,11 @@
 import { access } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test as base } from "@playwright/test";
 import { createSandbox, type Sandbox } from "./sandbox";
 import { type ServerProcess, spawnServer } from "./server";
 
-const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..");
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 export interface Fixtures {
 	scenarioName: string;
