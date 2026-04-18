@@ -36,6 +36,7 @@ export function archiveAndResetStep(
 			runNumber: step.history.length + 1,
 			status: archivedStatusFor(step.status),
 			output: step.output,
+			outputLog: step.outputLog,
 			error: step.error,
 			startedAt: step.startedAt,
 			completedAt: step.completedAt,
@@ -45,6 +46,7 @@ export function archiveAndResetStep(
 	step.status = status;
 	step.startedAt = status === "running" ? new Date().toISOString() : null;
 	step.output = "";
+	step.outputLog = [];
 	step.error = null;
 	step.sessionId = null;
 	step.pid = null;
@@ -58,6 +60,7 @@ export interface StepCallbackHandlers {
 	onSessionId: (workflowId: string, sessionId: string) => void;
 	onPid: (workflowId: string, pid: number) => void;
 	onTools: (tools: ToolUsage[]) => void;
+	onAssistantMessage?: (workflowId: string, text: string) => void;
 }
 
 export class CLIStepRunner {
@@ -75,6 +78,9 @@ export class CLIStepRunner {
 			onError: (error) => handlers.onError(workflowId, error),
 			onSessionId: (sessionId) => handlers.onSessionId(workflowId, sessionId),
 			onPid: (pid) => handlers.onPid(workflowId, pid),
+			onAssistantMessage: handlers.onAssistantMessage
+				? (text) => handlers.onAssistantMessage?.(workflowId, text)
+				: undefined,
 		};
 	}
 

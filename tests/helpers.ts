@@ -25,6 +25,7 @@ export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 			prompt: def.prompt,
 			sessionId: null,
 			output: "",
+			outputLog: [],
 			error: null,
 			startedAt: null,
 			completedAt: null,

@@ -46,6 +46,7 @@ export class WorkflowEngine {
 				prompt: def.name === "specify" ? `${def.prompt} ${specification}` : def.prompt,
 				sessionId: null,
 				output: "",
+				outputLog: [],
 				error: null,
 				startedAt: null,
 				completedAt: null,

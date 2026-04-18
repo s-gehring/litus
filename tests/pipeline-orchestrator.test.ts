@@ -44,6 +44,7 @@ function createFakeEngine() {
 					prompt: def.name === "specify" ? `${def.prompt} ${spec}` : def.prompt,
 					sessionId: null,
 					output: "",
+					outputLog: [],
 					error: null,
 					startedAt: null,
 					completedAt: null,
@@ -162,11 +163,30 @@ function createFakeCliRunner() {
 
 function createFakeQuestionDetector() {
 	const detectResults: Array<Question | null> = [];
+	let hasFinalized = false;
+	// When `gateOnFinalized` is true, detectFromFinalized only returns a
+	// pushed result after appendFinalizedMessage has been called. This
+	// mirrors the real detector's partial-vs-finalized contract and is the
+	// mode the orchestrator wiring tests opt into. Defaults to false so
+	// older tests that push a result and call `onComplete()` directly still
+	// observe detection without having to wire an assistant message too.
+	let gateOnFinalized = false;
 	return {
-		detect: (_text: string): Question | null => detectResults.shift() ?? null,
+		appendFinalizedMessage: (_text: string) => {
+			hasFinalized = true;
+		},
+		detectFromFinalized: (): Question | null => {
+			if (gateOnFinalized && !hasFinalized) return null;
+			return detectResults.shift() ?? null;
+		},
 		classifyWithHaiku: mock((_text: string) => Promise.resolve(false)),
-		reset: mock(() => {}),
+		reset: mock(() => {
+			hasFinalized = false;
+		}),
 		_pushDetectResult: (r: Question | null) => detectResults.push(r),
+		_enableFinalizedGating: () => {
+			gateOnFinalized = true;
+		},
 	};
 }
 
@@ -398,6 +418,65 @@ describe("PipelineOrchestrator", () => {
 			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
 
 			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.steps[1].status).toBe("waiting_for_input");
+			expect(wf.pendingQuestion).toEqual(question);
+		});
+
+		test("partial-only deltas without a finalized assistant message do NOT pause", async () => {
+			// Regression guard for US2 / FR-008, FR-009: handleStepComplete must
+			// run detection through detectFromFinalized(), and the orchestrator
+			// must only forward finalized `assistant` events (not partial
+			// content_block_delta fragments) into the detector via
+			// appendFinalizedMessage. If either contract breaks, this test
+			// regresses because the detector will never see a finalized message
+			// and detection yields null — so the step must advance.
+			qd._enableFinalizedGating();
+			await startAndFlush("test");
+			const wf = getWf(engine);
+
+			const question: Question = {
+				id: "q1",
+				content: "Would you like to proceed?",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
+			// Stream partial deltas only — no onAssistantMessage.
+			cli.getLastCallbacks().onOutput("Would ");
+			cli.getLastCallbacks().onOutput("you like ");
+			cli.getLastCallbacks().onOutput("to proceed?");
+
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.steps[1].status).toBe("completed");
+			expect(wf.currentStepIndex).toBe(2);
+			expect(wf.pendingQuestion).toBeNull();
+		});
+
+		test("finalized assistant message triggers pause when orchestrator forwards it", async () => {
+			// Complement of the partial-only test: when the fake CLI emits a
+			// finalized `assistant` event, the orchestrator must forward it via
+			// appendFinalizedMessage so detection fires on completion.
+			qd._enableFinalizedGating();
+			await startAndFlush("test");
+			const wf = getWf(engine);
+
+			const question: Question = {
+				id: "q1",
+				content: "Would you like to proceed?",
+				detectedAt: new Date().toISOString(),
+			};
+			qd._pushDetectResult(question);
+			qd.classifyWithHaiku.mockImplementationOnce(() => Promise.resolve(true));
+
+			const finalCallbacks = cli.getLastCallbacks();
+			finalCallbacks.onOutput("Would you like to proceed?");
+			finalCallbacks.onAssistantMessage?.("Would you like to proceed?");
+			finalCallbacks.onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.steps[1].status).toBe("waiting_for_input");
@@ -3117,6 +3196,7 @@ function makeCallbacksWorkflowForRecovery(): Workflow {
 			prompt: def.prompt,
 			sessionId: null,
 			output: "",
+			outputLog: [],
 			error: null,
 			startedAt: null,
 			completedAt: null,

@@ -35,6 +35,7 @@ import { renderEpicTree } from "./components/epic-tree";
 import { updateFavicon } from "./components/favicon";
 import {
 	hideFeedbackPanel,
+	hideFeedbackPanelUnlessFor,
 	isFeedbackPanelVisible,
 	renderFeedbackHistory,
 	showFeedbackPanel,
@@ -51,8 +52,10 @@ import {
 	appendOutput,
 	appendToolIcons,
 	clearOutput,
+	removeThinkingIndicator,
 	renderOutputEntries,
 	setDefaultModelDisplayName,
+	syncThinkingIndicator,
 	updateActiveModelPanel,
 	updateBranchInfo,
 	updateDetailActions,
@@ -243,6 +246,9 @@ function handleMessage(msg: ServerMessage): void {
 			if (expandedId === msg.workflow.id) {
 				renderExpandedView();
 			}
+			if (expandedId === msg.workflow.id || selectedChildId === msg.workflow.id) {
+				syncThinkingIndicatorForView();
+			}
 			if (expandedEpicId && msg.workflow.epicId === expandedEpicId) {
 				renderExpandedView();
 			}
@@ -286,6 +292,10 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "workflow:step-change": {
 			if (change.scope.entity === "none") break;
+			// Step-change resets the output pane; drop any lingering indicator.
+			if (expandedId === msg.workflowId || selectedChildId === msg.workflowId) {
+				removeThinkingIndicator();
+			}
 			renderCards();
 			if (expandedId === msg.workflowId || selectedChildId === msg.workflowId) {
 				if (wasWatchingRunning) {
@@ -693,12 +703,25 @@ function renderExpandedView(): void {
 	const outputArea = document.getElementById("output-area");
 	if (outputArea) outputArea.classList.remove("epic-tree-fullsize");
 
+	// Reset overlay panels up-front — each render branch below re-opens any
+	// panel that belongs to its view. This ensures panels bound to a workflow
+	// (like the feedback modal) close automatically when the user navigates
+	// to an unrelated workflow, epic, or the welcome screen.
+	let activeWorkflowId: string | null = null;
+	if (expandedId) {
+		const expandedEpic = epics.get(expandedId);
+		const isEpicAnalysisView = !!expandedEpic && !expandedId.startsWith(EPIC_CARD_PREFIX);
+		if (!isEpicAnalysisView) {
+			activeWorkflowId = expandedEpicId ? selectedChildId : expandedId;
+		}
+	}
+	hideQuestion();
+	hideFeedbackPanelUnlessFor(activeWorkflowId);
+
 	if (!expandedId) {
 		// Nothing expanded — show welcome
 		if (detailArea) detailArea.classList.add("hidden");
 		if (welcomeArea) welcomeArea.classList.remove("hidden");
-		hideQuestion();
-		hideFeedbackPanel();
 		updateWorkflowStatus(null);
 		updateBranchInfo(null);
 		updateActiveModelPanel({ kind: "hidden" });
@@ -727,7 +750,6 @@ function renderExpandedView(): void {
 		updateUserInput(epic.description);
 		updateSpecDetails("");
 		updateDetailActions([]);
-		hideQuestion();
 
 		// Make output area fill available space for epic analysis
 		const oa = $("#output-area");
@@ -799,7 +821,6 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 	if (stepLabel) stepLabel.classList.add("hidden");
 	updateFlavor("");
 	updateDetailActions([]);
-	hideQuestion();
 	clearOutput();
 	updateSpecDetails("");
 
@@ -883,25 +904,30 @@ function selectStep(index: number): void {
 			? run.startedAt
 			: startedAt.toLocaleString();
 		appendOutput(`── Run ${run.runNumber} · ${formattedStart} · ${run.status} ──`, "system");
-		if (run.output) appendOutput(run.output);
+		if (run.outputLog && run.outputLog.length > 0) {
+			renderOutputEntries(run.outputLog);
+		} else if (run.output) {
+			appendOutput(run.output);
+		}
 		if (run.error) appendOutput(`Error: ${run.error}`, "error");
 	}
 
-	const isLive =
-		index === wf.currentStepIndex && (wf.status === "running" || wf.status === "waiting_for_input");
+	const isCurrentStep = index === wf.currentStepIndex;
+	const isLive = isCurrentStep && (wf.status === "running" || wf.status === "waiting_for_input");
 
-	if (isLive) {
-		// Show live accumulated output, fall back to persisted step.output after restart
-		if (entry.outputLines.length > 0) {
-			renderOutputEntries(entry.outputLines);
-		} else if (step.output) {
-			appendOutput(step.output);
-		}
+	// Prefer in-memory outputLines when viewing the current step — it is the
+	// live streaming buffer with tool icons interleaved. Otherwise use the
+	// server-persisted step.outputLog (survives pause and page reload).
+	if (isCurrentStep && entry.outputLines.length > 0) {
+		renderOutputEntries(entry.outputLines);
+		if (!isLive && step.error) appendOutput(`Error: ${step.error}`, "error");
+	} else if (step.outputLog && step.outputLog.length > 0) {
+		renderOutputEntries(step.outputLog);
+		if (!isLive && step.error) appendOutput(`Error: ${step.error}`, "error");
 	} else if (step.output || step.error) {
-		// Show stored step output
 		if (step.output) appendOutput(step.output);
 		if (step.error) appendOutput(`Error: ${step.error}`, "error");
-	} else if (step.history.length === 0) {
+	} else if (!isLive && step.history.length === 0) {
 		appendOutput("No output yet", "system");
 	}
 
@@ -911,6 +937,29 @@ function selectStep(index: number): void {
 		stateManager.getSelectedStepIndex(),
 		selectStep,
 		getArtifactContext(wf.id),
+	);
+
+	syncThinkingIndicatorForView();
+}
+
+function syncThinkingIndicatorForView(): void {
+	const selectedChildId = stateManager.getSelectedChildId();
+	const expandedId = stateManager.getExpandedId();
+	const workflowId = selectedChildId ?? expandedId;
+	const entry = workflowId ? stateManager.getWorkflows().get(workflowId) : null;
+	if (!entry) {
+		syncThinkingIndicator(false);
+		return;
+	}
+	const wf = entry.state;
+	const idx = stateManager.getSelectedStepIndex();
+	if (idx === null) {
+		syncThinkingIndicator(false);
+		return;
+	}
+	const step = wf.steps[idx];
+	syncThinkingIndicator(
+		idx === wf.currentStepIndex && wf.status === "running" && step?.status === "running",
 	);
 }
 
@@ -1033,16 +1082,17 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	// Auto-select a step and render its output
 	autoSelectStep(wf);
 
-	// Question
+	// Question — reset happened at the top of renderExpandedView, so we only
+	// need to re-open the panel when the workflow has a pending question.
 	const isTerminal =
 		wf.status === "cancelled" || wf.status === "completed" || wf.status === "error";
 	if (wf.pendingQuestion && !isTerminal) {
 		showQuestion(wf.pendingQuestion);
-	} else {
-		hideQuestion();
 	}
 
-	// Auto-hide the feedback panel when the workflow is no longer at the manual-mode merge-pr pause
+	// Feedback panel: when the workflow transitions out of the eligible state
+	// (e.g. paused→running inside the same workflow), close any open panel.
+	// Cross-workflow navigation is already handled at the top of renderExpandedView.
 	const feedbackEligible =
 		wf.status === "paused" &&
 		currentAutoMode === "manual" &&

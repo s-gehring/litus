@@ -47,6 +47,7 @@ import {
 	STEP,
 	shouldAutoAnswer,
 	shouldPauseBeforeMerge,
+	type ToolUsage,
 	type Workflow,
 	type WorkflowStatus,
 } from "./types";
@@ -107,7 +108,7 @@ export const MAX_STEP_OUTPUT_CHARS = 1_000_000;
  * after each output append.
  */
 export function enforceStepOutputCap(
-	step: Pick<PipelineStep, "history" | "output">,
+	step: Pick<PipelineStep, "history" | "output" | "outputLog">,
 	cap: number = MAX_STEP_OUTPUT_CHARS,
 ): void {
 	let historyLen = step.history.reduce((n, h) => n + h.output.length, 0);
@@ -117,6 +118,19 @@ export function enforceStepOutputCap(
 	}
 	if (step.output.length > cap) {
 		step.output = step.output.slice(step.output.length - cap);
+		// Trim oldest text entries from outputLog until remaining text fits the cap.
+		// Tool entries are kept regardless — they are tiny and carry the icon metadata.
+		let textLen = 0;
+		for (const entry of step.outputLog) {
+			if (entry.kind === "text") textLen += entry.text.length;
+		}
+		while (textLen > cap) {
+			const idx = step.outputLog.findIndex((e) => e.kind === "text");
+			if (idx < 0) break;
+			const dropped = step.outputLog[idx];
+			if (dropped.kind === "text") textLen -= dropped.text.length;
+			step.outputLog.splice(idx, 1);
+		}
 	}
 }
 
@@ -155,7 +169,6 @@ export class PipelineOrchestrator {
 	private store: WorkflowStore;
 	private managedRepoStore: ManagedRepoStore | null;
 	private callbacks: PipelineCallbacks;
-	private assistantTextBuffer = "";
 	private currentAuditRunId: string | null = null;
 	private pipelineName: string | null = null;
 	private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -304,6 +317,7 @@ export class PipelineOrchestrator {
 		// Append the user's answer to step output so it is visible and persisted
 		const answerLine = `[Human] ${answer}`;
 		step.output += `${answerLine}\n`;
+		step.outputLog.push({ kind: "text", text: answerLine });
 		this.callbacks.onOutput(workflowId, answerLine);
 
 		step.status = "running";
@@ -1293,14 +1307,13 @@ export class PipelineOrchestrator {
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.output += `${text}\n`;
+		step.outputLog.push({ kind: "text", text });
 		enforceStepOutputCap(step, this.maxStepOutputChars);
 		workflow.updatedAt = new Date().toISOString();
 
 		this.engine.updateLastOutput(workflowId, text);
 		this.callbacks.onOutput(workflowId, text);
 		this.persistDebounced(workflow);
-
-		this.assistantTextBuffer += `${text}\n`;
 
 		this.summarizer.maybeSummarize(workflowId, text, (stepSummary) => {
 			try {
@@ -1350,7 +1363,11 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		const candidate = this.questionDetector.detect(this.assistantTextBuffer);
+		// Detect only from the finalized-assistant buffer — partial deltas can
+		// synthesize or duplicate a question (the bug this branch fixes). The
+		// modern CLI always emits an `assistant` event at block boundaries, so
+		// failing closed is safer than a fallback to the known-broken path.
+		const candidate = this.questionDetector.detectFromFinalized();
 		if (candidate) {
 			this.questionDetector
 				.classifyWithHaiku(candidate.content)
@@ -2074,9 +2091,8 @@ export class PipelineOrchestrator {
 		});
 	}
 
-	/** Reset assistant text buffer and question detector state between steps. */
+	/** Reset question detector state between steps. */
 	private resetStepState(): void {
-		this.assistantTextBuffer = "";
 		this.questionDetector.reset();
 	}
 
@@ -2108,8 +2124,20 @@ export class PipelineOrchestrator {
 			onError: (wfId, error) => this.handleStepError(wfId, error),
 			onSessionId: (wfId, sessionId) => this.handleSessionId(wfId, sessionId),
 			onPid: (wfId, pid) => this.handlePid(wfId, pid),
-			onTools: (tools) => this.callbacks.onTools(workflowId, tools),
+			onTools: (tools) => this.handleStepTools(workflowId, tools),
+			onAssistantMessage: (_wfId, text) => this.questionDetector.appendFinalizedMessage(text),
 		});
+	}
+
+	private handleStepTools(workflowId: string, tools: ToolUsage[]): void {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (workflow) {
+			const step = workflow.steps[workflow.currentStepIndex];
+			step.outputLog.push({ kind: "tools", tools });
+			workflow.updatedAt = new Date().toISOString();
+			this.persistDebounced(workflow);
+		}
+		this.callbacks.onTools(workflowId, tools);
 	}
 
 	private requireStepIndex(workflow: Workflow, stepName: PipelineStepName): number {

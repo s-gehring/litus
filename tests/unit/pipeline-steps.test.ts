@@ -15,6 +15,7 @@ function makeStep(
 		displayName: overrides.displayName ?? "Implementing",
 		status: overrides.status ?? ("pending" as PipelineStepStatus),
 		output: "",
+		outputLog: [],
 		error: null,
 		startedAt: null,
 		completedAt: null,

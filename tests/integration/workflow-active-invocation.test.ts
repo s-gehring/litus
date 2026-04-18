@@ -50,6 +50,7 @@ function createFakeEngine() {
 					prompt: def.name === "specify" ? `${def.prompt} ${spec}` : def.prompt,
 					sessionId: null,
 					output: "",
+					outputLog: [],
 					error: null,
 					startedAt: null,
 					completedAt: null,

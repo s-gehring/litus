@@ -33,6 +33,7 @@ export function showFeedbackPanel(workflow: WorkflowState, onSubmit: (text: stri
 	submitBtn.title = hasInFlight ? "A feedback iteration is already in progress" : "";
 
 	input.value = "";
+	panel.dataset.workflowId = workflow.id;
 	panel.classList.remove("hidden");
 	input.focus();
 
@@ -60,6 +61,18 @@ export function showFeedbackPanel(workflow: WorkflowState, onSubmit: (text: stri
 export function hideFeedbackPanel(): void {
 	const panel = $("#feedback-panel");
 	panel.classList.add("hidden");
+	delete panel.dataset.workflowId;
+}
+
+/**
+ * Hide the feedback panel if it is visible but bound to a workflow other than
+ * `activeWorkflowId`. Pass `null` to force-hide (no workflow is active).
+ */
+export function hideFeedbackPanelUnlessFor(activeWorkflowId: string | null): void {
+	const panel = document.getElementById("feedback-panel");
+	if (!panel || panel.classList.contains("hidden")) return;
+	if (activeWorkflowId !== null && panel.dataset.workflowId === activeWorkflowId) return;
+	hideFeedbackPanel();
 }
 
 /** True when the feedback modal is currently visible. */

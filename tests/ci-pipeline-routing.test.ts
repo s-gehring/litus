@@ -70,6 +70,7 @@ function createFakeEngine() {
 					prompt: def.name === "specify" ? `${def.prompt} ${spec}` : def.prompt,
 					sessionId: null,
 					output: "",
+					outputLog: [],
 					error: null,
 					startedAt: null,
 					completedAt: null,
@@ -221,7 +222,8 @@ describe("CI Pipeline Routing", () => {
 			engine: engine as never,
 			cliRunner: cli as never,
 			questionDetector: {
-				detect: () => null,
+				appendFinalizedMessage: () => {},
+				detectFromFinalized: () => null,
 				classifyWithHaiku: async () => false,
 				reset: () => {},
 			} as never,
@@ -637,7 +639,8 @@ describe("CI Pipeline Routing", () => {
 				engine: localEngine as never,
 				cliRunner: localCli as never,
 				questionDetector: {
-					detect: () => null,
+					appendFinalizedMessage: () => {},
+					detectFromFinalized: () => null,
 					classifyWithHaiku: async () => false,
 					reset: () => {},
 				} as never,

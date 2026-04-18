@@ -194,11 +194,13 @@ describe("resetStep", () => {
 			runNumber: 1,
 			status: "completed",
 			output: "first run output",
+			outputLog: [],
 			error: null,
 			startedAt,
 			completedAt,
 		});
 		expect(step.output).toBe("");
+		expect(step.outputLog).toEqual([]);
 		expect(step.error).toBeNull();
 		expect(step.startedAt).toBeNull();
 		expect(step.completedAt).toBeNull();

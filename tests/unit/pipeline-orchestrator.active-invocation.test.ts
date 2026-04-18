@@ -31,6 +31,7 @@ function createFakeEngine() {
 					prompt: def.name === "specify" ? `${def.prompt} ${spec}` : def.prompt,
 					sessionId: null,
 					output: "",
+					outputLog: [],
 					error: null,
 					startedAt: null,
 					completedAt: null,
@@ -171,6 +172,7 @@ describe("PipelineOrchestrator.activeInvocation", () => {
 			cliRunner: cli,
 			questionDetector: {
 				detect: () => null,
+				detectFromFinalized: () => null,
 				classifyWithHaiku: async () => false,
 				reset: () => {},
 			},

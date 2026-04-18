@@ -252,6 +252,8 @@ export interface PipelineStepRun {
 	runNumber: number;
 	status: "completed" | "error" | "paused";
 	output: string;
+	// Structured log preserving text+tool interleaving. Empty for pre-migration runs.
+	outputLog: OutputEntry[];
 	error: string | null;
 	startedAt: string;
 	completedAt: string | null;
@@ -265,6 +267,9 @@ export interface PipelineStep {
 	prompt: string;
 	sessionId: string | null;
 	output: string;
+	// Structured log preserving text+tool interleaving. The `output` string
+	// mirrors all text entries for parsers (`parseAgentResult`, `extractPrUrl`).
+	outputLog: OutputEntry[];
 	error: string | null;
 	startedAt: string | null;
 	completedAt: string | null;
