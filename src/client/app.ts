@@ -737,6 +737,7 @@ function renderExpandedView(): void {
 		updateSpecDetails("");
 		updateDetailActions([]);
 		hideQuestion();
+		hideFeedbackPanel();
 
 		// Make output area fill available space for epic analysis
 		const oa = $("#output-area");
@@ -809,6 +810,7 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 	updateFlavor("");
 	updateDetailActions([]);
 	hideQuestion();
+	hideFeedbackPanel();
 	clearOutput();
 	updateSpecDetails("");
 
