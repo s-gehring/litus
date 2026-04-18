@@ -1,10 +1,13 @@
 import type { Alert } from "../../types";
+import type { ClientStateManager } from "../client-state-manager";
+import { alertDisplayLabel } from "./alert-label";
 
 type DismissHandler = (alertId: string) => void;
 type NavigateHandler = (alert: Alert) => void;
 
 interface AlertListDeps {
 	getAlerts: () => ReadonlyMap<string, Alert>;
+	getState?: () => ClientStateManager;
 	onDismiss: DismissHandler;
 	onNavigate: NavigateHandler;
 }
@@ -21,10 +24,10 @@ function relativeTime(ms: number): string {
 	return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
-function hintFor(alert: Alert): string {
-	if (alert.epicId) return `epic ${alert.epicId.slice(0, 8)}`;
-	if (alert.workflowId) return `workflow ${alert.workflowId.slice(0, 8)}`;
-	return "";
+function labelFor(alert: Alert): string {
+	const state = deps?.getState?.();
+	if (!state) return "";
+	return alertDisplayLabel(alert, state);
 }
 
 function renderRows(): void {
@@ -50,7 +53,7 @@ function renderRows(): void {
 		title.textContent = a.title;
 		const meta = document.createElement("div");
 		meta.className = "alert-list-row-meta";
-		const hint = hintFor(a);
+		const hint = labelFor(a);
 		meta.textContent = hint ? `${hint} · ${relativeTime(a.createdAt)}` : relativeTime(a.createdAt);
 		body.appendChild(title);
 		body.appendChild(meta);

@@ -24,7 +24,7 @@ export interface ModelConfig {
 	commitPushPr: string;
 }
 
-export type EffortLevel = "low" | "medium" | "high" | "max";
+export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
 
 export interface EffortConfig {
 	// Lightweight models — default "low"

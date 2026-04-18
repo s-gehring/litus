@@ -35,7 +35,7 @@ describe("Dashboard route handler", () => {
 		document.getElementById("welcome-area")?.classList.add("hidden");
 		document.getElementById("detail-area")?.classList.add("hidden");
 
-		handler.mount(appContent);
+		handler.mount(appContent, { params: {} });
 
 		expect(document.getElementById("card-strip")?.classList.contains("hidden")).toBe(false);
 		expect(document.getElementById("welcome-area")?.classList.contains("hidden")).toBe(false);
@@ -48,7 +48,7 @@ describe("Dashboard route handler", () => {
 		);
 		const handler = createDashboardHandler();
 
-		handler.mount(appContent);
+		handler.mount(appContent, { params: {} });
 		handler.unmount();
 
 		expect(document.getElementById("card-strip")?.classList.contains("hidden")).toBe(true);
@@ -79,7 +79,7 @@ describe("Config page", () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
 		const handler = createConfigPageHandler(sendSpy, navigateSpy);
 
-		handler.mount(container);
+		handler.mount(container, { params: {} });
 
 		const page = container.querySelector(".config-page") as HTMLElement;
 		expect(page).toBeTruthy();
@@ -97,7 +97,7 @@ describe("Config page", () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
 		const handler = createConfigPageHandler(sendSpy, navigateSpy);
 
-		handler.mount(container);
+		handler.mount(container, { params: {} });
 
 		const resetBtn = container.querySelector(".cfg-reset-all-btn");
 		expect(resetBtn).toBeTruthy();
@@ -112,7 +112,7 @@ describe("Config page", () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
 		const handler = createConfigPageHandler(sendSpy, navigateSpy);
 
-		handler.mount(container);
+		handler.mount(container, { params: {} });
 
 		const backLink = container.querySelector(".config-page-back");
 		expect(backLink).toBeTruthy();
@@ -123,7 +123,7 @@ describe("Config page", () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
 		const handler = createConfigPageHandler(sendSpy, navigateSpy);
 
-		handler.mount(container);
+		handler.mount(container, { params: {} });
 
 		expect(sendSpy).toHaveBeenCalledWith({ type: "config:get" });
 	});
@@ -132,7 +132,7 @@ describe("Config page", () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
 		const handler = createConfigPageHandler(sendSpy, navigateSpy);
 
-		handler.mount(container);
+		handler.mount(container, { params: {} });
 		expect(container.querySelector(".config-page")).toBeTruthy();
 
 		handler.unmount();

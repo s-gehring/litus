@@ -1,0 +1,243 @@
+import type {
+	AppConfig,
+	ClientMessage,
+	EpicAggregatedState,
+	EpicClientState,
+	ServerMessage,
+	WorkflowState,
+} from "../../types";
+import type { ClientStateManager } from "../client-state-manager";
+import { $ } from "../dom";
+import { renderMarkdown } from "../render-markdown";
+import type { RouteHandler, RouteMatch } from "../router";
+import { hideDetailLayout, showDetailLayout } from "./detail-layout";
+import { renderEpicTree } from "./epic-tree";
+import { renderPipelineSteps } from "./pipeline-steps";
+import { EPIC_AGG_STATUS_CLASSES } from "./status-maps";
+import {
+	appendOutput,
+	appendToolIcons,
+	clearOutput,
+	renderOutputEntries,
+	updateActiveModelPanel,
+	updateBranchInfo,
+	updateDetailActions,
+	updateEpicStatus,
+	updateFeedbackHistorySection,
+	updateFlavor,
+	updateSpecDetails,
+	updateStepSummary,
+	updateSummary,
+	updateUserInput,
+} from "./workflow-window";
+
+export interface EpicDetailDeps {
+	getState: () => ClientStateManager;
+	getConfig: () => AppConfig | null;
+	send: (msg: ClientMessage) => void;
+	navigate: (path: string) => void;
+}
+
+export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
+	let currentEpicId: string | null = null;
+
+	function hideLayout(): void {
+		const existingAnalysis = document.getElementById("epic-analysis-notes");
+		if (existingAnalysis) existingAnalysis.remove();
+		hideDetailLayout();
+	}
+
+	function renderAnalysisView(epic: EpicClientState): void {
+		updateEpicStatus(epic.status);
+		updateActiveModelPanelForEpic(epic);
+		renderPipelineSteps(null);
+		updateSummary(epic.title || epic.description);
+		updateStepSummary("");
+		updateFlavor("");
+		updateUserInput(epic.description);
+		updateSpecDetails("");
+		updateDetailActions([]);
+		updateBranchInfo(null);
+		updateFeedbackHistorySection([]);
+
+		const stepLabel = document.getElementById("current-step-label");
+		if (stepLabel) stepLabel.classList.add("hidden");
+
+		const outputAreaEl = $("#output-area");
+		outputAreaEl.classList.add("epic-tree-fullsize");
+
+		clearOutput();
+		if (epic.status === "infeasible" && epic.infeasibleNotes) {
+			const outputLog = $("#output-log");
+			const notesEl = document.createElement("div");
+			notesEl.className = "user-input epic-analysis-notes infeasible-notes-fullheight";
+			notesEl.innerHTML = renderMarkdown(epic.infeasibleNotes);
+			outputLog.appendChild(notesEl);
+		} else if (epic.outputLines.length > 0) {
+			renderOutputEntries(epic.outputLines);
+		}
+	}
+
+	function renderTreeView(agg: EpicAggregatedState): void {
+		const state = deps.getState();
+		const epics = state.getEpics();
+		const workflows = state.getWorkflows();
+
+		const statusBadge = $("#workflow-status");
+		statusBadge.textContent = agg.status;
+		statusBadge.className = `status-badge ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
+
+		updateBranchInfo(null);
+		const epicData = epics.get(agg.epicId);
+		if (epicData) {
+			updateActiveModelPanelForEpic(epicData);
+		} else {
+			updateActiveModelPanel({ kind: "hidden" });
+		}
+		renderPipelineSteps(null);
+		updateSummary(`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`);
+		updateStepSummary("");
+		const stepLabel = document.getElementById("current-step-label");
+		if (stepLabel) stepLabel.classList.add("hidden");
+		updateFlavor("");
+		updateDetailActions([]);
+		clearOutput();
+		updateSpecDetails("");
+		updateFeedbackHistorySection([]);
+
+		if (epicData) {
+			updateUserInput(epicData.description);
+			renderEpicAnalysisNotes(epicData);
+		} else {
+			updateUserInput("");
+		}
+
+		const outputAreaEl = $("#output-area");
+		outputAreaEl.classList.add("epic-tree-fullsize");
+
+		const childWorkflows = new Map<string, WorkflowState>();
+		for (const id of agg.childWorkflowIds) {
+			const entry = workflows.get(id);
+			if (entry) childWorkflows.set(id, entry.state);
+		}
+
+		const outputLog = $("#output-log");
+		outputLog.replaceChildren();
+
+		const tree = renderEpicTree(agg, childWorkflows, (workflowId) => {
+			deps.navigate(`/workflow/${workflowId}`);
+		});
+		outputLog.appendChild(tree);
+	}
+
+	function renderEpicAnalysisNotes(epicData: EpicClientState): void {
+		const existing = document.getElementById("epic-analysis-notes");
+		if (existing) existing.remove();
+
+		const content = epicData.analysisSummary || epicData.infeasibleNotes;
+		if (!content) return;
+
+		const container = document.createElement("div");
+		container.id = "epic-analysis-notes";
+		container.className = "epic-analysis-notes user-input";
+		container.innerHTML = renderMarkdown(content);
+
+		const userInput = document.getElementById("user-input");
+		if (userInput) {
+			userInput.parentElement?.insertBefore(container, userInput.nextSibling);
+		}
+	}
+
+	function updateActiveModelPanelForEpic(epic: EpicClientState): void {
+		const config = deps.getConfig();
+		if (epic.status !== "analyzing" || !config) {
+			updateActiveModelPanel({ kind: "hidden" });
+			return;
+		}
+		updateActiveModelPanel({
+			kind: "epic-analysis",
+			model: config.models.epicDecomposition,
+			effort: config.efforts.epicDecomposition,
+		});
+	}
+
+	function renderFull(): void {
+		if (!currentEpicId) return;
+		const state = deps.getState();
+		const agg = state.getEpicAggregates().get(currentEpicId);
+		if (agg) {
+			renderTreeView(agg);
+			return;
+		}
+		const epic = state.getEpics().get(currentEpicId);
+		if (epic) {
+			renderAnalysisView(epic);
+			return;
+		}
+		clearOutput();
+		appendOutput("This epic no longer exists", "system");
+	}
+
+	return {
+		mount(_container: HTMLElement, match: RouteMatch) {
+			currentEpicId = match.params.id ?? null;
+			showDetailLayout();
+			renderFull();
+		},
+		unmount() {
+			currentEpicId = null;
+			hideLayout();
+		},
+		onMessage(msg: ServerMessage) {
+			if (!currentEpicId) return;
+			switch (msg.type) {
+				case "epic:summary":
+				case "epic:result":
+				case "epic:infeasible": {
+					if (msg.epicId === currentEpicId) renderFull();
+					break;
+				}
+				case "epic:output": {
+					if (msg.epicId === currentEpicId) appendOutput(msg.text);
+					break;
+				}
+				case "epic:tools": {
+					if (msg.epicId === currentEpicId) appendToolIcons(msg.tools);
+					break;
+				}
+				case "epic:error": {
+					if (msg.epicId === currentEpicId) {
+						appendOutput(`Error: ${msg.message}`, "error");
+					}
+					break;
+				}
+				case "epic:dependency-update": {
+					// Re-render tree if a child of our epic got an update.
+					const state = deps.getState();
+					const entry = state.getWorkflows().get(msg.workflowId);
+					if (entry?.state.epicId === currentEpicId) renderFull();
+					break;
+				}
+				case "workflow:state": {
+					// A child workflow state changed — tree might need an update.
+					if (msg.workflow?.epicId === currentEpicId) renderFull();
+					break;
+				}
+				case "workflow:list":
+				case "epic:list": {
+					renderFull();
+					break;
+				}
+				case "workflow:created": {
+					// Only re-render if the new workflow belongs to our epic.
+					if (msg.workflow.epicId === currentEpicId) renderFull();
+					break;
+				}
+				case "epic:created": {
+					// A new epic never affects the currently viewed epic.
+					break;
+				}
+			}
+		},
+	};
+}

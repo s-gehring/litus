@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { RouteHandler } from "../../src/client/router";
+import type { RouteHandler, RouteMatch } from "../../src/client/router";
 import { Router } from "../../src/client/router";
+import type { ServerMessage } from "../../src/types";
 
 // Minimal DOM container
 function makeContainer(): HTMLElement {
@@ -10,23 +11,45 @@ function makeContainer(): HTMLElement {
 	return el;
 }
 
-// Stub route handler that tracks mount/unmount calls
+// Stub route handler that tracks mount/unmount calls and captures the match.
 function makeHandler(): RouteHandler & {
 	mounted: number;
 	unmounted: number;
 	lastContainer: HTMLElement | null;
+	lastMatch: RouteMatch | null;
+	messages: ServerMessage[];
 } {
 	return {
 		mounted: 0,
 		unmounted: 0,
 		lastContainer: null,
-		mount(container: HTMLElement) {
+		lastMatch: null,
+		messages: [],
+		mount(container: HTMLElement, match: RouteMatch) {
 			this.mounted++;
 			this.lastContainer = container;
+			this.lastMatch = match;
 		},
 		unmount() {
 			this.unmounted++;
 		},
+		onMessage(msg: ServerMessage) {
+			this.messages.push(msg);
+		},
+	};
+}
+
+function makeSilentHandler(): RouteHandler & { mounted: number; unmounted: number } {
+	return {
+		mounted: 0,
+		unmounted: 0,
+		mount() {
+			this.mounted++;
+		},
+		unmount() {
+			this.unmounted++;
+		},
+		// no onMessage
 	};
 }
 
@@ -38,7 +61,6 @@ class TestRouter extends Router {
 		this._testPathname = path;
 	}
 
-	// Override the private getPathname via prototype trick
 	protected getPathname(): string {
 		return this._testPathname;
 	}
@@ -63,11 +85,10 @@ describe("Router", () => {
 	});
 
 	describe("register", () => {
-		test("registers a route", () => {
+		test("registers a route without throwing", () => {
 			const router = new Router(container);
 			const handler = makeHandler();
-			router.register("/test", handler);
-			// No error thrown = success
+			expect(() => router.register("/test", handler)).not.toThrow();
 		});
 
 		test("throws on duplicate path", () => {
@@ -91,6 +112,7 @@ describe("Router", () => {
 			router.navigate("/page");
 			expect(handler.mounted).toBe(1);
 			expect(handler.lastContainer).toBe(container);
+			expect(handler.lastMatch).toEqual({ params: {} });
 		});
 
 		test("calls pushState", () => {
@@ -150,6 +172,137 @@ describe("Router", () => {
 		});
 	});
 
+	describe("parametric routes", () => {
+		test("captures :id from /workflow/:id", () => {
+			const router = new Router(container);
+			const handler = makeHandler();
+			router.register("/workflow/:id", handler);
+			router.navigate("/workflow/abc123");
+			expect(handler.mounted).toBe(1);
+			expect(handler.lastMatch).toEqual({ params: { id: "abc123" } });
+		});
+
+		test("rejects /workflow/ (empty param)", () => {
+			const router = new Router(container, "/");
+			const fallback = makeHandler();
+			const handler = makeHandler();
+			router.register("/", fallback);
+			router.register("/workflow/:id", handler);
+			router.navigate("/workflow/");
+			expect(fallback.mounted).toBe(1);
+			expect(handler.mounted).toBe(0);
+		});
+
+		test("rejects /workflow/a/b (extra segment)", () => {
+			const router = new Router(container, "/");
+			const fallback = makeHandler();
+			const handler = makeHandler();
+			router.register("/", fallback);
+			router.register("/workflow/:id", handler);
+			router.navigate("/workflow/a/b");
+			expect(fallback.mounted).toBe(1);
+			expect(handler.mounted).toBe(0);
+		});
+
+		test("literal wins over parametric (even when registered after)", () => {
+			const router = new Router(container);
+			const paramHandler = makeHandler();
+			const literalHandler = makeHandler();
+			router.register("/workflow/:id", paramHandler);
+			router.register("/workflow/new", literalHandler);
+
+			router.navigate("/workflow/new");
+			expect(literalHandler.mounted).toBe(1);
+			expect(paramHandler.mounted).toBe(0);
+		});
+
+		test("insertion order within parametric class wins", () => {
+			const router = new Router(container);
+			const first = makeHandler();
+			const second = makeHandler();
+			router.register("/workflow/:id", first);
+			router.register("/epic/:id", second);
+
+			router.navigate("/workflow/abc");
+			expect(first.mounted).toBe(1);
+			expect(second.mounted).toBe(0);
+
+			router.navigate("/epic/xyz");
+			expect(second.mounted).toBe(1);
+		});
+
+		test("decodes percent-encoded params", () => {
+			const router = new Router(container);
+			const handler = makeHandler();
+			router.register("/workflow/:id", handler);
+			router.navigate("/workflow/abc%20def");
+			expect(handler.lastMatch?.params.id).toBe("abc def");
+		});
+
+		test("rapid navigate → only one handler is mounted", () => {
+			const router = new Router(container);
+			const a = makeHandler();
+			const b = makeHandler();
+			const c = makeHandler();
+			router.register("/a", a);
+			router.register("/b", b);
+			router.register("/c", c);
+			router.navigate("/a");
+			router.navigate("/b");
+			router.navigate("/c");
+			expect(a.unmounted).toBe(1);
+			expect(b.mounted).toBe(1);
+			expect(b.unmounted).toBe(1);
+			expect(c.mounted).toBe(1);
+			expect(c.unmounted).toBe(0);
+		});
+
+		test("currentMatch exposes the active params", () => {
+			const router = new Router(container);
+			router.register("/workflow/:id", makeHandler());
+			router.navigate("/workflow/xyz");
+			expect(router.currentMatch).toEqual({ params: { id: "xyz" } });
+		});
+
+		test("navigating between different params on the same pattern remounts", () => {
+			const router = new Router(container);
+			const handler = makeHandler();
+			router.register("/workflow/:id", handler);
+			router.navigate("/workflow/abc");
+			router.navigate("/workflow/xyz");
+			expect(handler.mounted).toBe(2);
+			expect(handler.unmounted).toBe(1);
+			expect(handler.lastMatch?.params.id).toBe("xyz");
+		});
+	});
+
+	describe("forwardMessage", () => {
+		test("dispatches to currentHandler.onMessage when defined", () => {
+			const router = new Router(container);
+			const handler = makeHandler();
+			router.register("/page", handler);
+			router.navigate("/page");
+
+			const msg: ServerMessage = { type: "alert:list", alerts: [] };
+			router.forwardMessage(msg);
+			expect(handler.messages).toEqual([msg]);
+		});
+
+		test("no-op when current handler has no onMessage", () => {
+			const router = new Router(container);
+			const handler = makeSilentHandler();
+			router.register("/page", handler);
+			router.navigate("/page");
+
+			expect(() => router.forwardMessage({ type: "alert:list", alerts: [] })).not.toThrow();
+		});
+
+		test("no-op when no handler is mounted", () => {
+			const router = new Router(container);
+			expect(() => router.forwardMessage({ type: "alert:list", alerts: [] })).not.toThrow();
+		});
+	});
+
 	describe("start", () => {
 		test("mounts route matching current URL", () => {
 			const router = new TestRouter(container);
@@ -177,6 +330,18 @@ describe("Router", () => {
 			router.start();
 			expect(dashHandler.mounted).toBe(1);
 		});
+
+		test("start mounts exactly one handler (no double-mount)", () => {
+			const router = new TestRouter(container);
+			router.setTestPathname("/workflow/abc");
+			const wf = makeHandler();
+			const dash = makeHandler();
+			router.register("/", dash);
+			router.register("/workflow/:id", wf);
+			router.start();
+			expect(wf.mounted).toBe(1);
+			expect(dash.mounted).toBe(0);
+		});
 	});
 
 	describe("popstate", () => {
@@ -187,7 +352,6 @@ describe("Router", () => {
 			router.register("/a", handlerA);
 			router.register("/b", handlerB);
 
-			// start() attaches popstate listener
 			router.setTestPathname("/a");
 			router.start();
 			expect(handlerA.mounted).toBe(1);
@@ -196,12 +360,11 @@ describe("Router", () => {
 			expect(handlerA.unmounted).toBe(1);
 			expect(handlerB.mounted).toBe(1);
 
-			// Simulate browser back to /a
 			router.setTestPathname("/a");
 			window.dispatchEvent(new PopStateEvent("popstate"));
 
 			expect(handlerB.unmounted).toBe(1);
-			expect(handlerA.mounted).toBe(2); // once from start, once from popstate
+			expect(handlerA.mounted).toBe(2);
 		});
 	});
 
@@ -230,7 +393,6 @@ describe("Router", () => {
 			router.register("/", otherHandler);
 			router.register("/page", handler);
 
-			// start() attaches popstate listener
 			router.setTestPathname("/");
 			router.start();
 			router.navigate("/page");
@@ -239,12 +401,29 @@ describe("Router", () => {
 			router.destroy();
 			expect(handler.unmounted).toBe(1);
 
-			// Simulate popstate — handler should NOT be re-mounted
 			router.setTestPathname("/page");
 			window.dispatchEvent(new PopStateEvent("popstate"));
 
-			// If listener is removed, no additional mount
 			expect(handler.mounted).toBe(1);
+		});
+	});
+
+	describe("sibling non-interference (registration-after-boot)", () => {
+		test("registering a new route does not mount or affect siblings", () => {
+			const router = new Router(container);
+			const a = makeHandler();
+			const b = makeHandler();
+			router.register("/a", a);
+			router.register("/b", b);
+			router.navigate("/a");
+
+			const c = makeHandler();
+			router.register("/c", c);
+
+			expect(a.mounted).toBe(1);
+			expect(a.unmounted).toBe(0);
+			expect(b.mounted).toBe(0);
+			expect(c.mounted).toBe(0);
 		});
 	});
 });

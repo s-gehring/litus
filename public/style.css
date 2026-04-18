@@ -1533,18 +1533,44 @@ body::-webkit-scrollbar-track {
 
 /* ── Epic Breadcrumb ─────────────────────────────────── */
 
-.epic-breadcrumb {
-  display: inline-block;
-  font-size: 0.8rem;
+.back-to-epic {
+  display: inline-flex;
+  align-items: center;
+  max-width: calc(100% - 32px);
+  font-family: inherit;
+  font-size: 0.82rem;
   color: var(--accent-blue);
+  background: rgba(74, 158, 255, 0.08);
+  border: 1px solid rgba(74, 158, 255, 0.35);
+  border-radius: var(--radius);
   cursor: pointer;
-  padding: 6px 0;
-  margin-bottom: 8px;
-  transition: color 0.15s;
+  padding: 6px 12px;
+  margin: 8px 16px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.epic-breadcrumb:hover {
-  color: var(--accent-green);
+.back-to-epic:hover {
+  background: rgba(74, 158, 255, 0.16);
+  border-color: var(--accent-blue);
+  color: var(--text);
+}
+
+.back-to-epic:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.back-to-epic .back-to-epic-prefix {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.back-to-epic .epic-title {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* ── Modal Overlay & Panel ──────────────────────────────── */

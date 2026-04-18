@@ -81,6 +81,14 @@ describe("runClaude", () => {
 			expect(args).toContain("low");
 		});
 
+		test("effort flag passes xhigh through unchanged", async () => {
+			await runClaude({ prompt: "hello", effort: "xhigh" });
+			const args = spawnMock.mock.calls[0][0] as string[];
+			const idx = args.indexOf("--effort");
+			expect(idx).toBeGreaterThan(-1);
+			expect(args[idx + 1]).toBe("xhigh");
+		});
+
 		test("maxTurns flag included when provided", async () => {
 			await runClaude({ prompt: "hello", maxTurns: 3 });
 			const args = spawnMock.mock.calls[0][0] as string[];

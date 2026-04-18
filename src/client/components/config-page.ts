@@ -1,8 +1,7 @@
 import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "../../config-metadata";
-import type { AppConfig, ClientMessage, ConfigWarning, EffortLevel } from "../../types";
+import type { AppConfig, ClientMessage, ConfigWarning } from "../../types";
 import type { RouteHandler } from "../router";
-
-const EFFORT_LEVELS: EffortLevel[] = ["low", "medium", "high", "max"];
+import { EFFORT_LEVELS_ORDER, formatEffortLabel } from "./effort-label";
 
 // Module-level send reference
 let sendFn: ((msg: ClientMessage) => void) | null = null;
@@ -36,10 +35,10 @@ function makeResetButton(dotPath: string): HTMLButtonElement {
 function makeEffortSelect(modelKey: string): HTMLSelectElement {
 	const select = el("select", "cfg-effort-select") as HTMLSelectElement;
 	select.dataset.cfgPath = `efforts.${modelKey}`;
-	for (const level of EFFORT_LEVELS) {
+	for (const level of EFFORT_LEVELS_ORDER) {
 		const option = el("option");
 		option.value = level;
-		option.textContent = level;
+		option.textContent = formatEffortLabel(level);
 		select.appendChild(option);
 	}
 	select.addEventListener("change", () => {
@@ -588,6 +587,13 @@ export function createConfigPageHandler(
 ): RouteHandler {
 	return {
 		mount(container: HTMLElement) {
+			const cardStrip = container.querySelector<HTMLElement>("#card-strip");
+			const welcomeArea = container.querySelector<HTMLElement>("#welcome-area");
+			const detailArea = container.querySelector<HTMLElement>("#detail-area");
+			if (cardStrip) cardStrip.classList.add("hidden");
+			if (welcomeArea) welcomeArea.classList.add("hidden");
+			if (detailArea) detailArea.classList.add("hidden");
+
 			const page = createConfigPage(send, navigate);
 			container.appendChild(page);
 			send({ type: "config:get" });

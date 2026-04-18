@@ -1,18 +1,14 @@
 import { looksLikeGitUrl } from "../git-url";
-import {
-	type Alert,
-	type AppConfig,
-	type ArtifactDescriptor,
-	type ArtifactListResponse,
-	type AutoMode,
-	type ClientMessage,
-	type EpicAggregatedState,
-	type EpicClientState,
-	type PipelineStepName,
-	type ServerMessage,
-	STEP,
-	type WorkflowClientState,
-	type WorkflowState,
+import type {
+	Alert,
+	AppConfig,
+	ArtifactDescriptor,
+	ArtifactListResponse,
+	AutoMode,
+	ClientMessage,
+	PipelineStepName,
+	ServerMessage,
+	WorkflowState,
 } from "../types";
 import { ClientStateManager } from "./client-state-manager";
 import {
@@ -31,45 +27,20 @@ import {
 } from "./components/config-page";
 import { createModal, type Modal } from "./components/creation-modal";
 import { createDashboardHandler } from "./components/dashboard-handler";
-import { renderEpicTree } from "./components/epic-tree";
+import { createEpicDetailHandler } from "./components/epic-detail-handler";
 import { updateFavicon } from "./components/favicon";
-import {
-	hideFeedbackPanel,
-	hideFeedbackPanelUnlessFor,
-	isFeedbackPanelVisible,
-	renderFeedbackHistory,
-	showFeedbackPanel,
-} from "./components/feedback-panel";
+import { showFeedbackPanel } from "./components/feedback-panel";
 import { createFolderPicker } from "./components/folder-picker";
 import {
 	type PipelineStepsArtifactContext,
 	renderPipelineSteps,
 } from "./components/pipeline-steps";
-import { getAnswer, hideQuestion, showQuestion } from "./components/question-panel";
-import { EPIC_AGG_STATUS_CLASSES, EPIC_CARD_PREFIX } from "./components/status-maps";
+import { getAnswer } from "./components/question-panel";
+import { EPIC_CARD_PREFIX } from "./components/status-maps";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
-import {
-	appendOutput,
-	appendToolIcons,
-	clearOutput,
-	removeThinkingIndicator,
-	renderOutputEntries,
-	setDefaultModelDisplayName,
-	syncThinkingIndicator,
-	updateActiveModelPanel,
-	updateBranchInfo,
-	updateDetailActions,
-	updateEpicStatus,
-	updateFeedbackHistorySection,
-	updateFlavor,
-	updateSpecDetails,
-	updateStepSummary,
-	updateSummary,
-	updateUserInput,
-	updateWorkflowStatus,
-} from "./components/workflow-window";
+import { createWorkflowDetailHandler } from "./components/workflow-detail-handler";
+import { appendOutput, setDefaultModelDisplayName } from "./components/workflow-window";
 import { $ } from "./dom";
-import { renderMarkdown } from "./render-markdown";
 import { Router } from "./router";
 
 const stateManager = new ClientStateManager();
@@ -97,15 +68,15 @@ async function fetchWorkflowArtifacts(workflowId: string): Promise<void> {
 			byStep.set(item.step, arr);
 		}
 		artifactsByWorkflow.set(workflowId, byStep);
-		const expandedId = stateManager.getExpandedId();
-		const selectedChildId = stateManager.getSelectedChildId();
-		if (expandedId === workflowId || selectedChildId === workflowId) {
+		if (isViewingWorkflow(workflowId)) {
 			const entry = stateManager.getWorkflows().get(workflowId);
 			if (entry) {
 				renderPipelineSteps(
 					entry.state,
 					stateManager.getSelectedStepIndex(),
-					selectStep,
+					() => {
+						/* re-selection is handled by the workflow-detail handler */
+					},
 					getArtifactContext(workflowId),
 				);
 			}
@@ -152,9 +123,6 @@ function connect(): void {
 		dot.className = "status-dot disconnected";
 		dot.title = "Disconnected";
 
-		// Surface a readable error in any modal currently waiting on a clone —
-		// without this, a disconnect mid-clone leaves the user stuck on "Cloning…"
-		// with no way to recover short of reloading.
 		for (const [, handlers] of pendingCloneSubmissions) {
 			handlers.onError(
 				"disconnected",
@@ -192,205 +160,93 @@ function send(msg: ClientMessage): void {
 	}
 }
 
-function handleMessage(msg: ServerMessage): void {
-	// Capture pre-mutation state needed for view-side decisions
-	const expandedId = stateManager.getExpandedId();
-	const expandedEpicId = stateManager.getExpandedEpicId();
-	const selectedStepIndex = stateManager.getSelectedStepIndex();
-	const selectedChildId = stateManager.getSelectedChildId();
-	const workflows = stateManager.getWorkflows();
-	const epics = stateManager.getEpics();
+function isViewingWorkflow(workflowId: string): boolean {
+	return (
+		appRouter?.currentMatch?.params?.id === workflowId &&
+		appRouter?.currentPath?.startsWith("/workflow/") === true
+	);
+}
 
-	// Pre-mutation snapshots for step-change
-	let wasWatchingRunning = false;
-	if (msg.type === "workflow:step-change") {
-		const entry = workflows.get(msg.workflowId);
-		if (entry) {
-			wasWatchingRunning = selectedStepIndex === entry.state.currentStepIndex;
-		}
+function activeCardId(): string | null {
+	const path = appRouter?.currentPath ?? null;
+	if (!path) return null;
+	const wfMatch = path.match(/^\/workflow\/(.+)$/);
+	if (wfMatch) {
+		const id = wfMatch[1];
+		const entry = stateManager.getWorkflows().get(id);
+		if (entry?.state.epicId) return `${EPIC_CARD_PREFIX}${entry.state.epicId}`;
+		return id;
 	}
+	const epicMatch = path.match(/^\/epic\/(.+)$/);
+	if (epicMatch) {
+		const id = epicMatch[1];
+		// Epic analysis card (no prefix) if the aggregate isn't present yet.
+		if (stateManager.getEpicAggregates().has(id)) return `${EPIC_CARD_PREFIX}${id}`;
+		return id;
+	}
+	return null;
+}
 
-	// Mutate state and get change descriptor
-	const change = stateManager.handleMessage(msg);
+function handleMessage(msg: ServerMessage): void {
+	stateManager.handleMessage(msg);
 
-	// View-layer rendering based on message type and change
 	switch (msg.type) {
 		case "workflow:list": {
 			renderCards();
-			const standaloneWorkflows = msg.workflows.filter((w) => !w.epicId);
-			if (standaloneWorkflows.length === 1 && stateManager.getEpicAggregates().size === 0) {
-				expandItem(standaloneWorkflows[0].id);
-			} else if (stateManager.getEpicAggregates().size === 1 && standaloneWorkflows.length === 0) {
-				const epicId = [...stateManager.getEpicAggregates().keys()][0];
-				expandItem(`${EPIC_CARD_PREFIX}${epicId}`);
-			} else {
-				renderExpandedView();
+			// Pre-existing behaviour: on the dashboard, when exactly one top-level
+			// item exists, jump into its detail view. The `currentPath === "/"`
+			// guard prevents re-triggering on subsequent broadcasts.
+			if (appRouter?.currentPath === "/") {
+				const standalone = msg.workflows.filter((w) => !w.epicId);
+				const epicAggregates = stateManager.getEpicAggregates();
+				if (standalone.length === 1 && epicAggregates.size === 0) {
+					appRouter.navigate(`/workflow/${standalone[0].id}`, { replace: true });
+				} else if (epicAggregates.size === 1 && standalone.length === 0) {
+					const epicId = [...epicAggregates.keys()][0];
+					appRouter.navigate(`/epic/${epicId}`, { replace: true });
+				}
 			}
 			break;
 		}
 
 		case "workflow:created": {
 			renderCards();
-			if (!epics.has(expandedId ?? "") && !msg.workflow.epicId) {
-				expandItem(msg.workflow.id);
-			}
-			if (expandedEpicId && msg.workflow.epicId === expandedEpicId) {
-				renderExpandedView();
+			if (!msg.workflow.epicId && appRouter?.currentPath !== "/config") {
+				appRouter?.navigate(`/workflow/${msg.workflow.id}`);
 			}
 			break;
 		}
 
-		case "workflow:state": {
-			if (!msg.workflow) break;
-			renderCards();
-			if (expandedId === msg.workflow.id) {
-				renderExpandedView();
-			}
-			if (expandedId === msg.workflow.id || selectedChildId === msg.workflow.id) {
-				syncThinkingIndicatorForView();
-			}
-			if (expandedEpicId && msg.workflow.epicId === expandedEpicId) {
-				renderExpandedView();
-			}
-			break;
-		}
-
-		case "workflow:output": {
-			if (change.scope.entity === "none") break;
-			const entry = workflows.get(msg.workflowId);
-			if (
-				entry &&
-				(expandedId === msg.workflowId || selectedChildId === msg.workflowId) &&
-				selectedStepIndex === entry.state.currentStepIndex
-			) {
-				appendOutput(msg.text);
-			}
-			break;
-		}
-
-		case "workflow:tools": {
-			if (change.scope.entity === "none") break;
-			const entry = workflows.get(msg.workflowId);
-			if (
-				entry &&
-				(expandedId === msg.workflowId || selectedChildId === msg.workflowId) &&
-				selectedStepIndex === entry.state.currentStepIndex
-			) {
-				appendToolIcons(msg.tools);
-			}
-			break;
-		}
-
-		case "workflow:question": {
-			if (change.scope.entity === "none") break;
-			renderCards();
-			if (expandedId === msg.workflowId || selectedChildId === msg.workflowId) {
-				showQuestion(msg.question);
-			}
-			break;
-		}
-
+		case "workflow:state":
+		case "workflow:output":
+		case "workflow:tools":
+		case "workflow:question":
 		case "workflow:step-change": {
-			if (change.scope.entity === "none") break;
-			// Step-change resets the output pane; drop any lingering indicator.
-			if (expandedId === msg.workflowId || selectedChildId === msg.workflowId) {
-				removeThinkingIndicator();
-			}
 			renderCards();
-			if (expandedId === msg.workflowId || selectedChildId === msg.workflowId) {
-				if (wasWatchingRunning) {
-					selectStep(msg.currentStepIndex);
-				} else {
-					const entry = workflows.get(msg.workflowId);
-					if (entry) {
-						renderPipelineSteps(
-							entry.state,
-							stateManager.getSelectedStepIndex(),
-							selectStep,
-							getArtifactContext(msg.workflowId),
-						);
-					}
-				}
-			}
-			// A step change often means a new artifact just appeared on disk.
-			void fetchWorkflowArtifacts(msg.workflowId);
 			break;
 		}
 
 		case "epic:list": {
 			renderCards();
-			renderExpandedView();
 			break;
 		}
 
 		case "epic:created": {
 			renderCards();
-			expandItem(msg.epicId);
-			break;
-		}
-
-		case "epic:summary": {
-			if (change.scope.entity === "none") break;
-			renderCards();
-			if (expandedId === msg.epicId) {
-				updateSummary(msg.summary);
+			if (appRouter?.currentPath !== "/config") {
+				appRouter?.navigate(`/epic/${msg.epicId}`);
 			}
 			break;
 		}
 
-		case "epic:output": {
-			if (change.scope.entity === "none") break;
-			if (expandedId === msg.epicId) {
-				appendOutput(msg.text);
-			}
-			break;
-		}
-
-		case "epic:tools": {
-			if (change.scope.entity === "none") break;
-			if (expandedId === msg.epicId) {
-				appendToolIcons(msg.tools);
-			}
-			break;
-		}
-
-		case "epic:result": {
-			if (change.scope.entity === "none") break;
-			renderCards();
-			if (expandedId === msg.epicId) {
-				expandItem(`${EPIC_CARD_PREFIX}${msg.epicId}`);
-			}
-			break;
-		}
-
-		case "epic:infeasible": {
-			if (change.scope.entity === "none") break;
-			renderCards();
-			if (expandedId === msg.epicId) {
-				renderExpandedView();
-			}
-			break;
-		}
-
-		case "epic:error": {
-			if (change.scope.entity === "none") break;
-			renderCards();
-			if (expandedId === msg.epicId) {
-				appendOutput(`Error: ${msg.message}`, "error");
-			}
-			break;
-		}
-
+		case "epic:summary":
+		case "epic:output":
+		case "epic:tools":
+		case "epic:result":
+		case "epic:infeasible":
+		case "epic:error":
 		case "epic:dependency-update": {
-			if (change.scope.entity === "none") break;
 			renderCards();
-			if (expandedId === msg.workflowId) {
-				renderExpandedView();
-			}
-			const entry = workflows.get(msg.workflowId);
-			if (expandedEpicId && entry?.state.epicId === expandedEpicId) {
-				renderExpandedView();
-			}
 			break;
 		}
 
@@ -402,9 +258,8 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "purge:complete": {
 			hidePurgeProgress();
-			if (appRouter) appRouter.navigate("/");
+			appRouter?.navigate("/");
 			renderCards();
-			renderExpandedView();
 			if (msg.warnings.length > 0) {
 				appendOutput(`Purge completed with warnings: ${msg.warnings.join("; ")}`, "error");
 			}
@@ -422,7 +277,6 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "default-model:info": {
 			setDefaultModelDisplayName(msg.modelInfo ? msg.modelInfo.displayName : null);
-			renderExpandedView();
 			break;
 		}
 
@@ -431,7 +285,6 @@ function handleMessage(msg: ServerMessage): void {
 			syncAutoModeToggle(msg.config.autoMode);
 			currentAutoMode = msg.config.autoMode;
 			latestConfig = msg.config;
-			renderExpandedView();
 			break;
 		}
 
@@ -463,27 +316,19 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "repo:clone-complete": {
-			// Guard against duplicate/late events: if the entry is already gone
-			// (user dismissed the modal, or a prior clone-complete fired), skip
-			// onComplete — calling modal.hide() on an already-hidden modal is
-			// tolerated by the browser but not part of the contract.
 			const handlers = pendingCloneSubmissions.get(msg.submissionId);
 			if (!handlers) break;
-			// onComplete calls modal.hide(), which is wrapped to delete the
-			// entry — no explicit delete needed here.
 			handlers.onComplete();
 			break;
 		}
 
 		case "repo:clone-error": {
-			// onError leaves the modal open (inline error), so delete explicitly.
 			pendingCloneSubmissions.get(msg.submissionId)?.onError(msg.code, msg.message);
 			pendingCloneSubmissions.delete(msg.submissionId);
 			break;
 		}
 
 		case "alert:list": {
-			// Initial list: refresh badge only — do not spawn toasts retroactively.
 			renderAlertBell();
 			refreshAlertList();
 			break;
@@ -503,6 +348,11 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 	}
+
+	// Forward every message to the currently mounted route handler so detail
+	// views can update their own DOM without the top-level switch knowing about
+	// per-view rendering.
+	appRouter?.forwardMessage(msg);
 }
 
 function showMissingTargetToast(message: string): void {
@@ -528,15 +378,10 @@ function navigateToAlertTarget(alert: Alert): void {
 		const wfId = workflowMatch[1];
 		const entry = stateManager.getWorkflows().get(wfId);
 		if (!entry) {
-			showMissingTargetToast(`Workflow ${wfId} no longer exists`);
+			showMissingTargetToast("This workflow no longer exists");
 			return;
 		}
-		if (appRouter) appRouter.navigate("/");
-		expandItem(entry.state.epicId ? `${EPIC_CARD_PREFIX}${entry.state.epicId}` : wfId);
-		if (entry.state.epicId) {
-			stateManager.selectChild(wfId);
-			renderExpandedView();
-		}
+		appRouter?.navigate(`/workflow/${wfId}`);
 		return;
 	}
 	if (epicMatch) {
@@ -544,11 +389,10 @@ function navigateToAlertTarget(alert: Alert): void {
 		const hasEpic =
 			stateManager.getEpics().has(epicId) || stateManager.getEpicAggregates().has(epicId);
 		if (!hasEpic) {
-			showMissingTargetToast(`Epic ${epicId} no longer exists`);
+			showMissingTargetToast("This epic no longer exists");
 			return;
 		}
-		if (appRouter) appRouter.navigate("/");
-		expandItem(`${EPIC_CARD_PREFIX}${epicId}`);
+		appRouter?.navigate(`/epic/${epicId}`);
 	}
 }
 
@@ -577,11 +421,6 @@ interface PendingCloneHandlers {
 
 const pendingCloneSubmissions = new Map<string, PendingCloneHandlers>();
 
-/**
- * Wire a modal to a pending clone submission: renders status, disables the
- * form, and ensures the map entry is cleaned up on any modal close (so late
- * clone-progress events from a dismissed modal don't act on a detached DOM).
- */
 function attachCloneSubmission(
 	modal: Modal,
 	cloneStatus: HTMLElement,
@@ -613,8 +452,6 @@ function attachCloneSubmission(
 		},
 	});
 
-	// Ensure the pending entry is removed even if the user closes the modal
-	// (escape/overlay click/close button) before the clone completes.
 	const origHide = modal.hide;
 	modal.hide = () => {
 		pendingCloneSubmissions.delete(submissionId);
@@ -622,24 +459,18 @@ function attachCloneSubmission(
 	};
 }
 
-function expandItem(id: string): void {
-	stateManager.expandItem(id);
-	renderCards();
-	renderExpandedView();
-}
-
-function selectChild(workflowId: string): void {
-	stateManager.selectChild(workflowId);
-	renderExpandedView();
-}
-
-function returnToEpicTree(): void {
-	// selectChild toggles off when called with the currently selected child
-	const currentChild = stateManager.getSelectedChildId();
-	if (currentChild) {
-		stateManager.selectChild(currentChild);
+function handleCardClick(cardId: string): void {
+	if (cardId.startsWith(EPIC_CARD_PREFIX)) {
+		const epicId = cardId.slice(EPIC_CARD_PREFIX.length);
+		appRouter?.navigate(`/epic/${epicId}`);
+		return;
 	}
-	renderExpandedView();
+	if (stateManager.getWorkflows().has(cardId)) {
+		appRouter?.navigate(`/workflow/${cardId}`);
+		return;
+	}
+	// Epic analysis card — raw epicId
+	appRouter?.navigate(`/epic/${cardId}`);
 }
 
 const AUTO_MODE_CYCLE = ["manual", "normal", "full-auto"] as const;
@@ -665,446 +496,7 @@ function renderCards(): void {
 	const epics = stateManager.getEpics();
 	const epicAggregates = stateManager.getEpicAggregates();
 	const cardOrder = stateManager.getCardOrder();
-	const expandedId = stateManager.getExpandedId();
-
-	renderCardStrip(cardOrder, workflows, epics, epicAggregates, expandedId, expandItem);
-}
-
-function updateActiveModelPanelForEpic(epic: EpicClientState): void {
-	if (epic.status !== "analyzing" || !latestConfig) {
-		updateActiveModelPanel({ kind: "hidden" });
-		return;
-	}
-	updateActiveModelPanel({
-		kind: "epic-analysis",
-		model: latestConfig.models.epicDecomposition,
-		effort: latestConfig.efforts.epicDecomposition,
-	});
-}
-
-function renderExpandedView(): void {
-	const expandedId = stateManager.getExpandedId();
-	const expandedEpicId = stateManager.getExpandedEpicId();
-	const selectedChildId = stateManager.getSelectedChildId();
-	const workflows = stateManager.getWorkflows();
-	const epics = stateManager.getEpics();
-	const epicAggregates = stateManager.getEpicAggregates();
-
-	const detailArea = $("#detail-area");
-	const welcomeArea = $("#welcome-area");
-	const treeContainer = document.getElementById("epic-tree-panel");
-
-	// Clear tree panel, breadcrumb, analysis details, and fullsize mode
-	if (treeContainer) treeContainer.remove();
-	const existingBreadcrumb = document.getElementById("epic-breadcrumb");
-	if (existingBreadcrumb) existingBreadcrumb.remove();
-	const existingAnalysis = document.getElementById("epic-analysis-notes");
-	if (existingAnalysis) existingAnalysis.remove();
-	const outputArea = document.getElementById("output-area");
-	if (outputArea) outputArea.classList.remove("epic-tree-fullsize");
-
-	// Reset overlay panels up-front — each render branch below re-opens any
-	// panel that belongs to its view. This ensures panels bound to a workflow
-	// (like the feedback modal) close automatically when the user navigates
-	// to an unrelated workflow, epic, or the welcome screen.
-	let activeWorkflowId: string | null = null;
-	if (expandedId) {
-		const expandedEpic = epics.get(expandedId);
-		const isEpicAnalysisView = !!expandedEpic && !expandedId.startsWith(EPIC_CARD_PREFIX);
-		if (!isEpicAnalysisView) {
-			activeWorkflowId = expandedEpicId ? selectedChildId : expandedId;
-		}
-	}
-	hideQuestion();
-	hideFeedbackPanelUnlessFor(activeWorkflowId);
-
-	if (!expandedId) {
-		// Nothing expanded — show welcome
-		if (detailArea) detailArea.classList.add("hidden");
-		if (welcomeArea) welcomeArea.classList.remove("hidden");
-		updateWorkflowStatus(null);
-		updateBranchInfo(null);
-		updateActiveModelPanel({ kind: "hidden" });
-		renderPipelineSteps(null);
-		updateSummary("");
-		updateFlavor("");
-		updateUserInput("");
-		updateSpecDetails("");
-		updateDetailActions([]);
-		updateFeedbackHistorySection([]);
-		return;
-	}
-
-	// Check if expanded item is an epic analysis card
-	const epic = epics.get(expandedId);
-	if (epic && !expandedId.startsWith(EPIC_CARD_PREFIX)) {
-		if (welcomeArea) welcomeArea.classList.add("hidden");
-		if (detailArea) detailArea.classList.remove("hidden");
-
-		updateEpicStatus(epic.status);
-		updateActiveModelPanelForEpic(epic);
-		renderPipelineSteps(null);
-		updateSummary(epic.title || epic.description);
-		updateStepSummary("");
-		updateFlavor("");
-		updateUserInput(epic.description);
-		updateSpecDetails("");
-		updateDetailActions([]);
-
-		// Make output area fill available space for epic analysis
-		const oa = $("#output-area");
-		oa.classList.add("epic-tree-fullsize");
-
-		clearOutput();
-		if (epic.status === "infeasible" && epic.infeasibleNotes) {
-			// Render infeasible notes as markdown inside the output log
-			const outputLog = $("#output-log");
-			const notesEl = document.createElement("div");
-			notesEl.className = "user-input epic-analysis-notes infeasible-notes-fullheight";
-			notesEl.innerHTML = renderMarkdown(epic.infeasibleNotes);
-			outputLog.appendChild(notesEl);
-		} else if (epic.outputLines.length > 0) {
-			renderOutputEntries(epic.outputLines);
-		}
-		return;
-	}
-
-	// Check if it's an aggregated epic card
-	if (expandedEpicId) {
-		const agg = epicAggregates.get(expandedEpicId);
-		if (!agg) return;
-
-		if (welcomeArea) welcomeArea.classList.add("hidden");
-		if (detailArea) detailArea.classList.remove("hidden");
-
-		// If a child is selected, show the child's detail view with breadcrumb
-		if (selectedChildId) {
-			renderChildDetailView(selectedChildId, agg);
-			return;
-		}
-
-		// Show epic tree view
-		renderEpicTreeView(agg);
-		return;
-	}
-
-	// Regular workflow
-	if (welcomeArea) welcomeArea.classList.add("hidden");
-	if (detailArea) detailArea.classList.remove("hidden");
-
-	const entry = workflows.get(expandedId);
-	if (!entry) return;
-
-	renderWorkflowDetail(entry);
-}
-
-function renderEpicTreeView(agg: EpicAggregatedState): void {
-	const workflows = stateManager.getWorkflows();
-	const epics = stateManager.getEpics();
-
-	// Update status area for epic
-	const statusBadge = $("#workflow-status");
-	statusBadge.textContent = agg.status;
-	statusBadge.className = `status-badge ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
-
-	updateBranchInfo(null);
-	const epicDataForPanel = epics.get(agg.epicId);
-	if (epicDataForPanel) {
-		updateActiveModelPanelForEpic(epicDataForPanel);
-	} else {
-		updateActiveModelPanel({ kind: "hidden" });
-	}
-	renderPipelineSteps(null);
-	updateSummary(`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`);
-	updateStepSummary("");
-	const stepLabel = document.getElementById("current-step-label");
-	if (stepLabel) stepLabel.classList.add("hidden");
-	updateFlavor("");
-	updateDetailActions([]);
-	clearOutput();
-	updateSpecDetails("");
-
-	// Show epic description and analysis output
-	const epicData = epics.get(agg.epicId);
-	if (epicData) {
-		updateUserInput(epicData.description);
-		renderEpicAnalysisNotes(epicData);
-	} else {
-		updateUserInput("");
-	}
-
-	// Make output area fill available space for epic tree
-	const outputAreaEl = $("#output-area");
-	outputAreaEl.classList.add("epic-tree-fullsize");
-
-	// Build workflow map from child IDs
-	const childWorkflows = new Map<string, WorkflowState>();
-	for (const id of agg.childWorkflowIds) {
-		const entry = workflows.get(id);
-		if (entry) childWorkflows.set(id, entry.state);
-	}
-
-	// Render the tree inside the output area
-	const outputLog = $("#output-log");
-	outputLog.replaceChildren();
-
-	const tree = renderEpicTree(agg, childWorkflows, selectChild);
-	outputLog.appendChild(tree);
-}
-
-function renderEpicAnalysisNotes(epicData: EpicClientState): void {
-	// Remove existing if present
-	const existing = document.getElementById("epic-analysis-notes");
-	if (existing) existing.remove();
-
-	// Prefer the LLM-generated summary; fall back to infeasibleNotes
-	const content = epicData.analysisSummary || epicData.infeasibleNotes;
-	if (!content) return;
-
-	const container = document.createElement("div");
-	container.id = "epic-analysis-notes";
-	container.className = "epic-analysis-notes user-input";
-	container.innerHTML = renderMarkdown(content);
-
-	// Insert after user-input
-	const userInput = document.getElementById("user-input");
-	if (userInput) {
-		userInput.parentElement?.insertBefore(container, userInput.nextSibling);
-	}
-}
-
-function renderChildDetailView(childId: string, epicAgg: EpicAggregatedState): void {
-	const entry = stateManager.getWorkflows().get(childId);
-	if (!entry) return;
-
-	renderWorkflowDetail(entry, epicAgg);
-}
-
-function selectStep(index: number): void {
-	stateManager.selectStep(index);
-
-	const selectedChildId = stateManager.getSelectedChildId();
-	const expandedId = stateManager.getExpandedId();
-	const workflowId = selectedChildId ?? expandedId;
-	const entry = workflowId ? stateManager.getWorkflows().get(workflowId) : null;
-	if (!entry) return;
-
-	const wf = entry.state;
-	const step = wf.steps[index];
-	if (!step) return;
-
-	clearOutput();
-
-	// Render archived prior runs first (FR-001/FR-003). Each gets a system-styled
-	// header with run #, start time, and final status; followed by its output
-	// and error block, if any. The live/stored current-run render follows.
-	for (const run of step.history) {
-		const startedAt = new Date(run.startedAt);
-		const formattedStart = Number.isNaN(startedAt.getTime())
-			? run.startedAt
-			: startedAt.toLocaleString();
-		appendOutput(`── Run ${run.runNumber} · ${formattedStart} · ${run.status} ──`, "system");
-		if (run.outputLog && run.outputLog.length > 0) {
-			renderOutputEntries(run.outputLog);
-		} else if (run.output) {
-			appendOutput(run.output);
-		}
-		if (run.error) appendOutput(`Error: ${run.error}`, "error");
-	}
-
-	const isCurrentStep = index === wf.currentStepIndex;
-	const isLive = isCurrentStep && (wf.status === "running" || wf.status === "waiting_for_input");
-
-	// Prefer in-memory outputLines when viewing the current step — it is the
-	// live streaming buffer with tool icons interleaved. Otherwise use the
-	// server-persisted step.outputLog (survives pause and page reload).
-	if (isCurrentStep && entry.outputLines.length > 0) {
-		renderOutputEntries(entry.outputLines);
-		if (!isLive && step.error) appendOutput(`Error: ${step.error}`, "error");
-	} else if (step.outputLog && step.outputLog.length > 0) {
-		renderOutputEntries(step.outputLog);
-		if (!isLive && step.error) appendOutput(`Error: ${step.error}`, "error");
-	} else if (step.output || step.error) {
-		if (step.output) appendOutput(step.output);
-		if (step.error) appendOutput(`Error: ${step.error}`, "error");
-	} else if (!isLive && step.history.length === 0) {
-		appendOutput("No output yet", "system");
-	}
-
-	// Re-render pipeline steps to update selected state
-	renderPipelineSteps(
-		wf,
-		stateManager.getSelectedStepIndex(),
-		selectStep,
-		getArtifactContext(wf.id),
-	);
-
-	syncThinkingIndicatorForView();
-}
-
-function syncThinkingIndicatorForView(): void {
-	const selectedChildId = stateManager.getSelectedChildId();
-	const expandedId = stateManager.getExpandedId();
-	const workflowId = selectedChildId ?? expandedId;
-	const entry = workflowId ? stateManager.getWorkflows().get(workflowId) : null;
-	if (!entry) {
-		syncThinkingIndicator(false);
-		return;
-	}
-	const wf = entry.state;
-	const idx = stateManager.getSelectedStepIndex();
-	if (idx === null) {
-		syncThinkingIndicator(false);
-		return;
-	}
-	const step = wf.steps[idx];
-	syncThinkingIndicator(
-		idx === wf.currentStepIndex && wf.status === "running" && step?.status === "running",
-	);
-}
-
-function autoSelectStep(wf: WorkflowState): void {
-	if (wf.status === "running" || wf.status === "waiting_for_input" || wf.status === "paused") {
-		selectStep(wf.currentStepIndex);
-	} else if (wf.steps.length > 0) {
-		// Select last non-pending step, or first step if all pending
-		let lastActive = 0;
-		for (let i = wf.steps.length - 1; i >= 0; i--) {
-			if (wf.steps[i].status !== "pending") {
-				lastActive = i;
-				break;
-			}
-		}
-		selectStep(lastActive);
-	}
-}
-
-function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggregatedState): void {
-	const wf = entry.state;
-	const selectedStepIndex = stateManager.getSelectedStepIndex();
-
-	// Render status, pipeline, summary
-	updateWorkflowStatus(wf);
-	updateBranchInfo(wf);
-	updateActiveModelPanel({ kind: "workflow", workflow: wf });
-	renderPipelineSteps(wf, selectedStepIndex, selectStep, getArtifactContext(wf.id));
-	if (!artifactsByWorkflow.has(wf.id)) {
-		void fetchWorkflowArtifacts(wf.id);
-	}
-	if (wf.summary) updateSummary(wf.summary);
-	updateStepSummary(wf.stepSummary ?? "");
-	updateFlavor(wf.flavor ?? "");
-	updateUserInput(wf.specification);
-	updateSpecDetails("");
-	updateFeedbackHistorySection(wf.feedbackEntries);
-
-	// Action buttons: Pause, Resume, Abort, Retry, and epic-specific actions
-	const actions: { label: string; className: string; onClick: () => void }[] = [];
-	const isError = wf.status === "error";
-
-	if (wf.status === "running") {
-		actions.push({
-			label: "Pause",
-			className: "btn-secondary",
-			onClick: () => send({ type: "workflow:pause", workflowId: wf.id }),
-		});
-	}
-	if (wf.status === "paused") {
-		actions.push({
-			label: "Resume",
-			className: "btn-primary",
-			onClick: () => send({ type: "workflow:resume", workflowId: wf.id }),
-		});
-		if (currentAutoMode === "manual" && wf.steps[wf.currentStepIndex]?.name === STEP.MERGE_PR) {
-			actions.push({
-				label: "Provide Feedback",
-				className: "btn-secondary",
-				onClick: () => openFeedbackPanel(wf),
-			});
-		}
-		actions.push({
-			label: "Abort",
-			className: "btn-danger",
-			onClick: () => {
-				if (confirm("Are you sure you want to abort this workflow?")) {
-					send({ type: "workflow:abort", workflowId: wf.id });
-				}
-			},
-		});
-	}
-	if (wf.status === "waiting_for_input" || wf.status === "waiting_for_dependencies") {
-		actions.push({
-			label: "Abort",
-			className: "btn-danger",
-			onClick: () => {
-				if (confirm("Are you sure you want to abort this workflow?")) {
-					send({ type: "workflow:abort", workflowId: wf.id });
-				}
-			},
-		});
-	}
-	if (isError) {
-		actions.push({
-			label: "Retry",
-			className: "btn-secondary",
-			onClick: () => send({ type: "workflow:retry", workflowId: wf.id }),
-		});
-	}
-	if (wf.status === "idle" && wf.epicId) {
-		actions.push({
-			label: "Start",
-			className: "btn-primary",
-			onClick: () => send({ type: "workflow:start-existing", workflowId: wf.id }),
-		});
-	}
-	if (wf.status === "waiting_for_dependencies") {
-		actions.push({
-			label: "Force Start",
-			className: "btn-secondary",
-			onClick: () => send({ type: "workflow:force-start", workflowId: wf.id }),
-		});
-	}
-	updateDetailActions(actions);
-
-	// Add breadcrumb above user-input if viewing within an epic context
-	if (epicContext) {
-		const userInput = document.getElementById("user-input");
-		if (userInput) {
-			const breadcrumb = document.createElement("div");
-			breadcrumb.className = "epic-breadcrumb";
-			breadcrumb.id = "epic-breadcrumb";
-			breadcrumb.textContent = `\u2190 Epic: ${epicContext.title}`;
-			breadcrumb.addEventListener("click", returnToEpicTree);
-			userInput.parentElement?.insertBefore(breadcrumb, userInput);
-		}
-	}
-
-	// Auto-select a step and render its output
-	autoSelectStep(wf);
-
-	// Question — reset happened at the top of renderExpandedView, so we only
-	// need to re-open the panel when the workflow has a pending question.
-	const isTerminal =
-		wf.status === "cancelled" || wf.status === "completed" || wf.status === "error";
-	if (wf.pendingQuestion && !isTerminal) {
-		showQuestion(wf.pendingQuestion);
-	}
-
-	// Feedback panel: when the workflow transitions out of the eligible state
-	// (e.g. paused→running inside the same workflow), close any open panel.
-	// Cross-workflow navigation is already handled at the top of renderExpandedView.
-	const feedbackEligible =
-		wf.status === "paused" &&
-		currentAutoMode === "manual" &&
-		wf.steps[wf.currentStepIndex]?.name === STEP.MERGE_PR;
-	if (!feedbackEligible) {
-		hideFeedbackPanel();
-	} else if (isFeedbackPanelVisible()) {
-		// Keep the modal's history in sync with live state broadcasts — otherwise
-		// a late `workflow:state` arriving while the panel is open shows the
-		// snapshot from the moment the panel was opened.
-		renderFeedbackHistory(wf.feedbackEntries);
-	}
+	renderCardStrip(cardOrder, workflows, epics, epicAggregates, activeCardId(), handleCardClick);
 }
 
 function openFeedbackPanel(wf: WorkflowState): void {
@@ -1325,14 +717,12 @@ document.addEventListener("DOMContentLoaded", () => {
 	const btnSubmitAnswer = $("#btn-submit-answer") as HTMLButtonElement;
 	const btnSkip = $("#btn-skip-question") as HTMLButtonElement;
 
-	// Header buttons → modals
 	const btnNewSpec = document.getElementById("btn-new-spec");
 	if (btnNewSpec) btnNewSpec.addEventListener("click", openSpecModal);
 
 	const btnNewEpic = document.getElementById("btn-new-epic");
 	if (btnNewEpic) btnNewEpic.addEventListener("click", openEpicModal);
 
-	// Auto-mode toggle (three-state cycle: manual → normal → full-auto → manual)
 	const btnAutoMode = document.getElementById("btn-auto-mode");
 	if (btnAutoMode) {
 		btnAutoMode.addEventListener("click", () => {
@@ -1344,10 +734,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	}
 
-	// Question panel
 	btnSubmitAnswer.addEventListener("click", () => {
 		const answer = getAnswer();
-		const workflowId = stateManager.getSelectedChildId() ?? stateManager.getExpandedId();
+		const workflowId = activeWorkflowIdFromRoute();
 		if (!answer || !workflowId) return;
 
 		const entry = stateManager.getWorkflows().get(workflowId);
@@ -1364,7 +753,7 @@ document.addEventListener("DOMContentLoaded", () => {
 	});
 
 	btnSkip.addEventListener("click", () => {
-		const workflowId = stateManager.getSelectedChildId() ?? stateManager.getExpandedId();
+		const workflowId = activeWorkflowIdFromRoute();
 		if (!workflowId) return;
 
 		const entry = stateManager.getWorkflows().get(workflowId);
@@ -1379,7 +768,6 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	});
 
-	// Allow Enter to submit answer (Shift+Enter for newline)
 	const answerInput = $("#answer-input") as HTMLTextAreaElement;
 	answerInput.addEventListener("keydown", (e) => {
 		if (e.key === "Enter" && !e.shiftKey) {
@@ -1388,33 +776,55 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 	});
 
-	// Initialize router
+	// Initialize router with four top-level views.
 	const appContent = document.getElementById("app-content");
 	if (appContent) {
 		appRouter = new Router(appContent, "/");
 		appRouter.register("/", createDashboardHandler());
 		appRouter.register(
+			"/workflow/:id",
+			createWorkflowDetailHandler({
+				getState: () => stateManager,
+				getAutoMode: () => currentAutoMode,
+				getArtifactContext,
+				fetchArtifacts: (id) => {
+					void fetchWorkflowArtifacts(id);
+				},
+				send,
+				navigate: (path) => appRouter?.navigate(path),
+				openFeedbackPanel,
+			}),
+		);
+		appRouter.register(
+			"/epic/:id",
+			createEpicDetailHandler({
+				getState: () => stateManager,
+				getConfig: () => latestConfig,
+				send,
+				navigate: (path) => appRouter?.navigate(path),
+			}),
+		);
+		appRouter.register(
 			"/config",
 			createConfigPageHandler(send, (path) => appRouter?.navigate(path)),
 		);
 		appRouter.start();
+		// Render cards once the router is ready so highlights pick up the current path.
+		renderCards();
 	}
 
-	// Gear button → router navigation
 	const btnConfig = document.getElementById("btn-config");
 	if (btnConfig) {
 		btnConfig.addEventListener("click", () => {
-			if (appRouter) {
-				if (appRouter.currentPath === "/config") {
-					appRouter.navigate("/");
-				} else {
-					appRouter.navigate("/config");
-				}
+			if (!appRouter) return;
+			if (appRouter.currentPath === "/config") {
+				appRouter.navigate("/");
+			} else {
+				appRouter.navigate("/config");
 			}
 		});
 	}
 
-	// Timer update interval
 	setInterval(updateTimers, 1000);
 
 	initAlertToasts((alert) => {
@@ -1423,6 +833,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	initAlertList({
 		getAlerts: () => stateManager.getAlerts(),
+		getState: () => stateManager,
 		onDismiss: (id) => {
 			send({ type: "alert:dismiss", alertId: id });
 		},
@@ -1441,3 +852,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	connect();
 });
+
+function activeWorkflowIdFromRoute(): string | null {
+	const path = appRouter?.currentPath ?? null;
+	if (!path) return null;
+	const m = path.match(/^\/workflow\/(.+)$/);
+	return m ? m[1] : null;
+}
