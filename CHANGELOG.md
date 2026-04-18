@@ -4,12 +4,64 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [1.3.0] — 2026-04-18
+
 ### Added
 
 - Manual-mode feedback loop: a **Provide Feedback** action on the merge-PR pause lets you submit free-form feedback,
   which spawns a dedicated agent that applies it, commits with Conventional Commit messages, pushes, and optionally
   updates the PR description. Submitted feedback is persisted on the workflow, survives server restart, and is injected
   as authoritative context into every subsequent agent step — overriding spec/plan content on conflict.
+- GitHub URL input for specs and epics — paste a repository URL alongside a local path in the new-spec or new-epic
+  modal. Litus clones the repo under `~/.litus/repos` with a live clone-progress indicator, and multiple workflows
+  against the same repo share a single managed clone that is cleaned up when the last workflow terminates.
+- Alert queue: persistent alerts surface as toasts, a bell icon in the header with a full alert list, and a red dot
+  on the favicon. Fires on questions asked, PRs opened in manual mode, finished standalone workflows, finished epics,
+  and workflow errors. Clicking any alert deep-links to the corresponding workflow or epic. Alerts persist across
+  server restarts.
+- Workflow artifact viewer — per-step artifact dropdown on the workflow detail view lets you preview or download the
+  spec, plan, tasks, review, and implement-review markdown in-app. Artifacts are snapshotted on step completion so
+  they survive worktree deletion and can't be mutated by later steps.
+- Active-model panel on the workflow detail view shows the current step's model and effort (e.g.
+  `Model: Default (Opus 4.7) - Effort: Medium`). The default Claude model is auto-detected at server start.
+- Repeatable-step history — when a step is reset, prior runs are archived and remain visible in the step detail view
+  instead of being discarded.
+- `xhigh` effort level (rendered as "Extra High") available per-step alongside low / medium / high / max.
+- URL-based navigation — dashboard, workflow detail, epic detail, and config are now separate routes
+  (`/`, `/workflow/:id`, `/epic/:id`, `/config`). Deep links and browser back / forward work consistently.
+- "Back to epic" breadcrumb button on workflows opened from an epic, showing the epic title.
+- Thinking indicator shown while awaiting agent output.
+
+### Changed
+
+- Default epic-decomposition prompt rewritten to produce self-contained, independently verifiable specs and to fold
+  pure-scaffolding specs into their first consumer.
+- Default merge-conflict-resolution prompt tightened — forbids `git merge --abort`, `git reset --hard`, and
+  `git rebase --abort`, and requires the session to end with a new commit. Applied to fresh installs only; existing
+  users keep their customized prompt unless they reset it from the config panel.
+- `timing.maxCiLogLength` default raised from 50,000 to 200,000 characters — the fix-CI agent now sees more context
+  on long runs.
+- Alerts show the workflow summary or spec title instead of a short workflow hash.
+- Tooltips now position relative to the viewport so they stay on-screen, and long field values are truncated per-field
+  rather than truncating the whole tooltip.
+- Clarify questions are de-duplicated so the detector cannot re-fire the same prompt.
+- Tool-call icons in the output window now persist across pause and page reload.
+- Server logs are prefixed with ISO timestamps for easier triage.
+
+### Fixed
+
+- Paused workflows no longer silently advance to the next step when an async callback (question classification,
+  spec-kit init, merge, sync) resolves after the pause.
+- Pausing during the merge-PR step no longer restarts CI polling behind the paused workflow.
+- Merge-conflict resolution no longer enters a silent no-op loop that consumed every merge attempt when the agent
+  aborted the merge or when the branch was already up to date. Merge outcomes are now classified, "already up to date"
+  is retried once without consuming an attempt, and unrecoverable cases surface an actionable error.
+- Submitting a workflow with a local folder path that happens to point at a managed clone now attaches to that
+  clone's reference count, so aborting one workflow can no longer delete the folder out from under another.
+- Fix-CI step no longer fails on Windows with `ENAMETOOLONG` when the concatenated failure logs are long — logs are
+  written to a temp file instead of being embedded in the spawned command line.
+- Feedback modal now closes when you navigate away from the workflow that opened it.
+- Config-save failures are surfaced to the client instead of being silently swallowed.
 
 ## [1.2.0] — 2026-04-11
 
