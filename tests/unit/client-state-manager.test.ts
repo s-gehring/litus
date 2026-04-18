@@ -858,6 +858,37 @@ describe("selection methods", () => {
 		mgr.selectStep(5);
 		expect(mgr.getSelectedStepIndex()).toBe(5);
 	});
+
+	test("selectStepFor binds the selection to a workflow id", () => {
+		const mgr = createManager();
+
+		mgr.selectStepFor("wf-a", 3);
+		expect(mgr.getSelectedStepIndex()).toBe(3);
+		expect(mgr.getSelectedStepIndexFor("wf-a")).toBe(3);
+	});
+
+	test("getSelectedStepIndexFor returns null for a different workflow", () => {
+		const mgr = createManager();
+
+		mgr.selectStepFor("wf-a", 3);
+		expect(mgr.getSelectedStepIndexFor("wf-b")).toBeNull();
+	});
+
+	test("selectChild clears the per-workflow binding", () => {
+		const mgr = createManager();
+
+		mgr.selectStepFor("wf-a", 4);
+		mgr.selectChild("wf-other");
+		expect(mgr.getSelectedStepIndexFor("wf-a")).toBeNull();
+	});
+
+	test("expandItem clears the per-workflow binding", () => {
+		const mgr = createManager();
+
+		mgr.selectStepFor("wf-a", 2);
+		mgr.expandItem("wf-a");
+		expect(mgr.getSelectedStepIndexFor("wf-a")).toBeNull();
+	});
 });
 
 // T014: listener notification

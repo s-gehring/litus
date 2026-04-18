@@ -35,7 +35,7 @@ describe("Dashboard route handler", () => {
 		document.getElementById("welcome-area")?.classList.add("hidden");
 		document.getElementById("detail-area")?.classList.add("hidden");
 
-		handler.mount(appContent);
+		handler.mount(appContent, { params: {} });
 
 		expect(document.getElementById("card-strip")?.classList.contains("hidden")).toBe(false);
 		expect(document.getElementById("welcome-area")?.classList.contains("hidden")).toBe(false);
@@ -48,7 +48,7 @@ describe("Dashboard route handler", () => {
 		);
 		const handler = createDashboardHandler();
 
-		handler.mount(appContent);
+		handler.mount(appContent, { params: {} });
 		handler.unmount();
 
 		expect(document.getElementById("card-strip")?.classList.contains("hidden")).toBe(true);
@@ -77,9 +77,9 @@ describe("Config page", () => {
 
 	test("mount renders all config sections", async () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
-		const handler = createConfigPageHandler(sendSpy, navigateSpy);
+		const handler = createConfigPageHandler(sendSpy, navigateSpy, () => null);
 
-		handler.mount(container);
+		handler.mount(container, { params: {} });
 
 		const page = container.querySelector(".config-page") as HTMLElement;
 		expect(page).toBeTruthy();
@@ -95,9 +95,9 @@ describe("Config page", () => {
 
 	test("mount renders Reset and Purge buttons", async () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
-		const handler = createConfigPageHandler(sendSpy, navigateSpy);
+		const handler = createConfigPageHandler(sendSpy, navigateSpy, () => null);
 
-		handler.mount(container);
+		handler.mount(container, { params: {} });
 
 		const resetBtn = container.querySelector(".cfg-reset-all-btn");
 		expect(resetBtn).toBeTruthy();
@@ -110,29 +110,48 @@ describe("Config page", () => {
 
 	test("mount renders Back link", async () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
-		const handler = createConfigPageHandler(sendSpy, navigateSpy);
+		const handler = createConfigPageHandler(sendSpy, navigateSpy, () => null);
 
-		handler.mount(container);
+		handler.mount(container, { params: {} });
 
 		const backLink = container.querySelector(".config-page-back");
 		expect(backLink).toBeTruthy();
 		expect(backLink?.textContent).toContain("Back");
 	});
 
-	test("mount sends config:get", async () => {
+	test("mount does not re-request the config over the WebSocket", async () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
-		const handler = createConfigPageHandler(sendSpy, navigateSpy);
+		const handler = createConfigPageHandler(sendSpy, navigateSpy, () => null);
 
-		handler.mount(container);
+		handler.mount(container, { params: {} });
 
-		expect(sendSpy).toHaveBeenCalledWith({ type: "config:get" });
+		// The initial config is fetched once on WebSocket open; re-opening the
+		// config page must not trigger a fresh round-trip.
+		expect(sendSpy).not.toHaveBeenCalledWith({ type: "config:get" });
+	});
+
+	test("mount populates form fields from the cached config", async () => {
+		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
+		const { DEFAULT_CONFIG } = await import("../../src/config-store");
+		const cached = {
+			...DEFAULT_CONFIG,
+			models: { ...DEFAULT_CONFIG.models, specify: "cached-specify-model" },
+		};
+		const handler = createConfigPageHandler(sendSpy, navigateSpy, () => cached);
+
+		handler.mount(container, { params: {} });
+
+		const input = container.querySelector<HTMLInputElement>(
+			"input[data-cfg-path='models.specify']",
+		);
+		expect(input?.value).toBe("cached-specify-model");
 	});
 
 	test("unmount removes config page from container", async () => {
 		const { createConfigPageHandler } = await import("../../src/client/components/config-page");
-		const handler = createConfigPageHandler(sendSpy, navigateSpy);
+		const handler = createConfigPageHandler(sendSpy, navigateSpy, () => null);
 
-		handler.mount(container);
+		handler.mount(container, { params: {} });
 		expect(container.querySelector(".config-page")).toBeTruthy();
 
 		handler.unmount();

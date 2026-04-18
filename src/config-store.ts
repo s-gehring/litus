@@ -98,7 +98,10 @@ Steps:
 \${logSections}
 
 Fix these CI failures. After fixing, commit and push the changes.`,
-		epicDecomposition: `You are analyzing a codebase to decompose a large feature epic into multiple
+		// Contract: tests/unit/epic-decomposition-prompt.test.ts enforces the
+		// guidance rules below (self-contained, independently verifiable, valuable,
+		// no scaffolding-only specs, substantial scope allowed). Edit with care.
+		epicDecomposition: `You are analyzing a codebase to decompose a large feature epic into a set of
 self-contained implementation specifications.
 
 ## Epic Description
@@ -108,13 +111,32 @@ self-contained implementation specifications.
 ## Instructions
 
 1. Analyze the current codebase structure, patterns, and architecture.
-2. Decompose the epic into the smallest set of self-contained specifications
-   that together deliver the full scope of the epic.
-3. Each spec MUST be independently implementable and testable.
-4. Identify dependency relationships: if spec B requires changes from spec A
-   to exist first, B depends on A.
-5. Avoid circular dependencies.
-6. If any part of the epic is infeasible given the current codebase, note it.
+2. Decompose the epic into a set of specifications that together deliver the
+   full scope of the epic. Prefer fewer, meatier specs over many tiny ones —
+   specs may be substantial in scope (multiple tasks, non-trivial complexity);
+   small size is explicitly not a goal.
+3. Every spec you emit MUST satisfy ALL of the following:
+   a. **Self-contained** — implementable on its own branch without waiting for
+      a sibling spec to land first. The spec's description must stand alone.
+   b. **Independently verifiable** — its acceptance criteria can be validated
+      on its own, with no dependency on as-yet-unwritten sibling specs. A
+      reviewer reading the spec in isolation can judge whether it is done.
+   c. **Valuable** — brings user-observable or application-level value. This
+      is a strong preference: a spec should make the app better in some way a
+      user or the application itself can notice, not merely set up future
+      work.
+4. Avoid trivial scaffolding-only specs (e.g., "mock xyz executable", "create
+   stub bar", "add a placeholder module"). If scaffolding work (mocks, stubs,
+   new modules without behaviour) is genuinely required, fold it into the
+   first consuming spec that actually exercises it — never emit it as its own
+   standalone item. Combine and merge scaffolding into the consumer so every
+   spec delivers something a reviewer can judge on its own.
+5. Identify dependency relationships: if spec B requires changes from spec A
+   to exist first, B depends on A. Keep the dependency graph shallow; a spec
+   that only makes sense after many siblings is a sign it should be merged
+   into one of them.
+6. Avoid circular dependencies.
+7. If any part of the epic is infeasible given the current codebase, note it.
 
 ## Output Format
 
@@ -146,8 +168,10 @@ Rules:
 - \`id\` values are simple lowercase letters (a, b, c, ...)
 - \`dependencies\` reference other spec \`id\` values within this decomposition
 - \`description\` should be detailed enough to serve as a specification input
+  and must make clear the spec's value and what "done" looks like on its own
 - \`summary\` must be a human-readable overview (1-3 paragraphs, markdown allowed)
-- If the epic is already atomic (cannot be split), return a single spec
+- If the epic is already atomic (cannot be split), return a single spec covering
+  the whole epic — do not invent splits just to produce more items
 - If parts are infeasible, set \`infeasibleNotes\` to explain why
 - If the ENTIRE epic is infeasible, \`specs\` can be an empty array with \`infeasibleNotes\` explaining why`,
 		feedbackImplementerInstruction: `You are applying the user's latest feedback to the current feature branch, which already has an open PR at \${prUrl}.
@@ -375,7 +399,7 @@ export class ConfigStore {
 			}
 		}
 
-		const VALID_EFFORT_LEVELS: EffortLevel[] = ["low", "medium", "high", "max"];
+		const VALID_EFFORT_LEVELS: EffortLevel[] = ["low", "medium", "high", "xhigh", "max"];
 
 		if (partial.efforts) {
 			for (const [key, value] of Object.entries(partial.efforts)) {

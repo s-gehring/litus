@@ -1,4 +1,5 @@
 import type {
+	EffortLevel,
 	EpicStatus,
 	FeedbackEntry,
 	FeedbackOutcomeValue,
@@ -8,6 +9,7 @@ import type {
 } from "../../types";
 import { $ } from "../dom";
 import { renderMarkdown } from "../render-markdown";
+import { formatEffortLabel } from "./effort-label";
 
 export const TOOL_ICONS: Record<string, { icon: string; label: string }> = {
 	Agent: { icon: "🤖", label: "Agent" },
@@ -386,7 +388,7 @@ export function updateBranchInfo(workflow: WorkflowState | null): void {
 export type ActiveModelPanelMode =
 	| { kind: "hidden" }
 	| { kind: "workflow"; workflow: WorkflowState }
-	| { kind: "epic-analysis"; model: string; effort: string | null };
+	| { kind: "epic-analysis"; model: string; effort: EffortLevel | null };
 
 function capitalize(value: string): string {
 	if (!value) return value;
@@ -399,7 +401,7 @@ export function setDefaultModelDisplayName(name: string | null): void {
 	defaultModelDisplayName = name?.trim() ? name.trim() : null;
 }
 
-function formatModelEffort(model: string, effort: string | null): string {
+function formatModelEffort(model: string, effort: EffortLevel | null): string {
 	const trimmed = model.trim();
 	const isDefault = !trimmed || trimmed.toLowerCase() === "default";
 	let modelLabel: string;
@@ -408,8 +410,7 @@ function formatModelEffort(model: string, effort: string | null): string {
 	} else {
 		modelLabel = capitalize(trimmed);
 	}
-	const effortLabel = capitalize(effort ?? "default");
-	return `Model: ${modelLabel} - Effort: ${effortLabel}`;
+	return `Model: ${modelLabel} - Effort: ${formatEffortLabel(effort)}`;
 }
 
 export function updateActiveModelPanel(mode: ActiveModelPanelMode): void {
