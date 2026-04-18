@@ -35,6 +35,7 @@ import { renderEpicTree } from "./components/epic-tree";
 import { updateFavicon } from "./components/favicon";
 import {
 	hideFeedbackPanel,
+	hideFeedbackPanelUnlessFor,
 	isFeedbackPanelVisible,
 	renderFeedbackHistory,
 	showFeedbackPanel,
@@ -702,12 +703,25 @@ function renderExpandedView(): void {
 	const outputArea = document.getElementById("output-area");
 	if (outputArea) outputArea.classList.remove("epic-tree-fullsize");
 
+	// Reset overlay panels up-front — each render branch below re-opens any
+	// panel that belongs to its view. This ensures panels bound to a workflow
+	// (like the feedback modal) close automatically when the user navigates
+	// to an unrelated workflow, epic, or the welcome screen.
+	let activeWorkflowId: string | null = null;
+	if (expandedId) {
+		const expandedEpic = epics.get(expandedId);
+		const isEpicAnalysisView = !!expandedEpic && !expandedId.startsWith(EPIC_CARD_PREFIX);
+		if (!isEpicAnalysisView) {
+			activeWorkflowId = expandedEpicId ? selectedChildId : expandedId;
+		}
+	}
+	hideQuestion();
+	hideFeedbackPanelUnlessFor(activeWorkflowId);
+
 	if (!expandedId) {
 		// Nothing expanded — show welcome
 		if (detailArea) detailArea.classList.add("hidden");
 		if (welcomeArea) welcomeArea.classList.remove("hidden");
-		hideQuestion();
-		hideFeedbackPanel();
 		updateWorkflowStatus(null);
 		updateBranchInfo(null);
 		updateActiveModelPanel({ kind: "hidden" });
@@ -736,8 +750,6 @@ function renderExpandedView(): void {
 		updateUserInput(epic.description);
 		updateSpecDetails("");
 		updateDetailActions([]);
-		hideQuestion();
-		hideFeedbackPanel();
 
 		// Make output area fill available space for epic analysis
 		const oa = $("#output-area");
@@ -809,8 +821,6 @@ function renderEpicTreeView(agg: EpicAggregatedState): void {
 	if (stepLabel) stepLabel.classList.add("hidden");
 	updateFlavor("");
 	updateDetailActions([]);
-	hideQuestion();
-	hideFeedbackPanel();
 	clearOutput();
 	updateSpecDetails("");
 
@@ -1072,16 +1082,17 @@ function renderWorkflowDetail(entry: WorkflowClientState, epicContext?: EpicAggr
 	// Auto-select a step and render its output
 	autoSelectStep(wf);
 
-	// Question
+	// Question — reset happened at the top of renderExpandedView, so we only
+	// need to re-open the panel when the workflow has a pending question.
 	const isTerminal =
 		wf.status === "cancelled" || wf.status === "completed" || wf.status === "error";
 	if (wf.pendingQuestion && !isTerminal) {
 		showQuestion(wf.pendingQuestion);
-	} else {
-		hideQuestion();
 	}
 
-	// Auto-hide the feedback panel when the workflow is no longer at the manual-mode merge-pr pause
+	// Feedback panel: when the workflow transitions out of the eligible state
+	// (e.g. paused→running inside the same workflow), close any open panel.
+	// Cross-workflow navigation is already handled at the top of renderExpandedView.
 	const feedbackEligible =
 		wf.status === "paused" &&
 		currentAutoMode === "manual" &&

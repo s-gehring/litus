@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
 	hideFeedbackPanel,
+	hideFeedbackPanelUnlessFor,
 	renderFeedbackHistory,
 	showFeedbackPanel,
 } from "../../src/client/components/feedback-panel";
@@ -156,6 +157,36 @@ describe("feedback-panel", () => {
 		cancelBtn.click();
 
 		expect(submitted).toEqual([]);
+		expect(document.querySelector("#feedback-panel")?.classList.contains("hidden")).toBe(true);
+	});
+
+	test("hideFeedbackPanelUnlessFor keeps the panel when workflow id matches", () => {
+		const wf = makeWorkflowState({ id: "wf-active" });
+		wf.feedbackEntries = [];
+		showFeedbackPanel(wf, () => {});
+
+		hideFeedbackPanelUnlessFor("wf-active");
+
+		expect(document.querySelector("#feedback-panel")?.classList.contains("hidden")).toBe(false);
+	});
+
+	test("hideFeedbackPanelUnlessFor hides the panel when workflow id differs", () => {
+		const wf = makeWorkflowState({ id: "wf-a" });
+		wf.feedbackEntries = [];
+		showFeedbackPanel(wf, () => {});
+
+		hideFeedbackPanelUnlessFor("wf-b");
+
+		expect(document.querySelector("#feedback-panel")?.classList.contains("hidden")).toBe(true);
+	});
+
+	test("hideFeedbackPanelUnlessFor hides the panel when no workflow is active", () => {
+		const wf = makeWorkflowState({ id: "wf-a" });
+		wf.feedbackEntries = [];
+		showFeedbackPanel(wf, () => {});
+
+		hideFeedbackPanelUnlessFor(null);
+
 		expect(document.querySelector("#feedback-panel")?.classList.contains("hidden")).toBe(true);
 	});
 
