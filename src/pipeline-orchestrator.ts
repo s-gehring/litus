@@ -1187,6 +1187,10 @@ export class PipelineOrchestrator {
 
 		workflow.ciCycle.lastCheckResults = result.results;
 
+		// Refresh from config so limit changes take effect on the next monitor
+		// result rather than being frozen at workflow creation time.
+		workflow.ciCycle.maxAttempts = configStore.get().limits.ciFixMaxAttempts;
+
 		// If max attempts already reached, give up
 		if (workflow.ciCycle.attempt >= workflow.ciCycle.maxAttempts) {
 			const msg = result.timedOut
