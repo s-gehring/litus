@@ -88,16 +88,12 @@ function renderArtifactAffordance(
 	const btn = document.createElement("button");
 	btn.type = "button";
 	btn.className = "artifact-affordance";
-	const label = descriptors[0]?.affordanceLabel ?? "View artifact";
-	btn.textContent = descriptors.length > 1 ? `${label}s ▾` : label;
+	btn.textContent = "📄";
+	const label = "Artifacts";
 	btn.title = label;
 	btn.setAttribute("aria-label", label);
 	btn.addEventListener("click", (e) => {
 		e.stopPropagation();
-		if (descriptors.length === 1) {
-			openArtifactViewer({ workflowId, descriptor: descriptors[0], triggerEl: btn });
-			return;
-		}
 		openDropdown(btn, descriptors, (descriptor) => {
 			openArtifactViewer({ workflowId, descriptor, triggerEl: btn });
 		});

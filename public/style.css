@@ -1959,11 +1959,109 @@ body::-webkit-scrollbar-track {
   padding: 0 6px;
 }
 .artifact-modal-body {
-  padding: 16px 20px;
+  padding: 16px 24px;
   overflow: auto;
   flex: 1;
-  line-height: 1.5;
+  line-height: 1.6;
+  font-size: 0.88rem;
 }
+.artifact-modal-body h1,
+.artifact-modal-body h2,
+.artifact-modal-body h3,
+.artifact-modal-body h4,
+.artifact-modal-body h5,
+.artifact-modal-body h6 {
+  color: var(--accent-blue);
+  margin: 1.2em 0 0.5em;
+  line-height: 1.3;
+  font-weight: 600;
+}
+.artifact-modal-body h1:first-child,
+.artifact-modal-body h2:first-child,
+.artifact-modal-body h3:first-child { margin-top: 0; }
+.artifact-modal-body h1 { font-size: 1.35rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+.artifact-modal-body h2 { font-size: 1.15rem; border-bottom: 1px solid var(--border); padding-bottom: 0.2em; }
+.artifact-modal-body h3 { font-size: 1.02rem; }
+.artifact-modal-body h4 { font-size: 0.95rem; color: var(--text); }
+.artifact-modal-body h5,
+.artifact-modal-body h6 { font-size: 0.88rem; color: var(--text); }
+.artifact-modal-body p { margin: 0 0 0.85em; }
+.artifact-modal-body ul,
+.artifact-modal-body ol {
+  margin: 0.4em 0 0.9em;
+  padding-left: 1.6em;
+}
+.artifact-modal-body ul { list-style: disc outside; }
+.artifact-modal-body ol { list-style: decimal outside; }
+.artifact-modal-body li {
+  margin: 0.2em 0;
+  padding-left: 0.15em;
+}
+.artifact-modal-body li > p { margin: 0 0 0.3em; }
+.artifact-modal-body li ul,
+.artifact-modal-body li ol { margin: 0.25em 0 0.35em; }
+.artifact-modal-body blockquote {
+  margin: 0.6em 0;
+  padding: 0.2em 0.9em;
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.02);
+}
+.artifact-modal-body code {
+  font-family: "Cascadia Code", "Fira Code", ui-monospace, monospace;
+  font-size: 0.82rem;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.artifact-modal-body pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  margin: 0.6em 0 1em;
+  line-height: 1.45;
+}
+.artifact-modal-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.8rem;
+}
+.artifact-modal-body a {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+.artifact-modal-body a:hover { text-decoration: underline; }
+.artifact-modal-body table {
+  border-collapse: collapse;
+  margin: 0.6em 0 1em;
+  font-size: 0.82rem;
+  width: auto;
+  max-width: 100%;
+}
+.artifact-modal-body th,
+.artifact-modal-body td {
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: left;
+}
+.artifact-modal-body th {
+  background: var(--surface-2);
+  font-weight: 600;
+  color: var(--text);
+}
+.artifact-modal-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.2em 0;
+}
+.artifact-modal-body img { max-width: 100%; height: auto; }
+.artifact-modal-body input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.artifact-modal-body > *:last-child { margin-bottom: 0; }
 .artifact-modal-unavailable {
   color: var(--text-dim);
   font-style: italic;

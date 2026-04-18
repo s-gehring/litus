@@ -50,6 +50,7 @@ import {
 	type Workflow,
 	type WorkflowStatus,
 } from "./types";
+import { snapshotStepArtifacts } from "./workflow-artifacts";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
 
@@ -1476,6 +1477,19 @@ export class PipelineOrchestrator {
 
 	/** Persist and route to the appropriate next step after completion. */
 	private routeAfterStep(workflow: Workflow): void {
+		// Snapshot artifacts now that branch detection/worktree rename have
+		// settled, so getSpecsRoot() points at the correct path.
+		const completedStep = workflow.steps[workflow.currentStepIndex];
+		if (completedStep) {
+			try {
+				snapshotStepArtifacts(workflow, completedStep.name);
+			} catch (err) {
+				logger.warn(
+					`[pipeline] Failed to snapshot artifacts for ${completedStep.name}: ${String(err)}`,
+				);
+			}
+		}
+
 		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);
 

@@ -3,11 +3,10 @@ import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
 import { type ClientMessage, STEP, type Workflow } from "../types";
 import {
-	getSpecsRoot,
+	getArtifactSnapshotPath,
 	getWorkflowBranch,
 	listArtifacts,
 	lookupArtifact,
-	resolveArtifactPath,
 	sanitizeBranchForFilename,
 } from "../workflow-artifacts";
 import type { HandlerDeps, MessageHandler } from "./handler-types";
@@ -257,11 +256,7 @@ async function resolveArtifactAbsolutePath(
 	if (!workflow) {
 		return { kind: "error", response: jsonError(404, "workflow_not_found") };
 	}
-	const specsRoot = getSpecsRoot(workflow);
-	if (!specsRoot) {
-		return { kind: "error", response: jsonError(404, "artifact_unavailable") };
-	}
-	const absPath = resolveArtifactPath(specsRoot, entry.relPath);
+	const absPath = getArtifactSnapshotPath(workflowId, entry.step, entry.runOrdinal, entry.relPath);
 	if (!absPath) {
 		return { kind: "error", response: jsonError(400, "invalid_artifact") };
 	}

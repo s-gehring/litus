@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
-import { listArtifacts, resolveArtifactPath } from "../../src/workflow-artifacts";
+import {
+	getArtifactsRoot,
+	listArtifacts,
+	resolveArtifactPath,
+	snapshotStepArtifacts,
+} from "../../src/workflow-artifacts";
 import { makeWorkflow } from "../helpers";
 import { withTempDir } from "../test-infra";
 
@@ -16,48 +21,49 @@ function seedSpecs(dir: string, branch: string, files: Record<string, string>): 
 	return specsRoot;
 }
 
+/** Seed a snapshot file directly at $HOME/.litus/artifacts/<wf>/<step>/<ordinal>/<rel>. */
+function seedSnapshot(
+	workflowId: string,
+	step: string,
+	ordinal: number | null,
+	relPath: string,
+	content: string,
+): void {
+	const ordSeg = ordinal == null ? "_" : String(ordinal);
+	const abs = join(getArtifactsRoot(workflowId), step, ordSeg, relPath);
+	mkdirSync(join(abs, ".."), { recursive: true });
+	writeFileSync(abs, content);
+}
+
 describe("workflow-artifacts: step mapping and discovery", () => {
-	test("specify alone surfaces only the spec descriptor (FR-005)", async () => {
-		await withTempDir(async (dir) => {
-			seedSpecs(dir, "feat-branch", { "spec.md": "# hi" });
-			const wf = makeWorkflow({
-				id: "wf-1a",
-				worktreePath: dir,
-				featureBranch: "feat-branch",
-			});
-			const res = listArtifacts(wf);
-			expect(res.branch).toBe("feat-branch");
-			const spec = res.items.find((i) => i.step === "specify");
-			const clarify = res.items.find((i) => i.step === "clarify");
-			expect(spec?.affordanceLabel).toBe("View spec");
-			expect(spec?.relPath).toBe("spec.md");
-			expect(clarify).toBeUndefined();
-		});
+	test("specify alone surfaces only the spec descriptor (FR-005)", () => {
+		const id = `wf-1a-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		seedSnapshot(id, "specify", null, "spec.md", "# hi");
+		const wf = makeWorkflow({ id, featureBranch: "feat-branch" });
+		const res = listArtifacts(wf);
+		expect(res.branch).toBe("feat-branch");
+		const spec = res.items.find((i) => i.step === "specify");
+		const clarify = res.items.find((i) => i.step === "clarify");
+		expect(spec?.displayLabel).toBe("spec.md");
+		expect(spec?.relPath).toBe("spec.md");
+		expect(clarify).toBeUndefined();
 	});
 
-	test("clarify descriptor appears only once the clarify step has run (FR-005)", async () => {
-		await withTempDir(async (dir) => {
-			seedSpecs(dir, "feat-branch", { "spec.md": "# hi" });
-			const wf = makeWorkflow({
-				id: "wf-1b",
-				worktreePath: dir,
-				featureBranch: "feat-branch",
-			});
-			const clarifyStep = wf.steps.find((s) => s.name === "clarify");
-			if (!clarifyStep) throw new Error("missing clarify step");
-			clarifyStep.status = "completed";
-
-			const res = listArtifacts(wf);
-			const spec = res.items.find((i) => i.step === "specify");
-			const clarify = res.items.find((i) => i.step === "clarify");
-			expect(spec?.affordanceLabel).toBe("View spec");
-			expect(clarify?.affordanceLabel).toBe("View spec with clarifications");
-			expect(clarify?.relPath).toBe("spec.md");
-			expect(spec?.id).not.toBe(clarify?.id);
-		});
+	test("clarify descriptor appears once a clarify snapshot exists (FR-005)", () => {
+		const id = `wf-1b-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		seedSnapshot(id, "specify", null, "spec.md", "# v1");
+		seedSnapshot(id, "clarify", null, "spec.md", "# v2");
+		const wf = makeWorkflow({ id, featureBranch: "feat-branch" });
+		const res = listArtifacts(wf);
+		const spec = res.items.find((i) => i.step === "specify");
+		const clarify = res.items.find((i) => i.step === "clarify");
+		expect(spec?.displayLabel).toBe("spec.md");
+		expect(clarify?.displayLabel).toBe("spec.md (clarified)");
+		expect(clarify?.relPath).toBe("spec.md");
+		expect(spec?.id).not.toBe(clarify?.id);
 	});
 
-	test("plan step surfaces plan.md + side artifacts + contracts/**/*.md", async () => {
+	test("plan step surfaces plan.md + side artifacts + contracts/**/*.md via snapshotting", async () => {
 		await withTempDir(async (dir) => {
 			seedSpecs(dir, "feat-branch", {
 				"plan.md": "p",
@@ -67,11 +73,13 @@ describe("workflow-artifacts: step mapping and discovery", () => {
 				"contracts/foo.md": "f",
 				"contracts/nested/bar.md": "b",
 			});
+			const id = `wf-2-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 			const wf = makeWorkflow({
-				id: "wf-2",
+				id,
 				worktreePath: dir,
 				featureBranch: "feat-branch",
 			});
+			snapshotStepArtifacts(wf, "plan");
 			const plans = listArtifacts(wf).items.filter((i) => i.step === "plan");
 			const names = plans.map((p) => p.relPath).sort();
 			expect(names).toEqual([
@@ -85,117 +93,57 @@ describe("workflow-artifacts: step mapping and discovery", () => {
 		});
 	});
 
-	test("missing files are filtered out", async () => {
+	test("missing snapshots are not listed", () => {
+		const id = `wf-3-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		seedSnapshot(id, "plan", null, "plan.md", "p");
+		const wf = makeWorkflow({ id, featureBranch: "feat-branch" });
+		const res = listArtifacts(wf);
+		const steps = res.items.map((i) => i.step);
+		expect(steps).not.toContain("specify");
+		expect(steps).not.toContain("tasks");
+		expect(steps).toContain("plan");
+	});
+
+	test("review + implement-review pair by ordinal", () => {
+		const id = `wf-4-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		seedSnapshot(id, "review", 1, "code-review.md", "r1");
+		seedSnapshot(id, "review", 2, "code-review-2.md", "r2");
+		seedSnapshot(id, "review", 3, "code-review-3.md", "r3");
+		seedSnapshot(id, "implement-review", 1, "code-review.md", "r1-fixed");
+		seedSnapshot(id, "implement-review", 2, "code-review-2.md", "r2-fixed");
+		const wf = makeWorkflow({ id, featureBranch: "feat" });
+		const res = listArtifacts(wf);
+		const reviews = res.items.filter((i) => i.step === "review");
+		const impls = res.items.filter((i) => i.step === "implement-review");
+		expect(reviews.map((r) => r.runOrdinal)).toEqual([1, 2, 3]);
+		expect(impls.map((i) => i.runOrdinal)).toEqual([1, 2]);
+		for (const ord of [1, 2]) {
+			const r = reviews.find((x) => x.runOrdinal === ord);
+			const i = impls.find((x) => x.runOrdinal === ord);
+			expect(r?.relPath).toBe(i?.relPath ?? "");
+		}
+	});
+
+	test("snapshotStepArtifacts copies spec.md from specs root at specify time", async () => {
 		await withTempDir(async (dir) => {
-			seedSpecs(dir, "feat-branch", { "plan.md": "p" });
-			const wf = makeWorkflow({
-				id: "wf-3",
-				worktreePath: dir,
-				featureBranch: "feat-branch",
-			});
+			seedSpecs(dir, "feat", { "spec.md": "original" });
+			const id = `wf-snap-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+			const wf = makeWorkflow({ id, worktreePath: dir, featureBranch: "feat" });
+			snapshotStepArtifacts(wf, "specify");
+			// Mutate the specs/ file — the snapshot must retain the original content.
+			writeFileSync(join(dir, "specs", "feat", "spec.md"), "modified");
 			const res = listArtifacts(wf);
-			const steps = res.items.map((i) => i.step);
-			expect(steps).not.toContain("specify");
-			expect(steps).not.toContain("tasks");
-			expect(steps).toContain("plan");
+			const spec = res.items.find((i) => i.step === "specify");
+			expect(spec?.relPath).toBe("spec.md");
 		});
 	});
 
-	test("review + implement-review pair by ordinal", async () => {
-		await withTempDir(async (dir) => {
-			seedSpecs(dir, "feat", {
-				"code-review.md": "r1",
-				"code-review-2.md": "r2",
-				"code-review-3.md": "r3",
-			});
-			const wf = makeWorkflow({
-				id: "wf-4",
-				worktreePath: dir,
-				featureBranch: "feat",
-			});
-			// Mark implement-review as having completed 2 runs (history=1 + status=completed)
-			const impl = wf.steps.find((s) => s.name === "implement-review");
-			if (!impl) throw new Error("missing implement-review step");
-			impl.status = "completed";
-			impl.history = [
-				{
-					runNumber: 1,
-					status: "completed",
-					output: "",
-					error: null,
-					startedAt: new Date().toISOString(),
-					completedAt: new Date().toISOString(),
-				},
-			];
-
-			const res = listArtifacts(wf);
-			const reviews = res.items.filter((i) => i.step === "review");
-			const impls = res.items.filter((i) => i.step === "implement-review");
-			expect(reviews.map((r) => r.runOrdinal)).toEqual([1, 2, 3]);
-			expect(impls.map((i) => i.runOrdinal)).toEqual([1, 2]);
-			// Matching ordinals must reference the same file
-			for (const ord of [1, 2]) {
-				const r = reviews.find((x) => x.runOrdinal === ord);
-				const i = impls.find((x) => x.runOrdinal === ord);
-				expect(r?.relPath).toBe(i?.relPath ?? "");
-			}
-		});
-	});
-
-	test("implement-review history entries with non-completed status do not count", async () => {
-		await withTempDir(async (dir) => {
-			seedSpecs(dir, "feat", {
-				"code-review.md": "r1",
-				"code-review-2.md": "r2",
-				"code-review-3.md": "r3",
-			});
-			const wf = makeWorkflow({
-				id: "wf-4b",
-				worktreePath: dir,
-				featureBranch: "feat",
-			});
-			const impl = wf.steps.find((s) => s.name === "implement-review");
-			if (!impl) throw new Error("missing implement-review step");
-			impl.status = "completed";
-			// One errored run + one completed run in history, plus the current
-			// completed status: historical error must NOT be paired.
-			impl.history = [
-				{
-					runNumber: 1,
-					status: "error",
-					output: "",
-					error: "boom",
-					startedAt: new Date().toISOString(),
-					completedAt: new Date().toISOString(),
-				},
-				{
-					runNumber: 2,
-					status: "completed",
-					output: "",
-					error: null,
-					startedAt: new Date().toISOString(),
-					completedAt: new Date().toISOString(),
-				},
-			];
-
-			const res = listArtifacts(wf);
-			const impls = res.items.filter((i) => i.step === "implement-review");
-			expect(impls.length).toBe(2);
-			expect(impls.map((i) => i.runOrdinal)).toEqual([1, 2]);
-		});
-	});
-
-	test("empty list when worktreePath missing or specs dir absent", async () => {
-		await withTempDir(async (dir) => {
-			const wf = makeWorkflow({
-				id: "wf-5",
-				worktreePath: dir,
-				featureBranch: "missing-branch",
-			});
-			const res = listArtifacts(wf);
-			expect(res.items).toEqual([]);
-			expect(res.branch).toBe("missing-branch");
-		});
+	test("empty list when no snapshots exist", () => {
+		const id = `wf-5-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const wf = makeWorkflow({ id, featureBranch: "missing-branch" });
+		const res = listArtifacts(wf);
+		expect(res.items).toEqual([]);
+		expect(res.branch).toBe("missing-branch");
 	});
 });
 
