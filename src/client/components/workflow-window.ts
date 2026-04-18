@@ -94,12 +94,10 @@ export function appendOutput(text: string, type: "normal" | "error" | "system" =
 	log.scrollTop = log.scrollHeight;
 }
 
-// Thinking indicator: small animated marker at the tail of the active step's
-// output while LLM tokens are streaming. A hide debounce absorbs sub-second
-// tool-call gaps so the indicator does not flicker during tool use.
-
-const THINKING_HIDE_DEBOUNCE_MS = 400;
-let thinkingHideTimer: ReturnType<typeof setTimeout> | null = null;
+// Thinking indicator: small animated marker pinned at the tail of the active
+// step's output while the step is `running`. Visibility is driven by workflow
+// state, not by output-stream timing — so it appears during silent "thinking"
+// before the first token and stays visible across tool-only streaks.
 
 function getOrCreateThinkingIndicator(): HTMLElement {
 	const log = $("#output-log");
@@ -111,38 +109,24 @@ function getOrCreateThinkingIndicator(): HTMLElement {
 		el.innerHTML =
 			'<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
 		log.appendChild(el);
-	} else {
-		// Always keep the indicator pinned at the tail so new output lines
-		// push it down rather than orphaning it mid-log.
+	} else if (el !== log.lastElementChild) {
 		log.appendChild(el);
 	}
 	return el;
 }
 
-export function showThinkingIndicator(): void {
-	if (thinkingHideTimer) {
-		clearTimeout(thinkingHideTimer);
-		thinkingHideTimer = null;
-	}
-	const el = getOrCreateThinkingIndicator();
-	el.classList.add("visible");
-	const log = $("#output-log");
-	log.scrollTop = log.scrollHeight;
-}
-
-export function scheduleHideThinkingIndicator(): void {
-	if (thinkingHideTimer) clearTimeout(thinkingHideTimer);
-	thinkingHideTimer = setTimeout(() => {
-		thinkingHideTimer = null;
+export function syncThinkingIndicator(show: boolean): void {
+	if (show) {
+		const el = getOrCreateThinkingIndicator();
+		el.classList.add("visible");
+		const log = $("#output-log");
+		log.scrollTop = log.scrollHeight;
+	} else {
 		removeThinkingIndicator();
-	}, THINKING_HIDE_DEBOUNCE_MS);
+	}
 }
 
 export function removeThinkingIndicator(): void {
-	if (thinkingHideTimer) {
-		clearTimeout(thinkingHideTimer);
-		thinkingHideTimer = null;
-	}
 	const log = $("#output-log");
 	const el = log.querySelector(".thinking-indicator");
 	if (el) el.remove();
@@ -332,10 +316,6 @@ export function renderOutputEntries(entries: OutputEntry[]): void {
 
 export function clearOutput(): void {
 	const log = $("#output-log");
-	if (thinkingHideTimer) {
-		clearTimeout(thinkingHideTimer);
-		thinkingHideTimer = null;
-	}
 	log.replaceChildren();
 }
 
