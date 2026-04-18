@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- `limits.ciFixMaxAttempts` default raised from 3 to 10 so more CI failures are auto-fixed before giving up.
+- CI fix attempt budget is refreshed from config on every monitor result, so raising the limit mid-workflow takes
+  effect on the next poll instead of being frozen at workflow creation.
+- Retrying a workflow after "CI checks still failing after N fix attempts" now resets the attempt budget to 0 and
+  picks up the current config value, so retry is no longer refused immediately.
+
 ## [1.3.0] — 2026-04-18
 
 ### Added
