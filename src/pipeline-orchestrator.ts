@@ -454,6 +454,12 @@ export class PipelineOrchestrator {
 		}
 
 		if (step.name === STEP.MONITOR_CI) {
+			// User-initiated retry grants a fresh attempt budget and picks up any
+			// config changes. Without this, a retry after "CI checks still failing
+			// after N fix attempts" would re-trip the exhausted check immediately.
+			workflow.ciCycle.attempt = 0;
+			workflow.ciCycle.monitorStartedAt = null;
+			workflow.ciCycle.maxAttempts = configStore.get().limits.ciFixMaxAttempts;
 			this.runMonitorCi(workflow);
 			return;
 		}
@@ -1186,6 +1192,10 @@ export class PipelineOrchestrator {
 		}
 
 		workflow.ciCycle.lastCheckResults = result.results;
+
+		// Refresh from config so limit changes take effect on the next monitor
+		// result rather than being frozen at workflow creation time.
+		workflow.ciCycle.maxAttempts = configStore.get().limits.ciFixMaxAttempts;
 
 		// If max attempts already reached, give up
 		if (workflow.ciCycle.attempt >= workflow.ciCycle.maxAttempts) {
