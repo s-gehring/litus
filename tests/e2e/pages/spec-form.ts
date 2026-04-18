@@ -5,7 +5,7 @@ export class SpecFormPage {
 
 	modal(): Locator {
 		return this.page
-			.locator(".modal")
+			.locator(".modal-panel")
 			.filter({ has: this.page.locator(".modal-title", { hasText: "New Specification" }) });
 	}
 
