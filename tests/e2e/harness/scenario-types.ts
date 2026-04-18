@@ -1,5 +1,5 @@
 export interface StreamJsonEvent {
-	type: string;
+	type: "system" | "assistant" | "user" | "result";
 	[key: string]: unknown;
 }
 
@@ -13,8 +13,9 @@ export interface StreamJsonEvent {
  *   - When `text` is present, the fake writes it verbatim to stdout
  *     (text mode, used by `QuestionDetector` and `ReviewClassifier`).
  *
- * Entries may provide both to be tolerant of either caller; the fake
- * picks based on `--output-format` at invocation time.
+ * An entry must provide exactly one of `events` or `text` (mirrors the
+ * `oneOf` in `scenario-script.schema.json`). The fake dies if the invocation's
+ * `--output-format` does not match the field the entry provides.
  */
 export interface ClaudeInvocationScript {
 	events?: StreamJsonEvent[];

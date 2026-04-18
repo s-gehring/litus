@@ -47,6 +47,19 @@ function readOutputFormat(argv: string[]): string {
 
 async function main() {
 	const argv = process.argv.slice(2);
+
+	// Short-circuit probe invocations (e.g. setup checker's `claude --version`)
+	// without consuming a scenario slot. These are not part of the scripted
+	// pipeline sequence and must not advance the FIFO counter.
+	if (argv.length === 1 && (argv[0] === "--version" || argv[0] === "-v")) {
+		process.stdout.write("1.0.0 (litus-e2e-fake)\n");
+		process.exit(0);
+	}
+	if (argv.length === 1 && (argv[0] === "--help" || argv[0] === "-h")) {
+		process.stdout.write("litus-e2e-fake claude\n");
+		process.exit(0);
+	}
+
 	const outputFormat = readOutputFormat(argv);
 	const { scenario, path } = loadScenario();
 	const counterFile = process.env.LITUS_E2E_COUNTER;
@@ -72,16 +85,21 @@ async function main() {
 		for (const event of script.events) {
 			process.stdout.write(`${JSON.stringify(event)}\n`);
 		}
-	} else {
-		// text (or anything else the server might try); emit the scripted text verbatim
+	} else if (outputFormat === "text") {
 		if (script.text === undefined) {
 			die(
-				`claude invocation ${idx} was called with --output-format ${outputFormat || "text"} but scenario entry has no \`text\` (argv=${JSON.stringify(argv)})`,
+				`claude invocation ${idx} was called with --output-format text but scenario entry has no \`text\` (argv=${JSON.stringify(argv)})`,
 			);
 		}
 		process.stdout.write(script.text);
+	} else {
+		die(
+			`claude invocation ${idx} called with unsupported --output-format: ${JSON.stringify(outputFormat)} (argv=${JSON.stringify(argv)})`,
+		);
 	}
 
+	// Flush buffered stdout before process.exit — otherwise piped output may be
+	// truncated and the server observes a short read.
 	await new Promise<void>((resolve) => {
 		process.stdout.write("", () => resolve());
 	});

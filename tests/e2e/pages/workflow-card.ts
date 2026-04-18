@@ -75,14 +75,10 @@ export class WorkflowCardPage {
 
 	/**
 	 * The UI merge action shown when the pipeline pauses at `merge-pr` in
-	 * manual mode. Implemented as the Resume button inside the step's detail
-	 * actions — clicking it proceeds to call `gh pr merge`.
+	 * manual mode. Selected by the `action-resume` test id rendered on every
+	 * detail-action button (see `renderActionButtons` in workflow-window.ts).
 	 */
 	mergeAction(): Locator {
-		return this.detailActions().locator("button", { hasText: "Resume" });
-	}
-
-	card(workflowId: string): Locator {
-		return this.page.locator(`.workflow-card[data-workflow-id="${workflowId}"]`);
+		return this.detailActions().locator('[data-testid="action-resume"]');
 	}
 }

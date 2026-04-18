@@ -23,6 +23,7 @@ test("happy-path: spec creation through merged PR", async ({ page, server, sandb
 
 	const card = new WorkflowCardPage(page);
 
+	await waitForStep(card, "setup", "completed", { timeoutMs: 60_000 });
 	await waitForStep(card, "specify", "completed", { timeoutMs: 60_000 });
 	await waitForStep(card, "clarify", "waiting", { timeoutMs: 60_000 });
 

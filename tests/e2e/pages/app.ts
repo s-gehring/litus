@@ -7,10 +7,6 @@ export class AppPage {
 		await this.page.goto(baseUrl);
 	}
 
-	connectionStatus(): Locator {
-		return this.page.locator("#connection-status");
-	}
-
 	newSpecButton(): Locator {
 		return this.page.locator("#btn-new-spec");
 	}
@@ -21,10 +17,6 @@ export class AppPage {
 
 	workflowCards(): Locator {
 		return this.page.locator(".workflow-card");
-	}
-
-	workflowCardById(workflowId: string): Locator {
-		return this.page.locator(`.workflow-card[data-workflow-id="${workflowId}"]`);
 	}
 
 	async waitConnected() {

@@ -42,7 +42,7 @@
 				}
 			]
 		},
-		{ "text": "yes" },
+		{ "text": "yes\n" },
 		{
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "sess-clarify-2" },
@@ -156,7 +156,7 @@
 				}
 			]
 		},
-		{ "text": "nit" },
+		{ "text": "nit\n" },
 		{
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "sess-cpp" },
@@ -198,7 +198,6 @@
 			"exitCode": 0,
 			"stdout": "https://github.com/example/repo/pull/42\n"
 		},
-		"run list": { "exitCode": 0, "stdout": "[]" },
 		"run view": { "exitCode": 0, "stdout": "" }
 	}
 }

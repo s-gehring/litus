@@ -103,8 +103,16 @@ function keyPrefixes(positional: string[]): string[] {
 }
 
 function main() {
-	const { scenario, path } = loadScenario();
 	const argv = process.argv.slice(2);
+
+	// Short-circuit probe invocations (e.g. setup checker's `gh --version`)
+	// so they don't go through subcommand lookup.
+	if (argv.length === 1 && (argv[0] === "--version" || argv[0] === "-v")) {
+		process.stdout.write("gh version 2.60.0 (litus-e2e-fake)\n");
+		process.exit(0);
+	}
+
+	const { scenario, path } = loadScenario();
 	const parsed = parseArgs(argv);
 	if (parsed.positional.length === 0) {
 		die(`no subcommand provided: argv=${JSON.stringify(argv)}`);

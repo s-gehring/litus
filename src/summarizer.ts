@@ -2,6 +2,12 @@ import { configStore } from "./config-store";
 import { logger } from "./logger";
 import { runClaude } from "./spawn-utils";
 
+// When the E2E harness is driving the server, summarizer spawns race the
+// pipeline-step claude spawns against a shared FIFO scenario counter. Skip
+// cosmetic summaries entirely in that mode so scenario authoring stays
+// deterministic per pipeline step.
+const SUMMARIZER_DISABLED = Boolean(process.env.LITUS_E2E_SCENARIO);
+
 export class Summarizer {
 	private charCount: Map<string, number> = new Map();
 	private recentChunks: Map<string, string[]> = new Map();
@@ -12,6 +18,7 @@ export class Summarizer {
 	private readonly MAX_RECENT_CHUNKS = 10;
 
 	maybeSummarize(workflowId: string, text: string, callback: (summary: string) => void): void {
+		if (SUMMARIZER_DISABLED) return;
 		// Track character count without joining the full buffer
 		this.charCount.set(workflowId, (this.charCount.get(workflowId) ?? 0) + text.length);
 
@@ -86,6 +93,7 @@ export class Summarizer {
 	}
 
 	async generateSpecSummary(specification: string): Promise<{ summary: string; flavor: string }> {
+		if (SUMMARIZER_DISABLED) return { summary: "", flavor: "" };
 		try {
 			const config = configStore.get();
 			const promptTemplate = config.prompts.specSummarization;

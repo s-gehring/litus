@@ -17,7 +17,9 @@ export interface SpawnServerOptions {
 }
 
 const READY_MARKER = "Litus running at http://localhost:";
-const READY_TIMEOUT_MS = 30_000;
+// 30s covers cold bun start + client bundle resolve on a loaded CI runner;
+// overridable via env for slower sandboxes / debugging.
+const READY_TIMEOUT_MS = Number(process.env.LITUS_E2E_SERVER_READY_MS ?? 30_000);
 
 export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProcess> {
 	const logFile = await open(opts.logPath, "w");

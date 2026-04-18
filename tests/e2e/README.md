@@ -44,7 +44,7 @@ tests/e2e/
 ## Adding a new scenario
 
 1. Copy `scenarios/happy-path.json` to `scenarios/<my-scenario>.json`. The JSON schema is documented at `specs/001-e2e-browser-tests/contracts/scenario-script.schema.json`.
-2. Edit the `claude` list (one entry per `claude` invocation, FIFO across the whole scenario — including side calls like `QuestionDetector.classifyWithHaiku` and `ReviewClassifier.classify`). Each entry uses `{"events": [...]}` for `--output-format stream-json` (pipeline steps) or `{"text": "..."}` for `--output-format text` (detectors/classifier). The `gh` map keys subcommands like `"pr create"`, `"pr merge"`, `"auth status"`.
+2. Edit the `claude` list (one entry per `claude` invocation, FIFO across the whole scenario — including side calls like `QuestionDetector.classifyWithHaiku` and `ReviewClassifier.classify`). Each entry uses `{"events": [...]}` for `--output-format stream-json` (pipeline steps) or `{"text": "..."}` for `--output-format text` (detectors/classifier). Probe invocations like `claude --version` / `gh --version` are short-circuited inside the fake and do NOT consume a scenario slot. The `Summarizer` (which would otherwise race the pipeline's claude spawns) is skipped entirely when `LITUS_E2E_SCENARIO` is set, so scenarios do not need to script its calls. The `gh` map keys subcommands like `"pr create"`, `"pr merge"`, `"auth status"`.
 3. Add a new spec under `tests/` that declares `test.use({ scenarioName: "<my-scenario>" })` and composes helpers from `../helpers`.
 4. Run `bun run test:e2e`.
 

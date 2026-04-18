@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { test as base } from "@playwright/test";
 import { createSandbox, type Sandbox } from "./sandbox";
@@ -29,7 +29,7 @@ export const test = base.extend<Fixtures>({
 
 	scenario: async ({ scenarioName }, use) => {
 		const path = resolve(REPO_ROOT, "tests/e2e/scenarios", `${scenarioName}.json`);
-		await readFile(path, "utf8"); // fail fast if missing
+		await access(path); // fail fast if missing
 		await use({ path, name: scenarioName });
 	},
 
@@ -53,10 +53,6 @@ export const test = base.extend<Fixtures>({
 		},
 		{ auto: false },
 	],
-
-	baseURL: async ({ server }, use) => {
-		await use(server.baseUrl);
-	},
 });
 
 export const expect = test.expect;

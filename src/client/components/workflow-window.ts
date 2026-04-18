@@ -593,6 +593,7 @@ export function updateDetailActions(
 		const el = document.createElement("button");
 		el.className = `btn ${btn.className}`;
 		el.textContent = btn.label;
+		el.dataset.testid = `action-${btn.label.toLowerCase().replace(/\s+/g, "-")}`;
 		el.addEventListener("click", btn.onClick);
 		container.appendChild(el);
 	}

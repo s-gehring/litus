@@ -38,7 +38,27 @@ async function runCmd(
 	}
 }
 
-async function initTargetRepo(dir: string): Promise<void> {
+const SPECKIT_INIT_NAMES = ["clarify", "implement", "plan", "specify", "tasks"];
+
+async function populateSpeckitSkills(targetDir: string): Promise<void> {
+	// Pre-populate the skill stubs that `ensureSpeckitSkills` looks for so
+	// `hasSpeckitSkills` returns true and the orchestrator never shells out
+	// to `uvx specify init` (which would require network access and violate
+	// hermetic isolation — SC-004).
+	const skillsDir = join(targetDir, ".claude", "skills");
+	await mkdir(skillsDir, { recursive: true });
+	for (const name of SPECKIT_INIT_NAMES) {
+		const dir = join(skillsDir, `speckit-${name}`);
+		await mkdir(dir, { recursive: true });
+		await writeFile(
+			join(dir, "SKILL.md"),
+			`# speckit-${name} (e2e stub)\n\nPlaceholder installed by the E2E harness.\n`,
+			"utf8",
+		);
+	}
+}
+
+async function initTargetRepo(dir: string, originDir: string): Promise<void> {
 	await mkdir(dir, { recursive: true });
 	// Use a neutral identity so `git commit` works without relying on user config.
 	const env = {
@@ -49,8 +69,37 @@ async function initTargetRepo(dir: string): Promise<void> {
 	};
 	await runCmd("git", ["init", "-b", "master"], dir, env);
 	await writeFile(join(dir, "README.md"), "# E2E Target Repo\n", "utf8");
-	await runCmd("git", ["add", "README.md"], dir, env);
+	await populateSpeckitSkills(dir);
+	await runCmd("git", ["add", "-A"], dir, env);
 	await runCmd("git", ["commit", "-m", "chore: initial commit"], dir, env);
+
+	// Bootstrap a bare origin alongside the target repo so `git fetch origin
+	// master` and the GitHub-origin setup check both succeed. URL carries
+	// "github" so `checkGitHubOrigin`'s substring check passes.
+	await mkdir(originDir, { recursive: true });
+	await runCmd("git", ["init", "--bare", "-b", "master"], originDir, env);
+	await runCmd(
+		"git",
+		["remote", "add", "origin", `https://github.com/litus-e2e/fake-origin.git`],
+		dir,
+		env,
+	);
+	await runCmd("git", ["remote", "set-url", "origin", originDir], dir, env);
+	await runCmd("git", ["push", "origin", "master"], dir, env);
+	// Restore the pretend GitHub URL so setup-checker sees a github-looking
+	// origin; configure pushInsteadOf so real pushes hit the local bare repo.
+	await runCmd(
+		"git",
+		["remote", "set-url", "origin", "https://github.com/litus-e2e/fake-origin.git"],
+		dir,
+		env,
+	);
+	await runCmd(
+		"git",
+		["config", `url.${originDir}.insteadOf`, "https://github.com/litus-e2e/fake-origin.git"],
+		dir,
+		env,
+	);
 }
 
 export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sandbox> {
@@ -58,9 +107,10 @@ export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sa
 	const counterFile = join(homeDir, ".litus-e2e-claude-counter.json");
 	const serverLogPath = join(homeDir, "server.log");
 	const targetRepo = join(homeDir, "target-repo");
+	const originRepo = join(homeDir, "origin.git");
 	const litusDir = join(homeDir, ".litus");
 	const configPath = join(litusDir, "config.json");
-	await initTargetRepo(targetRepo);
+	await initTargetRepo(targetRepo, originRepo);
 	if (opts.autoMode) {
 		await mkdir(litusDir, { recursive: true });
 		await writeFile(configPath, JSON.stringify({ autoMode: opts.autoMode }, null, 2), "utf8");
@@ -78,7 +128,10 @@ export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sa
 			try {
 				await rm(homeDir, { recursive: true, force: true });
 			} catch {
-				// best-effort
+				// Best-effort: on Windows, antivirus scanners or bun subprocess
+				// handles can briefly hold files open and produce ENOTEMPTY.
+				// A stale sandbox in $TMPDIR is preferable to a failing teardown
+				// that masks the real test result.
 			}
 		},
 	};
