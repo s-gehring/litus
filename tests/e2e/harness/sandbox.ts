@@ -81,32 +81,14 @@ async function initTargetRepo(dir: string, originDir: string): Promise<void> {
 	await runCmd("git", ["commit", "-m", "chore: initial commit"], dir, env);
 
 	// Bootstrap a bare origin alongside the target repo so `git fetch origin
-	// master` and the GitHub-origin setup check both succeed. URL carries
-	// "github" so `checkGitHubOrigin`'s substring check passes.
+	// master` and the GitHub-origin setup check both succeed. The origin path
+	// contains "github" so `checkGitHubOrigin`'s substring check passes — we
+	// can't use a real github URL with `insteadOf` rewrite because
+	// `git remote get-url` applies the rewrite and would expose the local path.
 	await mkdir(originDir, { recursive: true });
 	await runCmd("git", ["init", "--bare", "-b", "master"], originDir, env);
-	await runCmd(
-		"git",
-		["remote", "add", "origin", `https://github.com/litus-e2e/fake-origin.git`],
-		dir,
-		env,
-	);
-	await runCmd("git", ["remote", "set-url", "origin", originDir], dir, env);
+	await runCmd("git", ["remote", "add", "origin", originDir], dir, env);
 	await runCmd("git", ["push", "origin", "master"], dir, env);
-	// Restore the pretend GitHub URL so setup-checker sees a github-looking
-	// origin; configure pushInsteadOf so real pushes hit the local bare repo.
-	await runCmd(
-		"git",
-		["remote", "set-url", "origin", "https://github.com/litus-e2e/fake-origin.git"],
-		dir,
-		env,
-	);
-	await runCmd(
-		"git",
-		["config", `url.${originDir}.insteadOf`, "https://github.com/litus-e2e/fake-origin.git"],
-		dir,
-		env,
-	);
 }
 
 export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sandbox> {
@@ -114,7 +96,9 @@ export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sa
 	const counterFile = join(homeDir, ".litus-e2e-claude-counter.json");
 	const serverLogPath = join(homeDir, "server.log");
 	const targetRepo = join(homeDir, "target-repo");
-	const originRepo = join(homeDir, "origin.git");
+	// Path includes "github" so setup-checker's checkGitHubOrigin passes when
+	// it inspects the configured origin URL.
+	const originRepo = join(homeDir, "github-origin.git");
 	const litusDir = join(homeDir, ".litus");
 	const configPath = join(litusDir, "config.json");
 	await initTargetRepo(targetRepo, originRepo);
