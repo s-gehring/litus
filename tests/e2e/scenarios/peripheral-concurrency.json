@@ -1,0 +1,210 @@
+{
+	"name": "peripheral-concurrency",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-a-specify" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-a-specify",
+					"result": "Spec A drafted."
+				}
+			],
+			"delayMs": 50
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-b-specify" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-b-specify",
+					"result": "Spec B drafted."
+				}
+			],
+			"delayMs": 150
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-a-clarify" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-a-clarify",
+					"result": "No clarifications needed."
+				}
+			],
+			"delayMs": 80
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-b-clarify" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-b-clarify",
+					"result": "No clarifications needed."
+				}
+			],
+			"delayMs": 200
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-a-plan" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-a-plan",
+					"result": "Plan A generated."
+				}
+			],
+			"delayMs": 40
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-b-plan" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-b-plan",
+					"result": "Plan B generated."
+				}
+			],
+			"delayMs": 120
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-a-tasks" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-a-tasks",
+					"result": "Tasks A generated."
+				}
+			],
+			"delayMs": 60
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-b-tasks" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-b-tasks",
+					"result": "Tasks B generated."
+				}
+			],
+			"delayMs": 90
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-a-impl" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-a-impl",
+					"result": "Impl A complete."
+				}
+			],
+			"delayMs": 50
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-b-impl" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-b-impl",
+					"result": "Impl B complete."
+				}
+			],
+			"delayMs": 100
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-a-review" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-a-review",
+					"result": "LGTM"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-b-review" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-b-review",
+					"result": "LGTM"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-a-impl-review" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-a-impl-review",
+					"result": "Review response appended."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-b-impl-review" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-b-impl-review",
+					"result": "Review response appended."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-a-cpp" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-a-cpp",
+					"result": "PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-b-cpp" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-b-cpp",
+					"result": "PR created: https://github.com/example/repo/pull/102"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": {
+			"exitCode": 0,
+			"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/101\",\"number\":101}"
+		},
+		"pr merge": { "exitCode": 0, "stdout": "Merged pull request (Squash and merge)\n" },
+		"pr checks": {
+			"exitCode": 0,
+			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"
+		},
+		"pr create": {
+			"exitCode": 0,
+			"stdout": "https://github.com/example/repo/pull/101\n"
+		},
+		"run view": { "exitCode": 0, "stdout": "" }
+	}
+}
