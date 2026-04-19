@@ -10,4 +10,5 @@ export {
 	retryStep,
 	setAutomationMode,
 } from "./run-controls";
+export { submitFeedback } from "./submit-feedback";
 export { waitForStep } from "./wait-for-step";

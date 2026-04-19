@@ -1,4 +1,5 @@
 export { AppPage } from "./app";
+export { FeedbackPanelPage } from "./feedback-panel";
 export { QuestionPromptPage } from "./question-prompt";
 export { SpecFormPage } from "./spec-form";
 export {
