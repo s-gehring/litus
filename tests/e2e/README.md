@@ -73,3 +73,10 @@ A dedicated GitHub Actions workflow (`.github/workflows/e2e.yml`) runs the suite
 - **Sandbox leaked** — teardown is idempotent; safe to `rm -rf $TMPDIR/litus-e2e-*` between runs.
 
 See also `specs/001-e2e-browser-tests/quickstart.md` for the end-to-end acceptance walkthrough.
+
+## Spec files
+
+- `tests/happy-path.spec.ts` — baseline end-to-end path (`scenarios/happy-path.json`)
+- `tests/run-controls.spec.ts` — US1 workflow run-control surface: pause/resume, abort, full-auto merge, automation-mode toggle (`scenarios/run-controls.json`)
+- `tests/mid-run-question.spec.ts` — US2 mid-run question handling in both manual and full-auto modes; asserts resume-call payload via the argv capture in `fakes/claude.ts` + `harness/claude-captures.ts` (`scenarios/mid-run-question.json`)
+- `tests/review-feedback-loop.spec.ts` — US3 manual-mode feedback panel loop at the merge-pr pause, including iteration-history persistence (`scenarios/review-feedback-loop.json`)
