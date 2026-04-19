@@ -1805,8 +1805,12 @@ export class PipelineOrchestrator {
 		this.stepRunner.killProcess(workflow.id);
 		this.summarizer.cleanup(workflow.id);
 		this.persistWorkflow(workflow);
+		// onComplete broadcasts the terminal state from the in-memory orchestrator
+		// and removes it from the active map. A subsequent onStateChange would race
+		// the async `persistWorkflow` save above: broadcastPersistedWorkflowState
+		// falls back to disk and can re-broadcast a pre-completion state, leaving
+		// the UI stuck on the prior step. Let onComplete own the final broadcast.
 		this.callbacks.onComplete(workflow.id);
-		this.callbacks.onStateChange(workflow.id);
 
 		// For URL-sourced workflows, the sync-repo step has already removed the worktree.
 		// Release the managed-repo refcount so the clone is cleaned up when the last

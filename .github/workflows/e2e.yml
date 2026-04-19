@@ -1,0 +1,59 @@
+name: E2E
+
+on:
+  pull_request:
+    branches: [ master ]
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+
+      # SC-004: after the suite runs, the developer's (runner's) $HOME/.litus
+      # must be byte-identical to before. Seed a sentinel dir so the check has
+      # stable content to hash even on a fresh runner.
+      - name: Snapshot $HOME/.litus before e2e
+        run: |
+          mkdir -p "$HOME/.litus"
+          : > "$HOME/.litus/sc004-sentinel"
+          find "$HOME/.litus" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/litus-before.sha256
+
+      - name: Run E2E suite
+        run: bun run test:e2e
+
+      - name: Verify $HOME/.litus unchanged (SC-004)
+        if: always()
+        run: |
+          find "$HOME/.litus" -type f -print0 | sort -z | xargs -0 sha256sum > /tmp/litus-after.sha256
+          diff -u /tmp/litus-before.sha256 /tmp/litus-after.sha256
+
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-test-results
+          path: |
+            tests/e2e/test-results/
+            tests/e2e/playwright-report/
+          retention-days: 7
