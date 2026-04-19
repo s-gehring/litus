@@ -81,4 +81,36 @@ export class WorkflowCardPage {
 	mergeAction(): Locator {
 		return this.detailActions().locator('[data-testid="action-resume"]');
 	}
+
+	pauseAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-pause"]');
+	}
+
+	resumeAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-resume"]');
+	}
+
+	retryAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-retry"]');
+	}
+
+	abortAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-abort"]');
+	}
+
+	forceStartAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-force-start"]');
+	}
+
+	provideFeedbackAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-provide-feedback"]');
+	}
+
+	autoModeToggle(): Locator {
+		return this.page.locator("#btn-auto-mode");
+	}
+
+	autoModeClass(mode: "manual" | "normal" | "full-auto"): string {
+		return `mode-${mode}`;
+	}
 }
