@@ -29,6 +29,7 @@ export interface GhResponse {
 	stdout?: string;
 	stderr?: string;
 	matchFlags?: Record<string, string>;
+	delayMs?: number;
 }
 
 export interface ScenarioScript {

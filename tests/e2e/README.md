@@ -43,7 +43,7 @@ tests/e2e/
 
 ## Adding a new scenario
 
-1. Copy `scenarios/happy-path.json` to `scenarios/<my-scenario>.json`. The JSON schema is documented at `specs/001-e2e-browser-tests/contracts/scenario-script.schema.json`.
+1. Copy `scenarios/happy-path.json` to `scenarios/<my-scenario>.json`.
 2. Edit the `claude` list (one entry per `claude` invocation, FIFO across the whole scenario — including side calls like `QuestionDetector.classifyWithHaiku` and `ReviewClassifier.classify`). Each entry uses `{"events": [...]}` for `--output-format stream-json` (pipeline steps) or `{"text": "..."}` for `--output-format text` (detectors/classifier). Probe invocations like `claude --version` / `gh --version` are short-circuited inside the fake and do NOT consume a scenario slot. The `Summarizer` (which would otherwise race the pipeline's claude spawns) is skipped entirely when `LITUS_E2E_SCENARIO` is set, so scenarios do not need to script its calls. The `gh` map keys subcommands like `"pr create"`, `"pr merge"`, `"auth status"`.
 3. Add a new spec under `tests/` that declares `test.use({ scenarioName: "<my-scenario>" })` and composes helpers from `../helpers`.
 4. Run `bun run test:e2e`.
@@ -72,4 +72,11 @@ A dedicated GitHub Actions workflow (`.github/workflows/e2e.yml`) runs the suite
 - **Port already in use** — ephemeral ports are used; retry or check for orphaned server processes.
 - **Sandbox leaked** — teardown is idempotent; safe to `rm -rf $TMPDIR/litus-e2e-*` between runs.
 
-See also `specs/001-e2e-browser-tests/quickstart.md` for the end-to-end acceptance walkthrough.
+## Spec files
+
+- `tests/happy-path.spec.ts` — baseline end-to-end path (`scenarios/happy-path.json`)
+- `tests/run-controls.spec.ts` — workflow run-control surface: pause/resume, abort, full-auto merge, automation-mode toggle (`scenarios/run-controls.json`)
+- `tests/mid-run-question.spec.ts` — mid-run question handling in both manual and full-auto modes; asserts resume-call payload via the argv capture in `fakes/claude.ts` + `harness/claude-captures.ts` (`scenarios/mid-run-question.json`)
+- `tests/review-feedback-loop.spec.ts` — manual-mode feedback panel loop at the merge-pr pause, including iteration-history persistence (`scenarios/review-feedback-loop.json`)
+
+Merge-conflict resolution dispatch and WebSocket reconnection resilience are **not yet implemented**.

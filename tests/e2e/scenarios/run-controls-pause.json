@@ -1,0 +1,188 @@
+{
+	"name": "run-controls-pause",
+	"claude": [
+		{
+			"delayMs": 1500,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-specify" },
+				{
+					"type": "assistant",
+					"session_id": "sess-specify",
+					"message": {
+						"content": [{ "type": "text", "text": "Specification drafted." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-specify",
+					"result": "Specification drafted."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-clarify" },
+				{
+					"type": "assistant",
+					"session_id": "sess-clarify",
+					"message": {
+						"content": [
+							{ "type": "text", "text": "Question 1: Should the feature support dark mode?" }
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-clarify",
+					"result": "Question 1: Should the feature support dark mode?"
+				}
+			]
+		},
+		{ "text": "yes\n" },
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-clarify-2" },
+				{
+					"type": "assistant",
+					"session_id": "sess-clarify-2",
+					"message": {
+						"content": [{ "type": "text", "text": "Clarifications complete." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-clarify-2",
+					"result": "Clarifications complete."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-plan" },
+				{
+					"type": "assistant",
+					"session_id": "sess-plan",
+					"message": { "content": [{ "type": "text", "text": "Plan generated." }] }
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-plan",
+					"result": "Plan generated."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-tasks" },
+				{
+					"type": "assistant",
+					"session_id": "sess-tasks",
+					"message": { "content": [{ "type": "text", "text": "Tasks generated." }] }
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-tasks",
+					"result": "Tasks generated."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-implement" },
+				{
+					"type": "assistant",
+					"session_id": "sess-implement",
+					"message": { "content": [{ "type": "text", "text": "Implementation complete." }] }
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-implement",
+					"result": "Implementation complete."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-review" },
+				{
+					"type": "assistant",
+					"session_id": "sess-review",
+					"message": {
+						"content": [{ "type": "text", "text": "Review complete. No issues found. LGTM." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-review",
+					"result": "Review complete. No issues found. LGTM."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-impl-review" },
+				{
+					"type": "assistant",
+					"session_id": "sess-impl-review",
+					"message": { "content": [{ "type": "text", "text": "Review response appended." }] }
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-impl-review",
+					"result": "Review response appended."
+				}
+			]
+		},
+		{ "text": "nit\n" },
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-cpp" },
+				{
+					"type": "assistant",
+					"session_id": "sess-cpp",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "PR created: https://github.com/example/repo/pull/42"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-cpp",
+					"result": "PR created: https://github.com/example/repo/pull/42"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": {
+			"exitCode": 0,
+			"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/42\",\"number\":42}"
+		},
+		"pr merge": { "exitCode": 0, "stdout": "Merged pull request #42 (Squash and merge)\n" },
+		"pr checks": {
+			"exitCode": 0,
+			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"
+		},
+		"pr create": {
+			"exitCode": 0,
+			"stdout": "https://github.com/example/repo/pull/42\n"
+		},
+		"run view": { "exitCode": 0, "stdout": "" }
+	}
+}
