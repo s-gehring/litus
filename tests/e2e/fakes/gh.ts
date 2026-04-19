@@ -102,7 +102,7 @@ function keyPrefixes(positional: string[]): string[] {
 	return keys;
 }
 
-function main() {
+async function main() {
 	const argv = process.argv.slice(2);
 
 	// Short-circuit probe invocations (e.g. setup checker's `gh --version`)
@@ -135,9 +135,13 @@ function main() {
 		);
 	}
 
+	if (matched.delayMs && matched.delayMs > 0) {
+		await new Promise((r) => setTimeout(r, matched.delayMs));
+	}
+
 	if (matched.stdout) process.stdout.write(matched.stdout);
 	if (matched.stderr) process.stderr.write(matched.stderr);
 	process.exit(matched.exitCode);
 }
 
-main();
+main().catch((e) => die(`unexpected: ${(e as Error).message}`, 99));

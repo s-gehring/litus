@@ -94,8 +94,7 @@ test.describe("US2: mid-run question handling", () => {
 			await waitForStep(card, "clarify", "completed", { timeoutMs: 60_000 });
 			expect(await prompt.panel().isVisible()).toBe(false);
 			const everVisible = await page.evaluate(() => {
-				return (window as unknown as { __litusPanelEverVisible?: boolean })
-					.__litusPanelEverVisible;
+				return (window as unknown as { __litusPanelEverVisible?: boolean }).__litusPanelEverVisible;
 			});
 			expect(everVisible, "question panel must never become visible in Full Auto").toBe(false);
 

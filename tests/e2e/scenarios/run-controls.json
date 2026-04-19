@@ -173,7 +173,11 @@
 			"exitCode": 0,
 			"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/42\",\"number\":42}"
 		},
-		"pr merge": { "exitCode": 0, "stdout": "Merged pull request #42 (Squash and merge)\n" },
+		"pr merge": {
+			"exitCode": 0,
+			"stdout": "Merged pull request #42 (Squash and merge)\n",
+			"delayMs": 1500
+		},
 		"pr checks": {
 			"exitCode": 0,
 			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"

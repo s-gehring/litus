@@ -163,7 +163,28 @@
 			]
 		},
 		{
-			"text": "<<<FEEDBACK_IMPLEMENTER_RESULT\n{\"outcome\":\"no changes\",\"summary\":\"Reviewed the feedback, nothing to change.\",\"materiallyRelevant\":false}\nFEEDBACK_IMPLEMENTER_RESULT>>>\n"
+			"text": "<<<FEEDBACK_IMPLEMENTER_RESULT\n{\"outcome\":\"no changes\",\"summary\":\"Reviewed the feedback, nothing to change.\",\"materiallyRelevant\":false}\nFEEDBACK_IMPLEMENTER_RESULT>>>\n",
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-feedback-implementer" },
+				{
+					"type": "assistant",
+					"session_id": "sess-feedback-implementer",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "<<<FEEDBACK_IMPLEMENTER_RESULT\n{\"outcome\":\"no changes\",\"summary\":\"Reviewed the feedback, nothing to change.\",\"materiallyRelevant\":false}\nFEEDBACK_IMPLEMENTER_RESULT>>>"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-feedback-implementer",
+					"result": "<<<FEEDBACK_IMPLEMENTER_RESULT\n{\"outcome\":\"no changes\",\"summary\":\"Reviewed the feedback, nothing to change.\",\"materiallyRelevant\":false}\nFEEDBACK_IMPLEMENTER_RESULT>>>"
+				}
+			]
 		}
 	],
 	"gh": {
