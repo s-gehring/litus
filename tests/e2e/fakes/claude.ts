@@ -1,5 +1,11 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	appendFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { ScenarioFile, ScenarioScript } from "../harness/scenario-types";
 
@@ -138,6 +144,18 @@ async function main() {
 	const counterFile = process.env.LITUS_E2E_COUNTER;
 	if (!counterFile) die("missing env LITUS_E2E_COUNTER");
 	const idx = nextIndex(counterFile as string);
+
+	// Record scripted invocations (argv + output format) so tests can assert
+	// on resume-call payloads etc. Probe invocations short-circuit above and
+	// are not captured. One JSON object per line, appended in FIFO order.
+	try {
+		appendFileSync(
+			`${counterFile}.argv.jsonl`,
+			`${JSON.stringify({ index: idx, outputFormat, argv })}\n`,
+		);
+	} catch {
+		// best-effort: never fail a scenario because capture IO hiccupped
+	}
 	const script = scenario.claude[idx];
 	if (!script) {
 		die(

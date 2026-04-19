@@ -84,7 +84,7 @@ function createCompactCard(
 	badge.textContent = STATUS_LABELS[wf.status] || wf.status;
 	card.appendChild(badge);
 
-	// Epic label (US2)
+	// Epic label
 	if (wf.epicId && wf.epicTitle) {
 		const epicLabel = document.createElement("span");
 		epicLabel.className = "card-epic-label";
@@ -98,7 +98,7 @@ function createCompactCard(
 	summary.textContent = wf.summary || wf.specification;
 	card.appendChild(summary);
 
-	// Dependency text (US3)
+	// Dependency text
 	if (wf.epicDependencies && wf.epicDependencies.length > 0 && allWorkflowsRef) {
 		const depNames = wf.epicDependencies
 			.map((depId) => {

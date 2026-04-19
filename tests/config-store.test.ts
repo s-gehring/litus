@@ -475,7 +475,7 @@ describe("T005: template variable warning generation", () => {
 		expect(sentinelWarning).toBeUndefined();
 	});
 
-	// Lock the "user-facing rename is material" guidance. Spec US3 cites a
+	// Lock the "user-facing rename is material" guidance. The spec cites a
 	// user-facing label rename as the canonical example of a materially-relevant
 	// change; the prompt must not silently lump all renames into the non-material
 	// bucket.

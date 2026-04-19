@@ -73,12 +73,46 @@ export class WorkflowCardPage {
 		return this.page.locator("#detail-actions");
 	}
 
+	pauseAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-pause"]');
+	}
+
 	/**
-	 * The UI merge action shown when the pipeline pauses at `merge-pr` in
-	 * manual mode. Selected by the `action-resume` test id rendered on every
-	 * detail-action button (see `renderActionButtons` in workflow-window.ts).
+	 * The detail-action button rendered by `updateDetailActions` in
+	 * `workflow-window.ts`. In manual mode this doubles as both the
+	 * post-pause Resume control and the merge-pr Merge control — the label
+	 * differs but the test id does not. Callers choose `resumeAction()` vs.
+	 * `mergeAction()` to encode intent at the call site.
 	 */
-	mergeAction(): Locator {
+	resumeAction(): Locator {
 		return this.detailActions().locator('[data-testid="action-resume"]');
+	}
+
+	mergeAction(): Locator {
+		return this.resumeAction();
+	}
+
+	retryAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-retry"]');
+	}
+
+	abortAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-abort"]');
+	}
+
+	forceStartAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-force-start"]');
+	}
+
+	provideFeedbackAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-provide-feedback"]');
+	}
+
+	autoModeToggle(): Locator {
+		return this.page.locator("#btn-auto-mode");
+	}
+
+	autoModeClass(mode: "manual" | "normal" | "full-auto"): string {
+		return `mode-${mode}`;
 	}
 }
