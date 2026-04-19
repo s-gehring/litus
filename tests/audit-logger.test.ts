@@ -17,7 +17,7 @@ afterEach(() => {
 	rmSync(TEST_AUDIT_DIR, { recursive: true, force: true });
 });
 
-// T007 — US1: logQuery writes correct JSONL
+// T007: logQuery writes correct JSONL
 describe("logQuery", () => {
 	it("appends a query event with correct fields", () => {
 		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
@@ -36,7 +36,7 @@ describe("logQuery", () => {
 	});
 });
 
-// T008 — US1: logAnswer writes correct JSONL
+// T008: logAnswer writes correct JSONL
 describe("logAnswer", () => {
 	it("appends an answer event with correct fields", () => {
 		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
@@ -53,7 +53,7 @@ describe("logAnswer", () => {
 	});
 });
 
-// T009 — US1: startRun/endRun lifecycle
+// T009: startRun/endRun lifecycle
 describe("startRun/endRun lifecycle", () => {
 	it("writes pipeline_start and pipeline_end events with correct runId and sequence", () => {
 		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
@@ -76,7 +76,7 @@ describe("startRun/endRun lifecycle", () => {
 	});
 });
 
-// T015 — US2: branch field is populated
+// T015: branch field is populated
 describe("git branch tracking", () => {
 	it("populates branch field in all events", () => {
 		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
@@ -91,7 +91,7 @@ describe("git branch tracking", () => {
 	});
 });
 
-// T016 — US2: logCommit writes correct JSONL
+// T016: logCommit writes correct JSONL
 describe("logCommit", () => {
 	it("writes a commit event with commitHash and message", () => {
 		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
@@ -107,7 +107,7 @@ describe("logCommit", () => {
 	});
 });
 
-// T021 — US4: default audit directory path
+// T021: default audit directory path
 describe("default audit directory", () => {
 	it("resolves to $HOME/.litus/audit by default", () => {
 		const logger = new AuditLogger();
@@ -116,7 +116,7 @@ describe("default audit directory", () => {
 	});
 });
 
-// T022 — US4: custom auditDir config
+// T022: custom auditDir config
 describe("custom auditDir config", () => {
 	it("respects AuditConfig.auditDir override and writes to the specified directory", () => {
 		const customDir = join(tmpdir(), "litus-audit-test-custom");
@@ -138,7 +138,7 @@ describe("custom auditDir config", () => {
 	});
 });
 
-// T025 — US3: file naming
+// T025: file naming
 describe("file naming", () => {
 	it("creates file as {pipelineName}.jsonl in audit directory", () => {
 		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });
@@ -166,7 +166,7 @@ describe("pipeline name sanitization", () => {
 	});
 });
 
-// T026 — US3: append behavior
+// T026: append behavior
 describe("append behavior", () => {
 	it("appends to existing file on second run", () => {
 		const logger = new AuditLogger({ auditDir: TEST_AUDIT_DIR });

@@ -172,7 +172,7 @@ describe("QuestionDetector", () => {
 		});
 	});
 
-	// T008: Cross-step detection tests (US2)
+	// T008: Cross-step detection tests
 	describe("detection works across all LLM-based steps", () => {
 		test("detects question from specify step output", () => {
 			const specifyOutput =

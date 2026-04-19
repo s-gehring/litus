@@ -425,7 +425,7 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("partial-only deltas without a finalized assistant message do NOT pause", async () => {
-			// Regression guard for US2 / FR-008, FR-009: handleStepComplete must
+			// Regression guard for FR-008, FR-009: handleStepComplete must
 			// run detection through detectFromFinalized(), and the orchestrator
 			// must only forward finalized `assistant` events (not partial
 			// content_block_delta fragments) into the detector via
@@ -712,7 +712,7 @@ describe("PipelineOrchestrator", () => {
 	});
 
 	// T003: Spec summary preservation — maybeSummarize writes to stepSummary, not summary
-	describe("spec summary preservation (US7)", () => {
+	describe("spec summary preservation", () => {
 		test("maybeSummarize writes to stepSummary, not summary", async () => {
 			// Configure summarizer to call the callback with a step summary
 			summarizer.maybeSummarize.mockImplementation(
@@ -2866,7 +2866,7 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 		});
 	});
 
-	describe("feedback context injection into other CLI steps (US2)", () => {
+	describe("feedback context injection into other CLI steps", () => {
 		test("fix-ci prompt is prefixed with the feedback context block when entries exist", async () => {
 			configStore.save({ autoMode: "normal" });
 			await startAndFlush("test");
