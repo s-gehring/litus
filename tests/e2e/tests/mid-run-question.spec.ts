@@ -44,10 +44,10 @@ test.describe("US2: mid-run question handling", () => {
 					c.argv.includes("sess-clarify") &&
 					c.outputFormat === "stream-json",
 			);
-			expect(resumeCall, "expected a resume call using the clarify session").toBeDefined();
-			const resumePrompt = promptOf(resumeCall!);
+			if (!resumeCall) throw new Error("expected a resume call using the clarify session");
+			const resumePrompt = promptOf(resumeCall);
 			expect(resumePrompt, "resume prompt should be non-empty").not.toBeNull();
-			expect(resumePrompt!.length).toBeGreaterThan(0);
+			expect((resumePrompt ?? "").length).toBeGreaterThan(0);
 		});
 	});
 
@@ -84,10 +84,12 @@ test.describe("US2: mid-run question handling", () => {
 					c.argv.includes("sess-clarify") &&
 					c.outputFormat === "stream-json",
 			);
-			expect(resumeCall, "expected an auto-resume call using the clarify session").toBeDefined();
-			const resumePrompt = promptOf(resumeCall!);
+			if (!resumeCall) {
+				throw new Error("expected an auto-resume call using the clarify session");
+			}
+			const resumePrompt = promptOf(resumeCall);
 			expect(resumePrompt, "auto-resume prompt should be non-empty").not.toBeNull();
-			expect(resumePrompt!.length).toBeGreaterThan(0);
+			expect((resumePrompt ?? "").length).toBeGreaterThan(0);
 		});
 	});
 });
