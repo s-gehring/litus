@@ -5,192 +5,192 @@
 		{
 			"delayMs": 200,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-a-specify" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-0" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-a-specify",
-					"result": "Spec A drafted."
+					"session_id": "c-slot-0",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 1500,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-b-specify" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-1" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-b-specify",
-					"result": "Spec B drafted."
+					"session_id": "c-slot-1",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 400,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-a-clarify" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-2" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-a-clarify",
-					"result": "No clarifications needed."
+					"session_id": "c-slot-2",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 1500,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-b-clarify" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-3" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-b-clarify",
-					"result": "No clarifications needed."
+					"session_id": "c-slot-3",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 400,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-a-plan" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-4" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-a-plan",
-					"result": "Plan A generated."
+					"session_id": "c-slot-4",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 1500,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-b-plan" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-5" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-b-plan",
-					"result": "Plan B generated."
+					"session_id": "c-slot-5",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 400,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-a-tasks" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-6" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-a-tasks",
-					"result": "Tasks A generated."
+					"session_id": "c-slot-6",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 1500,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-b-tasks" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-7" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-b-tasks",
-					"result": "Tasks B generated."
+					"session_id": "c-slot-7",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 400,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-a-impl" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-8" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-a-impl",
-					"result": "Impl A complete."
+					"session_id": "c-slot-8",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 1500,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-b-impl" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-9" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-b-impl",
-					"result": "Impl B complete."
+					"session_id": "c-slot-9",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 400,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-a-review" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-10" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-a-review",
-					"result": "LGTM"
+					"session_id": "c-slot-10",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 1500,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-b-review" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-11" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-b-review",
-					"result": "LGTM"
+					"session_id": "c-slot-11",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 400,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-a-impl-review" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-12" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-a-impl-review",
-					"result": "Review response appended."
+					"session_id": "c-slot-12",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 1500,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-b-impl-review" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-13" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-b-impl-review",
-					"result": "Review response appended."
+					"session_id": "c-slot-13",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 400,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-a-cpp" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-14" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-a-cpp",
-					"result": "PR created: https://github.com/example/repo/pull/101"
+					"session_id": "c-slot-14",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		},
 		{
 			"delayMs": 1500,
 			"events": [
-				{ "type": "system", "subtype": "init", "session_id": "c-b-cpp" },
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-15" },
 				{
 					"type": "result",
 					"subtype": "success",
-					"session_id": "c-b-cpp",
-					"result": "PR created: https://github.com/example/repo/pull/101"
+					"session_id": "c-slot-15",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		}
