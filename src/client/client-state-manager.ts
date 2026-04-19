@@ -211,7 +211,7 @@ export class ClientStateManager {
 			case "config:error":
 				return { scope: { entity: "config" }, action: "updated" };
 			case "log":
-				return { scope: { entity: "none" }, action: "updated" };
+				return this.handleLog(msg);
 			case "error":
 				return { scope: { entity: "none" }, action: "updated" };
 			default:
@@ -259,6 +259,16 @@ export class ClientStateManager {
 		const entry = this.workflows.get(msg.workflowId);
 		if (!entry) return { scope: { entity: "none" }, action: "updated" };
 		const outputEntry: OutputEntry = { kind: "text", text: msg.text };
+		entry.outputLines.push(outputEntry);
+		this.trimOutput(entry.outputLines);
+		return { scope: { entity: "output", id: msg.workflowId }, action: "appended" };
+	}
+
+	private handleLog(msg: Extract<ServerMessage, { type: "log" }>): StateChange {
+		if (!msg.workflowId) return { scope: { entity: "none" }, action: "updated" };
+		const entry = this.workflows.get(msg.workflowId);
+		if (!entry) return { scope: { entity: "none" }, action: "updated" };
+		const outputEntry: OutputEntry = { kind: "text", text: msg.text, type: "system" };
 		entry.outputLines.push(outputEntry);
 		this.trimOutput(entry.outputLines);
 		return { scope: { entity: "output", id: msg.workflowId }, action: "appended" };

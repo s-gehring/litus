@@ -52,6 +52,7 @@ import {
 	type WorkflowStatus,
 } from "./types";
 import { snapshotStepArtifacts } from "./workflow-artifacts";
+import { runInWorkflowContext } from "./workflow-context";
 import { WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
 
@@ -229,33 +230,35 @@ export class PipelineOrchestrator {
 
 	/** Start the pipeline for an already-created workflow (used by epic flow). */
 	startPipelineFromWorkflow(workflow: Workflow): void {
-		this.engine.setWorkflow(workflow);
-		this.engine.transition(workflow.id, "running");
+		runInWorkflowContext(workflow.id, () => {
+			this.engine.setWorkflow(workflow);
+			this.engine.transition(workflow.id, "running");
 
-		const branchCwd = requireTargetRepository(workflow);
-		this.getBranch(branchCwd).then((branch) => {
-			this.pipelineName = branch ?? workflow.worktreeBranch;
-			this.currentAuditRunId = this.auditLogger.startRun(
-				this.pipelineName,
-				workflow.worktreeBranch,
-			);
-		});
-
-		this.persistWorkflow(workflow);
-		this.startStep(workflow);
-
-		this.summarizer
-			.generateSpecSummary(workflow.specification)
-			.then(({ summary, flavor }) => {
-				if (summary && !workflow.summary) workflow.summary = summary;
-				if (flavor) workflow.flavor = flavor;
-				workflow.updatedAt = new Date().toISOString();
-				this.persistWorkflow(workflow);
-				this.callbacks.onStateChange(workflow.id);
-			})
-			.catch((err) => {
-				logger.warn(`[pipeline] Summary generation failed: ${err}`);
+			const branchCwd = requireTargetRepository(workflow);
+			this.getBranch(branchCwd).then((branch) => {
+				this.pipelineName = branch ?? workflow.worktreeBranch;
+				this.currentAuditRunId = this.auditLogger.startRun(
+					this.pipelineName,
+					workflow.worktreeBranch,
+				);
 			});
+
+			this.persistWorkflow(workflow);
+			this.startStep(workflow);
+
+			this.summarizer
+				.generateSpecSummary(workflow.specification)
+				.then(({ summary, flavor }) => {
+					if (summary && !workflow.summary) workflow.summary = summary;
+					if (flavor) workflow.flavor = flavor;
+					workflow.updatedAt = new Date().toISOString();
+					this.persistWorkflow(workflow);
+					this.callbacks.onStateChange(workflow.id);
+				})
+				.catch((err) => {
+					logger.warn(`[pipeline] Summary generation failed: ${err}`);
+				});
+		});
 	}
 
 	async startPipeline(
@@ -264,29 +267,34 @@ export class PipelineOrchestrator {
 		managedRepo: Workflow["managedRepo"] = null,
 	): Promise<Workflow> {
 		const workflow = await this.engine.createWorkflow(specification, targetRepository, managedRepo);
-		this.engine.transition(workflow.id, "running");
+		return runInWorkflowContext(workflow.id, async () => {
+			this.engine.transition(workflow.id, "running");
 
-		const branchCwd = targetRepository;
-		this.pipelineName = (await this.getBranch(branchCwd)) ?? workflow.worktreeBranch;
-		this.currentAuditRunId = this.auditLogger.startRun(this.pipelineName, workflow.worktreeBranch);
+			const branchCwd = targetRepository;
+			this.pipelineName = (await this.getBranch(branchCwd)) ?? workflow.worktreeBranch;
+			this.currentAuditRunId = this.auditLogger.startRun(
+				this.pipelineName,
+				workflow.worktreeBranch,
+			);
 
-		this.persistWorkflow(workflow);
-		this.startStep(workflow);
+			this.persistWorkflow(workflow);
+			this.startStep(workflow);
 
-		this.summarizer
-			.generateSpecSummary(specification)
-			.then(({ summary, flavor }) => {
-				if (summary) workflow.summary = summary;
-				if (flavor) workflow.flavor = flavor;
-				workflow.updatedAt = new Date().toISOString();
-				this.persistWorkflow(workflow);
-				this.callbacks.onStateChange(workflow.id);
-			})
-			.catch((err) => {
-				logger.warn(`[pipeline] Summary generation failed: ${err}`);
-			});
+			this.summarizer
+				.generateSpecSummary(specification)
+				.then(({ summary, flavor }) => {
+					if (summary) workflow.summary = summary;
+					if (flavor) workflow.flavor = flavor;
+					workflow.updatedAt = new Date().toISOString();
+					this.persistWorkflow(workflow);
+					this.callbacks.onStateChange(workflow.id);
+				})
+				.catch((err) => {
+					logger.warn(`[pipeline] Summary generation failed: ${err}`);
+				});
 
-		return workflow;
+			return workflow;
+		});
 	}
 
 	private async getBranch(cwd: string): Promise<string | null> {
@@ -299,70 +307,72 @@ export class PipelineOrchestrator {
 	}
 
 	answerQuestion(workflowId: string, questionId: string, answer: string): void {
-		const workflow = this.getWorkflowOrThrow(workflowId);
+		runInWorkflowContext(workflowId, () => {
+			const workflow = this.getWorkflowOrThrow(workflowId);
 
-		if (!workflow.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
-			return;
-		}
-
-		if (this.currentAuditRunId) {
-			const stepName = workflow.steps[workflow.currentStepIndex]?.name ?? null;
-			this.auditLogger.logAnswer(this.currentAuditRunId, answer, stepName);
-		}
-
-		this.engine.clearQuestion(workflowId);
-		this.clearQuestionAlert(workflowId);
-		const step = workflow.steps[workflow.currentStepIndex];
-
-		// Append the user's answer to step output so it is visible and persisted
-		const answerLine = `[Human] ${answer}`;
-		step.output += `${answerLine}\n`;
-		step.outputLog.push({ kind: "text", text: answerLine });
-		this.callbacks.onOutput(workflowId, answerLine);
-
-		step.status = "running";
-		workflow.updatedAt = new Date().toISOString();
-
-		this.tryTransition(workflowId, "running");
-
-		this.persistWorkflow(workflow);
-		this.callbacks.onStateChange(workflowId);
-
-		if (step.name === STEP.SETUP) {
-			// User answered the optional warnings prompt — create worktree, checkout master then advance
-			this.createWorktreeAndCheckout(workflow);
-			return;
-		}
-
-		if (step.name === STEP.MONITOR_CI) {
-			if (answer.toLowerCase().includes("abort")) {
-				this.handleStepError(workflowId, "Workflow aborted by user after cancelled CI checks");
-			} else {
-				this.runMonitorCi(workflow);
+			if (!workflow.pendingQuestion || workflow.pendingQuestion.id !== questionId) {
+				return;
 			}
-			return;
-		}
 
-		this.resetStepState();
+			if (this.currentAuditRunId) {
+				const stepName = workflow.steps[workflow.currentStepIndex]?.name ?? null;
+				this.auditLogger.logAnswer(this.currentAuditRunId, answer, stepName);
+			}
 
-		// Kill any lingering CLI process before resuming
-		this.stepRunner.killProcess(workflowId);
+			this.engine.clearQuestion(workflowId);
+			this.clearQuestionAlert(workflowId);
+			const step = workflow.steps[workflow.currentStepIndex];
 
-		const sessionId = step.sessionId;
-		if (!sessionId) {
-			this.handleStepError(workflowId, "No session ID available to resume after answer");
-			return;
-		}
+			// Append the user's answer to step output so it is visible and persisted
+			const answerLine = `[Human] ${answer}`;
+			step.output += `${answerLine}\n`;
+			step.outputLog.push({ kind: "text", text: answerLine });
+			this.callbacks.onOutput(workflowId, answerLine);
 
-		const cwd = requireWorktreePath(workflow);
-		this.stepRunner.resumeStep(
-			workflowId,
-			sessionId,
-			cwd,
-			this.buildStepCallbacks(workflowId),
-			this.buildStepEnv(workflow),
-			answer,
-		);
+			step.status = "running";
+			workflow.updatedAt = new Date().toISOString();
+
+			this.tryTransition(workflowId, "running");
+
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflowId);
+
+			if (step.name === STEP.SETUP) {
+				// User answered the optional warnings prompt — create worktree, checkout master then advance
+				this.createWorktreeAndCheckout(workflow);
+				return;
+			}
+
+			if (step.name === STEP.MONITOR_CI) {
+				if (answer.toLowerCase().includes("abort")) {
+					this.handleStepError(workflowId, "Workflow aborted by user after cancelled CI checks");
+				} else {
+					this.runMonitorCi(workflow);
+				}
+				return;
+			}
+
+			this.resetStepState();
+
+			// Kill any lingering CLI process before resuming
+			this.stepRunner.killProcess(workflowId);
+
+			const sessionId = step.sessionId;
+			if (!sessionId) {
+				this.handleStepError(workflowId, "No session ID available to resume after answer");
+				return;
+			}
+
+			const cwd = requireWorktreePath(workflow);
+			this.stepRunner.resumeStep(
+				workflowId,
+				sessionId,
+				cwd,
+				this.buildStepCallbacks(workflowId),
+				this.buildStepEnv(workflow),
+				answer,
+			);
+		});
 	}
 
 	skipQuestion(workflowId: string, questionId: string): void {
@@ -374,187 +384,33 @@ export class PipelineOrchestrator {
 	}
 
 	resumeMonitorCi(workflowId: string): void {
-		const workflow = this.getWorkflowOrThrow(workflowId);
-		if (workflow.status !== "running") return;
+		runInWorkflowContext(workflowId, () => {
+			const workflow = this.getWorkflowOrThrow(workflowId);
+			if (workflow.status !== "running") return;
 
-		const step = workflow.steps[workflow.currentStepIndex];
-		if (step.name !== STEP.MONITOR_CI) return;
+			const step = workflow.steps[workflow.currentStepIndex];
+			if (step.name !== STEP.MONITOR_CI) return;
 
-		this.runMonitorCi(workflow);
+			this.runMonitorCi(workflow);
+		});
 	}
 
 	async resumeStep(workflowId: string): Promise<void> {
-		const workflow = this.getWorkflowOrThrow(workflowId);
-		if (workflow.status !== "running") return;
+		return runInWorkflowContext(workflowId, async () => {
+			const workflow = this.getWorkflowOrThrow(workflowId);
+			if (workflow.status !== "running") return;
 
-		const step = workflow.steps[workflow.currentStepIndex];
-		if (!step.sessionId) return;
+			const step = workflow.steps[workflow.currentStepIndex];
+			if (!step.sessionId) return;
 
-		const cwd = requireWorktreePath(workflow);
-		const targetDir = requireTargetRepository(workflow);
-		const pipelineName =
-			this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
-		this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
+			const cwd = requireWorktreePath(workflow);
+			const targetDir = requireTargetRepository(workflow);
+			const pipelineName =
+				this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
+			this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
 
-		this.resetStepState();
+			this.resetStepState();
 
-		this.stepRunner.resumeStep(
-			workflowId,
-			step.sessionId,
-			cwd,
-			this.buildStepCallbacks(workflowId),
-			this.buildStepEnv(workflow),
-		);
-	}
-
-	async retryStep(workflowId: string): Promise<void> {
-		const workflow = this.getWorkflowOrThrow(workflowId);
-
-		if (workflow.status !== "error") return;
-
-		const step = workflow.steps[workflow.currentStepIndex];
-
-		// Feedback-implementer has no retry path: a failed FI run rewinds to the
-		// merge-pr pause and invites the user to submit fresh feedback (FR-012).
-		// If a future refactor ever routes an FI failure to workflow.status=error,
-		// this guard keeps retryStep from spawning a CLI with the step's empty
-		// static prompt (types.ts PIPELINE_STEP_DEFINITIONS) and skipping feedback
-		// context injection (runStep treats FI as a pre-built prompt).
-		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
-			logger.warn(
-				`[pipeline] retryStep called on feedback-implementer for workflow ${workflowId}; FI cannot be retried — submit new feedback instead`,
-			);
-			return;
-		}
-
-		this.stepRunner.resetStep(step);
-		workflow.updatedAt = new Date().toISOString();
-
-		const targetDir = requireTargetRepository(workflow);
-		const pipelineName =
-			this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
-		this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
-
-		this.engine.transition(workflowId, "running");
-		this.callbacks.onStateChange(workflowId);
-		this.resetStepState();
-
-		this.persistWorkflow(workflow);
-		this.callbacks.onStepChange(
-			workflow.id,
-			step.name,
-			step.name,
-			workflow.currentStepIndex,
-			workflow.reviewCycle.iteration,
-		);
-
-		if (step.name === STEP.SETUP) {
-			this.runSetup(workflow);
-			return;
-		}
-
-		if (step.name === STEP.MONITOR_CI) {
-			// User-initiated retry grants a fresh attempt budget and picks up any
-			// config changes. Without this, a retry after "CI checks still failing
-			// after N fix attempts" would re-trip the exhausted check immediately.
-			workflow.ciCycle.attempt = 0;
-			workflow.ciCycle.monitorStartedAt = null;
-			workflow.ciCycle.maxAttempts = configStore.get().limits.ciFixMaxAttempts;
-			this.runMonitorCi(workflow);
-			return;
-		}
-
-		if (step.name === STEP.FIX_CI) {
-			this.runFixCi(workflow);
-			return;
-		}
-
-		if (step.name === STEP.MERGE_PR) {
-			workflow.mergeCycle.attempt = 0;
-			this.runMergePr(workflow);
-			return;
-		}
-
-		if (step.name === STEP.SYNC_REPO) {
-			this.runSyncRepo(workflow);
-			return;
-		}
-
-		const cwd = requireWorktreePath(workflow);
-		const config = configStore.get();
-		const configKey = STEP_CONFIG_KEY[step.name];
-		this.runStep(
-			workflow,
-			step.prompt,
-			cwd,
-			configKey ? config.models[configKey] : undefined,
-			configKey ? config.efforts[configKey] : undefined,
-		);
-	}
-
-	pause(workflowId: string): void {
-		const workflow = this.getActiveWorkflow(workflowId);
-		if (!workflow || workflow.status !== "running") return;
-
-		this.stepRunner.killProcess(workflowId);
-		this.ciMonitor.abort();
-
-		const step = workflow.steps[workflow.currentStepIndex];
-		step.status = "paused";
-		step.pid = null;
-		workflow.updatedAt = new Date().toISOString();
-
-		this.engine.transition(workflowId, "paused");
-		this.flushPersistDebounce();
-		this.persistWorkflow(workflow);
-		this.callbacks.onStateChange(workflowId);
-	}
-
-	resume(workflowId: string): void {
-		const workflow = this.getActiveWorkflow(workflowId);
-		if (!workflow || workflow.status !== "paused") return;
-
-		const step = workflow.steps[workflow.currentStepIndex];
-		step.status = "running";
-		workflow.updatedAt = new Date().toISOString();
-
-		this.engine.transition(workflowId, "running");
-		this.persistWorkflow(workflow);
-		this.callbacks.onStateChange(workflowId);
-
-		this.resetStepState();
-
-		if (step.name === STEP.SETUP) {
-			this.runSetup(workflow);
-			return;
-		}
-
-		const cwd = requireWorktreePath(workflow);
-
-		if (step.name === STEP.MONITOR_CI) {
-			this.runMonitorCi(workflow);
-		} else if (step.name === STEP.FIX_CI) {
-			this.runFixCi(workflow);
-		} else if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
-			if (step.sessionId) {
-				this.stepRunner.resumeStep(
-					workflowId,
-					step.sessionId,
-					cwd,
-					this.buildStepCallbacks(workflowId),
-					this.buildStepEnv(workflow),
-				);
-			} else {
-				this.runFeedbackImplementer(workflow).catch((err) => {
-					this.handleStepError(workflowId, toErrorMessage(err));
-				});
-			}
-		} else if (step.name === STEP.MERGE_PR) {
-			workflow.mergeCycle.attempt = 0;
-			this.runMergePr(workflow);
-		} else if (step.name === STEP.SYNC_REPO) {
-			this.runSyncRepo(workflow);
-		} else if (step.sessionId) {
 			this.stepRunner.resumeStep(
 				workflowId,
 				step.sessionId,
@@ -562,7 +418,84 @@ export class PipelineOrchestrator {
 				this.buildStepCallbacks(workflowId),
 				this.buildStepEnv(workflow),
 			);
-		} else {
+		});
+	}
+
+	async retryStep(workflowId: string): Promise<void> {
+		return runInWorkflowContext(workflowId, async () => {
+			const workflow = this.getWorkflowOrThrow(workflowId);
+
+			if (workflow.status !== "error") return;
+
+			const step = workflow.steps[workflow.currentStepIndex];
+
+			// Feedback-implementer has no retry path: a failed FI run rewinds to the
+			// merge-pr pause and invites the user to submit fresh feedback (FR-012).
+			// If a future refactor ever routes an FI failure to workflow.status=error,
+			// this guard keeps retryStep from spawning a CLI with the step's empty
+			// static prompt (types.ts PIPELINE_STEP_DEFINITIONS) and skipping feedback
+			// context injection (runStep treats FI as a pre-built prompt).
+			if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+				logger.warn(
+					`[pipeline] retryStep called on feedback-implementer for workflow ${workflowId}; FI cannot be retried — submit new feedback instead`,
+				);
+				return;
+			}
+
+			this.stepRunner.resetStep(step);
+			workflow.updatedAt = new Date().toISOString();
+
+			const targetDir = requireTargetRepository(workflow);
+			const pipelineName =
+				this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
+			this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
+
+			this.engine.transition(workflowId, "running");
+			this.callbacks.onStateChange(workflowId);
+			this.resetStepState();
+
+			this.persistWorkflow(workflow);
+			this.callbacks.onStepChange(
+				workflow.id,
+				step.name,
+				step.name,
+				workflow.currentStepIndex,
+				workflow.reviewCycle.iteration,
+			);
+
+			if (step.name === STEP.SETUP) {
+				this.runSetup(workflow);
+				return;
+			}
+
+			if (step.name === STEP.MONITOR_CI) {
+				// User-initiated retry grants a fresh attempt budget and picks up any
+				// config changes. Without this, a retry after "CI checks still failing
+				// after N fix attempts" would re-trip the exhausted check immediately.
+				workflow.ciCycle.attempt = 0;
+				workflow.ciCycle.monitorStartedAt = null;
+				workflow.ciCycle.maxAttempts = configStore.get().limits.ciFixMaxAttempts;
+				this.runMonitorCi(workflow);
+				return;
+			}
+
+			if (step.name === STEP.FIX_CI) {
+				this.runFixCi(workflow);
+				return;
+			}
+
+			if (step.name === STEP.MERGE_PR) {
+				workflow.mergeCycle.attempt = 0;
+				this.runMergePr(workflow);
+				return;
+			}
+
+			if (step.name === STEP.SYNC_REPO) {
+				this.runSyncRepo(workflow);
+				return;
+			}
+
+			const cwd = requireWorktreePath(workflow);
 			const config = configStore.get();
 			const configKey = STEP_CONFIG_KEY[step.name];
 			this.runStep(
@@ -572,93 +505,182 @@ export class PipelineOrchestrator {
 				configKey ? config.models[configKey] : undefined,
 				configKey ? config.efforts[configKey] : undefined,
 			);
-		}
+		});
+	}
+
+	pause(workflowId: string): void {
+		runInWorkflowContext(workflowId, () => {
+			const workflow = this.getActiveWorkflow(workflowId);
+			if (!workflow || workflow.status !== "running") return;
+
+			this.stepRunner.killProcess(workflowId);
+			this.ciMonitor.abort();
+
+			const step = workflow.steps[workflow.currentStepIndex];
+			step.status = "paused";
+			step.pid = null;
+			workflow.updatedAt = new Date().toISOString();
+
+			this.engine.transition(workflowId, "paused");
+			this.flushPersistDebounce();
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflowId);
+		});
+	}
+
+	resume(workflowId: string): void {
+		runInWorkflowContext(workflowId, () => {
+			const workflow = this.getActiveWorkflow(workflowId);
+			if (!workflow || workflow.status !== "paused") return;
+
+			const step = workflow.steps[workflow.currentStepIndex];
+			step.status = "running";
+			workflow.updatedAt = new Date().toISOString();
+
+			this.engine.transition(workflowId, "running");
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflowId);
+
+			this.resetStepState();
+
+			if (step.name === STEP.SETUP) {
+				this.runSetup(workflow);
+				return;
+			}
+
+			const cwd = requireWorktreePath(workflow);
+
+			if (step.name === STEP.MONITOR_CI) {
+				this.runMonitorCi(workflow);
+			} else if (step.name === STEP.FIX_CI) {
+				this.runFixCi(workflow);
+			} else if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+				if (step.sessionId) {
+					this.stepRunner.resumeStep(
+						workflowId,
+						step.sessionId,
+						cwd,
+						this.buildStepCallbacks(workflowId),
+						this.buildStepEnv(workflow),
+					);
+				} else {
+					this.runFeedbackImplementer(workflow).catch((err) => {
+						this.handleStepError(workflowId, toErrorMessage(err));
+					});
+				}
+			} else if (step.name === STEP.MERGE_PR) {
+				workflow.mergeCycle.attempt = 0;
+				this.runMergePr(workflow);
+			} else if (step.name === STEP.SYNC_REPO) {
+				this.runSyncRepo(workflow);
+			} else if (step.sessionId) {
+				this.stepRunner.resumeStep(
+					workflowId,
+					step.sessionId,
+					cwd,
+					this.buildStepCallbacks(workflowId),
+					this.buildStepEnv(workflow),
+				);
+			} else {
+				const config = configStore.get();
+				const configKey = STEP_CONFIG_KEY[step.name];
+				this.runStep(
+					workflow,
+					step.prompt,
+					cwd,
+					configKey ? config.models[configKey] : undefined,
+					configKey ? config.efforts[configKey] : undefined,
+				);
+			}
+		});
 	}
 
 	cancelPipeline(workflowId: string): void {
-		const workflow = this.getWorkflowOrThrow(workflowId);
+		runInWorkflowContext(workflowId, () => {
+			const workflow = this.getWorkflowOrThrow(workflowId);
 
-		if (this.currentAuditRunId) {
-			this.auditLogger.endRun(this.currentAuditRunId, { cancelled: true });
-			this.currentAuditRunId = null;
-		}
-
-		this.stepRunner.killProcess(workflowId);
-		this.ciMonitor.abort();
-		this.summarizer.cleanup(workflowId);
-		this.resetStepState();
-		this.engine.clearQuestion(workflowId);
-		this.clearQuestionAlert(workflowId);
-
-		const step = workflow.steps[workflow.currentStepIndex];
-
-		// If aborting a feedback-implementer run, record the in-flight entry as cancelled
-		// (FR-019). Git-based commit detection runs fire-and-forget — the outcome is
-		// immediately persisted with commitRefs: [] and backfilled when detection resolves.
-		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
-			const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
-			if (latest && latest.outcome === null) {
-				latest.outcome = {
-					value: "cancelled",
-					summary: "Cancelled by user abort",
-					commitRefs: [],
-					warnings: [],
-				};
-				const preRunHead = workflow.feedbackPreRunHead;
-				const cwd = workflow.worktreePath;
-				if (preRunHead && cwd) {
-					this.detectNewCommitsFn(preRunHead, cwd)
-						.then((commits) => {
-							if (latest.outcome && commits.length > 0) {
-								latest.outcome.commitRefs = commits;
-								workflow.updatedAt = new Date().toISOString();
-								this.persistWorkflow(workflow);
-								this.callbacks.onStateChange(workflowId);
-							}
-						})
-						.catch((err) => {
-							// Best-effort commit backfill — agent already cancelled.
-							// Surface the failure so a missing commitRefs on a cancelled
-							// entry can be traced back to this path instead of silently
-							// showing []. Production detectNewCommits swallows its own
-							// errors; this fires only when a custom/test-injected fn throws.
-							logger.warn(
-								`[pipeline] Post-cancel commit backfill failed for workflow ${workflowId}: ${toErrorMessage(err)}`,
-							);
-						});
-				}
+			if (this.currentAuditRunId) {
+				this.auditLogger.endRun(this.currentAuditRunId, { cancelled: true });
+				this.currentAuditRunId = null;
 			}
-			workflow.feedbackPreRunHead = null;
-		}
 
-		if (
-			step.status === "running" ||
-			step.status === "waiting_for_input" ||
-			step.status === "paused"
-		) {
-			step.status = "error";
-			step.error = "Cancelled by user";
-		}
+			this.stepRunner.killProcess(workflowId);
+			this.ciMonitor.abort();
+			this.summarizer.cleanup(workflowId);
+			this.resetStepState();
+			this.engine.clearQuestion(workflowId);
+			this.clearQuestionAlert(workflowId);
 
-		this.tryTransition(workflowId, "cancelled");
+			const step = workflow.steps[workflow.currentStepIndex];
 
-		step.pid = null;
-		this.flushPersistDebounce();
-		this.persistWorkflow(workflow);
-		this.callbacks.onStateChange(workflowId);
+			// If aborting a feedback-implementer run, record the in-flight entry as cancelled
+			// (FR-019). Git-based commit detection runs fire-and-forget — the outcome is
+			// immediately persisted with commitRefs: [] and backfilled when detection resolves.
+			if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
+				const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
+				if (latest && latest.outcome === null) {
+					latest.outcome = {
+						value: "cancelled",
+						summary: "Cancelled by user abort",
+						commitRefs: [],
+						warnings: [],
+					};
+					const preRunHead = workflow.feedbackPreRunHead;
+					const cwd = workflow.worktreePath;
+					if (preRunHead && cwd) {
+						this.detectNewCommitsFn(preRunHead, cwd)
+							.then((commits) => {
+								if (latest.outcome && commits.length > 0) {
+									latest.outcome.commitRefs = commits;
+									workflow.updatedAt = new Date().toISOString();
+									this.persistWorkflow(workflow);
+									this.callbacks.onStateChange(workflowId);
+								}
+							})
+							.catch((err) => {
+								// Best-effort commit backfill — agent already cancelled.
+								// Surface the failure so a missing commitRefs on a cancelled
+								// entry can be traced back to this path instead of silently
+								// showing []. Production detectNewCommits swallows its own
+								// errors; this fires only when a custom/test-injected fn throws.
+								logger.warn(
+									`[pipeline] Post-cancel commit backfill failed for workflow ${workflowId}: ${toErrorMessage(err)}`,
+								);
+							});
+					}
+				}
+				workflow.feedbackPreRunHead = null;
+			}
 
-		// If this workflow cloned from a URL, release the managed-repo refcount so the
-		// clone is cleaned up once it has no remaining consumers. sync-repo (which is
-		// the release hook for normal completion) does not run on cancel.
-		this.releaseManagedRepoIfAny(workflow);
+			if (
+				step.status === "running" ||
+				step.status === "waiting_for_input" ||
+				step.status === "paused"
+			) {
+				step.status = "error";
+				step.error = "Cancelled by user";
+			}
 
-		// Update epic dependency status for siblings if this workflow was cancelled,
-		// and emit `epic-finished` when every sibling has reached a terminal state.
-		if (workflow.epicId) {
-			this.checkEpicDependencies(workflow).catch((err) => {
-				logger.error(`[pipeline] Failed to check epic dependencies: ${err}`);
-			});
-		}
+			this.tryTransition(workflowId, "cancelled");
+
+			step.pid = null;
+			this.flushPersistDebounce();
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflowId);
+
+			// If this workflow cloned from a URL, release the managed-repo refcount so the
+			// clone is cleaned up once it has no remaining consumers. sync-repo (which is
+			// the release hook for normal completion) does not run on cancel.
+			this.releaseManagedRepoIfAny(workflow);
+
+			// Update epic dependency status for siblings if this workflow was cancelled,
+			// and emit `epic-finished` when every sibling has reached a terminal state.
+			if (workflow.epicId) {
+				this.checkEpicDependencies(workflow).catch((err) => {
+					logger.error(`[pipeline] Failed to check epic dependencies: ${err}`);
+				});
+			}
+		});
 	}
 
 	/**
@@ -669,66 +691,68 @@ export class PipelineOrchestrator {
 	 * below exists as a defensive no-op for direct programmatic callers.
 	 */
 	submitFeedback(workflowId: string, text: string): void {
-		const workflow = this.getWorkflowOrThrow(workflowId);
-		const trimmed = text.trim();
+		runInWorkflowContext(workflowId, () => {
+			const workflow = this.getWorkflowOrThrow(workflowId);
+			const trimmed = text.trim();
 
-		if (trimmed === "") {
-			this.resume(workflowId);
-			return;
-		}
-		// Handler-side validation in `handleFeedback` is authoritative; these guards
-		// are defense-in-depth for programmatic callers. Log on silent drop so a
-		// mis-sequencing can be diagnosed from the logs instead of source inspection.
-		if (workflow.status !== "paused") {
-			logger.warn(
-				`[pipeline] submitFeedback rejected for workflow ${workflowId}: workflow status=${workflow.status}, expected paused`,
-			);
-			return;
-		}
-		const step = workflow.steps[workflow.currentStepIndex];
-		if (step.name !== STEP.MERGE_PR) {
-			logger.warn(
-				`[pipeline] submitFeedback rejected for workflow ${workflowId}: current step=${step.name}, expected ${STEP.MERGE_PR}`,
-			);
-			return;
-		}
-		if (configStore.get().autoMode !== "manual") {
-			logger.warn(
-				`[pipeline] submitFeedback rejected for workflow ${workflowId}: autoMode is not manual`,
-			);
-			return;
-		}
-		if (workflow.feedbackEntries.some((e) => e.outcome === null)) {
-			logger.warn(
-				`[pipeline] submitFeedback rejected for workflow ${workflowId}: an in-flight feedback entry already exists`,
-			);
-			return;
-		}
+			if (trimmed === "") {
+				this.resume(workflowId);
+				return;
+			}
+			// Handler-side validation in `handleFeedback` is authoritative; these guards
+			// are defense-in-depth for programmatic callers. Log on silent drop so a
+			// mis-sequencing can be diagnosed from the logs instead of source inspection.
+			if (workflow.status !== "paused") {
+				logger.warn(
+					`[pipeline] submitFeedback rejected for workflow ${workflowId}: workflow status=${workflow.status}, expected paused`,
+				);
+				return;
+			}
+			const step = workflow.steps[workflow.currentStepIndex];
+			if (step.name !== STEP.MERGE_PR) {
+				logger.warn(
+					`[pipeline] submitFeedback rejected for workflow ${workflowId}: current step=${step.name}, expected ${STEP.MERGE_PR}`,
+				);
+				return;
+			}
+			if (configStore.get().autoMode !== "manual") {
+				logger.warn(
+					`[pipeline] submitFeedback rejected for workflow ${workflowId}: autoMode is not manual`,
+				);
+				return;
+			}
+			if (workflow.feedbackEntries.some((e) => e.outcome === null)) {
+				logger.warn(
+					`[pipeline] submitFeedback rejected for workflow ${workflowId}: an in-flight feedback entry already exists`,
+				);
+				return;
+			}
 
-		const now = new Date().toISOString();
-		const entry: FeedbackEntry = {
-			id: randomUUID(),
-			iteration: workflow.feedbackEntries.length + 1,
-			text: trimmed,
-			submittedAt: now,
-			submittedAtStepName: STEP.MERGE_PR,
-			outcome: null,
-		};
-		workflow.feedbackEntries.push(entry);
-		workflow.updatedAt = now;
+			const now = new Date().toISOString();
+			const entry: FeedbackEntry = {
+				id: randomUUID(),
+				iteration: workflow.feedbackEntries.length + 1,
+				text: trimmed,
+				submittedAt: now,
+				submittedAtStepName: STEP.MERGE_PR,
+				outcome: null,
+			};
+			workflow.feedbackEntries.push(entry);
+			workflow.updatedAt = now;
 
-		// Reset merge-pr so a clean re-entry is possible after CI re-runs
-		this.stepRunner.resetStep(step, "pending");
+			// Reset merge-pr so a clean re-entry is possible after CI re-runs
+			this.stepRunner.resetStep(step, "pending");
 
-		// Advance currentStepIndex BEFORE transitioning the workflow to running, so
-		// no broadcast ever carries the logically-impossible `{ status: running,
-		// currentStep: merge-pr }` combination. startStep emits the single final
-		// broadcast once the feedback-implementer step is seeded.
-		const fiIndex = this.requireStepIndex(workflow, STEP.FEEDBACK_IMPLEMENTER);
-		workflow.currentStepIndex = fiIndex;
+			// Advance currentStepIndex BEFORE transitioning the workflow to running, so
+			// no broadcast ever carries the logically-impossible `{ status: running,
+			// currentStep: merge-pr }` combination. startStep emits the single final
+			// broadcast once the feedback-implementer step is seeded.
+			const fiIndex = this.requireStepIndex(workflow, STEP.FEEDBACK_IMPLEMENTER);
+			workflow.currentStepIndex = fiIndex;
 
-		this.engine.transition(workflowId, "running");
-		this.startStep(workflow);
+			this.engine.transition(workflowId, "running");
+			this.startStep(workflow);
+		});
 	}
 
 	private async runFeedbackImplementer(workflow: Workflow): Promise<void> {

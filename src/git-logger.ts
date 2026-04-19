@@ -1,7 +1,8 @@
 import { logger } from "./logger";
 import { readStream } from "./spawn-utils";
+import { getCurrentWorkflowId } from "./workflow-context";
 
-type GitLogCallback = (msg: string) => void;
+type GitLogCallback = (msg: string, workflowId: string | undefined) => void;
 
 interface GitSpawnResult {
 	code: number;
@@ -53,9 +54,10 @@ export async function gitSpawn(
 	options?: { cwd?: string; extra?: Record<string, string | undefined> },
 ): Promise<GitSpawnResult> {
 	const cwd = options?.cwd;
+	const workflowId = getCurrentWorkflowId();
 	const startMsg = formatLog(cmd, cwd, options?.extra);
 	logger.info(startMsg);
-	globalLogCallback?.(startMsg);
+	globalLogCallback?.(startMsg, workflowId);
 
 	const proc = Bun.spawn(cmd, {
 		cwd,
@@ -71,7 +73,7 @@ export async function gitSpawn(
 	const result = { code, stdout: stdout.trim(), stderr: stderr.trim() };
 	const resultMsg = formatResult(cmd, result);
 	logger.info(resultMsg);
-	globalLogCallback?.(resultMsg);
+	globalLogCallback?.(resultMsg, workflowId);
 
 	return result;
 }
