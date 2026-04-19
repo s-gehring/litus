@@ -515,11 +515,16 @@ test.describe("concurrency", () => {
 
 // ── Responsive ──────────────────────────────────────────────
 
+// `defaultBrowserType` from `devices[...]` forces a new worker when used in a
+// describe-scope `test.use()`, which Playwright rejects. Strip it here —
+// project-level browser selection already handles engine choice.
+const { defaultBrowserType: _iPhoneSEBrowserType, ...iPhoneSE } = devices["iPhone SE"];
+
 test.describe("responsive", () => {
 	test.use({
 		scenarioName: "peripheral-artifacts",
 		autoMode: "manual",
-		...devices["iPhone SE"],
+		...iPhoneSE,
 	});
 
 	test("iPhone SE: dashboard → card → artifact viewer", async ({ page, server, sandbox }) => {
