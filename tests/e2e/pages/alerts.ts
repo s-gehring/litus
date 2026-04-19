@@ -3,7 +3,7 @@ import type { Locator, Page } from "@playwright/test";
 export class AlertsPage {
 	constructor(public readonly page: Page) {}
 
-	bellButton(): Locator {
+	private bellButton(): Locator {
 		return this.page.locator("#btn-alert-bell");
 	}
 
@@ -16,7 +16,17 @@ export class AlertsPage {
 		return this.bellButton().locator(".bell-count");
 	}
 
-	toastContainer(): Locator {
+	async currentBellCount(): Promise<number> {
+		const badge = this.bellCount();
+		if ((await badge.count()) === 0) return 0;
+		const isHidden = await badge.evaluate((el) => el.classList.contains("hidden"));
+		if (isHidden) return 0;
+		const raw = (await badge.textContent())?.trim() ?? "0";
+		const n = Number.parseInt(raw, 10);
+		return Number.isFinite(n) ? n : 0;
+	}
+
+	private toastContainer(): Locator {
 		return this.page.locator("#alert-toast-container");
 	}
 

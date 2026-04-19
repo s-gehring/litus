@@ -130,7 +130,8 @@
 					"session_id": "c-a-review",
 					"result": "LGTM"
 				}
-			]
+			],
+			"delayMs": 40
 		},
 		{
 			"events": [
@@ -141,7 +142,8 @@
 					"session_id": "c-b-review",
 					"result": "LGTM"
 				}
-			]
+			],
+			"delayMs": 160
 		},
 		{
 			"events": [
@@ -152,7 +154,8 @@
 					"session_id": "c-a-impl-review",
 					"result": "Review response appended."
 				}
-			]
+			],
+			"delayMs": 300
 		},
 		{ "text": "nit\n" },
 		{
@@ -164,7 +167,8 @@
 					"session_id": "c-b-impl-review",
 					"result": "Review response appended."
 				}
-			]
+			],
+			"delayMs": 600
 		},
 		{ "text": "nit\n" },
 		{
@@ -185,7 +189,7 @@
 					"type": "result",
 					"subtype": "success",
 					"session_id": "c-b-cpp",
-					"result": "PR created: https://github.com/example/repo/pull/102"
+					"result": "PR created: https://github.com/example/repo/pull/101"
 				}
 			]
 		}

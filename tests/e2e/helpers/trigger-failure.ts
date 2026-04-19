@@ -18,19 +18,9 @@ export async function triggerFailure(
 	alerts: AlertsPage,
 	input: TriggerFailureInput,
 ): Promise<void> {
-	const startingCount = await currentBellCount(alerts);
+	const startingCount = await alerts.currentBellCount();
 	await createSpecification(app, input);
 	await expect
-		.poll(async () => currentBellCount(alerts), { timeout: 60_000 })
+		.poll(async () => alerts.currentBellCount(), { timeout: 60_000 })
 		.toBeGreaterThan(startingCount);
-}
-
-async function currentBellCount(alerts: AlertsPage): Promise<number> {
-	const badge = alerts.bellCount();
-	if ((await badge.count()) === 0) return 0;
-	const isHidden = await badge.evaluate((el) => el.classList.contains("hidden"));
-	if (isHidden) return 0;
-	const raw = (await badge.textContent())?.trim() ?? "0";
-	const n = Number.parseInt(raw, 10);
-	return Number.isFinite(n) ? n : 0;
 }

@@ -43,7 +43,7 @@ test.describe("alerts", () => {
 			specification: "Second alerts scenario workflow",
 			repo: sandbox.targetRepo,
 		});
-		const afterSecond = Number.parseInt((await alerts.bellCount().textContent()) ?? "0", 10);
+		const afterSecond = await alerts.currentBellCount();
 		expect(afterSecond).toBeGreaterThanOrEqual(2);
 
 		// AS3: manual dismiss decrements the bell count.
@@ -52,19 +52,15 @@ test.describe("alerts", () => {
 		await expect(firstRow).toBeVisible();
 		await alerts.dismissButton(firstRow).click();
 		await expect
-			.poll(async () => Number.parseInt((await alerts.bellCount().textContent()) ?? "0", 10), {
-				timeout: 10_000,
-			})
+			.poll(async () => alerts.currentBellCount(), { timeout: 10_000 })
 			.toBeLessThan(afterSecond);
 
 		// AS4/AS5: reload — undismissed alerts survive, dismissed ones do not.
-		const beforeReload = Number.parseInt((await alerts.bellCount().textContent()) ?? "0", 10);
+		const beforeReload = await alerts.currentBellCount();
 		await page.reload();
 		await app.waitConnected();
 		await expect
-			.poll(async () => Number.parseInt((await alerts.bellCount().textContent()) ?? "0", 10), {
-				timeout: 15_000,
-			})
+			.poll(async () => alerts.currentBellCount(), { timeout: 15_000 })
 			.toBe(beforeReload);
 	});
 });
@@ -89,7 +85,9 @@ test.describe("artifacts", () => {
 		});
 
 		// Wait for specify to produce its artifact snapshot (spec.md with XSS).
-		await expect(card.stepIndicator("specify")).toHaveClass(/step-completed/, { timeout: 90_000 });
+		await expect(card.stepIndicator("specify")).toHaveClass(/\bstep-completed\b/, {
+			timeout: 90_000,
+		});
 		await expect(viewer.anyAffordance()).toBeVisible({ timeout: 30_000 });
 
 		// Install a sentinel — the injected script, onerror, or javascript: URL
@@ -111,7 +109,7 @@ test.describe("artifacts", () => {
 		const bodyHtml = await viewer.modalBody().innerHTML();
 		expect(bodyHtml).not.toMatch(/<script/i);
 		expect(bodyHtml).not.toMatch(/onerror=/i);
-		expect(bodyHtml.toLowerCase()).not.toContain('href="javascript:');
+		expect(bodyHtml).not.toMatch(/href=["']javascript:/i);
 
 		// AS5: focus trap — focusing the LAST tabbable element (the close
 		// button) and pressing Tab once must wrap forward to the FIRST (the
@@ -124,6 +122,15 @@ test.describe("artifacts", () => {
 			.downloadLink()
 			.evaluate((el) => el === document.activeElement);
 		expect(focusedDownloadLink).toBe(true);
+
+		// Shift+Tab on the first tabbable (download link) wraps back to the
+		// last (close button). The trap's two branches (forward and backward)
+		// are both exercised — regressions that break only one direction
+		// would otherwise slip through.
+		await viewer.downloadLink().focus();
+		await page.keyboard.press("Shift+Tab");
+		const focusedClose = await viewer.closeButton().evaluate((el) => el === document.activeElement);
+		expect(focusedClose).toBe(true);
 
 		// AS4: download fires and delivers the spec.md bytes unchanged — the
 		// sanitiser is a render-time concern; on-disk bytes must preserve every
@@ -157,7 +164,7 @@ test.describe("artifacts", () => {
 		// downloadable. Download the file and assert the suggested filename
 		// round-trips through `encodeURIComponent` intact — this is where
 		// double-encoding / decode-mismatch regressions show up.
-		await expect(card.stepIndicator("plan")).toHaveClass(/step-completed/, { timeout: 90_000 });
+		await expect(card.stepIndicator("plan")).toHaveClass(/\bstep-completed\b/, { timeout: 90_000 });
 		await viewer.affordanceForStep("Planning").click();
 		const encodedItem = viewer.dropdownItemByLabel("contracts/example artifact #1.md");
 		await expect(encodedItem).toBeVisible();
@@ -180,7 +187,10 @@ test.describe("artifacts", () => {
 // ── Routing ─────────────────────────────────────────────────
 
 test.describe("routing", () => {
-	test.use({ scenarioName: "happy-path", autoMode: "manual" });
+	// Routing assertions never spawn a workflow, so load the small
+	// `peripheral-alerts` scenario rather than the 20-entry happy-path. This
+	// removes the "why happy-path?" reader surprise without affecting coverage.
+	test.use({ scenarioName: "peripheral-alerts", autoMode: "manual" });
 
 	test("deep links + back/forward + refresh + not-found", async ({ page, server }) => {
 		test.setTimeout(60_000);
@@ -283,19 +293,19 @@ test.describe("concurrency", () => {
 			.toBe(true);
 
 		// AS3: clicking each card swaps the detail pane — assert the
-		// `#pipeline-steps` content actually changes identity between clicks.
+		// `#user-input` text binds to the selected workflow. The per-workflow
+		// specification text is the only discriminator guaranteed to differ
+		// regardless of which step each workflow is on at observation time.
 		await cards.nth(0).click();
 		await expect(page.locator("#detail-area")).toBeVisible();
-		const firstDetailFingerprint = await page
-			.locator("#pipeline-steps")
-			.evaluate((el) => el.innerHTML);
+		await expect(page.locator("#user-input")).toContainText("Concurrency spec one", {
+			timeout: 15_000,
+		});
 		await cards.nth(1).click();
 		await expect(page.locator("#detail-area")).toBeVisible();
-		await expect
-			.poll(async () => page.locator("#pipeline-steps").evaluate((el) => el.innerHTML), {
-				timeout: 15_000,
-			})
-			.not.toBe(firstDetailFingerprint);
+		await expect(page.locator("#user-input")).toContainText("Concurrency spec two", {
+			timeout: 15_000,
+		});
 
 		// AS4: both cards eventually reach a `card-status-completed` badge.
 		// Full-auto drives through merge-pr; the scenario has 8 scripted
@@ -341,7 +351,7 @@ test.describe("responsive", () => {
 		await app.workflowCards().first().click();
 		await expect(page.locator("#detail-area")).toBeVisible();
 
-		await expect(card.stepIndicator("specify")).toHaveClass(/step-completed/, {
+		await expect(card.stepIndicator("specify")).toHaveClass(/\bstep-completed\b/, {
 			timeout: 90_000,
 		});
 
@@ -352,8 +362,10 @@ test.describe("responsive", () => {
 		await expect(viewer.modal()).toBeHidden();
 
 		// FR-010: card strip must not overflow the 375px viewport horizontally,
-		// and the pipeline tree (visible after selecting the card) must be
-		// visible and not horizontally clip the card strip.
+		// and the pipeline-steps strip (visible after selecting the card) must
+		// be visible and not horizontally overflow. The epic-tree component
+		// (`#output-area.epic-tree-fullsize`) is epic-bound and not rendered
+		// here — this smoke does not assert on it.
 		const viewport = page.viewportSize();
 		expect(viewport).not.toBeNull();
 		const stripBox = await page.locator("#card-strip").boundingBox();
@@ -362,12 +374,12 @@ test.describe("responsive", () => {
 			expect(stripBox.x).toBeGreaterThanOrEqual(0);
 			expect(stripBox.x + stripBox.width).toBeLessThanOrEqual(viewport.width + 1);
 		}
-		const tree = page.locator("#pipeline-steps");
-		await expect(tree).toBeVisible();
-		const treeBox = await tree.boundingBox();
-		expect(treeBox).not.toBeNull();
-		if (treeBox && viewport) {
-			expect(treeBox.x + treeBox.width).toBeLessThanOrEqual(viewport.width + 1);
+		const pipelineStrip = page.locator("#pipeline-steps");
+		await expect(pipelineStrip).toBeVisible();
+		const pipelineStripBox = await pipelineStrip.boundingBox();
+		expect(pipelineStripBox).not.toBeNull();
+		if (pipelineStripBox && viewport) {
+			expect(pipelineStripBox.x + pipelineStripBox.width).toBeLessThanOrEqual(viewport.width + 1);
 		}
 	});
 });

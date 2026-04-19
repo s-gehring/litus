@@ -20,7 +20,7 @@ export class ArtifactViewerPage {
 		return this.page.locator(".artifact-affordance").first();
 	}
 
-	dropdown(): Locator {
+	private dropdown(): Locator {
 		return this.page.locator(".artifact-dropdown");
 	}
 
