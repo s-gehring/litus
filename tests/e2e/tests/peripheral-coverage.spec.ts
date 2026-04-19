@@ -7,6 +7,7 @@ import {
 	AppPage,
 	ArtifactViewerPage,
 	ConfigPageObject,
+	DashboardLayoutPage,
 	NotFoundPage,
 	WelcomePage,
 	WorkflowCardPage,
@@ -42,7 +43,7 @@ test.describe("alerts", () => {
 		await expect(alerts.toasts().first()).toBeHidden({ timeout: 10_000 });
 		await expect(alerts.bellCount()).toBeVisible();
 		await alerts.openList();
-		await expect(alerts.listRows().first()).toBeVisible();
+		await expect(alerts.listRows()).toHaveCount(1);
 		await alerts.closeList();
 
 		// Drive a second failure so we can assert manual dismissal decrements the count.
@@ -63,12 +64,23 @@ test.describe("alerts", () => {
 			.toBeLessThan(afterSecond);
 
 		// AS4/AS5: reload — undismissed alerts survive, dismissed ones do not.
+		// Rows are sorted newest-first, so `listRows().first()` in AS3 above
+		// dismissed the *second* failure's alert. Post-reload, the list must
+		// contain the first-failure row and must NOT contain the dismissed
+		// second-failure row. A plain bell-count check would silently pass a
+		// regression that dropped the surviving alert AND resurrected the
+		// dismissed one (1 → 1).
 		const beforeReload = await alerts.currentBellCount();
 		await page.reload();
 		await app.waitConnected();
 		await expect
 			.poll(async () => alerts.currentBellCount(), { timeout: 15_000 })
 			.toBe(beforeReload);
+		await alerts.openList();
+		await expect(alerts.listRows()).toHaveCount(1);
+		await expect(alerts.listPanel()).toContainText("First alerts scenario workflow");
+		await expect(alerts.listPanel()).not.toContainText("Second alerts scenario workflow");
+		await alerts.closeList();
 	});
 });
 
@@ -238,6 +250,7 @@ test.describe("routing", () => {
 		const welcome = new WelcomePage(page);
 		const config = new ConfigPageObject(page);
 		const notFound = new NotFoundPage(page);
+		const layout = new DashboardLayoutPage(page);
 
 		// Pass `server.baseUrl` explicitly to every `deepLink` call — the helper
 		// no longer derives the origin from `page.url()` (which is `about:blank`
@@ -279,11 +292,12 @@ test.describe("routing", () => {
 		const seededCard = app.workflowCards().first();
 		await expect(seededCard).toBeVisible({ timeout: 30_000 });
 		await seededCard.click();
-		await expect(page.locator("#pipeline-steps .pipeline-step").first()).toBeVisible({
+		await expect(layout.pipelineStepRows().first()).toBeVisible({
 			timeout: 30_000,
 		});
 		const seededId = await seededCard.getAttribute("data-workflow-id");
 		expect(seededId).toBeTruthy();
+		if (!seededId) throw new Error("unreachable: seededId truthy-asserted above");
 		// FR-008: the card-strip selection state tracks the URL. After clicking
 		// the card the matching strip entry must carry the `card-expanded`
 		// class (the strip's "this card is selected" affordance).
@@ -292,33 +306,30 @@ test.describe("routing", () => {
 		// FR-008 deep-link → card-strip selection: navigate away then deep-link
 		// straight back to `/workflow/<id>` and assert the strip re-selects the
 		// matching card without a click.
-		if (seededId) {
-			await deepLink(app, server.baseUrl, "/");
-			await expect(seededCard).not.toHaveClass(/\bcard-expanded\b/);
-			await deepLink(app, server.baseUrl, `/workflow/${seededId}`);
-			await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
+		await deepLink(app, server.baseUrl, "/");
+		await expect(seededCard).not.toHaveClass(/\bcard-expanded\b/);
+		await deepLink(app, server.baseUrl, `/workflow/${seededId}`);
+		await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
 
-			// AS4: back/forward across a card-strip-selected view. popstate
-			// must re-apply the `card-expanded` class on the seeded workflow
-			// when we navigate back to `/workflow/<id>` — the previous
-			// welcome↔config hops never exercised a selected card so a
-			// regression in popstate's selection reapply would have slipped.
-			await deepLink(app, server.baseUrl, "/config");
-			await expect(config.root()).toBeVisible();
-			await page.goBack();
-			await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
-			await page.goForward();
-			await expect(config.root()).toBeVisible();
+		// AS4: back/forward across a card-strip-selected view. popstate must
+		// re-apply the `card-expanded` class on the seeded workflow when we
+		// navigate back to `/workflow/<id>` — the previous welcome↔config
+		// hops never exercised a selected card so a regression in popstate's
+		// selection reapply would have slipped.
+		await deepLink(app, server.baseUrl, "/config");
+		await expect(config.root()).toBeVisible();
+		await page.goBack();
+		await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
+		await page.goForward();
+		await expect(config.root()).toBeVisible();
 
-			// AS5: refresh on a seeded `/workflow/<id>` deep-link must
-			// restore the same view + card-strip selection after reconnect.
-			// The welcome/config reloads above don't exercise the
-			// `workflow:list` re-render path.
-			await deepLink(app, server.baseUrl, `/workflow/${seededId}`);
-			await page.reload();
-			await app.waitConnected();
-			await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
-		}
+		// AS5: refresh on a seeded `/workflow/<id>` deep-link must restore the
+		// same view + card-strip selection after reconnect. The welcome/config
+		// reloads above don't exercise the `workflow:list` re-render path.
+		await deepLink(app, server.baseUrl, `/workflow/${seededId}`);
+		await page.reload();
+		await app.waitConnected();
+		await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
 
 		await deepLink(app, server.baseUrl, "/workflow/does-not-exist");
 		await expect(notFound.root()).toBeVisible();
@@ -332,7 +343,7 @@ test.describe("routing", () => {
 		// the empty-state owns the detail surface. This is the genuine
 		// stale-leak class — without the seed step the assertion was a
 		// tautology.
-		await expect(page.locator("#pipeline-steps .pipeline-step")).toHaveCount(0);
+		await expect(layout.pipelineStepRows()).toHaveCount(0);
 
 		// AS5: refresh on the not-found panel must re-render the empty-state
 		// rather than briefly flashing stale content or the welcome area.
@@ -340,6 +351,14 @@ test.describe("routing", () => {
 		await app.waitConnected();
 		await expect(notFound.root()).toBeVisible();
 		await expect(notFound.message()).toContainText(/does-not-exist/);
+
+		// Re-seed `#pipeline-steps` by returning to the seeded workflow view —
+		// the `/workflow/does-not-exist` transition above already cleared the
+		// strip, so a count-zero assertion after the epic not-found nav would
+		// otherwise be comparing zero-to-zero and exercise no product-code
+		// invariant.
+		await deepLink(app, server.baseUrl, `/workflow/${seededId}`);
+		await expect(layout.pipelineStepRows().first()).toBeVisible({ timeout: 30_000 });
 
 		// `also-missing` is chosen to collide with neither a seeded epic id nor
 		// an aggregate key — the epic detail handler falls through to
@@ -349,7 +368,7 @@ test.describe("routing", () => {
 		await expect(notFound.root()).toBeVisible();
 		await expect(notFound.message()).toContainText(/epic/i);
 		await expect(notFound.message()).toContainText(/also-missing/);
-		await expect(page.locator("#pipeline-steps .pipeline-step")).toHaveCount(0);
+		await expect(layout.pipelineStepRows()).toHaveCount(0);
 	});
 });
 
@@ -366,6 +385,7 @@ test.describe("concurrency", () => {
 		test.setTimeout(180_000);
 
 		const app = new AppPage(page);
+		const layout = new DashboardLayoutPage(page);
 		await app.goto(server.baseUrl);
 		await app.waitConnected();
 
@@ -383,24 +403,46 @@ test.describe("concurrency", () => {
 
 		const cards = app.workflowCards();
 
-		// AS2: per-card step indicators progress independently. Record every
-		// non-empty `.card-step` value each card emits over the run; by the
-		// end, each card must have shown at least two distinct step names.
-		// This is monotonic (accumulating a Set never un-satisfies the
-		// assertion) so it survives both cards completing — `.card-step` is
-		// only rendered while the workflow is `running`/`waiting_for_input`
-		// and vanishes on completion, which would make an equality-based
-		// divergence poll false-forever once both workflows finish.
-		const observedSteps: [Set<string>, Set<string>] = [new Set(), new Set()];
+		// AS2: per-card step indicators progress independently. Key the
+		// observed-step sets by `data-workflow-id` so a future card-strip
+		// re-order (by status/recency/id) can't silently mix the two cards'
+		// samples. "Independent" is stronger than "each progressed" — also
+		// require at least one poll where the two cards' current step texts
+		// differ, catching regressions (shared module-scope "current step",
+		// wrong data-workflow-id lookup) that would otherwise have both cards
+		// progress in lockstep and still satisfy the size ≥ 2 check.
+		// Accumulators are monotonic so they survive completion — `.card-step`
+		// only renders while the workflow is `running`/`waiting_for_input`,
+		// which would make an equality-based poll false-forever once both
+		// workflows finish.
+		const observedSteps = new Map<string, Set<string>>();
+		let sawDivergence = false;
 		await expect
 			.poll(
 				async () => {
-					const steps = await cards.evaluateAll((els) =>
-						els.map((el) => el.querySelector(".card-step")?.textContent ?? ""),
+					const samples = await cards.evaluateAll((els) =>
+						els.map((el) => ({
+							id: el.getAttribute("data-workflow-id") ?? "",
+							step: el.querySelector(".card-step")?.textContent ?? "",
+						})),
 					);
-					if (steps[0]) observedSteps[0].add(steps[0]);
-					if (steps[1]) observedSteps[1].add(steps[1]);
-					return observedSteps[0].size >= 2 && observedSteps[1].size >= 2;
+					for (const { id, step } of samples) {
+						if (!id || !step) continue;
+						let set = observedSteps.get(id);
+						if (!set) {
+							set = new Set();
+							observedSteps.set(id, set);
+						}
+						set.add(step);
+					}
+					if (samples.length === 2 && samples[0].step && samples[1].step) {
+						if (samples[0].id !== samples[1].id && samples[0].step !== samples[1].step) {
+							sawDivergence = true;
+						}
+					}
+					if (observedSteps.size < 2) return false;
+					const sizes = [...observedSteps.values()].map((s) => s.size);
+					return sizes.every((n) => n >= 2) && sawDivergence;
 				},
 				{ timeout: 90_000 },
 			)
@@ -417,19 +459,19 @@ test.describe("concurrency", () => {
 		await expect(cardOne).toHaveCount(1);
 		await expect(cardTwo).toHaveCount(1);
 		await cardOne.click();
-		await expect(page.locator("#detail-area")).toBeVisible();
-		await expect(page.locator("#user-input")).toContainText("Concurrency spec one", {
+		await expect(layout.detailArea()).toBeVisible();
+		await expect(layout.userInput()).toContainText("Concurrency spec one", {
 			timeout: 15_000,
 		});
 		// Guard against append-instead-of-replace regressions: a substring
 		// match alone passes spuriously when both texts end up concatenated.
-		await expect(page.locator("#user-input")).not.toContainText("Concurrency spec two");
+		await expect(layout.userInput()).not.toContainText("Concurrency spec two");
 		await cardTwo.click();
-		await expect(page.locator("#detail-area")).toBeVisible();
-		await expect(page.locator("#user-input")).toContainText("Concurrency spec two", {
+		await expect(layout.detailArea()).toBeVisible();
+		await expect(layout.userInput()).toContainText("Concurrency spec two", {
 			timeout: 15_000,
 		});
-		await expect(page.locator("#user-input")).not.toContainText("Concurrency spec one");
+		await expect(layout.userInput()).not.toContainText("Concurrency spec one");
 
 		// AS4: both cards eventually reach a `card-status-completed` badge.
 		// Full-auto drives through merge-pr; the scenario has 8 scripted
@@ -463,6 +505,7 @@ test.describe("responsive", () => {
 		const app = new AppPage(page);
 		const card = new WorkflowCardPage(page);
 		const viewer = new ArtifactViewerPage(page);
+		const layout = new DashboardLayoutPage(page);
 		await app.goto(server.baseUrl);
 		await app.waitConnected();
 
@@ -473,7 +516,7 @@ test.describe("responsive", () => {
 
 		await expect(app.workflowCards().first()).toBeVisible();
 		await app.workflowCards().first().click();
-		await expect(page.locator("#detail-area")).toBeVisible();
+		await expect(layout.detailArea()).toBeVisible();
 
 		await expect(card.stepIndicator("specify")).toHaveClass(/\bstep-completed\b/, {
 			timeout: 90_000,
@@ -496,13 +539,17 @@ test.describe("responsive", () => {
 		// here — this smoke does not assert on it.
 		const viewport = page.viewportSize();
 		expect(viewport).not.toBeNull();
-		const stripBox = await page.locator("#card-strip").boundingBox();
+		// `+ 1` absorbs sub-pixel rounding in `boundingBox` (Chromium reports
+		// fractional widths rounded to one decimal): strictly-equal widths
+		// trip a naive `<=` by ~0.5px on some devicePixelRatio values. Not a
+		// flake-avoidance fudge — a subpixel-rendering tolerance.
+		const stripBox = await layout.cardStrip().boundingBox();
 		expect(stripBox).not.toBeNull();
 		if (stripBox && viewport) {
 			expect(stripBox.x).toBeGreaterThanOrEqual(0);
 			expect(stripBox.x + stripBox.width).toBeLessThanOrEqual(viewport.width + 1);
 		}
-		const pipelineStrip = page.locator("#pipeline-steps");
+		const pipelineStrip = layout.pipelineSteps();
 		await expect(pipelineStrip).toBeVisible();
 		const pipelineStripBox = await pipelineStrip.boundingBox();
 		expect(pipelineStripBox).not.toBeNull();
