@@ -73,7 +73,7 @@ function mockDeps(opts: MockDepsOptions = {}): {
 	return { deps, calls, removed };
 }
 
-describe("ManagedRepoStore — fresh clone (US1)", () => {
+describe("ManagedRepoStore — fresh clone", () => {
 	test("undefined → cloning → ready(1); returns path under baseDir", async () => {
 		const { deps, calls } = mockDeps({ baseDir: "/root/.litus/repos" });
 		const store = new ManagedRepoStore(deps);
@@ -196,7 +196,7 @@ describe("ManagedRepoStore — fresh clone (US1)", () => {
 	});
 });
 
-describe("ManagedRepoStore — US2 (coalescing + ready reuse)", () => {
+describe("ManagedRepoStore — coalescing + ready reuse", () => {
 	test("concurrent acquire during cloning coalesces into one subprocess", async () => {
 		// Gate the first clone subprocess so the second acquire lands during cloning
 		let resolveClone!: () => void;
@@ -248,7 +248,7 @@ describe("ManagedRepoStore — US2 (coalescing + ready reuse)", () => {
 	});
 });
 
-describe("ManagedRepoStore — US3 (release + seed)", () => {
+describe("ManagedRepoStore — release + seed", () => {
 	test("release on ready(1) transitions to deleting and removes the clone dir", async () => {
 		const { deps, removed } = mockDeps();
 		const store = new ManagedRepoStore(deps);

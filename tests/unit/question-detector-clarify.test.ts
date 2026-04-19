@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { QuestionDetector } from "../../src/question-detector";
 
-describe("QuestionDetector finalized-only mode (US2 / FR-008, FR-009)", () => {
+describe("QuestionDetector finalized-only mode (FR-008, FR-009)", () => {
 	test("partial-only messages (never appended as finalized) yield no detection", () => {
 		const detector = new QuestionDetector();
 		// Simulate the orchestrator NOT forwarding partial deltas into the

@@ -51,7 +51,7 @@ function depsWith(workflow: Workflow): Pick<HandlerDeps, "orchestrators" | "shar
 	};
 }
 
-describe("artifacts HTTP: list endpoint (US1)", () => {
+describe("artifacts HTTP: list endpoint", () => {
 	test("returns descriptors grouped by step from persistent snapshots", async () => {
 		await withTempDir(async (dir) => {
 			seedSpecs(dir, "001-feat", {
@@ -83,7 +83,7 @@ describe("artifacts HTTP: list endpoint (US1)", () => {
 		});
 	});
 
-	test("omits steps that never snapshotted (FR-005, US3)", async () => {
+	test("omits steps that never snapshotted (FR-005)", async () => {
 		await withTempDir(async (dir) => {
 			seedSpecs(dir, "001-feat", { "spec.md": "# spec" });
 			const wf = makeWorkflow({
@@ -100,7 +100,7 @@ describe("artifacts HTTP: list endpoint (US1)", () => {
 		});
 	});
 
-	test("Plan with 4 base files + one contract yields 5 plan descriptors (US3)", async () => {
+	test("Plan with 4 base files + one contract yields 5 plan descriptors", async () => {
 		await withTempDir(async (dir) => {
 			seedSpecs(dir, "001-feat", {
 				"plan.md": "p",
@@ -175,7 +175,7 @@ describe("artifacts HTTP: list endpoint (US1)", () => {
 	});
 });
 
-describe("artifacts HTTP: content endpoint (US1)", () => {
+describe("artifacts HTTP: content endpoint", () => {
 	test("returns snapshotted bytes with text/markdown content-type", async () => {
 		await withTempDir(async (dir) => {
 			seedSpecs(dir, "001-feat", { "spec.md": "# hello" });
@@ -272,7 +272,7 @@ describe("artifacts HTTP: content endpoint (US1)", () => {
 	});
 });
 
-describe("artifacts HTTP: download endpoint (US2)", () => {
+describe("artifacts HTTP: download endpoint", () => {
 	test("sets Content-Disposition with sanitized branch prefix", async () => {
 		await withTempDir(async (dir) => {
 			seedSpecs(dir, "feat-with-spaces", { "spec.md": "hi" });
