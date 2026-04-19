@@ -9,7 +9,9 @@ export {
 	setAndSave,
 } from "./config-actions";
 export { createSpecification } from "./create-specification";
+export { deepLink } from "./deep-link";
 export { mergePullRequest } from "./merge-pr";
+export { openArtifact } from "./open-artifact";
 export {
 	type AutomationMode,
 	abortRun,
@@ -21,4 +23,5 @@ export {
 } from "./run-controls";
 export { type ServerMessage, ServerMessageObserver } from "./server-messages";
 export { submitFeedback } from "./submit-feedback";
+export { triggerFailure } from "./trigger-failure";
 export { waitForStep } from "./wait-for-step";

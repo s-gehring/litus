@@ -138,7 +138,6 @@
 				}
 			]
 		},
-		{ "text": "nit\n" },
 		{
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "sess-cpp" },

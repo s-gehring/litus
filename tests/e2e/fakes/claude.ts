@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import type { ScenarioScript } from "../harness/scenario-types";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+import type { ScenarioFile, ScenarioScript } from "../harness/scenario-types";
 
 const FAKE = "claude";
 
@@ -45,6 +46,54 @@ function readOutputFormat(argv: string[]): string {
 	return "text"; // matches `runClaude` default
 }
 
+/**
+ * Resolve a scenario file path against the fake's CWD and reject any path
+ * that escapes it. `..` anywhere in the path, absolute paths, and paths that
+ * normalise outside CWD all fail fast. Paths that stay inside return the
+ * absolute target.
+ */
+function resolveSafePath(cwd: string, file: ScenarioFile): string {
+	if (isAbsolute(file.path)) {
+		die(`refusing to write outside CWD: ${file.path}`);
+	}
+	const target = resolve(cwd, file.path);
+	const rel = relative(cwd, target);
+	if (rel.startsWith("..") || isAbsolute(rel)) {
+		die(`refusing to write outside CWD: ${file.path}`);
+	}
+	return target;
+}
+
+function writeScenarioFiles(files: ScenarioFile[] | undefined, idx: number): void {
+	if (!files || files.length === 0) return;
+	const cwd = process.cwd();
+	for (const file of files) {
+		const target = resolveSafePath(cwd, file);
+		mkdirSync(dirname(target), { recursive: true });
+		if (file.encoding === "base64") {
+			// `Buffer.from(…, "base64")` never throws — it silently discards
+			// invalid characters. Validate the input with a strict base64
+			// character-set regex first (allow standard base64 alphabet plus
+			// optional trailing `=` padding, plus any whitespace the scenario
+			// author may have embedded for readability).
+			const normalised = file.content.replace(/\s+/g, "");
+			if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalised)) {
+				die(
+					`claude invocation ${idx}: invalid base64 content for ${file.path} (non-base64 characters present)`,
+				);
+			}
+			const bytes = Buffer.from(normalised, "base64");
+			writeFileSync(target, bytes);
+		} else if (file.encoding === "utf8") {
+			writeFileSync(target, file.content, "utf8");
+		} else {
+			die(
+				`claude invocation ${idx}: unsupported encoding ${JSON.stringify((file as ScenarioFile).encoding)} for ${file.path}`,
+			);
+		}
+	}
+}
+
 async function main() {
 	const argv = process.argv.slice(2);
 
@@ -76,6 +125,16 @@ async function main() {
 
 	const outputFormat = readOutputFormat(argv);
 	const { scenario, path } = loadScenario();
+
+	// Short-circuit the review-classifier side-channel call. Like the model
+	// detection probe above, this is not part of the scripted pipeline
+	// sequence and must not consume a FIFO slot — concurrent workflows would
+	// otherwise interleave classifier calls into the FIFO non-deterministically.
+	if (outputFormat === "text" && promptArg.startsWith("Classify the highest severity")) {
+		process.stdout.write(scenario.classifier ?? "nit\n");
+		process.exit(0);
+	}
+
 	const counterFile = process.env.LITUS_E2E_COUNTER;
 	if (!counterFile) die("missing env LITUS_E2E_COUNTER");
 	const idx = nextIndex(counterFile as string);
@@ -101,6 +160,11 @@ async function main() {
 	if (script.delayMs && script.delayMs > 0) {
 		await new Promise((r) => setTimeout(r, script.delayMs));
 	}
+
+	// Materialise scripted files into the worktree BEFORE emitting output, so
+	// the server's artifact snapshotter — which runs after step completion —
+	// picks them up as real workflow outputs.
+	writeScenarioFiles(script.files, idx);
 
 	if (outputFormat === "stream-json") {
 		if (!script.events) {

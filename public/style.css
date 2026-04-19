@@ -2129,3 +2129,18 @@ body::-webkit-scrollbar-track {
   padding: 40px 20px;
 }
 body.artifact-modal-open { overflow: hidden; }
+
+.not-found-panel {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text);
+}
+.not-found-heading {
+  font-size: 1.3em;
+  margin: 0 0 12px 0;
+}
+.not-found-message {
+  color: var(--text-dim);
+  margin: 0 auto;
+  max-width: 520px;
+}

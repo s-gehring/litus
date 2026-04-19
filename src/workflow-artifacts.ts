@@ -99,7 +99,39 @@ export function getArtifactSnapshotPath(
 	return resolveArtifactPath(stepDir, relPath);
 }
 
-function collectMdFilesRecursive(absDir: string, relPrefix: string, out: string[]): void {
+// Files considered "contract artifacts" when the plan step snapshots
+// `contracts/**`. Allows common text/spec formats alongside a few binary image
+// types so scenarios that ship e.g. a reference `pixel.png` diagram under
+// contracts/ are surfaced in the Planning dropdown and downloadable verbatim.
+const CONTRACT_ARTIFACT_EXTS = new Set([
+	".md",
+	".txt",
+	".json",
+	".yaml",
+	".yml",
+	".png",
+	".jpg",
+	".jpeg",
+	".gif",
+	".svg",
+]);
+
+function isContractArtifactFilename(name: string): boolean {
+	const dot = name.lastIndexOf(".");
+	if (dot < 0) return false;
+	return CONTRACT_ARTIFACT_EXTS.has(name.slice(dot).toLowerCase());
+}
+
+function collectContractFilesRecursive(absDir: string, relPrefix: string, out: string[]): void {
+	collectFilesRecursive(absDir, relPrefix, out, isContractArtifactFilename);
+}
+
+function collectFilesRecursive(
+	absDir: string,
+	relPrefix: string,
+	out: string[],
+	accept: (name: string) => boolean,
+): void {
 	let entries: string[];
 	try {
 		entries = readdirSync(absDir);
@@ -116,40 +148,11 @@ function collectMdFilesRecursive(absDir: string, relPrefix: string, out: string[
 		}
 		const relName = relPrefix ? `${relPrefix}/${name}` : name;
 		if (stat.isDirectory()) {
-			collectMdFilesRecursive(abs, relName, out);
-		} else if (stat.isFile() && name.endsWith(".md")) {
+			collectFilesRecursive(abs, relName, out, accept);
+		} else if (stat.isFile() && accept(name)) {
 			out.push(relName);
 		}
 	}
-}
-
-interface ReviewFile {
-	ordinal: number;
-	name: string;
-}
-
-function scanReviewFiles(dir: string): ReviewFile[] {
-	if (!existsSync(dir)) return [];
-	let entries: string[];
-	try {
-		entries = readdirSync(dir);
-	} catch {
-		return [];
-	}
-	const files: ReviewFile[] = [];
-	for (const name of entries) {
-		if (name === "code-review.md") {
-			files.push({ ordinal: 1, name });
-			continue;
-		}
-		const m = name.match(/^code-review-(\d+)\.md$/);
-		if (m) {
-			const n = parseInt(m[1], 10);
-			if (n >= 1) files.push({ ordinal: n, name });
-		}
-	}
-	files.sort((a, b) => a.ordinal - b.ordinal);
-	return files;
 }
 
 function buildDescriptor(
@@ -249,9 +252,9 @@ export function snapshotStepArtifacts(
 			{
 				const contractsAbs = join(specsRoot, "contracts");
 				if (existsSync(contractsAbs)) {
-					const mds: string[] = [];
-					collectMdFilesRecursive(contractsAbs, "contracts", mds);
-					for (const rel of mds) snap(rel, null);
+					const files: string[] = [];
+					collectContractFilesRecursive(contractsAbs, "contracts", files);
+					for (const rel of files) snap(rel, null);
 				}
 			}
 			break;
@@ -270,7 +273,10 @@ export function snapshotStepArtifacts(
 	}
 }
 
-function listFilesInStepDir(stepDir: string): {
+function listFilesInStepDir(
+	stepDir: string,
+	accept: (name: string) => boolean = (n) => n.endsWith(".md"),
+): {
 	direct: string[];
 	byOrdinal: Map<number, string[]>;
 } {
@@ -294,16 +300,23 @@ function listFilesInStepDir(stepDir: string): {
 		if (!stat.isDirectory()) continue;
 		if (name === "_") {
 			const out: string[] = [];
-			collectMdFilesRecursive(abs, "", out);
+			collectFilesRecursive(abs, "", out, accept);
 			direct.push(...out);
 		} else if (/^\d+$/.test(name)) {
 			const ord = parseInt(name, 10);
 			const out: string[] = [];
-			collectMdFilesRecursive(abs, "", out);
+			collectFilesRecursive(abs, "", out, accept);
 			byOrdinal.set(ord, out);
 		}
 	}
 	return { direct, byOrdinal };
+}
+
+function planStepAccept(name: string): boolean {
+	// Plan step lists both the canonical `.md` outputs (plan.md, research.md,
+	// etc) and any contract artifacts that were snapshotted under `contracts/`
+	// (which may include binary types like `.png`).
+	return name.endsWith(".md") || isContractArtifactFilename(name);
 }
 
 export function listArtifacts(workflow: Workflow): ArtifactListResponse {
@@ -332,7 +345,10 @@ export function listArtifacts(workflow: Workflow): ArtifactListResponse {
 	// signal that the step produced it.
 	for (const step of STEP_ORDER) {
 		const stepDir = join(root, step);
-		const { direct, byOrdinal } = listFilesInStepDir(stepDir);
+		const { direct, byOrdinal } = listFilesInStepDir(
+			stepDir,
+			step === "plan" ? planStepAccept : undefined,
+		);
 
 		if (step === "specify" || step === "clarify") {
 			const label = step === "clarify" ? "spec.md (clarified)" : "spec.md";

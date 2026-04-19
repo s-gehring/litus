@@ -1,0 +1,217 @@
+{
+	"name": "peripheral-concurrency",
+	"classifier": "nit\n",
+	"claude": [
+		{
+			"delayMs": 200,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-0" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-0",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 1500,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-1" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-1",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 400,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-2" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-2",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 1500,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-3" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-3",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 400,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-4" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-4",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 1500,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-5" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-5",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 400,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-6" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-6",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 1500,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-7" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-7",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 400,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-8" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-8",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 1500,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-9" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-9",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 400,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-10" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-10",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 1500,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-11" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-11",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 400,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-12" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-12",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 1500,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-13" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-13",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 400,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-14" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-14",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		},
+		{
+			"delayMs": 1500,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "c-slot-15" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "c-slot-15",
+					"result": "Step complete. PR created: https://github.com/example/repo/pull/101"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": {
+			"exitCode": 0,
+			"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/101\",\"number\":101}"
+		},
+		"pr merge": { "exitCode": 0, "stdout": "Merged pull request (Squash and merge)\n" },
+		"pr checks": {
+			"exitCode": 0,
+			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"
+		},
+		"pr create": {
+			"exitCode": 0,
+			"stdout": "https://github.com/example/repo/pull/101\n"
+		},
+		"run view": { "exitCode": 0, "stdout": "" }
+	}
+}

@@ -1,0 +1,33 @@
+{
+	"name": "peripheral-alerts",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-specify-fail" },
+				{
+					"type": "result",
+					"subtype": "error",
+					"session_id": "sess-specify-fail",
+					"result": "Scripted specify failure for alerts coverage"
+				}
+			],
+			"exitCode": 1
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-specify-fail-2" },
+				{
+					"type": "result",
+					"subtype": "error",
+					"session_id": "sess-specify-fail-2",
+					"result": "Second scripted failure for alerts coverage"
+				}
+			],
+			"exitCode": 1
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" }
+	}
+}

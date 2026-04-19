@@ -12,6 +12,7 @@ import { renderMarkdown } from "../render-markdown";
 import type { RouteHandler, RouteMatch } from "../router";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
 import { renderEpicTree, updateEpicTreeRow } from "./epic-tree";
+import { hideNotFoundPanel, showNotFoundPanel } from "./not-found-panel";
 import { renderPipelineSteps } from "./pipeline-steps";
 import { EPIC_AGG_STATUS_CLASSES } from "./status-maps";
 import {
@@ -44,6 +45,7 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 	function hideLayout(): void {
 		const existingAnalysis = document.getElementById("epic-analysis-notes");
 		if (existingAnalysis) existingAnalysis.remove();
+		hideNotFoundPanel();
 		hideDetailLayout();
 	}
 
@@ -166,16 +168,17 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		const state = deps.getState();
 		const agg = state.getEpicAggregates().get(currentEpicId);
 		if (agg) {
+			hideNotFoundPanel();
 			renderTreeView(agg);
 			return;
 		}
 		const epic = state.getEpics().get(currentEpicId);
 		if (epic) {
+			hideNotFoundPanel();
 			renderAnalysisView(epic);
 			return;
 		}
-		clearOutput();
-		appendOutput("This epic no longer exists", "system");
+		showNotFoundPanel("epic", currentEpicId);
 	}
 
 	return {
