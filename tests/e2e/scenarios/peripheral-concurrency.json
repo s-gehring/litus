@@ -3,6 +3,7 @@
 	"classifier": "nit\n",
 	"claude": [
 		{
+			"delayMs": 200,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-a-specify" },
 				{
@@ -14,6 +15,7 @@
 			]
 		},
 		{
+			"delayMs": 1500,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-b-specify" },
 				{
@@ -25,6 +27,7 @@
 			]
 		},
 		{
+			"delayMs": 400,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-a-clarify" },
 				{
@@ -36,6 +39,7 @@
 			]
 		},
 		{
+			"delayMs": 1500,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-b-clarify" },
 				{
@@ -47,6 +51,7 @@
 			]
 		},
 		{
+			"delayMs": 400,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-a-plan" },
 				{
@@ -58,6 +63,7 @@
 			]
 		},
 		{
+			"delayMs": 1500,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-b-plan" },
 				{
@@ -69,6 +75,7 @@
 			]
 		},
 		{
+			"delayMs": 400,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-a-tasks" },
 				{
@@ -80,6 +87,7 @@
 			]
 		},
 		{
+			"delayMs": 1500,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-b-tasks" },
 				{
@@ -91,6 +99,7 @@
 			]
 		},
 		{
+			"delayMs": 400,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-a-impl" },
 				{
@@ -102,6 +111,7 @@
 			]
 		},
 		{
+			"delayMs": 1500,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-b-impl" },
 				{
@@ -113,6 +123,7 @@
 			]
 		},
 		{
+			"delayMs": 400,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-a-review" },
 				{
@@ -124,6 +135,7 @@
 			]
 		},
 		{
+			"delayMs": 1500,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-b-review" },
 				{
@@ -135,6 +147,7 @@
 			]
 		},
 		{
+			"delayMs": 400,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-a-impl-review" },
 				{
@@ -146,6 +159,7 @@
 			]
 		},
 		{
+			"delayMs": 1500,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-b-impl-review" },
 				{
@@ -157,6 +171,7 @@
 			]
 		},
 		{
+			"delayMs": 400,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-a-cpp" },
 				{
@@ -168,6 +183,7 @@
 			]
 		},
 		{
+			"delayMs": 1500,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-b-cpp" },
 				{

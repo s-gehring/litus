@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
+import { getMimeType } from "../static-files";
 import { type ClientMessage, STEP, type Workflow } from "../types";
 import {
 	getArtifactSnapshotPath,
@@ -277,7 +278,7 @@ export async function handleArtifactContent(
 	const file = Bun.file(resolved.absPath);
 	return new Response(file.stream(), {
 		headers: {
-			"Content-Type": "text/markdown; charset=utf-8",
+			"Content-Type": getMimeType(resolved.basename),
 			"Cache-Control": "no-store",
 			"Content-Length": String(file.size),
 		},
@@ -302,7 +303,7 @@ export async function handleArtifactDownload(
 	const file = Bun.file(resolved.absPath);
 	return new Response(file.stream(), {
 		headers: {
-			"Content-Type": "text/markdown; charset=utf-8",
+			"Content-Type": getMimeType(resolved.basename),
 			"Cache-Control": "no-store",
 			"Content-Length": String(file.size),
 			"Content-Disposition": `attachment; filename="${quoted}"; filename*=UTF-8''${encoded}`,

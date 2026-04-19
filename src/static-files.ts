@@ -15,12 +15,18 @@ export function resolveStaticPath(pathname: string): string | null {
 }
 
 export function getMimeType(path: string): string {
-	if (path.endsWith(".html")) return "text/html";
-	if (path.endsWith(".css")) return "text/css";
-	if (path.endsWith(".js")) return "application/javascript";
-	if (path.endsWith(".json")) return "application/json";
-	if (path.endsWith(".svg")) return "image/svg+xml";
-	if (path.endsWith(".png")) return "image/png";
-	if (path.endsWith(".ico")) return "image/x-icon";
+	const lower = path.toLowerCase();
+	if (lower.endsWith(".html")) return "text/html";
+	if (lower.endsWith(".css")) return "text/css";
+	if (lower.endsWith(".js")) return "application/javascript";
+	if (lower.endsWith(".json")) return "application/json";
+	if (lower.endsWith(".svg")) return "image/svg+xml";
+	if (lower.endsWith(".png")) return "image/png";
+	if (lower.endsWith(".ico")) return "image/x-icon";
+	if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+	if (lower.endsWith(".gif")) return "image/gif";
+	if (lower.endsWith(".md")) return "text/markdown; charset=utf-8";
+	if (lower.endsWith(".txt")) return "text/plain; charset=utf-8";
+	if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "application/yaml; charset=utf-8";
 	return "application/octet-stream";
 }
