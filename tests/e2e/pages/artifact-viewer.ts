@@ -24,7 +24,7 @@ export class ArtifactViewerPage {
 		return this.page.locator(".artifact-dropdown");
 	}
 
-	dropdownItems(): Locator {
+	private dropdownItems(): Locator {
 		return this.dropdown().locator(".artifact-dropdown-item");
 	}
 

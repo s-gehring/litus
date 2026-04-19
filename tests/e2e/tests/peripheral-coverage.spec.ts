@@ -180,6 +180,12 @@ test.describe("artifacts", () => {
 		// (including the space and '#') round-trips through Content-Disposition
 		// without double-encoding.
 		expect(encodedDownload.suggestedFilename()).toContain("example artifact #1.md");
+		// Verify the bytes too — filename echo alone doesn't prove the
+		// encode/decode round-trip delivered the actual file content.
+		const encodedPath = await encodedDownload.path();
+		expect(encodedPath).toBeTruthy();
+		const encodedBytes = await readFile(encodedPath as string, "utf8");
+		expect(encodedBytes).toContain("URL-encoded filename");
 		await page.keyboard.press("Escape");
 	});
 });
@@ -227,6 +233,11 @@ test.describe("routing", () => {
 		// where the panel receives the wrong id (or the route handler passes
 		// the wrong one) surface here.
 		await expect(notFound.message()).toContainText(/does-not-exist/);
+		// Guard against stale workflow content leaking into `#detail-area`
+		// alongside the not-found panel — `hideNotFoundPanel`'s contract
+		// keeps `#detail-area` visible, so a substring assertion alone
+		// would silently pass on a leaked render.
+		await expect(page.locator("#pipeline-steps .pipeline-step")).toHaveCount(0);
 
 		// `also-missing` is chosen to collide with neither a seeded epic id nor
 		// an aggregate key — the epic detail handler falls through to
@@ -236,6 +247,7 @@ test.describe("routing", () => {
 		await expect(notFound.root()).toBeVisible();
 		await expect(notFound.message()).toContainText(/epic/i);
 		await expect(notFound.message()).toContainText(/also-missing/);
+		await expect(page.locator("#pipeline-steps .pipeline-step")).toHaveCount(0);
 	});
 });
 
@@ -301,11 +313,15 @@ test.describe("concurrency", () => {
 		await expect(page.locator("#user-input")).toContainText("Concurrency spec one", {
 			timeout: 15_000,
 		});
+		// Guard against append-instead-of-replace regressions: a substring
+		// match alone passes spuriously when both texts end up concatenated.
+		await expect(page.locator("#user-input")).not.toContainText("Concurrency spec two");
 		await cards.nth(1).click();
 		await expect(page.locator("#detail-area")).toBeVisible();
 		await expect(page.locator("#user-input")).toContainText("Concurrency spec two", {
 			timeout: 15_000,
 		});
+		await expect(page.locator("#user-input")).not.toContainText("Concurrency spec one");
 
 		// AS4: both cards eventually reach a `card-status-completed` badge.
 		// Full-auto drives through merge-pr; the scenario has 8 scripted
@@ -316,7 +332,7 @@ test.describe("concurrency", () => {
 					const classes = await cards.evaluateAll((els) =>
 						els.map((el) => el.querySelector(".card-status")?.className ?? ""),
 					);
-					return classes.length === 2 && classes.every((c) => c.includes("card-status-completed"));
+					return classes.length === 2 && classes.every((c) => /\bcard-status-completed\b/.test(c));
 				},
 				{ timeout: 120_000 },
 			)
@@ -358,6 +374,10 @@ test.describe("responsive", () => {
 		await expect(viewer.anyAffordance()).toBeVisible({ timeout: 30_000 });
 		await openArtifact(viewer, "Specifying", "spec.md");
 		await expect(viewer.modal()).toBeVisible();
+		// Gate the close on rendered content so a regression where the
+		// modal opens empty and is dismissed before `/content` resolves
+		// doesn't pass this smoke silently.
+		await expect(viewer.modalBody()).toContainText("Artifact XSS test", { timeout: 15_000 });
 		await page.keyboard.press("Escape");
 		await expect(viewer.modal()).toBeHidden();
 
