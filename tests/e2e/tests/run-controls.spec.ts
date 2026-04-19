@@ -9,7 +9,7 @@ import {
 } from "../helpers";
 import { AppPage, WorkflowCardPage } from "../pages";
 
-test.describe("US1: run-control surface", () => {
+test.describe("run-control surface", () => {
 	test.use({ scenarioName: "run-controls" });
 
 	test.describe("manual mode — pause cycle", () => {
@@ -116,7 +116,7 @@ test.describe("US1: run-control surface", () => {
 			await waitForStep(card, "monitor-ci", "completed", { timeoutMs: 60_000 });
 
 			// Catch the merge-pr step while it's still running and assert no
-			// manual-mode Resume/Merge action surfaced. Spec US1 §7 is about
+			// manual-mode Resume/Merge action surfaced. Full-auto merge is
 			// *operator confirmation not required*; a post-hoc check after
 			// merge completes would silently pass a regression that flashed
 			// the action briefly.

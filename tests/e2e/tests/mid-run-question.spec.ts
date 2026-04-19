@@ -3,7 +3,7 @@ import { expect, test } from "../harness/fixtures";
 import { answerClarifyingQuestion, createSpecification, waitForStep } from "../helpers";
 import { AppPage, QuestionPromptPage, WorkflowCardPage } from "../pages";
 
-test.describe("US2: mid-run question handling", () => {
+test.describe("mid-run question handling", () => {
 	test.use({ scenarioName: "mid-run-question" });
 
 	test.describe("manual mode", () => {
@@ -100,7 +100,7 @@ test.describe("US2: mid-run question handling", () => {
 
 			// Full-auto path produces a resume call with a non-empty answer in
 			// the `-p` prompt. Exact text is owned by product code and not
-			// pinned (per spec US2 §3).
+			// pinned by this test.
 			const calls = readCapturedClaudeCalls(sandbox.counterFile);
 			const resumeCall = calls.find(
 				(c) =>

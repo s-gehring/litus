@@ -2,7 +2,7 @@ import { expect, test } from "../harness/fixtures";
 import { answerClarifyingQuestion, createSpecification, waitForStep } from "../helpers";
 import { AppPage, FeedbackPanelPage, WorkflowCardPage } from "../pages";
 
-test.describe("US3: review/feedback loop", () => {
+test.describe("review/feedback loop", () => {
 	test.use({ scenarioName: "review-feedback-loop", autoMode: "manual" });
 
 	test("provide feedback re-runs feedback-implementer and returns to merge-pr pause", async ({
