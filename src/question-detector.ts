@@ -63,7 +63,7 @@ export class QuestionDetector {
 		const blocks = text.split(/^(?=# )|^(?:---+|___+|\*\*\*+)\s*$/m);
 		const lastBlock = blocks[blocks.length - 1]?.trim();
 		if (!lastBlock) return text.trim();
-		return lastBlock.slice(0, 2000);
+		return lastBlock;
 	}
 
 	async classifyWithHaiku(text: string): Promise<boolean> {
