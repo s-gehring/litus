@@ -62,7 +62,7 @@ function openDropdown(
 		}
 		e.preventDefault();
 		const active = document.activeElement as HTMLElement | null;
-		const idx = buttons.findIndex((b) => b === active);
+		const idx = active ? buttons.indexOf(active as HTMLButtonElement) : -1;
 		const next =
 			e.key === "ArrowDown"
 				? buttons[(idx + 1 + buttons.length) % buttons.length]

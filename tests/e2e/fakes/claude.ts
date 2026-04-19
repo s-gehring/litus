@@ -1,11 +1,5 @@
 #!/usr/bin/env bun
-import {
-	appendFileSync,
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	writeFileSync,
-} from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { ScenarioFile, ScenarioScript } from "../harness/scenario-types";
 

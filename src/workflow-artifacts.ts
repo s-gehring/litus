@@ -155,35 +155,6 @@ function collectFilesRecursive(
 	}
 }
 
-interface ReviewFile {
-	ordinal: number;
-	name: string;
-}
-
-function scanReviewFiles(dir: string): ReviewFile[] {
-	if (!existsSync(dir)) return [];
-	let entries: string[];
-	try {
-		entries = readdirSync(dir);
-	} catch {
-		return [];
-	}
-	const files: ReviewFile[] = [];
-	for (const name of entries) {
-		if (name === "code-review.md") {
-			files.push({ ordinal: 1, name });
-			continue;
-		}
-		const m = name.match(/^code-review-(\d+)\.md$/);
-		if (m) {
-			const n = parseInt(m[1], 10);
-			if (n >= 1) files.push({ ordinal: n, name });
-		}
-	}
-	files.sort((a, b) => a.ordinal - b.ordinal);
-	return files;
-}
-
 function buildDescriptor(
 	workflowId: string,
 	step: PipelineStepName,
