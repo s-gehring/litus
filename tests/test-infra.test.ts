@@ -8,21 +8,17 @@ import {
 	collectStream,
 	createCallTracker,
 	createDelayedStream,
-	// US2 mocks
 	createMockCliRunner,
 	createMockConfigStore,
 	createMockEpicStore,
 	createMockSpawn,
 	createMockWebSocket,
 	createMockWorkflowStore,
-	// US5 streams
 	createReadableStream,
 	createTempRepo,
 	expectStepStatus,
 	expectValidWorkflow,
-	// US4 assertions
 	expectWorkflowStatus,
-	// US1 factories
 	makeAppConfig,
 	makeCompletedWorkflow,
 	makeFailedWorkflow,
@@ -31,7 +27,6 @@ import {
 	makeRunningWorkflow,
 	makeWorkflowWithStatus,
 	resetEpicCounter,
-	// US3 temp dir
 	withTempDir,
 } from "./test-infra";
 
@@ -65,7 +60,7 @@ describe("createCallTracker", () => {
 	});
 });
 
-// ── US1: makeAppConfig ───────────────────────────────────
+// ── makeAppConfig ────────────────────────────────────────
 
 describe("makeAppConfig", () => {
 	test("zero-arg produces valid AppConfig with defaults", () => {
@@ -93,7 +88,7 @@ describe("makeAppConfig", () => {
 	});
 });
 
-// ── US1: makePersistedEpic ───────────────────────────────
+// ── makePersistedEpic ────────────────────────────────────
 
 describe("makePersistedEpic", () => {
 	test("zero-arg produces valid PersistedEpic", () => {
@@ -127,7 +122,7 @@ describe("makePersistedEpic", () => {
 	});
 });
 
-// ── US1: makePipelineStep ────────────────────────────────
+// ── makePipelineStep ─────────────────────────────────────
 
 describe("makePipelineStep", () => {
 	test("zero-arg produces valid PipelineStep", () => {
@@ -148,7 +143,7 @@ describe("makePipelineStep", () => {
 	});
 });
 
-// ── US1: makeWorkflowWithStatus ──────────────────────────
+// ── makeWorkflowWithStatus ───────────────────────────────
 
 describe("makeWorkflowWithStatus", () => {
 	test("idle: all steps pending", () => {
@@ -214,7 +209,7 @@ describe("makeWorkflowWithStatus", () => {
 	});
 });
 
-// ── US1: Convenience workflow factories ──────────────────
+// ── Convenience workflow factories ───────────────────────
 
 describe("convenience workflow factories", () => {
 	test("makeCompletedWorkflow creates completed workflow", () => {
@@ -241,7 +236,7 @@ describe("convenience workflow factories", () => {
 	});
 });
 
-// ── US2: createMockCliRunner ─────────────────────────────
+// ── createMockCliRunner ──────────────────────────────────
 
 describe("createMockCliRunner", () => {
 	function makeCallbacks(): CLICallbacks {
@@ -343,7 +338,7 @@ describe("createMockCliRunner", () => {
 	});
 });
 
-// ── US2: createMockWorkflowStore ─────────────────────────
+// ── createMockWorkflowStore ──────────────────────────────
 
 describe("createMockWorkflowStore", () => {
 	test("save/load/loadAll tracked", async () => {
@@ -384,7 +379,7 @@ describe("createMockWorkflowStore", () => {
 	});
 });
 
-// ── US2: createMockEpicStore ─────────────────────────────
+// ── createMockEpicStore ──────────────────────────────────
 
 describe("createMockEpicStore", () => {
 	test("loadAll/save/removeAll tracked", async () => {
@@ -403,7 +398,7 @@ describe("createMockEpicStore", () => {
 	});
 });
 
-// ── US2: createMockConfigStore ───────────────────────────
+// ── createMockConfigStore ────────────────────────────────
 
 describe("createMockConfigStore", () => {
 	test("get/save/reset tracked", () => {
@@ -435,7 +430,7 @@ describe("createMockConfigStore", () => {
 	});
 });
 
-// ── US2: createMockWebSocket ─────────────────────────────
+// ── createMockWebSocket ──────────────────────────────────
 
 describe("createMockWebSocket", () => {
 	test("send/close/publish/subscribe tracked", () => {
@@ -455,7 +450,7 @@ describe("createMockWebSocket", () => {
 	});
 });
 
-// ── US2: createMockSpawn ─────────────────────────────────
+// ── createMockSpawn ──────────────────────────────────────
 
 describe("createMockSpawn", () => {
 	test("configureExit/configureStdout/configureStderr work", async () => {
@@ -485,7 +480,7 @@ describe("createMockSpawn", () => {
 	});
 });
 
-// ── US3: withTempDir ─────────────────────────────────────
+// ── withTempDir ──────────────────────────────────────────
 
 describe("withTempDir", () => {
 	test("directory exists during callback", async () => {
@@ -533,7 +528,7 @@ describe("withTempDir", () => {
 	});
 });
 
-// ── US3: createTempRepo ──────────────────────────────────
+// ── createTempRepo ───────────────────────────────────────
 
 describe("createTempRepo", () => {
 	test("returned path is a valid git repo with at least one commit", async () => {
@@ -573,7 +568,7 @@ describe("createTempRepo", () => {
 	});
 });
 
-// ── US4: expectWorkflowStatus ────────────────────────────
+// ── expectWorkflowStatus ─────────────────────────────────
 
 describe("expectWorkflowStatus", () => {
 	test("passes on match", () => {
@@ -594,7 +589,7 @@ describe("expectWorkflowStatus", () => {
 	});
 });
 
-// ── US4: expectValidWorkflow ─────────────────────────────
+// ── expectValidWorkflow ──────────────────────────────────
 
 describe("expectValidWorkflow", () => {
 	test("passes for valid workflow", () => {
@@ -610,7 +605,7 @@ describe("expectValidWorkflow", () => {
 	});
 });
 
-// ── US4: expectStepStatus ────────────────────────────────
+// ── expectStepStatus ─────────────────────────────────────
 
 describe("expectStepStatus", () => {
 	test("passes on match", () => {
@@ -631,7 +626,7 @@ describe("expectStepStatus", () => {
 	});
 });
 
-// ── US5: createReadableStream + collectStream ────────────
+// ── createReadableStream + collectStream ─────────────────
 
 describe("createReadableStream + collectStream", () => {
 	test("round-trips string arrays", async () => {
@@ -647,7 +642,7 @@ describe("createReadableStream + collectStream", () => {
 	});
 });
 
-// ── US5: createDelayedStream ─────────────────────────────
+// ── createDelayedStream ──────────────────────────────────
 
 describe("createDelayedStream", () => {
 	test("produces correct output with observable delay", async () => {

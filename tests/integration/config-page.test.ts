@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
-// ── Dashboard route handler tests (US2) ──────────────────
+// ── Dashboard route handler tests ────────────────────────
 
 describe("Dashboard route handler", () => {
 	let appContent: HTMLElement;
@@ -57,7 +57,7 @@ describe("Dashboard route handler", () => {
 	});
 });
 
-// ── Config page tests (US1) ──────────────────────────────
+// ── Config page tests ────────────────────────────────────
 
 describe("Config page", () => {
 	let container: HTMLElement;

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { WorkflowStore } from "../src/workflow-store";
 import { assertDefined, makeWorkflow } from "./helpers";
 
-describe("Persistence Integration — US1: Survive Server Restart", () => {
+describe("Persistence Integration — Survive Server Restart", () => {
 	let baseDir: string;
 	let store: WorkflowStore;
 
@@ -117,7 +117,7 @@ describe("Persistence Integration — US1: Survive Server Restart", () => {
 	});
 });
 
-describe("Persistence Integration — US2: Survive Page Reload", () => {
+describe("Persistence Integration — Survive Page Reload", () => {
 	let baseDir: string;
 	let store: WorkflowStore;
 

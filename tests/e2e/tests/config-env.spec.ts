@@ -17,7 +17,7 @@ import { AppPage, ConfigPage } from "../pages";
 test.use({ scenarioName: "config-happy", autoMode: "manual" });
 test.describe.configure({ timeout: 60_000 });
 
-test.describe("US1 — config page edits persist across reloads", () => {
+test.describe("config page edits persist across reloads", () => {
 	test("edit model, effort, and prompt → reload → values persist", async ({
 		page,
 		server,
