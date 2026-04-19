@@ -32,8 +32,7 @@ export function showNotFoundPanel(kind: "workflow" | "epic", id: string): void {
 
 	const message = document.createElement("p");
 	message.className = "not-found-message";
-	const label = kind === "workflow" ? "workflow" : "epic";
-	message.textContent = `No ${label} with id "${id}" exists. It may have been deleted or the link is incorrect.`;
+	message.textContent = `No ${kind} with id "${id}" exists. It may have been deleted or the link is incorrect.`;
 	container.appendChild(message);
 
 	host.appendChild(container);

@@ -130,26 +130,49 @@ test.describe("artifacts", () => {
 		expect(bodyHtml).not.toMatch(/onerror=/i);
 		expect(bodyHtml).not.toMatch(/href=["']javascript:/i);
 
-		// AS5: focus trap — focusing the LAST tabbable element (the close
-		// button) and pressing Tab once must wrap forward to the FIRST (the
-		// download link). This is the only case the trap actually handles —
-		// pressing Tab between interior tabbables is just the browser's default,
-		// which doesn't prove the trap's wrap logic at all.
-		await viewer.closeButton().focus();
-		await page.keyboard.press("Tab");
-		const focusedDownloadLink = await viewer
-			.downloadLink()
-			.evaluate((el) => el === document.activeElement);
-		expect(focusedDownloadLink).toBe(true);
+		// AS5: focus trap — the forward and backward wrap branches must both
+		// return focus to the opposite boundary after a full traversal. Uses
+		// a count-based traversal (focus first tabbable → press Tab `n`
+		// times → assert focus returned to first) instead of hard-coding the
+		// identity of "first" and "last": if a future sanitiser-policy
+		// change leaves an `<a href>` inside the modal body and it joins the
+		// focus loop, identity-based wrap assertions would silently pass or
+		// fail based on document order; the count-based form is robust
+		// regardless of which element sits at which boundary.
+		const tabbableSelector =
+			'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+		const tabbableCount = await viewer
+			.modal()
+			.evaluate((el, sel) => el.querySelectorAll(sel).length, tabbableSelector);
+		expect(tabbableCount).toBeGreaterThanOrEqual(2);
 
-		// Shift+Tab on the first tabbable (download link) wraps back to the
-		// last (close button). The trap's two branches (forward and backward)
-		// are both exercised — regressions that break only one direction
-		// would otherwise slip through.
-		await viewer.downloadLink().focus();
+		// Forward wrap: focus first, press Tab n times, focus returns to first.
+		await viewer
+			.modal()
+			.evaluate(
+				(el, sel) => (el.querySelector(sel) as HTMLElement | null)?.focus(),
+				tabbableSelector,
+			);
+		for (let i = 0; i < tabbableCount; i++) await page.keyboard.press("Tab");
+		const focusedFirstForward = await viewer
+			.modal()
+			.evaluate((el, sel) => el.querySelector(sel) === document.activeElement, tabbableSelector);
+		expect(focusedFirstForward).toBe(true);
+
+		// Backward wrap: focus first, press Shift+Tab once, focus must land
+		// on last (the trap's Shift+Tab branch wraps from first to last).
+		await viewer
+			.modal()
+			.evaluate(
+				(el, sel) => (el.querySelector(sel) as HTMLElement | null)?.focus(),
+				tabbableSelector,
+			);
 		await page.keyboard.press("Shift+Tab");
-		const focusedClose = await viewer.closeButton().evaluate((el) => el === document.activeElement);
-		expect(focusedClose).toBe(true);
+		const focusedLastBackward = await viewer.modal().evaluate((el, sel) => {
+			const all = el.querySelectorAll(sel);
+			return all[all.length - 1] === document.activeElement;
+		}, tabbableSelector);
+		expect(focusedLastBackward).toBe(true);
 
 		// AS4: download fires and delivers the spec.md bytes unchanged — the
 		// sanitiser is a render-time concern; on-disk bytes must preserve every
@@ -539,22 +562,21 @@ test.describe("responsive", () => {
 		// here — this smoke does not assert on it.
 		const viewport = page.viewportSize();
 		expect(viewport).not.toBeNull();
+		if (!viewport) throw new Error("unreachable: viewport truthy-asserted above");
 		// `+ 1` absorbs sub-pixel rounding in `boundingBox` (Chromium reports
 		// fractional widths rounded to one decimal): strictly-equal widths
 		// trip a naive `<=` by ~0.5px on some devicePixelRatio values. Not a
 		// flake-avoidance fudge — a subpixel-rendering tolerance.
 		const stripBox = await layout.cardStrip().boundingBox();
 		expect(stripBox).not.toBeNull();
-		if (stripBox && viewport) {
-			expect(stripBox.x).toBeGreaterThanOrEqual(0);
-			expect(stripBox.x + stripBox.width).toBeLessThanOrEqual(viewport.width + 1);
-		}
+		if (!stripBox) throw new Error("unreachable: stripBox truthy-asserted above");
+		expect(stripBox.x).toBeGreaterThanOrEqual(0);
+		expect(stripBox.x + stripBox.width).toBeLessThanOrEqual(viewport.width + 1);
 		const pipelineStrip = layout.pipelineSteps();
 		await expect(pipelineStrip).toBeVisible();
 		const pipelineStripBox = await pipelineStrip.boundingBox();
 		expect(pipelineStripBox).not.toBeNull();
-		if (pipelineStripBox && viewport) {
-			expect(pipelineStripBox.x + pipelineStripBox.width).toBeLessThanOrEqual(viewport.width + 1);
-		}
+		if (!pipelineStripBox) throw new Error("unreachable: pipelineStripBox truthy-asserted above");
+		expect(pipelineStripBox.x + pipelineStripBox.width).toBeLessThanOrEqual(viewport.width + 1);
 	});
 });

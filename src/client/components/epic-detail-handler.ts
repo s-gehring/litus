@@ -168,6 +168,7 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		const state = deps.getState();
 		const agg = state.getEpicAggregates().get(currentEpicId);
 		if (agg) {
+			hideNotFoundPanel();
 			renderTreeView(agg);
 			return;
 		}
