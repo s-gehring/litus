@@ -72,8 +72,6 @@ A dedicated GitHub Actions workflow (`.github/workflows/e2e.yml`) runs the suite
 - **Port already in use** — ephemeral ports are used; retry or check for orphaned server processes.
 - **Sandbox leaked** — teardown is idempotent; safe to `rm -rf $TMPDIR/litus-e2e-*` between runs.
 
-See also `specs/001-e2e-browser-tests/quickstart.md` for the end-to-end acceptance walkthrough.
-
 ## Spec files
 
 - `tests/happy-path.spec.ts` — baseline end-to-end path (`scenarios/happy-path.json`)
