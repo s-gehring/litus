@@ -104,7 +104,7 @@ export class Summarizer {
 				model: config.models.specSummarization,
 				effort: config.efforts.specSummarization,
 				callerLabel: "summarizer:spec",
-				timeoutMs: 30_000,
+				timeoutMs: 60_000,
 			});
 			if (!ok) return { summary: "", flavor: "" };
 
