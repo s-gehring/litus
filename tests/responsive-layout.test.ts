@@ -12,8 +12,14 @@ describe("responsive layout CSS rules", () => {
 
 	test("text-heavy elements have max-width: 80ch", () => {
 		for (const selector of [".welcome-text", ".question-content", ".card-summary"]) {
-			const selectorIndex = css.indexOf(selector);
-			expect(selectorIndex).not.toBe(-1);
+			// Match only the standalone rule (selector immediately followed by `{`),
+			// not compound selectors like `.user-input p, .question-content p { ... }`.
+			const ruleRegex = new RegExp(
+				`${selector.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\s*\\{`,
+			);
+			const match = ruleRegex.exec(css);
+			expect(match).not.toBeNull();
+			const selectorIndex = match?.index ?? -1;
 			const ruleBlock = css.slice(selectorIndex, css.indexOf("}", selectorIndex));
 			expect(ruleBlock).toContain("max-width: 80ch");
 		}

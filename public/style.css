@@ -339,30 +339,32 @@ header h1 {
   overflow-y: auto;
 }
 
-.user-input p { margin: 0 0 0.5em; }
-.user-input p:last-child { margin-bottom: 0; }
-.user-input h1, .user-input h2, .user-input h3 {
+.user-input p, .question-content p { margin: 0 0 0.5em; }
+.user-input p:last-child, .question-content p:last-child { margin-bottom: 0; }
+.user-input h1, .user-input h2, .user-input h3,
+.question-content h1, .question-content h2, .question-content h3 {
   font-size: 0.9rem;
   margin: 0.5em 0 0.3em;
   color: var(--text);
 }
-.user-input ul, .user-input ol { margin: 0.3em 0; padding-left: 1.5em; }
-.user-input code {
+.user-input ul, .user-input ol,
+.question-content ul, .question-content ol { margin: 0.3em 0; padding-left: 1.5em; }
+.user-input code, .question-content code {
   font-family: "Cascadia Code", "Fira Code", monospace;
   font-size: 0.78rem;
   background: rgba(255, 255, 255, 0.06);
   padding: 1px 4px;
   border-radius: 3px;
 }
-.user-input pre {
+.user-input pre, .question-content pre {
   background: var(--bg);
   padding: 8px 10px;
   border-radius: var(--radius);
   overflow-x: auto;
   margin: 0.4em 0;
 }
-.user-input pre code { background: none; padding: 0; }
-.user-input a { color: var(--accent-blue); }
+.user-input pre code, .question-content pre code { background: none; padding: 0; }
+.user-input a, .question-content a { color: var(--accent-blue); }
 
 .epic-analysis-notes {
   border-left: 3px solid var(--accent-yellow);

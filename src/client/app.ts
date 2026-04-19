@@ -307,7 +307,12 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "log": {
-			appendOutput(msg.text, "system");
+			// Global logs (no workflowId) are appended to whatever workflow window
+			// is currently open. Workflow-scoped logs are routed via
+			// workflow-detail-handler instead, so they only appear in their own
+			// workflow's output and are buffered into that workflow's outputLines
+			// otherwise.
+			if (!msg.workflowId) appendOutput(msg.text, "system");
 			break;
 		}
 

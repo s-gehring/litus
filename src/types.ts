@@ -621,7 +621,7 @@ export type ServerMessage =
 				| "unknown";
 			message: string;
 	  }
-	| { type: "log"; text: string }
+	| { type: "log"; text: string; workflowId?: string }
 	| { type: "alert:list"; alerts: Alert[] }
 	| { type: "alert:created"; alert: Alert }
 	| { type: "alert:dismissed"; alertIds: string[] }

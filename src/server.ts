@@ -198,8 +198,8 @@ function broadcast(msg: ServerMessage) {
 	server.publish(WS_TOPIC, JSON.stringify(msg));
 }
 
-setGitLogCallback((text) => {
-	broadcast({ type: "log", text });
+setGitLogCallback((text, workflowId) => {
+	broadcast({ type: "log", text, ...(workflowId ? { workflowId } : {}) });
 });
 
 function sendTo(ws: ServerWebSocket<WsData>, msg: ServerMessage) {
