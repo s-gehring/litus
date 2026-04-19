@@ -125,6 +125,16 @@ async function main() {
 
 	const outputFormat = readOutputFormat(argv);
 	const { scenario, path } = loadScenario();
+
+	// Short-circuit the review-classifier side-channel call. Like the model
+	// detection probe above, this is not part of the scripted pipeline
+	// sequence and must not consume a FIFO slot — concurrent workflows would
+	// otherwise interleave classifier calls into the FIFO non-deterministically.
+	if (outputFormat === "text" && promptArg.startsWith("Classify the highest severity")) {
+		process.stdout.write(scenario.classifier ?? "nit\n");
+		process.exit(0);
+	}
+
 	const counterFile = process.env.LITUS_E2E_COUNTER;
 	if (!counterFile) die("missing env LITUS_E2E_COUNTER");
 	const idx = nextIndex(counterFile as string);

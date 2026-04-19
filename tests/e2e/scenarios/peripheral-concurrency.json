@@ -1,5 +1,6 @@
 {
 	"name": "peripheral-concurrency",
+	"classifier": "nit\n",
 	"claude": [
 		{
 			"events": [
@@ -10,8 +11,7 @@
 					"session_id": "c-a-specify",
 					"result": "Spec A drafted."
 				}
-			],
-			"delayMs": 50
+			]
 		},
 		{
 			"events": [
@@ -22,8 +22,7 @@
 					"session_id": "c-b-specify",
 					"result": "Spec B drafted."
 				}
-			],
-			"delayMs": 150
+			]
 		},
 		{
 			"events": [
@@ -34,8 +33,7 @@
 					"session_id": "c-a-clarify",
 					"result": "No clarifications needed."
 				}
-			],
-			"delayMs": 80
+			]
 		},
 		{
 			"events": [
@@ -46,8 +44,7 @@
 					"session_id": "c-b-clarify",
 					"result": "No clarifications needed."
 				}
-			],
-			"delayMs": 200
+			]
 		},
 		{
 			"events": [
@@ -58,8 +55,7 @@
 					"session_id": "c-a-plan",
 					"result": "Plan A generated."
 				}
-			],
-			"delayMs": 40
+			]
 		},
 		{
 			"events": [
@@ -70,8 +66,7 @@
 					"session_id": "c-b-plan",
 					"result": "Plan B generated."
 				}
-			],
-			"delayMs": 120
+			]
 		},
 		{
 			"events": [
@@ -82,8 +77,7 @@
 					"session_id": "c-a-tasks",
 					"result": "Tasks A generated."
 				}
-			],
-			"delayMs": 60
+			]
 		},
 		{
 			"events": [
@@ -94,8 +88,7 @@
 					"session_id": "c-b-tasks",
 					"result": "Tasks B generated."
 				}
-			],
-			"delayMs": 90
+			]
 		},
 		{
 			"events": [
@@ -106,8 +99,7 @@
 					"session_id": "c-a-impl",
 					"result": "Impl A complete."
 				}
-			],
-			"delayMs": 50
+			]
 		},
 		{
 			"events": [
@@ -118,8 +110,7 @@
 					"session_id": "c-b-impl",
 					"result": "Impl B complete."
 				}
-			],
-			"delayMs": 100
+			]
 		},
 		{
 			"events": [
@@ -130,8 +121,7 @@
 					"session_id": "c-a-review",
 					"result": "LGTM"
 				}
-			],
-			"delayMs": 40
+			]
 		},
 		{
 			"events": [
@@ -142,8 +132,7 @@
 					"session_id": "c-b-review",
 					"result": "LGTM"
 				}
-			],
-			"delayMs": 160
+			]
 		},
 		{
 			"events": [
@@ -154,10 +143,8 @@
 					"session_id": "c-a-impl-review",
 					"result": "Review response appended."
 				}
-			],
-			"delayMs": 300
+			]
 		},
-		{ "text": "nit\n" },
 		{
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-b-impl-review" },
@@ -167,10 +154,8 @@
 					"session_id": "c-b-impl-review",
 					"result": "Review response appended."
 				}
-			],
-			"delayMs": 600
+			]
 		},
-		{ "text": "nit\n" },
 		{
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-a-cpp" },

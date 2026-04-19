@@ -198,8 +198,8 @@ test.describe("routing", () => {
 	// removes the "why happy-path?" reader surprise without affecting coverage.
 	test.use({ scenarioName: "peripheral-alerts", autoMode: "manual" });
 
-	test("deep links + back/forward + refresh + not-found", async ({ page, server }) => {
-		test.setTimeout(60_000);
+	test("deep links + back/forward + refresh + not-found", async ({ page, server, sandbox }) => {
+		test.setTimeout(120_000);
 
 		const app = new AppPage(page);
 		const welcome = new WelcomePage(page);
@@ -226,6 +226,39 @@ test.describe("routing", () => {
 		await app.waitConnected();
 		await expect(config.root()).toBeVisible();
 
+		// Seed a real workflow first so the not-found navigation actually has
+		// a stale-content surface to leak from. Without this, the
+		// `#pipeline-steps .pipeline-step` count-zero assertion below is a
+		// tautology — `#pipeline-steps` is never populated by the prior
+		// welcome / config / back-forward steps.
+		await deepLink(app, server.baseUrl, "/");
+		await createSpecification(app, {
+			specification: "Routing seed workflow",
+			repo: sandbox.targetRepo,
+		});
+		const seededCard = app.workflowCards().first();
+		await expect(seededCard).toBeVisible({ timeout: 30_000 });
+		await seededCard.click();
+		await expect(page.locator("#pipeline-steps .pipeline-step").first()).toBeVisible({
+			timeout: 30_000,
+		});
+		const seededId = await seededCard.getAttribute("data-workflow-id");
+		expect(seededId).toBeTruthy();
+		// FR-008: the card-strip selection state tracks the URL. After clicking
+		// the card the matching strip entry must carry the `card-expanded`
+		// class (the strip's "this card is selected" affordance).
+		await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
+
+		// FR-008 deep-link → card-strip selection: navigate away then deep-link
+		// straight back to `/workflow/<id>` and assert the strip re-selects the
+		// matching card without a click.
+		if (seededId) {
+			await deepLink(app, server.baseUrl, "/");
+			await expect(seededCard).not.toHaveClass(/\bcard-expanded\b/);
+			await deepLink(app, server.baseUrl, `/workflow/${seededId}`);
+			await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
+		}
+
 		await deepLink(app, server.baseUrl, "/workflow/does-not-exist");
 		await expect(notFound.root()).toBeVisible();
 		await expect(notFound.message()).toContainText(/workflow/i);
@@ -233,10 +266,11 @@ test.describe("routing", () => {
 		// where the panel receives the wrong id (or the route handler passes
 		// the wrong one) surface here.
 		await expect(notFound.message()).toContainText(/does-not-exist/);
-		// Guard against stale workflow content leaking into `#detail-area`
-		// alongside the not-found panel — `hideNotFoundPanel`'s contract
-		// keeps `#detail-area` visible, so a substring assertion alone
-		// would silently pass on a leaked render.
+		// With a real workflow seeded above, `#pipeline-steps` carries the
+		// seeded workflow's step rows; the not-found mount must clear them so
+		// the empty-state owns the detail surface. This is the genuine
+		// stale-leak class — without the seed step the assertion was a
+		// tautology.
 		await expect(page.locator("#pipeline-steps .pipeline-step")).toHaveCount(0);
 
 		// `also-missing` is chosen to collide with neither a seeded epic id nor
@@ -305,10 +339,16 @@ test.describe("concurrency", () => {
 			.toBe(true);
 
 		// AS3: clicking each card swaps the detail pane — assert the
-		// `#user-input` text binds to the selected workflow. The per-workflow
-		// specification text is the only discriminator guaranteed to differ
-		// regardless of which step each workflow is on at observation time.
-		await cards.nth(0).click();
+		// `#user-input` text binds to the selected workflow. Bind cards by
+		// their summary text rather than `nth(0)/nth(1)` so the assertion
+		// stays diagnostic if a future card-strip change re-orders by status,
+		// recency, or id (an order flip would otherwise silently flip the
+		// mapping and re-pass the test for the wrong reason).
+		const cardOne = cards.filter({ hasText: "Concurrency spec one" });
+		const cardTwo = cards.filter({ hasText: "Concurrency spec two" });
+		await expect(cardOne).toHaveCount(1);
+		await expect(cardTwo).toHaveCount(1);
+		await cardOne.click();
 		await expect(page.locator("#detail-area")).toBeVisible();
 		await expect(page.locator("#user-input")).toContainText("Concurrency spec one", {
 			timeout: 15_000,
@@ -316,7 +356,7 @@ test.describe("concurrency", () => {
 		// Guard against append-instead-of-replace regressions: a substring
 		// match alone passes spuriously when both texts end up concatenated.
 		await expect(page.locator("#user-input")).not.toContainText("Concurrency spec two");
-		await cards.nth(1).click();
+		await cardTwo.click();
 		await expect(page.locator("#detail-area")).toBeVisible();
 		await expect(page.locator("#user-input")).toContainText("Concurrency spec two", {
 			timeout: 15_000,

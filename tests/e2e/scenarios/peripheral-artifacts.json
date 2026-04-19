@@ -1,5 +1,6 @@
 {
 	"name": "peripheral-artifacts",
+	"classifier": "nit\n",
 	"claude": [
 		{
 			"events": [
@@ -118,7 +119,6 @@
 				}
 			]
 		},
-		{ "text": "nit\n" },
 		{
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "sess-cpp" },
@@ -143,7 +143,6 @@
 	"gh": {
 		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
 		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
-		"pr list": { "exitCode": 0, "stdout": "[]" },
 		"pr view": {
 			"exitCode": 0,
 			"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/99\",\"number\":99}"
@@ -155,7 +154,6 @@
 		"pr create": {
 			"exitCode": 0,
 			"stdout": "https://github.com/example/repo/pull/99\n"
-		},
-		"run view": { "exitCode": 0, "stdout": "" }
+		}
 	}
 }

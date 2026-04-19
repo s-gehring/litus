@@ -39,6 +39,14 @@ export function showNotFoundPanel(kind: "workflow" | "epic", id: string): void {
 	host.appendChild(container);
 	panel = container;
 
+	// Clear any stale pipeline-step rows left over from a previously-selected
+	// workflow. The not-found panel sits alongside `#detail-area`, so without
+	// this clear a deep link from `/workflow/<real>` to `/workflow/<unknown>`
+	// would render the not-found heading next to the prior workflow's step
+	// rows.
+	const pipelineSteps = document.getElementById("pipeline-steps");
+	if (pipelineSteps) pipelineSteps.replaceChildren();
+
 	// Hide the dashboard chrome while the not-found panel is visible so the
 	// empty-state owns the viewport. Record which elements we actually hid so
 	// `hideNotFoundPanel` only restores those (and doesn't unhide elements
@@ -55,7 +63,12 @@ export function showNotFoundPanel(kind: "workflow" | "epic", id: string): void {
 
 export function hideNotFoundPanel(): void {
 	if (panel) {
-		panel.remove();
+		// `isConnected` guard: if a test (or any future caller) re-imports this
+		// module the prior render's `panel` reference may point at a node that
+		// is no longer in the document. `remove()` on a detached node is a
+		// no-op in real browsers but throws in some test DOMs; the guard makes
+		// the cleanup idempotent regardless.
+		if (panel.isConnected) panel.remove();
 		panel = null;
 	}
 	for (const elId of hiddenByPanel) {

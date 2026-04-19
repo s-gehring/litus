@@ -8,10 +8,10 @@ export class ArtifactViewerPage {
 	 * that has one or more artifacts. Scoped by `.pipeline-step` + step label
 	 * so tests can target a specific step.
 	 */
-	affordanceForStep(displayName: string): Locator {
+	affordanceForStep(stepLabelText: string): Locator {
 		return this.page
 			.locator(".pipeline-step")
-			.filter({ has: this.page.locator(".step-label", { hasText: displayName }) })
+			.filter({ has: this.page.locator(".step-label", { hasText: stepLabelText }) })
 			.locator(".artifact-affordance");
 	}
 

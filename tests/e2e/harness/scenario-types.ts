@@ -57,4 +57,13 @@ export interface ScenarioScript {
 	name: string;
 	claude: ClaudeInvocationScript[];
 	gh: Record<string, GhResponse | GhResponse[]>;
+	/**
+	 * Canned response for the review-classifier side-channel call (server runs
+	 * `claude -p "Classify the highest severity ..." --output-format text`).
+	 * When set, the fake routes any matching invocation here without consuming
+	 * a `claude[]` FIFO slot — this avoids order-coupling the scripted pipeline
+	 * sequence to the non-deterministic timing of classifier calls during
+	 * concurrent workflows. Defaults to `"nit\n"` if omitted.
+	 */
+	classifier?: string;
 }
