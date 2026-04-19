@@ -40,6 +40,10 @@ export class ArtifactViewerPage {
 		return this.modal().locator(".artifact-modal-body");
 	}
 
+	modalTitle(): Locator {
+		return this.modal().locator(".artifact-modal-title");
+	}
+
 	downloadLink(): Locator {
 		return this.modal().locator(".artifact-modal-download");
 	}

@@ -72,6 +72,11 @@
 					"path": "specs/001-peripheral-artifacts/contracts/example artifact #1.md",
 					"encoding": "utf8",
 					"content": "# Example artifact with URL-encoded filename\n\nThis file's name contains a space and a '#' character.\n"
+				},
+				{
+					"path": "specs/001-peripheral-artifacts/contracts/pixel.png",
+					"encoding": "base64",
+					"content": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 				}
 			]
 		},

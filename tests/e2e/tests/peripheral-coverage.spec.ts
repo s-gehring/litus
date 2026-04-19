@@ -34,9 +34,16 @@ test.describe("alerts", () => {
 		await expect(alerts.bellCount()).toHaveText(/^[1-9]\d*$/);
 		await expect(alerts.toasts().first()).toBeVisible();
 
-		// AS2: after the 5s auto-dismiss window, the toast is gone but the bell count persists.
+		// AS2: after the 5s auto-dismiss window, the toast is gone but the
+		// bell count persists AND the alert remains in the alert list. The
+		// bell badge alone could regress to an "unread" counter wired to
+		// something other than list membership — opening the list closes
+		// the loop so AS2 reads membership, not just badge presence.
 		await expect(alerts.toasts().first()).toBeHidden({ timeout: 10_000 });
 		await expect(alerts.bellCount()).toBeVisible();
+		await alerts.openList();
+		await expect(alerts.listRows().first()).toBeVisible();
+		await alerts.closeList();
 
 		// Drive a second failure so we can assert manual dismissal decrements the count.
 		await triggerFailure(app, alerts, {
@@ -187,6 +194,32 @@ test.describe("artifacts", () => {
 		const encodedBytes = await readFile(encodedPath as string, "utf8");
 		expect(encodedBytes).toContain("URL-encoded filename");
 		await page.keyboard.press("Escape");
+		await expect(viewer.modal()).toBeHidden();
+
+		// US2 AS3: the PNG image artifact opens in the modal. Research D3
+		// scoped this to "the modal renders without error and carries a
+		// user-visible reference to the filename". The modal itself is
+		// markdown-rendering the raw bytes (not a dedicated image renderer),
+		// so assert on the modal title (filename) + non-empty download bytes,
+		// not on a DOM `<img>` element.
+		await openArtifact(viewer, "Planning", "pixel.png");
+		await expect(viewer.modalTitle()).toContainText("pixel.png");
+		const [imageDownload] = await Promise.all([
+			page.waitForEvent("download"),
+			viewer.downloadLink().click(),
+		]);
+		expect(imageDownload.suggestedFilename()).toContain("pixel.png");
+		const imagePath = await imageDownload.path();
+		expect(imagePath).toBeTruthy();
+		const imageBytes = await readFile(imagePath as string);
+		expect(imageBytes.byteLength).toBeGreaterThan(0);
+		// PNG magic bytes — confirms the base64 decode round-trip produced a
+		// valid PNG, not a corrupted payload.
+		expect(imageBytes[0]).toBe(0x89);
+		expect(imageBytes[1]).toBe(0x50);
+		expect(imageBytes[2]).toBe(0x4e);
+		expect(imageBytes[3]).toBe(0x47);
+		await page.keyboard.press("Escape");
 	});
 });
 
@@ -232,6 +265,13 @@ test.describe("routing", () => {
 		// tautology — `#pipeline-steps` is never populated by the prior
 		// welcome / config / back-forward steps.
 		await deepLink(app, server.baseUrl, "/");
+		// The `peripheral-alerts` scenario's first claude entry has
+		// `exitCode: 1`, so this seeded workflow *fails by design* and a
+		// background alert toast may fire during the routing assertions
+		// below. The routing assertions key on `notFound.root()` /
+		// `welcome.root()` / `config.root()` visibility, not on toast
+		// absence, so the stray alert is load-bearing-irrelevant — flagging
+		// the non-obvious invariant so future reorderings stay safe.
 		await createSpecification(app, {
 			specification: "Routing seed workflow",
 			repo: sandbox.targetRepo,
@@ -257,6 +297,27 @@ test.describe("routing", () => {
 			await expect(seededCard).not.toHaveClass(/\bcard-expanded\b/);
 			await deepLink(app, server.baseUrl, `/workflow/${seededId}`);
 			await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
+
+			// AS4: back/forward across a card-strip-selected view. popstate
+			// must re-apply the `card-expanded` class on the seeded workflow
+			// when we navigate back to `/workflow/<id>` — the previous
+			// welcome↔config hops never exercised a selected card so a
+			// regression in popstate's selection reapply would have slipped.
+			await deepLink(app, server.baseUrl, "/config");
+			await expect(config.root()).toBeVisible();
+			await page.goBack();
+			await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
+			await page.goForward();
+			await expect(config.root()).toBeVisible();
+
+			// AS5: refresh on a seeded `/workflow/<id>` deep-link must
+			// restore the same view + card-strip selection after reconnect.
+			// The welcome/config reloads above don't exercise the
+			// `workflow:list` re-render path.
+			await deepLink(app, server.baseUrl, `/workflow/${seededId}`);
+			await page.reload();
+			await app.waitConnected();
+			await expect(seededCard).toHaveClass(/\bcard-expanded\b/);
 		}
 
 		await deepLink(app, server.baseUrl, "/workflow/does-not-exist");
@@ -272,6 +333,13 @@ test.describe("routing", () => {
 		// stale-leak class — without the seed step the assertion was a
 		// tautology.
 		await expect(page.locator("#pipeline-steps .pipeline-step")).toHaveCount(0);
+
+		// AS5: refresh on the not-found panel must re-render the empty-state
+		// rather than briefly flashing stale content or the welcome area.
+		await page.reload();
+		await app.waitConnected();
+		await expect(notFound.root()).toBeVisible();
+		await expect(notFound.message()).toContainText(/does-not-exist/);
 
 		// `also-missing` is chosen to collide with neither a seeded epic id nor
 		// an aggregate key — the epic detail handler falls through to

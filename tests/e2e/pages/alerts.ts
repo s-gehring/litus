@@ -54,4 +54,9 @@ export class AlertsPage {
 		// fast while still exercising the assertion.
 		await this.listPanel().waitFor({ state: "visible", timeout: 5_000 });
 	}
+
+	async closeList(): Promise<void> {
+		await this.bellButton().click();
+		await this.listPanel().waitFor({ state: "hidden", timeout: 5_000 });
+	}
 }
