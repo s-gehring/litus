@@ -154,6 +154,7 @@
 				}
 			]
 		},
+		{ "text": "nit\n" },
 		{
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-b-impl-review" },
@@ -165,6 +166,7 @@
 				}
 			]
 		},
+		{ "text": "nit\n" },
 		{
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "c-a-cpp" },

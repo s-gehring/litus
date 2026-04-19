@@ -38,5 +38,10 @@ export class AlertsPage {
 
 	async openList(): Promise<void> {
 		await this.bellButton().click();
+		// Assert the panel actually became visible so future callers that forget
+		// to open it get a helpful failure instead of silently reading 0 rows
+		// from `listRows()`. The `waitFor` short timeout keeps happy-path runs
+		// fast while still exercising the assertion.
+		await this.listPanel().waitFor({ state: "visible", timeout: 5_000 });
 	}
 }

@@ -1,0 +1,161 @@
+{
+	"name": "peripheral-artifacts",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-specify" },
+				{
+					"type": "assistant",
+					"session_id": "sess-specify",
+					"message": {
+						"content": [{ "type": "text", "text": "Draft specification ready." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-specify",
+					"result": "Specification drafted."
+				}
+			],
+			"files": [
+				{
+					"path": "specs/001-peripheral-artifacts/spec.md",
+					"encoding": "utf8",
+					"content": "# Artifact XSS test\n\nRaw script: <script>window.__XSS = true</script>\n\nEvent handler: <img src=x onerror=\"window.__XSS = true\">\n\nJavaScript URL: <a href=\"javascript:window.__XSS=true\">click</a>\n\nEnd of document.\n"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-clarify" },
+				{
+					"type": "assistant",
+					"session_id": "sess-clarify",
+					"message": {
+						"content": [{ "type": "text", "text": "No clarifications needed." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-clarify",
+					"result": "No clarifications needed."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-plan" },
+				{
+					"type": "assistant",
+					"session_id": "sess-plan",
+					"message": {
+						"content": [{ "type": "text", "text": "Plan generated." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-plan",
+					"result": "Plan generated."
+				}
+			],
+			"files": [
+				{
+					"path": "specs/001-peripheral-artifacts/plan.md",
+					"encoding": "utf8",
+					"content": "# Plan\n\nImplementation plan for peripheral artifacts coverage.\n"
+				},
+				{
+					"path": "specs/001-peripheral-artifacts/contracts/example artifact #1.md",
+					"encoding": "utf8",
+					"content": "# Example artifact with URL-encoded filename\n\nThis file's name contains a space and a '#' character.\n"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-tasks" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-tasks",
+					"result": "Tasks generated."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-implement" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-implement",
+					"result": "Implementation complete."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-review" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-review",
+					"result": "LGTM"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-impl-review" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-impl-review",
+					"result": "Review response appended."
+				}
+			]
+		},
+		{ "text": "nit\n" },
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-cpp" },
+				{
+					"type": "assistant",
+					"session_id": "sess-cpp",
+					"message": {
+						"content": [
+							{ "type": "text", "text": "PR created: https://github.com/example/repo/pull/99" }
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-cpp",
+					"result": "PR created: https://github.com/example/repo/pull/99"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": {
+			"exitCode": 0,
+			"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/99\",\"number\":99}"
+		},
+		"pr checks": {
+			"exitCode": 0,
+			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"
+		},
+		"pr create": {
+			"exitCode": 0,
+			"stdout": "https://github.com/example/repo/pull/99\n"
+		},
+		"run view": { "exitCode": 0, "stdout": "" }
+	}
+}

@@ -102,14 +102,33 @@ describe("fake claude: files[] validation", () => {
 		expect(result.stderr).toContain("refusing to write outside CWD");
 	});
 
-	test("rejects invalid base64 content", async () => {
+	test("rejects invalid base64 content (non-alphabet characters)", async () => {
+		// `!` is outside the base64 alphabet. The regex pre-check must fire —
+		// `Buffer.from(…, "base64")` alone silently discards invalid chars and
+		// would otherwise pass this test only via the trailing length-0 check,
+		// which is not the branch whose name this test advertises.
 		const result = await runFake(
 			baseScenario({ path: "bad.bin", encoding: "base64", content: "!!!!" }),
 			workdir,
 		);
 		expect(result.exitCode).not.toBe(0);
 		expect(result.stderr).toContain("[litus-e2e-fake:claude]");
-		expect(result.stderr).toMatch(/base64/);
+		expect(result.stderr).toContain("invalid base64 content");
+	});
+
+	test("accepts valid base64 content", async () => {
+		// Guard the happy-path side of the regex — ensures the validation
+		// doesn't regress into rejecting well-formed base64 (alphabet +
+		// optional `=` padding) once someone tightens the pattern.
+		const scenario = baseScenario({
+			path: "ok.bin",
+			encoding: "base64",
+			content: Buffer.from("hello").toString("base64"),
+		});
+		const result = await runFake(scenario, workdir);
+		expect(result.exitCode).toBe(0);
+		const written = await readFile(join(workdir, "ok.bin"));
+		expect(written.toString("utf8")).toBe("hello");
 	});
 
 	test("rejects unknown encoding", async () => {

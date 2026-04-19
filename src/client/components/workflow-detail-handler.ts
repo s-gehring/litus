@@ -16,6 +16,7 @@ import {
 	isFeedbackPanelVisible,
 	renderFeedbackHistory,
 } from "./feedback-panel";
+import { hideNotFoundPanel, showNotFoundPanel } from "./not-found-panel";
 import type { PipelineStepsArtifactContext } from "./pipeline-steps";
 import { renderPipelineSteps } from "./pipeline-steps";
 import { hideQuestion, showQuestion } from "./question-panel";
@@ -63,10 +64,10 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		if (!currentWorkflowId) return;
 		const entry = deps.getState().getWorkflows().get(currentWorkflowId);
 		if (!entry) {
-			clearOutput();
-			appendOutput("This workflow no longer exists", "system");
+			showNotFoundPanel("workflow", currentWorkflowId);
 			return;
 		}
+		hideNotFoundPanel();
 		renderDetail(entry);
 	}
 
@@ -330,6 +331,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 	function hideLayout(): void {
 		const existingBreadcrumb = document.getElementById("epic-breadcrumb");
 		if (existingBreadcrumb) existingBreadcrumb.remove();
+		hideNotFoundPanel();
 		hideDetailLayout();
 	}
 
