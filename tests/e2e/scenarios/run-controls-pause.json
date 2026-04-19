@@ -1,7 +1,8 @@
 {
-	"name": "run-controls",
+	"name": "run-controls-pause",
 	"claude": [
 		{
+			"delayMs": 1500,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "sess-specify" },
 				{

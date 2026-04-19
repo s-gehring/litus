@@ -26,8 +26,4 @@ export class FeedbackPanelPage {
 	submitButton(): Locator {
 		return this.page.locator("#btn-submit-feedback");
 	}
-
-	cancelButton(): Locator {
-		return this.page.locator("#btn-cancel-feedback");
-	}
 }

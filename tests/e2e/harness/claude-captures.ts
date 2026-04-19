@@ -16,7 +16,17 @@ export interface CapturedClaudeCall {
  */
 export function readCapturedClaudeCalls(counterFile: string): CapturedClaudeCall[] {
 	const path = `${counterFile}.argv.jsonl`;
-	if (!existsSync(path)) return [];
+	if (!existsSync(path)) {
+		// A missing argv log while the harness was wired up indicates the
+		// fake `claude` never ran — tests that call this always expect at
+		// least one invocation, so treating missing as empty would pass
+		// assertions for the wrong reason.
+		throw new Error(
+			`no captured claude calls at ${path} — fake claude was never invoked. ` +
+				"If this test genuinely expects zero invocations, assert on the " +
+				"counter file directly instead of reading captures.",
+		);
+	}
 	const raw = readFileSync(path, "utf8");
 	return raw
 		.split("\n")

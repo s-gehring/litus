@@ -66,13 +66,38 @@ test.describe("US2: mid-run question handling", () => {
 			});
 
 			const card = new WorkflowCardPage(page);
-
-			// Full Auto short-circuits the question panel — we must never observe
-			// a visible panel during this run. Wait past clarify to confirm.
-			await waitForStep(card, "clarify", "completed", { timeoutMs: 60_000 });
-
 			const prompt = new QuestionPromptPage(page);
-			await expect(prompt.panel()).toBeHidden();
+
+			// Full Auto short-circuits the question panel — we must never
+			// observe a visible panel during this run. Install a
+			// MutationObserver before the pipeline reaches `clarify` so any
+			// transient panel flash (between the question event arriving and
+			// the auto-answer dispatching) is recorded. Asserting "hidden
+			// after clarify completes" alone would silently pass a flash.
+			await page.evaluate(() => {
+				const w = window as unknown as { __litusPanelEverVisible?: boolean };
+				w.__litusPanelEverVisible = false;
+				const target = document.getElementById("question-panel");
+				if (!target) return;
+				const check = (): void => {
+					if (!target.classList.contains("hidden") && target.offsetParent !== null) {
+						w.__litusPanelEverVisible = true;
+					}
+				};
+				check();
+				new MutationObserver(check).observe(target, {
+					attributes: true,
+					attributeFilter: ["class", "style", "hidden"],
+				});
+			});
+
+			await waitForStep(card, "clarify", "completed", { timeoutMs: 60_000 });
+			expect(await prompt.panel().isVisible()).toBe(false);
+			const everVisible = await page.evaluate(() => {
+				return (window as unknown as { __litusPanelEverVisible?: boolean })
+					.__litusPanelEverVisible;
+			});
+			expect(everVisible, "question panel must never become visible in Full Auto").toBe(false);
 
 			// Full-auto path produces a resume call with a non-empty answer in
 			// the `-p` prompt. Exact text is owned by product code and not

@@ -73,21 +73,23 @@ export class WorkflowCardPage {
 		return this.page.locator("#detail-actions");
 	}
 
-	/**
-	 * The UI merge action shown when the pipeline pauses at `merge-pr` in
-	 * manual mode. Selected by the `action-resume` test id rendered on every
-	 * detail-action button (see `renderActionButtons` in workflow-window.ts).
-	 */
-	mergeAction(): Locator {
-		return this.detailActions().locator('[data-testid="action-resume"]');
-	}
-
 	pauseAction(): Locator {
 		return this.detailActions().locator('[data-testid="action-pause"]');
 	}
 
+	/**
+	 * The detail-action button rendered by `updateDetailActions` in
+	 * `workflow-window.ts`. In manual mode this doubles as both the
+	 * post-pause Resume control and the merge-pr Merge control — the label
+	 * differs but the test id does not. Callers choose `resumeAction()` vs.
+	 * `mergeAction()` to encode intent at the call site.
+	 */
 	resumeAction(): Locator {
 		return this.detailActions().locator('[data-testid="action-resume"]');
+	}
+
+	mergeAction(): Locator {
+		return this.resumeAction();
 	}
 
 	retryAction(): Locator {

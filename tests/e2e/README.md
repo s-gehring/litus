@@ -80,3 +80,5 @@ See also `specs/001-e2e-browser-tests/quickstart.md` for the end-to-end acceptan
 - `tests/run-controls.spec.ts` — US1 workflow run-control surface: pause/resume, abort, full-auto merge, automation-mode toggle (`scenarios/run-controls.json`)
 - `tests/mid-run-question.spec.ts` — US2 mid-run question handling in both manual and full-auto modes; asserts resume-call payload via the argv capture in `fakes/claude.ts` + `harness/claude-captures.ts` (`scenarios/mid-run-question.json`)
 - `tests/review-feedback-loop.spec.ts` — US3 manual-mode feedback panel loop at the merge-pr pause, including iteration-history persistence (`scenarios/review-feedback-loop.json`)
+
+US4 (merge-conflict resolution dispatch) and US5 (WebSocket reconnection resilience) from the `001-workflow-interaction-tests` feature are **not yet implemented**; see `specs/001-workflow-interaction-tests/tasks.md` for the remaining T017–T021 tasks.

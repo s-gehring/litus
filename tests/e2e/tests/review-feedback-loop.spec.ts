@@ -50,5 +50,13 @@ test.describe("US3: review/feedback loop", () => {
 		await card.provideFeedbackAction().click();
 		await expect(panelPage.panel()).toBeVisible({ timeout: 10_000 });
 		await expect(panelPage.historyEntries()).toHaveCount(1);
+		// Scenario scripts a `no changes` feedback-implementer outcome;
+		// the rendered entry should carry the matching outcome badge. This
+		// catches a regression that silently drops the outcome payload —
+		// without it, the count-only assertion above passes even if the
+		// badge class never appears (SC-004 control-named failure).
+		await expect(panelPage.historyEntries().first().locator(".feedback-entry-outcome")).toHaveClass(
+			/outcome-no-changes/,
+		);
 	});
 });
