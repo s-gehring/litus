@@ -449,6 +449,27 @@ describe("workflow-handlers", () => {
 
 			expect(calls).toHaveLength(0);
 		});
+
+		test("aborts an errored workflow (user's escape hatch from error)", () => {
+			// Error is no longer terminal for refcount purposes — the user must be
+			// able to put a stuck-in-error workflow into `cancelled` so the managed-
+			// repo refcount actually drops. Before this was allowed, the only way
+			// out was a full purge.
+			const { ws, deps, calls, wf, orchestrators } = setup({ status: "error" });
+
+			handleAbort(
+				ws,
+				{
+					type: "workflow:abort",
+					workflowId: wf.id,
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls).toHaveLength(1);
+			expect(calls[0].method).toBe("cancelPipeline");
+			expect(orchestrators.has(wf.id)).toBe(false);
+		});
 	});
 
 	describe("handleRetry", () => {

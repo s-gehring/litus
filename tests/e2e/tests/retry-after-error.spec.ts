@@ -23,15 +23,16 @@ test.describe("retry after error", () => {
 		const card = new WorkflowCardPage(page);
 
 		// First specify invocation fails (exitCode 1) — the workflow must land
-		// in `error`, the failed step must be flagged, and the Retry button
-		// must be the only run-control offered. A visible Abort here would
-		// mean the orchestrator routed failure to cancel rather than error,
-		// which is the regression this whole fix guards against.
+		// in `error`, the failed step must be flagged, and BOTH Retry and
+		// Abort must surface so the operator can either recover or escape.
+		// Pause/Resume are meaningless for a stopped workflow and must stay
+		// hidden.
 		await waitForStep(card, "specify", "error", { timeoutMs: 60_000 });
 		await expect(card.statusBadge()).toHaveClass(/\berror\b/, { timeout: 30_000 });
 		await expect(card.retryAction()).toBeVisible({ timeout: 10_000 });
-		await expect(card.abortAction()).toHaveCount(0);
+		await expect(card.abortAction()).toBeVisible({ timeout: 10_000 });
 		await expect(card.pauseAction()).toHaveCount(0);
+		await expect(card.resumeAction()).toHaveCount(0);
 
 		await retryStep(card);
 
@@ -53,5 +54,33 @@ test.describe("retry after error", () => {
 		// running pipeline against the server shutdown.
 		await abortRun(card);
 		await expect(card.statusBadge()).toHaveClass(/\bcancelled\b/, { timeout: 30_000 });
+	});
+
+	test("abort from error state transitions to cancelled", async ({ page, server, sandbox }) => {
+		// Separate from the retry path: the user must be able to decide that
+		// an errored workflow is unrecoverable and put it into `cancelled`
+		// directly. Without this the managed-repo refcount would stay held
+		// indefinitely on a stuck workflow (error is non-terminal for
+		// refcount).
+		test.setTimeout(120_000);
+		const app = new AppPage(page);
+		await app.goto(server.baseUrl);
+		await app.waitConnected();
+
+		await createSpecification(app, {
+			specification: "Add a dark mode toggle to the application settings.",
+			repo: sandbox.targetRepo,
+		});
+
+		const card = new WorkflowCardPage(page);
+		await waitForStep(card, "specify", "error", { timeoutMs: 60_000 });
+		await expect(card.statusBadge()).toHaveClass(/\berror\b/, { timeout: 30_000 });
+		await expect(card.abortAction()).toBeVisible({ timeout: 10_000 });
+
+		await abortRun(card);
+
+		await expect(card.statusBadge()).toHaveClass(/\bcancelled\b/, { timeout: 30_000 });
+		await expect(card.retryAction()).toHaveCount(0);
+		await expect(card.abortAction()).toHaveCount(0);
 	});
 });

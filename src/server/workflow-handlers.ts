@@ -106,10 +106,16 @@ export const handleAbort: MessageHandler = withOrchestrator((_ws, data, deps, or
 	const workflow = orch.getEngine().getWorkflow();
 	if (!workflow) return;
 
+	// `error` is accepted here because the user needs a way to move an errored
+	// workflow to a terminal state: without it the managed-repo refcount stays
+	// held forever (error is no longer terminal for refcount purposes), and the
+	// only exit would be a full purge. Cancelling from `error` releases the
+	// refcount via the normal cancel path.
 	if (
 		workflow.status !== "paused" &&
 		workflow.status !== "waiting_for_input" &&
-		workflow.status !== "waiting_for_dependencies"
+		workflow.status !== "waiting_for_dependencies" &&
+		workflow.status !== "error"
 	) {
 		return;
 	}

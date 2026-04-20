@@ -208,7 +208,7 @@ export const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
 	paused: ["running", "cancelled", "error"],
 	completed: [],
 	cancelled: [],
-	error: ["running"],
+	error: ["running", "cancelled"],
 };
 
 // Question entity

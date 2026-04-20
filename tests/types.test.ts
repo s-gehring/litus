@@ -164,8 +164,11 @@ describe("VALID_TRANSITIONS", () => {
 		expect(VALID_TRANSITIONS.cancelled).toEqual([]);
 	});
 
-	test("error can transition to running (retry)", () => {
-		expect(VALID_TRANSITIONS.error).toEqual(["running"]);
+	test("error can transition to running (retry) or cancelled (abort)", () => {
+		// `cancelled` is the user's escape hatch from an errored workflow:
+		// without it the managed-repo refcount would stay held indefinitely,
+		// since error is not a terminal state for retention purposes.
+		expect(VALID_TRANSITIONS.error).toEqual(["running", "cancelled"]);
 	});
 
 	test("all workflow statuses are covered", () => {

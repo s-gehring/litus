@@ -172,6 +172,18 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 				className: "btn-secondary",
 				onClick: () => deps.send({ type: "workflow:retry", workflowId: wf.id }),
 			});
+			// Abort is offered alongside Retry so the user can put an unrecoverable
+			// workflow into a terminal state. Without it, a stuck error holds its
+			// managed-repo refcount indefinitely (error is non-terminal for refcount).
+			actions.push({
+				label: "Abort",
+				className: "btn-danger",
+				onClick: () => {
+					if (confirm("Are you sure you want to abort this workflow?")) {
+						deps.send({ type: "workflow:abort", workflowId: wf.id });
+					}
+				},
+			});
 		}
 		if (wf.status === "idle" && wf.epicId) {
 			actions.push({

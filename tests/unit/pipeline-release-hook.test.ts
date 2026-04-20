@@ -139,6 +139,33 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		expect(releaseCalls).toHaveLength(0);
 		expect(wf.managedRepo).toEqual({ owner: "Err", repo: "Path" });
 	});
+
+	test("cancelPipeline from error state releases the managed-repo refcount", async () => {
+		// Error is not terminal for refcount, so the refcount sits on an
+		// errored workflow until the user chooses a one-way exit. Cancelling
+		// from error IS that exit — it must fire exactly one release so the
+		// clone is eventually cleaned up.
+		const { orch, engine, releaseCalls } = createTestDeps();
+		const wf = makeWorkflow({
+			status: "running",
+			managedRepo: { owner: "Err", repo: "Path" },
+		});
+		wf.currentStepIndex = 0;
+		engine.setWorkflow(wf);
+
+		asPrivate(orch).handleStepError(wf.id, "boom");
+		await new Promise((r) => setTimeout(r, 10));
+		expect(releaseCalls).toHaveLength(0);
+		expect(wf.status).toBe("error");
+
+		orch.cancelPipeline(wf.id);
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(releaseCalls).toHaveLength(1);
+		expect(releaseCalls[0]).toEqual({ owner: "Err", repo: "Path" });
+		expect(wf.status).toBe("cancelled");
+		expect(wf.managedRepo).toBeNull();
+	});
 });
 
 describe("PipelineOrchestrator — release() failure is contained", () => {
