@@ -146,7 +146,7 @@ describe("handleRetryWorkflow", () => {
 			worktreeBranch: "tmp-dup",
 			targetRepository: "/tmp/repo",
 		});
-		const { deps, sent, broadcasts } = makeDeps(wf);
+		const { deps, sent, broadcasts, saved, auditEvents } = makeDeps(wf);
 
 		const p1 = handleRetryWorkflow(
 			{} as never,
@@ -164,5 +164,42 @@ describe("handleRetryWorkflow", () => {
 		// Single broadcast despite two sends — the dedupe guard dropped the
 		// second one without emitting any response.
 		expect(broadcasts).toEqual(["wf-dup"]);
+		// Harden: prove the second call is a full no-op end-to-end, not just
+		// that some other broadcast didn't happen to fire. If dedupe broke,
+		// the second invocation would also run `resetWorkflow` → save → audit.
+		expect(saved).toHaveLength(1);
+		expect(auditEvents).toHaveLength(1);
+	});
+
+	test("persist failure: emits a persist_failed error instead of broadcasting stale state", async () => {
+		const wf = makeWorkflow({
+			id: "wf-persist-fail",
+			status: "aborted",
+			worktreePath: null,
+			worktreeBranch: "tmp-pf",
+			targetRepository: "/tmp/repo",
+		});
+		const { deps, sent, saved, auditEvents, broadcasts } = makeDeps(wf);
+		// Force `sharedStore.save` to throw — simulates EACCES/disk-full.
+		deps.sharedStore.save = async () => {
+			throw new Error("ENOSPC");
+		};
+
+		await handleRetryWorkflow(
+			{} as never,
+			{ type: "workflow:retry-workflow", workflowId: "wf-persist-fail" },
+			deps,
+		);
+
+		expect(saved).toHaveLength(0);
+		// Audit + broadcast MUST NOT fire when persistence fails: otherwise the
+		// audit log and clients would diverge from the on-disk record.
+		expect(auditEvents).toHaveLength(0);
+		expect(broadcasts).toEqual([]);
+		expect(sent).toHaveLength(1);
+		const msg = sent[0].msg as Extract<ServerMessage, { type: "error" }>;
+		expect(msg.type).toBe("error");
+		expect(msg.requestType).toBe("workflow:retry-workflow");
+		expect(msg.code).toBe("persist_failed");
 	});
 });

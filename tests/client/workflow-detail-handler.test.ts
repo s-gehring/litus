@@ -26,6 +26,7 @@ const BASE_DOM = `
 				<div id="workflow-feedback-section" class="hidden"></div>
 				<details id="spec-details" class="hidden"><summary></summary><div id="spec-details-text"></div></details>
 				<div id="detail-actions" class="hidden"></div>
+				<div id="workflow-error-banner" class="hidden"></div>
 				<div id="pipeline-steps" class="hidden"></div>
 				<div id="active-model-panel"></div>
 				<div id="output-area"><div id="output-log"></div></div>
@@ -135,5 +136,47 @@ describe("workflow-detail-handler action buttons", () => {
 		const labels = actionLabels();
 		expect(labels).not.toContain("Retry step");
 		expect(labels).not.toContain("Retry workflow");
+	});
+
+	test("workflow-level error message is rendered in the detail pane banner", () => {
+		mountForWorkflow({
+			id: "wf-reset-partial",
+			status: "error",
+			error: { message: "Reset failed: could not delete worktree /tmp/locked-worktree" },
+		});
+		const banner = document.getElementById("workflow-error-banner") as HTMLElement;
+		expect(banner.classList.contains("hidden")).toBe(false);
+		expect(banner.textContent).toContain("Reset failed");
+		expect(banner.textContent).toContain("/tmp/locked-worktree");
+	});
+
+	test("workflow without error leaves the banner hidden", () => {
+		mountForWorkflow({ id: "wf-no-error", status: "error" });
+		const banner = document.getElementById("workflow-error-banner") as HTMLElement;
+		expect(banner.classList.contains("hidden")).toBe(true);
+		expect(banner.textContent ?? "").toBe("");
+	});
+
+	test("all action testids stay in sync with the e2e page-object contract", () => {
+		// Covers every button label this pane can emit, not just the retry pair.
+		// Renaming any label here will break the generated testid used by the
+		// Playwright page objects; extending the assertion surfaces that in
+		// review diff rather than only at e2e time.
+		const cases: {
+			status: NonNullable<Parameters<typeof makeWorkflowState>[0]>["status"];
+			expected: string[];
+		}[] = [
+			{ status: "running", expected: ["action-pause"] },
+			{ status: "paused", expected: ["action-resume", "action-abort"] },
+			{ status: "error", expected: ["action-retry-step", "action-retry-workflow", "action-abort"] },
+			{ status: "aborted", expected: ["action-retry-workflow"] },
+		];
+		for (const { status, expected } of cases) {
+			document.body.innerHTML = BASE_DOM;
+			state = new ClientStateManager();
+			mountForWorkflow({ id: `wf-${status}`, status });
+			const testids = actionTestIds();
+			for (const id of expected) expect(testids).toContain(id);
+		}
 	});
 });

@@ -160,9 +160,82 @@ describe("resetWorkflow", () => {
 		expect(wf.currentStepIndex).toBe(0);
 		// The Setup step should not be flagged as errored — the reset failed,
 		// not the Setup invocation. The workflow-level error.message is the
-		// single source of truth.
+		// single source of truth. The assertions below guard against a
+		// regression that re-introduces step-error mirroring: they would fail
+		// if the reset-failure message were written back onto any step.error.
 		expect(wf.steps[0].status).toBe("pending");
 		expect(wf.steps[0].error).toBeNull();
+		// Reset-failure text must live only on the workflow-level field — no
+		// step's `.error` may carry a fragment of the message.
+		const msg = wf.error?.message ?? "";
+		for (const step of wf.steps) {
+			expect(step.error).toBeNull();
+			expect(step.error ?? "").not.toContain("Reset failed");
+			expect(step.error ?? "").not.toContain(msg);
+		}
+	});
+
+	test("partial failure: pre-existing step errors are cleared and NOT replaced with the reset message", async () => {
+		// Seed every step with a distinctive pre-run error. After a partial-
+		// failure reset, all step errors must be null (cleaned up) AND none of
+		// them may carry any part of the new workflow-level reset-failure
+		// message — a future regression that re-introduced mirroring at the
+		// tail of resetWorkflow (after the cleanup loop) would fail here.
+		setMockSpawnByCommand({
+			worktree: { code: 1, stderr: "fatal: permission denied" },
+			branch: { code: 0 },
+		});
+		const wf = makeWorkflow({
+			id: workflowId,
+			status: "error",
+			worktreePath: "/tmp/locked-worktree",
+			worktreeBranch: "tmp-xyz",
+			targetRepository: "/tmp/repo",
+		});
+		for (const step of wf.steps) step.error = `prior run boom in ${step.name}`;
+
+		await resetWorkflow(wf);
+
+		expect(wf.error?.message).toContain("Reset failed");
+		for (const step of wf.steps) {
+			expect(step.error).toBeNull();
+		}
+	});
+
+	test("already-missing worktree: exit-non-zero with 'is not a working tree' stderr counts as success (FR-008)", async () => {
+		setMockSpawnByCommand({
+			worktree: { code: 1, stderr: "fatal: '/tmp/gone' is not a working tree" },
+			branch: { code: 0 },
+		});
+		const wf = makeWorkflow({
+			id: workflowId,
+			status: "error",
+			worktreePath: "/tmp/gone",
+			worktreeBranch: "tmp-abc",
+			targetRepository: "/tmp/repo",
+		});
+		const outcome = await resetWorkflow(wf);
+		expect(outcome.partialFailure).toBe(false);
+		expect(outcome.worktree.ok).toBe(true);
+		expect(wf.status as string).toBe("idle");
+	});
+
+	test("already-missing branch: exit-non-zero with 'not found' stderr counts as success (FR-008)", async () => {
+		setMockSpawnByCommand({
+			worktree: { code: 0 },
+			branch: { code: 1, stderr: "error: branch 'tmp-gone' not found." },
+		});
+		const wf = makeWorkflow({
+			id: workflowId,
+			status: "error",
+			worktreePath: "/tmp/some-path",
+			worktreeBranch: "tmp-gone",
+			targetRepository: "/tmp/repo",
+		});
+		const outcome = await resetWorkflow(wf);
+		expect(outcome.partialFailure).toBe(false);
+		expect(outcome.branch.ok).toBe(true);
+		expect(wf.status as string).toBe("idle");
 	});
 
 	test("artifact files removed as part of reset", async () => {

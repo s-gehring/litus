@@ -221,7 +221,13 @@ export type WorkflowStatus =
 	| "aborted"
 	| "error";
 
-// Valid state transitions
+// Valid state transitions.
+//
+// NOTE: `resetWorkflow` (src/workflow-engine.ts) intentionally bypasses this
+// table and sets `status = "idle"` directly. That path introduces two edges
+// not listed here — `aborted → idle` and `error → idle` — which are only
+// legal via the reset flow. `transition()` itself must continue to treat
+// `aborted`/`error` as terminal with respect to `running`/`aborted` only.
 export const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
 	idle: ["running", "waiting_for_dependencies"],
 	running: ["waiting_for_input", "completed", "error", "paused"],
@@ -658,7 +664,7 @@ export type ServerMessage =
 			type: "error";
 			message: string;
 			requestType?: "workflow:retry-workflow";
-			code?: "invalid_state" | "not_found";
+			code?: "invalid_state" | "not_found" | "persist_failed";
 	  };
 
 // Individual tool usage from CLI stream event

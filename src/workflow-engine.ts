@@ -483,6 +483,10 @@ export async function resetWorkflow(workflow: Workflow): Promise<ResetOutcome> {
 	} else {
 		workflow.status = "idle";
 		workflow.error = null;
+		// Regenerate the managed branch name from the stable id.
+		// `createWorkflow` uses the exact same formula, so this is idempotent
+		// for any workflow created through the normal path: the branch name
+		// returns to its original value rather than being silently rewritten.
 		workflow.worktreeBranch = `tmp-${workflow.id.slice(0, 8)}`;
 	}
 

@@ -300,15 +300,22 @@ export async function handleFolderExists(raw: string | null): Promise<Response> 
 	// uniformly as `permission_denied`. This prevents an unauthenticated caller
 	// from probing the wider filesystem via the finer-grained
 	// `not_found` / `not_a_directory` / `permission_denied` distinctions.
+	// The contract's discriminated union pairs `permission_denied` with
+	// `exists: true`, so we report that shape here even when we can't observe
+	// the path — the client maps to "Folder is not accessible (permission
+	// denied)." (see folderErrorMessageFor).
 	const home = homedir();
 	const absResolved = isAbsolute(resolved) ? resolved : resolve(home, resolved);
 	const rel = relative(home, absResolved);
 	const outsideHome = rel.startsWith("..") || isAbsolute(rel);
 	if (outsideHome) {
-		return Response.json({ exists: false, usable: false, reason: "permission_denied" });
+		return Response.json({ exists: true, usable: false, reason: "permission_denied" });
 	}
 	try {
-		const st = await stat(resolved);
+		// Stat the resolved ABSOLUTE form — `resolved` may be a relative path
+		// that the OS would resolve against the server's CWD rather than `home`,
+		// which would escape the allow-list above.
+		const st = await stat(absResolved);
 		if (!st.isDirectory()) {
 			return Response.json({ exists: true, usable: false, reason: "not_a_directory" });
 		}
@@ -321,7 +328,7 @@ export async function handleFolderExists(raw: string | null): Promise<Response> 
 		if (code === "EACCES" || code === "EPERM") {
 			return Response.json({ exists: true, usable: false, reason: "permission_denied" });
 		}
-		logger.warn(`[folder-exists] Unexpected stat error for ${resolved}: ${err}`);
+		logger.warn(`[folder-exists] Unexpected stat error for ${absResolved}: ${err}`);
 		return Response.json({ error: "internal" }, { status: 500 });
 	}
 }

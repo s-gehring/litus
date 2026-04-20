@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { clearArtifacts, getArtifactsRoot } from "../src/workflow-artifacts";
@@ -40,6 +40,31 @@ describe("clearArtifacts", () => {
 		expect(result.removed).toBe(3);
 		expect(result.failed).toEqual([]);
 	});
+
+	test.skipIf(process.platform === "win32")(
+		"unremovable file: surfaces the absolute path in failed[] without counting it in removed (T005 case 3)",
+		async () => {
+			// POSIX-only: remove write permission from the containing directory
+			// so `unlinkSync` fails. This exercises the `try { unlinkSync }
+			// catch { failed.push(abs) }` branch that feeds the partial-failure
+			// message in workflow-engine. Skipped on Windows where the ACL
+			// model can still allow unlink on a chmod'd-readonly dir.
+			const subdir = join(root, "locked");
+			mkdirSync(subdir, { recursive: true });
+			const file = join(subdir, "stuck.md");
+			writeFileSync(file, "cannot remove");
+			try {
+				// Read + execute only → cannot unlink children.
+				chmodSync(subdir, 0o500);
+				const result = await clearArtifacts(workflowId);
+				expect(result.failed).toContain(file);
+				expect(result.removed).toBe(0);
+			} finally {
+				// Restore writable so afterEach cleanup can remove the dir.
+				chmodSync(subdir, 0o700);
+			}
+		},
+	);
 
 	test("artifact root lives under $HOME/.litus/artifacts/<id>", () => {
 		expect(getArtifactsRoot(workflowId)).toBe(join(homedir(), ".litus", "artifacts", workflowId));

@@ -36,6 +36,7 @@ import {
 	updateStepSummary,
 	updateSummary,
 	updateUserInput,
+	updateWorkflowErrorBanner,
 	updateWorkflowStatus,
 } from "./workflow-window";
 
@@ -77,6 +78,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		const selectedStepIndex = state.getSelectedStepIndex();
 
 		updateWorkflowStatus(wf);
+		updateWorkflowErrorBanner(wf);
 		updateBranchInfo(wf);
 		updateActiveModelPanel({ kind: "workflow", workflow: wf });
 		renderPipelineSteps(wf, selectedStepIndex, doSelectStep, deps.getArtifactContext(wf.id));

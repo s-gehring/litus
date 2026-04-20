@@ -299,6 +299,33 @@ describe("WorkflowStore", () => {
 			expect(reloaded.id).toBe("linked-wf");
 			expect(reloaded.epicId).toBe("epic-123");
 			expect(reloaded.status).toBe("idle");
+
+			// FR-006 other half: the epic's `workflowIds` list must still
+			// resolve to the reset workflow's id. Save an epic record and
+			// assert the linkage survives the reset round-trip.
+			const { EpicStore } = await import("../src/epic-store");
+			const epicStore = new EpicStore(baseDir);
+			await epicStore.save({
+				epicId: "epic-123",
+				description: "epic for linkage test",
+				status: "completed",
+				title: "Linkage",
+				workflowIds: ["linked-wf"],
+				startedAt: new Date().toISOString(),
+				completedAt: new Date().toISOString(),
+				errorMessage: null,
+				infeasibleNotes: null,
+				analysisSummary: null,
+			});
+			// Re-reset + re-save to prove the epic's linkage is orthogonal to
+			// the workflow reset cycle.
+			await resetWorkflow(wf);
+			await store.save(wf);
+
+			const epics = await epicStore.loadAll();
+			const epic = epics.find((e) => e.epicId === "epic-123");
+			assertDefined(epic);
+			expect(epic.workflowIds).toContain("linked-wf");
 		} finally {
 			BunGlobal.Bun.spawn = originalSpawn;
 		}

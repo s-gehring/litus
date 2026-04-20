@@ -197,11 +197,24 @@ export const handleRetryWorkflow: MessageHandler = async (ws, data, deps) => {
 		const preResetWorktreePath = workflow.worktreePath ?? "";
 		const outcome = await resetWorkflow(workflow);
 
-		// Persist the mutated workflow record.
+		// Persist FIRST, then audit + broadcast — only on persist success.
+		// If we audited/broadcast before persistence and the save failed, the
+		// audit log would claim the reset happened while the on-disk record
+		// still showed the pre-reset state, and the `aborted` → broadcast
+		// fallback (which reads from the store) would then contradict the
+		// audit. Keep the three side-effects consistent with the persisted
+		// truth by gating them on `save` success.
 		try {
 			await deps.sharedStore.save(workflow);
 		} catch (err) {
 			logger.error(`[ws] workflow:retry-workflow persist failed: ${err}`);
+			deps.sendTo(ws, {
+				type: "error",
+				requestType: "workflow:retry-workflow",
+				code: "persist_failed",
+				message: "Could not persist reset — please retry.",
+			});
+			return;
 		}
 
 		// Keep in-memory orchestrator (if any) in sync so later WS reads see the

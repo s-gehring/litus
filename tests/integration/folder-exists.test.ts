@@ -63,10 +63,33 @@ describe("/api/folder-exists handler", () => {
 		// short-circuit before stat.
 		const outside = join(dirname(homedir()), "definitely-not-under-home");
 		const res = await handleFolderExists(outside);
+		// Contract's discriminated union only allows `reason: "permission_denied"`
+		// with `exists: true`. This also ensures the client's
+		// `folderErrorMessageFor` routes the response to the right message
+		// (it checks `reason` only when `exists: true`).
+		expect(await body(res)).toEqual({
+			exists: true,
+			usable: false,
+			reason: "permission_denied",
+		});
+	});
+
+	test("relative input stays confined to home — does not leak CWD existence", async () => {
+		// If the handler stat'd the raw `resolved` (not the absolute form), a
+		// relative path like "does-not-exist-anywhere" would be resolved by the
+		// OS against the server's CWD, which may be outside home — and could
+		// return `not_found` based on the CWD tree, leaking information.
+		// The allow-list must short-circuit relative paths that resolve under
+		// home to be treated as paths under home, and the stat must operate on
+		// the absolute form.
+		const res = await handleFolderExists("definitely-not-in-home-or-cwd-xyz-42");
+		// The relative path resolves under home (by the allow-list fallback),
+		// so the result must be `not_found` relative to home — never anything
+		// derived from the server's CWD.
 		expect(await body(res)).toEqual({
 			exists: false,
 			usable: false,
-			reason: "permission_denied",
+			reason: "not_found",
 		});
 	});
 });
