@@ -168,7 +168,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		}
 		if (isError) {
 			actions.push({
-				label: "Retry",
+				label: "Retry step",
 				className: "btn-secondary",
 				onClick: () => deps.send({ type: "workflow:retry", workflowId: wf.id }),
 			});
@@ -181,6 +181,24 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 				onClick: () => {
 					if (confirm("Are you sure you want to abort this workflow?")) {
 						deps.send({ type: "workflow:abort", workflowId: wf.id });
+					}
+				},
+			});
+		}
+		// Retry workflow — available from `error` OR `aborted`. Resets the entire
+		// workflow to Setup, deleting branch/worktree/artifacts. Distinct from
+		// the per-step "Retry step" action above.
+		if (wf.status === "error" || wf.status === "aborted") {
+			actions.push({
+				label: "Retry workflow",
+				className: "btn-secondary",
+				onClick: () => {
+					if (
+						confirm(
+							"This will reset the workflow to Setup and delete its branch, worktree, and artifacts. Uncommitted changes in the managed worktree will be lost. Continue?",
+						)
+					) {
+						deps.send({ type: "workflow:retry-workflow", workflowId: wf.id });
 					}
 				},
 			});

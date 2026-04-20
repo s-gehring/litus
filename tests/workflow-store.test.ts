@@ -255,6 +255,55 @@ describe("WorkflowStore", () => {
 		expect(loaded.feedbackPreRunHead).toBe("abc1234deadbeef");
 	});
 
+	test("identity + epic-linkage preserved across reset + persist + reload", async () => {
+		// FR-006: "workflow's stable identifier and any association with a
+		// parent epic" must survive a reset. Prove this across a full persist
+		// round-trip: save an epic-linked workflow, mutate it as resetWorkflow
+		// would (cleared per-step state, back to idle), save + reload, and
+		// assert id and epicId round-trip unchanged.
+		const { resetWorkflow } = await import("../src/workflow-engine");
+
+		// Mock Bun.spawn for the git worktree/branch calls.
+		const originalSpawn = Bun.spawn;
+		const BunGlobal = globalThis as unknown as { Bun: { spawn: unknown } };
+		BunGlobal.Bun.spawn = (() => ({
+			exited: Promise.resolve(0),
+			stdout: new ReadableStream({
+				start(c) {
+					c.close();
+				},
+			}),
+			stderr: new ReadableStream({
+				start(c) {
+					c.close();
+				},
+			}),
+		})) as unknown;
+
+		try {
+			const wf = makeWorkflow({
+				id: "linked-wf",
+				status: "error",
+				epicId: "epic-123",
+				worktreePath: null,
+				worktreeBranch: "tmp-linked",
+				targetRepository: "/tmp/repo",
+			});
+			await store.save(wf);
+
+			await resetWorkflow(wf);
+			await store.save(wf);
+
+			const reloaded = await store.load("linked-wf");
+			assertDefined(reloaded);
+			expect(reloaded.id).toBe("linked-wf");
+			expect(reloaded.epicId).toBe("epic-123");
+			expect(reloaded.status).toBe("idle");
+		} finally {
+			BunGlobal.Bun.spawn = originalSpawn;
+		}
+	});
+
 	test("T011: loadIndex rebuilds from scanning *.json when index.json is missing", async () => {
 		const w1 = makeWorkflow({ id: "scan-1", updatedAt: "2026-01-01T00:00:00.000Z" });
 		const w2 = makeWorkflow({ id: "scan-2", updatedAt: "2026-02-01T00:00:00.000Z" });

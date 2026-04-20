@@ -1711,6 +1711,12 @@ body::-webkit-scrollbar-track {
   font-size: 0.8rem;
 }
 
+.modal-field-error {
+  color: var(--accent);
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+
 /* ── Folder Picker ─────────────────────────────────────── */
 
 .folder-picker {

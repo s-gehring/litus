@@ -93,7 +93,11 @@ export class WorkflowCardPage {
 	}
 
 	retryAction(): Locator {
-		return this.detailActions().locator('[data-testid="action-retry"]');
+		return this.detailActions().locator('[data-testid="action-retry-step"]');
+	}
+
+	retryWorkflowAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-retry-workflow"]');
 	}
 
 	abortAction(): Locator {

@@ -109,6 +109,8 @@ export class WorkflowStore {
 			if (data.feedbackPreRunHead === undefined) data.feedbackPreRunHead = null;
 			if (data.activeInvocation === undefined) data.activeInvocation = null;
 			if (data.managedRepo === undefined) data.managedRepo = null;
+			// Migration: backfill workflow-level error field for pre-reset workflows.
+			if (data.error === undefined) data.error = null;
 			// Migration: backfill per-step history for pre-history workflows
 			for (const step of data.steps) {
 				if (!Array.isArray(step.history)) step.history = [];

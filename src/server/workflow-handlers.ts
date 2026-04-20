@@ -10,8 +10,14 @@ import {
 	lookupArtifact,
 	sanitizeBranchForFilename,
 } from "../workflow-artifacts";
+import { resetWorkflow } from "../workflow-engine";
 import type { HandlerDeps, MessageHandler } from "./handler-types";
 import { resolveTargetRepo, validateTextInput, withOrchestrator } from "./handler-types";
+
+// Per-workflow dedupe guard for `workflow:retry-workflow`. A second click while
+// the reset is still running is a no-op: the ordered cleanup is already in
+// progress and the outcome will broadcast when it resolves.
+const retryWorkflowInFlight = new Set<string>();
 
 export const handleStart: MessageHandler = async (ws, data, deps) => {
 	const msg = data as ClientMessage & { type: "workflow:start" };
@@ -133,6 +139,95 @@ export const handleRetry: MessageHandler = withOrchestrator((ws, data, deps, orc
 	}
 	orch.retryStep(msg.workflowId);
 });
+
+export const handleRetryWorkflow: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "workflow:retry-workflow" };
+	const { workflowId } = msg;
+
+	if (!workflowId) {
+		deps.sendTo(ws, {
+			type: "error",
+			requestType: "workflow:retry-workflow",
+			code: "not_found",
+			message: "Missing workflowId",
+		});
+		return;
+	}
+
+	if (retryWorkflowInFlight.has(workflowId)) {
+		// Drop duplicate sends while an ordered cleanup is already in flight; the
+		// outcome broadcast is the single source of truth.
+		return;
+	}
+
+	// Acquire the dedupe guard synchronously, BEFORE any await — otherwise a
+	// rapid-fire second send could slip past the `has()` check while the first
+	// call is still awaiting `sharedStore.load`.
+	retryWorkflowInFlight.add(workflowId);
+	try {
+		// Active orchestrator (error state) or persisted record (aborted state —
+		// which isn't restored into `orchestrators` on startup).
+		const orch = deps.orchestrators.get(workflowId);
+		const liveWorkflow = orch?.getEngine().getWorkflow();
+		const workflow: Workflow | null = liveWorkflow ?? (await deps.sharedStore.load(workflowId));
+
+		if (!workflow) {
+			deps.sendTo(ws, {
+				type: "error",
+				requestType: "workflow:retry-workflow",
+				code: "not_found",
+				message: `Workflow ${workflowId} not found`,
+			});
+			return;
+		}
+
+		if (workflow.status !== "error" && workflow.status !== "aborted") {
+			deps.sendTo(ws, {
+				type: "error",
+				requestType: "workflow:retry-workflow",
+				code: "invalid_state",
+				message: "Retry workflow is only available from error or aborted state.",
+			});
+			return;
+		}
+
+		// Capture pre-reset targets for the audit event — the reset mutates these
+		// fields in place on success, so we snapshot them before the call.
+		const preResetBranch = workflow.worktreeBranch ?? "";
+		const preResetWorktreePath = workflow.worktreePath ?? "";
+		const outcome = await resetWorkflow(workflow);
+
+		// Persist the mutated workflow record.
+		try {
+			await deps.sharedStore.save(workflow);
+		} catch (err) {
+			logger.error(`[ws] workflow:retry-workflow persist failed: ${err}`);
+		}
+
+		// Keep in-memory orchestrator (if any) in sync so later WS reads see the
+		// reset state.
+		if (orch) {
+			orch.getEngine().setWorkflow(workflow);
+		}
+
+		// Audit event — pipeline name follows the existing convention (feature
+		// branch when present, otherwise the managed `tmp-<shortId>` branch).
+		const pipelineName = workflow.featureBranch ?? workflow.worktreeBranch ?? workflow.id;
+		deps.sharedAuditLogger.logWorkflowReset({
+			pipelineName,
+			workflowId: workflow.id,
+			epicId: workflow.epicId,
+			branch: preResetBranch,
+			worktreePath: preResetWorktreePath,
+			artifactCount: outcome.artifacts.removed,
+			partialFailure: outcome.partialFailure,
+		});
+
+		deps.broadcastWorkflowState(workflowId);
+	} finally {
+		retryWorkflowInFlight.delete(workflowId);
+	}
+};
 
 export const handleStartExisting: MessageHandler = withOrchestrator((ws, data, deps, orch) => {
 	const msg = data as ClientMessage & { type: "workflow:start-existing" };

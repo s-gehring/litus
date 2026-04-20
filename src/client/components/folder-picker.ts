@@ -2,6 +2,11 @@ export interface FolderPicker {
 	element: HTMLElement;
 	getValue: () => string;
 	setValue: (value: string) => void;
+	/**
+	 * Register a handler invoked on input blur with the trimmed field value.
+	 * Intended for folder-existence validation in creation modals (FR-011).
+	 */
+	onBlurValidate: (handler: (trimmedValue: string) => void) => void;
 }
 
 export function createFolderPicker(placeholder = "~/git"): FolderPicker {
@@ -99,8 +104,10 @@ export function createFolderPicker(placeholder = "~/git"): FolderPicker {
 		}
 	});
 
+	let blurValidator: ((trimmedValue: string) => void) | null = null;
 	input.addEventListener("blur", () => {
 		hideDropdown();
+		if (blurValidator) blurValidator(input.value.trim());
 	});
 
 	input.addEventListener("keydown", (e) => {
@@ -131,6 +138,9 @@ export function createFolderPicker(placeholder = "~/git"): FolderPicker {
 			// Pre-fetch suggestions based on initial value
 			const parent = getParentDir(value);
 			if (parent) fetchSuggestions(parent);
+		},
+		onBlurValidate: (handler) => {
+			blurValidator = handler;
 		},
 	};
 }
