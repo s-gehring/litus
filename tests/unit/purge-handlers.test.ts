@@ -39,11 +39,11 @@ describe("purge-handlers", () => {
 	});
 
 	describe("handlePurgeAll", () => {
-		test("cancels running orchestrators and clears map", async () => {
+		test("aborts running orchestrators and clears map", async () => {
 			const { mock: ws } = createMockWebSocket();
 			const mockWs = ws as unknown as Parameters<typeof handlePurgeAll>[0];
 
-			const cancelCalls: string[] = [];
+			const abortCalls: string[] = [];
 			const wf = makeWorkflow({ status: "running" });
 			const mockOrch = {
 				getEngine() {
@@ -53,8 +53,8 @@ describe("purge-handlers", () => {
 						},
 					};
 				},
-				cancelPipeline(id: string) {
-					cancelCalls.push(id);
+				abortPipeline(id: string) {
+					abortCalls.push(id);
 				},
 			} as unknown as PipelineOrchestrator;
 
@@ -65,8 +65,8 @@ describe("purge-handlers", () => {
 
 			await handlePurgeAll(mockWs, { type: "purge:all" } as ClientMessage, deps);
 
-			expect(cancelCalls).toHaveLength(1);
-			expect(cancelCalls[0]).toBe(wf.id);
+			expect(abortCalls).toHaveLength(1);
+			expect(abortCalls[0]).toBe(wf.id);
 			expect(orchestrators.size).toBe(0);
 			expect(broadcastedMessages.some((m) => m.type === "purge:complete")).toBe(true);
 		});

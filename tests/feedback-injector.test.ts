@@ -113,7 +113,7 @@ describe("buildFeedbackContext", () => {
 				iteration: 3,
 				text: "aborted",
 				outcome: {
-					value: "cancelled",
+					value: "aborted",
 					summary: "user abort",
 					commitRefs: [],
 					warnings: [],
@@ -125,7 +125,7 @@ describe("buildFeedbackContext", () => {
 
 		expect(out).toContain("no changes");
 		expect(out).toContain("failed");
-		expect(out).toContain("cancelled");
+		expect(out).toContain("aborted");
 	});
 
 	test("emits a placeholder label for in-flight entries (null outcome)", () => {

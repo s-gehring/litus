@@ -127,9 +127,9 @@ describe("computeEpicAggregatedState", () => {
 		expect(result.status).toBe("paused");
 	});
 
-	test("cancelled counts as error", () => {
+	test("aborted counts as error", () => {
 		const children = [
-			makeWorkflowState({ ...EPIC_DEFAULTS, id: "a", status: "cancelled" }),
+			makeWorkflowState({ ...EPIC_DEFAULTS, id: "a", status: "aborted" }),
 			makeWorkflowState({ ...EPIC_DEFAULTS, id: "b", status: "completed" }),
 		];
 		const result = mustGet(computeEpicAggregatedState(children));

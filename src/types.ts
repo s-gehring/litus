@@ -196,19 +196,19 @@ export type WorkflowStatus =
 	| "waiting_for_dependencies"
 	| "paused"
 	| "completed"
-	| "cancelled"
+	| "aborted"
 	| "error";
 
 // Valid state transitions
 export const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
 	idle: ["running", "waiting_for_dependencies"],
 	running: ["waiting_for_input", "completed", "error", "paused"],
-	waiting_for_input: ["running", "cancelled"],
-	waiting_for_dependencies: ["running", "cancelled"],
-	paused: ["running", "cancelled", "error"],
+	waiting_for_input: ["running", "aborted"],
+	waiting_for_dependencies: ["running", "aborted"],
+	paused: ["running", "aborted", "error"],
 	completed: [],
-	cancelled: [],
-	error: ["running"],
+	aborted: [],
+	error: ["running", "aborted"],
 };
 
 // Question entity
@@ -409,7 +409,7 @@ export const STEP = {
 export const DELTA_FLUSH_TIMEOUT_MS = 50;
 
 // Manual-mode feedback loop: per-iteration outcome of a feedback-implementer run
-export type FeedbackOutcomeValue = "success" | "no changes" | "failed" | "cancelled";
+export type FeedbackOutcomeValue = "success" | "no changes" | "failed" | "aborted";
 
 export interface FeedbackOutcomeWarning {
 	kind: "pr_description_update_failed";
@@ -732,7 +732,7 @@ export type ClientMessage =
 			autoStart: boolean;
 			submissionId?: string;
 	  }
-	| { type: "epic:cancel" }
+	| { type: "epic:abort" }
 	| { type: "workflow:start-existing"; workflowId: string }
 	| { type: "workflow:force-start"; workflowId: string }
 	| { type: "workflow:feedback"; workflowId: string; text: string }

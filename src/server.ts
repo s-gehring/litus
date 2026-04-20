@@ -22,7 +22,7 @@ import { ReviewClassifier } from "./review-classifier";
 import { createAlertBroadcasters } from "./server/alert-broadcast";
 import { handleAlertDismiss, handleAlertList } from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
-import { handleEpicCancel, handleEpicStart } from "./server/epic-handlers";
+import { handleEpicAbort, handleEpicStart } from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
 import { MessageRouter } from "./server/message-router";
 import { handlePurgeAll } from "./server/purge-handlers";
@@ -212,8 +212,8 @@ function broadcastWorkflowState(workflowId: string) {
 		broadcast({ type: "workflow:state", workflow: state });
 		return;
 	}
-	// After cancelPipeline deletes the orchestrator, late-arriving callbacks (e.g.
-	// the post-cancel commit-backfill in pipeline-orchestrator.cancelPipeline) still
+	// After abortPipeline deletes the orchestrator, late-arriving callbacks (e.g.
+	// the post-abort commit-backfill in pipeline-orchestrator.abortPipeline) still
 	// invoke onStateChange. Fall back to the persisted workflow so the client sees
 	// the final commitRefs without needing a page reload.
 	void broadcastPersistedWorkflowState(workflowId, sharedStore, stripInternalFields, broadcast);
@@ -255,7 +255,7 @@ router.register("config:get", handleConfigGet);
 router.register("config:save", handleConfigSave);
 router.register("config:reset", handleConfigReset);
 router.register("epic:start", handleEpicStart);
-router.register("epic:cancel", handleEpicCancel);
+router.register("epic:abort", handleEpicAbort);
 router.register("purge:all", handlePurgeAll);
 router.register("alert:list", handleAlertList);
 router.register("alert:dismiss", handleAlertDismiss);
@@ -451,7 +451,7 @@ sharedAlertQueue.loadFromDisk().catch((err) => {
 		let restoredCount = 0;
 
 		for (const workflow of allWorkflows) {
-			if (workflow.status === "completed" || workflow.status === "cancelled") {
+			if (workflow.status === "completed" || workflow.status === "aborted") {
 				continue;
 			}
 
@@ -483,12 +483,12 @@ sharedAlertQueue.loadFromDisk().catch((err) => {
 					workflow.ciCycle.monitorStartedAt = null;
 					orch.resumeMonitorCi(workflow.id);
 				} else if (runningStep?.name === STEP.FEEDBACK_IMPLEMENTER) {
-					// FR-020: cancelled-via-restart path — mark in-flight entry cancelled
+					// FR-020: aborted-via-restart path — mark in-flight entry aborted
 					// and rewind to merge-pr pause. We do not auto-retry the agent.
 					recoverInterruptedFeedbackImplementer(workflow);
 					await sharedStore.save(workflow);
 					logger.info(
-						`[startup] Cancelled interrupted feedback-implementer for workflow ${workflow.id} and rewound to merge-pr pause`,
+						`[startup] Aborted interrupted feedback-implementer for workflow ${workflow.id} and rewound to merge-pr pause`,
 					);
 				} else if (runningStep?.sessionId) {
 					logger.info(
@@ -505,21 +505,10 @@ sharedAlertQueue.loadFromDisk().catch((err) => {
 						runningStep.pid = null;
 					}
 					workflow.status = "error";
-					// seedFromWorkflows above installed a ready(refCount=N) entry
-					// that counted this workflow as a live consumer. Now that we've
-					// force-transitioned it to error without running the normal
-					// teardown, drain its refcount so the seeded entry drops to the
-					// true number of consumers (and the clone is eventually deleted
-					// when the others finish).
-					if (workflow.managedRepo) {
-						const { owner, repo } = workflow.managedRepo;
-						workflow.managedRepo = null;
-						await managedRepoStore
-							.release(owner, repo)
-							.catch((err) =>
-								logger.warn(`[startup] managed-repo release failed for ${owner}/${repo}: ${err}`),
-							);
-					}
+					// Keep the managed-repo refcount intact: error is retriable, so the
+					// workflow still needs its clone on disk. seedFromWorkflows counts
+					// error workflows as consumers; this force-transition does not
+					// change the count.
 					workflow.updatedAt = new Date().toISOString();
 					await sharedStore.save(workflow);
 				}
@@ -542,7 +531,7 @@ sharedAlertQueue.loadFromDisk().catch((err) => {
 			for (const w of allWorkflows) {
 				if (w.epicId !== workflow.epicId) continue;
 				if (w.status === "completed") completedIds.add(w.id);
-				if (w.status === "error" || w.status === "cancelled") errorIds.add(w.id);
+				if (w.status === "error" || w.status === "aborted") errorIds.add(w.id);
 			}
 
 			const depStatus = computeDependencyStatus(workflow.epicDependencies, completedIds, errorIds);

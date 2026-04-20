@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { configStore } from "./config-store";
@@ -228,6 +228,18 @@ export class CLIRunner {
 
 		const env = cleanEnv(extraEnv);
 
+		// Bun/libuv surface a missing cwd as `ENOENT: no such file or directory,
+		// uv_spawn 'claude'` — the message names the binary, not the directory,
+		// which sent at least one user down a rabbit hole chasing a PATH issue
+		// that did not exist. Probe the cwd up front so the error names the
+		// actual cause.
+		if (!existsSync(cwd)) {
+			const msg = `Worktree directory missing: ${cwd}`;
+			logger.error(`[cli-runner] ${msg}`);
+			queueMicrotask(() => callbacks.onError(msg));
+			return;
+		}
+
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
 			logger.info(`[cli-runner] Starting CLI for workflow ${workflow.id} | cwd=${cwd}`);
@@ -302,6 +314,13 @@ export class CLIRunner {
 		];
 
 		const env = cleanEnv(extraEnv);
+
+		if (!existsSync(cwd)) {
+			const msg = `Worktree directory missing: ${cwd}`;
+			logger.error(`[cli-runner] ${msg}`);
+			queueMicrotask(() => callbacks.onError(msg));
+			return;
+		}
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {

@@ -19,7 +19,7 @@ export const handlePurgeAll: MessageHandler = async (_ws, _data, deps) => {
 			try {
 				const w = orch.getEngine().getWorkflow();
 				if (w && (w.status === "running" || w.status === "waiting_for_input")) {
-					orch.cancelPipeline(id);
+					orch.abortPipeline(id);
 				}
 			} catch {
 				// Best effort
@@ -27,7 +27,7 @@ export const handlePurgeAll: MessageHandler = async (_ws, _data, deps) => {
 		}
 		deps.orchestrators.clear();
 
-		// Cancel any in-progress epic analysis
+		// Abort any in-progress epic analysis
 		if (deps.epicAnalysisRef.current) {
 			deps.epicAnalysisRef.current.kill();
 			deps.epicAnalysisRef.current = null;

@@ -45,11 +45,11 @@ mock.module("../../src/workflow-engine", () => ({
 	createEpicWorkflows: async () => mockCreatedWorkflows,
 }));
 
-import { handleEpicCancel, handleEpicStart } from "../../src/server/epic-handlers";
+import { handleEpicAbort, handleEpicStart } from "../../src/server/epic-handlers";
 
 function setup() {
 	const { mock: ws } = createMockWebSocket();
-	const mockWs = ws as unknown as Parameters<typeof handleEpicCancel>[0];
+	const mockWs = ws as unknown as Parameters<typeof handleEpicAbort>[0];
 	const { deps, sentMessages, broadcastedMessages } = createMockHandlerDeps({
 		sharedSummarizer: {
 			generateSpecSummary: async () => ({ summary: null }),
@@ -415,7 +415,7 @@ describe("epic-handlers", () => {
 		});
 	});
 
-	describe("handleEpicCancel", () => {
+	describe("handleEpicAbort", () => {
 		test("kills active epic analysis process", () => {
 			const { ws, deps } = setup();
 			let killed = false;
@@ -425,7 +425,7 @@ describe("epic-handlers", () => {
 				},
 			} as unknown as typeof deps.epicAnalysisRef.current;
 
-			handleEpicCancel(ws, { type: "epic:cancel" } as ClientMessage, deps);
+			handleEpicAbort(ws, { type: "epic:abort" } as ClientMessage, deps);
 
 			expect(killed).toBe(true);
 			expect(deps.epicAnalysisRef.current).toBeNull();
@@ -436,7 +436,7 @@ describe("epic-handlers", () => {
 			deps.epicAnalysisRef.current = null;
 
 			// Should not throw
-			handleEpicCancel(ws, { type: "epic:cancel" } as ClientMessage, deps);
+			handleEpicAbort(ws, { type: "epic:abort" } as ClientMessage, deps);
 			expect(deps.epicAnalysisRef.current).toBeNull();
 		});
 	});

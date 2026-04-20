@@ -486,8 +486,15 @@ export class ManagedRepoStore {
 	}
 }
 
+/**
+ * Statuses that mean a workflow will never touch its clone again. `error` is
+ * intentionally NOT terminal here: an errored workflow can be retried from the
+ * UI, and the retry re-enters the spawn path at the same worktree — releasing
+ * (and potentially deleting) the clone before retry turns every retry into a
+ * missing-cwd error. Only `completed` and `aborted` are true one-way exits.
+ */
 function isTerminalStatus(status: Workflow["status"]): boolean {
-	return status === "completed" || status === "cancelled" || status === "error";
+	return status === "completed" || status === "aborted";
 }
 
 /** Production default — spawns via gitSpawn and handles real fs. */

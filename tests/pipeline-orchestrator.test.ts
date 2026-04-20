@@ -953,12 +953,12 @@ describe("PipelineOrchestrator", () => {
 			expect(auditLogger.endRun.mock.calls[0][0]).toBe("fake-audit-run-id");
 		});
 
-		test("cancelPipeline calls auditLogger.endRun with cancelled metadata", async () => {
+		test("abortPipeline calls auditLogger.endRun with aborted metadata", async () => {
 			await startAndFlush("test");
 
-			orchestrator.cancelPipeline("test-wf-id");
+			orchestrator.abortPipeline("test-wf-id");
 
-			expect(auditLogger.endRun).toHaveBeenCalledWith("fake-audit-run-id", { cancelled: true });
+			expect(auditLogger.endRun).toHaveBeenCalledWith("fake-audit-run-id", { aborted: true });
 		});
 
 		test("step error calls auditLogger.endRun with error metadata", async () => {
@@ -1017,20 +1017,20 @@ describe("PipelineOrchestrator", () => {
 	});
 
 	// T026: Cancellation
-	describe("cancellation", () => {
-		test("cancelPipeline kills CLI process and sets cancelled state", async () => {
+	describe("abort", () => {
+		test("abortPipeline kills CLI process and sets aborted state", async () => {
 			await startAndFlush("test");
 			const wf = getWf(engine);
 
-			orchestrator.cancelPipeline("test-wf-id");
+			orchestrator.abortPipeline("test-wf-id");
 
 			expect(cli.kill).toHaveBeenCalledWith("test-wf-id");
-			expect(wf.status).toBe("cancelled");
+			expect(wf.status).toBe("aborted");
 			expect(wf.steps[1].status).toBe("error");
-			expect(wf.steps[1].error).toBe("Cancelled by user");
+			expect(wf.steps[1].error).toBe("Aborted by user");
 		});
 
-		test("cancelPipeline triggers epic dependency check when epicId is set", async () => {
+		test("abortPipeline triggers epic dependency check when epicId is set", async () => {
 			await startAndFlush("test");
 			const wf = getWf(engine);
 			wf.epicId = "epic-123";
@@ -1047,9 +1047,9 @@ describe("PipelineOrchestrator", () => {
 			store.loadAll = mock(async () => [wf, sibling]);
 			store.save = mock(async () => {});
 
-			orchestrator.cancelPipeline("test-wf-id");
+			orchestrator.abortPipeline("test-wf-id");
 
-			expect(wf.status).toBe("cancelled");
+			expect(wf.status).toBe("aborted");
 			// checkEpicDependencies is async — give it a tick
 			await new Promise((r) => setTimeout(r, 50));
 			expect(callbacks.onEpicDependencyUpdate).toHaveBeenCalledWith("sibling-wf", "blocked", [
@@ -1057,7 +1057,7 @@ describe("PipelineOrchestrator", () => {
 			]);
 		});
 
-		test("cancellation during Q&A sets cancelled state", async () => {
+		test("abort during Q&A sets aborted state", async () => {
 			await startAndFlush("test");
 			const wf = getWf(engine);
 
@@ -1072,14 +1072,14 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
-			orchestrator.cancelPipeline("test-wf-id");
+			orchestrator.abortPipeline("test-wf-id");
 
-			expect(wf.status).toBe("cancelled");
+			expect(wf.status).toBe("aborted");
 		});
 	});
 
 	describe("epic dependency resolution", () => {
-		test("cancellation resolves satisfied for sibling whose deps are all completed", async () => {
+		test("abort resolves satisfied for sibling whose deps are all completed", async () => {
 			await startAndFlush("test");
 			const wf = getWf(engine);
 			wf.epicId = "epic-456";
@@ -1098,13 +1098,13 @@ describe("PipelineOrchestrator", () => {
 			store.save = mock(async () => {});
 
 			// Cancel triggers checkEpicDependencies; store shows wf as completed
-			orchestrator.cancelPipeline("test-wf-id");
+			orchestrator.abortPipeline("test-wf-id");
 
 			await new Promise((r) => setTimeout(r, 50));
 			expect(callbacks.onEpicDependencyUpdate).toHaveBeenCalledWith("sibling-wf", "satisfied", []);
 		});
 
-		test("cancellation notifies sibling with blocked status", async () => {
+		test("abort notifies sibling with blocked status", async () => {
 			await startAndFlush("test");
 			const wf = getWf(engine);
 			wf.epicId = "epic-789";
@@ -1117,12 +1117,12 @@ describe("PipelineOrchestrator", () => {
 				epicDependencyStatus: "waiting" as const,
 				status: "waiting_for_dependencies" as const,
 			};
-			// wf appears as cancelled in the store after cancelPipeline
-			const cancelledWf = { ...wf, status: "cancelled" as const };
-			store.loadAll = mock(async () => [cancelledWf, sibling]);
+			// wf appears as aborted in the store after abortPipeline
+			const abortedWf = { ...wf, status: "aborted" as const };
+			store.loadAll = mock(async () => [abortedWf, sibling]);
 			store.save = mock(async () => {});
 
-			orchestrator.cancelPipeline("test-wf-id");
+			orchestrator.abortPipeline("test-wf-id");
 
 			await new Promise((r) => setTimeout(r, 50));
 			expect(callbacks.onEpicDependencyUpdate).toHaveBeenCalledWith("sibling-err", "blocked", [
@@ -1154,7 +1154,7 @@ describe("PipelineOrchestrator", () => {
 			store.loadAll = mock(async () => [completedWf, sibling, otherRunning]);
 			store.save = mock(async () => {});
 
-			orchestrator.cancelPipeline("test-wf-id");
+			orchestrator.abortPipeline("test-wf-id");
 
 			await new Promise((r) => setTimeout(r, 50));
 			expect(callbacks.onEpicDependencyUpdate).toHaveBeenCalledWith("sibling-multi", "waiting", [
@@ -1266,7 +1266,7 @@ describe("PipelineOrchestrator", () => {
 			expect(cli._startCalls.length).toBe(startCallsBefore);
 		});
 
-		test("abort from paused: cancelPipeline sets step to error and workflow to cancelled", async () => {
+		test("abort from paused: abortPipeline sets step to error and workflow to aborted", async () => {
 			await startAndFlush("test");
 			const wf = getWf(engine);
 
@@ -1276,11 +1276,11 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.status).toBe("paused");
 			expect(wf.steps[1].status).toBe("paused");
 
-			orchestrator.cancelPipeline("test-wf-id");
+			orchestrator.abortPipeline("test-wf-id");
 
 			expect(wf.steps[1].status).toBe("error");
-			expect(wf.steps[1].error).toBe("Cancelled by user");
-			expect(wf.status).toBe("cancelled");
+			expect(wf.steps[1].error).toBe("Aborted by user");
+			expect(wf.status).toBe("aborted");
 			expect(store.save).toHaveBeenCalled();
 		});
 
@@ -2243,7 +2243,7 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			expect(wf.steps[fiIdx].completedAt).not.toBeNull();
 		});
 
-		test("Abort during feedback-implementer sets cancelled outcome (FR-019)", async () => {
+		test("Abort during feedback-implementer sets aborted outcome (FR-019)", async () => {
 			const wf = await seedMergePrPause();
 
 			orchestrator.submitFeedback(wf.id, "refactor everything");
@@ -2254,13 +2254,13 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			expect(wf.status).toBe("paused");
 
 			// Then aborting
-			orchestrator.cancelPipeline(wf.id);
+			orchestrator.abortPipeline(wf.id);
 			await new Promise((r) => setTimeout(r, 10));
 
 			const entry = wf.feedbackEntries[0];
-			expect(entry.outcome?.value).toBe("cancelled");
-			expect(entry.outcome?.summary).toContain("Cancelled by user abort");
-			expect(wf.status).toBe("cancelled");
+			expect(entry.outcome?.value).toBe("aborted");
+			expect(entry.outcome?.summary).toContain("Aborted by user");
+			expect(wf.status).toBe("aborted");
 		});
 
 		test("pause during submitFeedback→getGitHead await does not spawn CLI", async () => {
@@ -2802,10 +2802,10 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			expect(errorShapedOutputs).toEqual([]);
 		});
 
-		test("cancelPipeline commit-backfill rejection is logged, not unhandled (review-3 §1.5/§3.5)", async () => {
-			// Inject a throwing detectNewCommitsFn so the .catch() in cancelPipeline
+		test("abortPipeline commit-backfill rejection is logged, not unhandled (review-3 §1.5/§3.5)", async () => {
+			// Inject a throwing detectNewCommitsFn so the .catch() in abortPipeline
 			// fires. The promise must NOT propagate as an unhandled rejection, and
-			// commitRefs on the cancelled entry stays empty.
+			// commitRefs on the aborted entry stays empty.
 			const failingDetect = async (): Promise<string[]> => {
 				throw new Error("git unavailable");
 			};
@@ -2836,14 +2836,14 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			await new Promise((r) => setTimeout(r, 10));
 
 			orchestrator.pause(wf.id);
-			orchestrator.cancelPipeline(wf.id);
+			orchestrator.abortPipeline(wf.id);
 			// Wait long enough for the swallowed promise's .catch handler to run.
 			await new Promise((r) => setTimeout(r, 30));
 
 			const entry = wf.feedbackEntries[0];
-			expect(entry.outcome?.value).toBe("cancelled");
+			expect(entry.outcome?.value).toBe("aborted");
 			expect(entry.outcome?.commitRefs).toEqual([]);
-			expect(wf.status).toBe("cancelled");
+			expect(wf.status).toBe("aborted");
 		});
 
 		// retryStep on feedback-implementer is unreachable under today's routing
@@ -2926,14 +2926,14 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 	});
 
 	describe("interrupted feedback-implementer startup recovery (FR-020)", () => {
-		test("recoverInterruptedFeedbackImplementer cancels in-flight entry and rewinds to merge-pr pause", async () => {
+		test("recoverInterruptedFeedbackImplementer aborts in-flight entry and rewinds to merge-pr pause", async () => {
 			const { recoverInterruptedFeedbackImplementer } = await import("../src/feedback-implementer");
 			const wf = makeCallbacksWorkflowForRecovery();
 
 			recoverInterruptedFeedbackImplementer(wf);
 
 			const latest = wf.feedbackEntries[wf.feedbackEntries.length - 1];
-			expect(latest.outcome?.value).toBe("cancelled");
+			expect(latest.outcome?.value).toBe("aborted");
 			expect(latest.outcome?.summary).toBe("Interrupted by server restart");
 			expect(latest.outcome?.commitRefs).toEqual([]);
 

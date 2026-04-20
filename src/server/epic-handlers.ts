@@ -205,7 +205,7 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 	}
 };
 
-export const handleEpicCancel: MessageHandler = (_ws, _data, deps) => {
+export const handleEpicAbort: MessageHandler = (_ws, _data, deps) => {
 	if (deps.epicAnalysisRef.current) {
 		deps.epicAnalysisRef.current.kill();
 		deps.epicAnalysisRef.current = null;

@@ -97,7 +97,7 @@ function createFakeEngine() {
 				if (
 					status === "idle" ||
 					status === "completed" ||
-					status === "cancelled" ||
+					status === "aborted" ||
 					status === "error"
 				) {
 					workflow.activeInvocation = null;

@@ -56,8 +56,8 @@ function setup(workflow?: Partial<Workflow>) {
 		resume(...args: unknown[]) {
 			calls.push({ method: "resume", args });
 		},
-		cancelPipeline(...args: unknown[]) {
-			calls.push({ method: "cancelPipeline", args });
+		abortPipeline(...args: unknown[]) {
+			calls.push({ method: "abortPipeline", args });
 		},
 		retryStep(...args: unknown[]) {
 			calls.push({ method: "retryStep", args });
@@ -431,7 +431,7 @@ describe("workflow-handlers", () => {
 			);
 
 			expect(calls).toHaveLength(1);
-			expect(calls[0].method).toBe("cancelPipeline");
+			expect(calls[0].method).toBe("abortPipeline");
 			expect(orchestrators.has(wf.id)).toBe(false);
 		});
 
@@ -448,6 +448,27 @@ describe("workflow-handlers", () => {
 			);
 
 			expect(calls).toHaveLength(0);
+		});
+
+		test("aborts an errored workflow (user's escape hatch from error)", () => {
+			// Error is no longer terminal for refcount purposes — the user must be
+			// able to put a stuck-in-error workflow into `aborted` so the managed-
+			// repo refcount actually drops. Before this was allowed, the only way
+			// out was a full purge.
+			const { ws, deps, calls, wf, orchestrators } = setup({ status: "error" });
+
+			handleAbort(
+				ws,
+				{
+					type: "workflow:abort",
+					workflowId: wf.id,
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls).toHaveLength(1);
+			expect(calls[0].method).toBe("abortPipeline");
+			expect(orchestrators.has(wf.id)).toBe(false);
 		});
 	});
 

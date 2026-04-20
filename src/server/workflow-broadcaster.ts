@@ -3,10 +3,10 @@ import type { ServerMessage, Workflow, WorkflowState } from "../types";
 import type { WorkflowStore } from "../workflow-store";
 
 /**
- * Fallback broadcaster used after `cancelPipeline` deletes the orchestrator.
+ * Fallback broadcaster used after `abortPipeline` deletes the orchestrator.
  * Reads the persisted workflow from disk and re-broadcasts its state so late
- * callbacks (e.g., the post-cancel commit-backfill in
- * `pipeline-orchestrator.cancelPipeline`) still reach the client without
+ * callbacks (e.g., the post-abort commit-backfill in
+ * `pipeline-orchestrator.abortPipeline`) still reach the client without
  * needing a page reload.
  */
 export function broadcastPersistedWorkflowState(

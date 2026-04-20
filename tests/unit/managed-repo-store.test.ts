@@ -464,7 +464,8 @@ describe("ManagedRepoStore — release + seed", () => {
 		const { deps } = mockDeps({ baseDir, existing });
 		const store = new ManagedRepoStore(deps);
 
-		// 2 non-terminal + 1 terminal for foo/bar; 1 non-terminal for missing/one (dir missing)
+		// 3 non-terminal (running + paused + error) + 1 terminal (completed) for foo/bar;
+		// 1 non-terminal for missing/one (dir missing).
 		await store.seedFromWorkflows([
 			{
 				managedRepo: { owner: "foo", repo: "bar" },
@@ -473,6 +474,10 @@ describe("ManagedRepoStore — release + seed", () => {
 			{
 				managedRepo: { owner: "foo", repo: "bar" },
 				status: "paused",
+			} as never,
+			{
+				managedRepo: { owner: "foo", repo: "bar" },
+				status: "error",
 			} as never,
 			{
 				managedRepo: { owner: "foo", repo: "bar" },
@@ -488,8 +493,25 @@ describe("ManagedRepoStore — release + seed", () => {
 			} as never,
 		]);
 
-		expect(store.getStateForTest("foo/bar")).toEqual({ kind: "ready", refCount: 2 });
+		expect(store.getStateForTest("foo/bar")).toEqual({ kind: "ready", refCount: 3 });
 		expect(store.getStateForTest("missing/one")).toBeUndefined();
+	});
+
+	test("seedFromWorkflows treats aborted as terminal", async () => {
+		const baseDir = "/root/.litus/repos";
+		const existing = new Set<string>([join(baseDir, "foo", "bar")]);
+		const { deps } = mockDeps({ baseDir, existing });
+		const store = new ManagedRepoStore(deps);
+
+		await store.seedFromWorkflows([
+			{
+				managedRepo: { owner: "foo", repo: "bar" },
+				status: "aborted",
+			} as never,
+		]);
+
+		// Cancelled is the only other one-way exit alongside completed — no ref.
+		expect(store.getStateForTest("foo/bar")).toBeUndefined();
 	});
 });
 
