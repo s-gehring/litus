@@ -2064,10 +2064,14 @@ export class PipelineOrchestrator {
 		this.callbacks.onError(workflowId, error);
 		this.callbacks.onStateChange(workflowId);
 
-		// Release managed-repo refcount on errored workflows so the clone is
-		// eventually cleaned up. data-model.md §"Clone Consumer" lists errored
-		// alongside completed/cancelled as a terminal state that must release.
-		this.releaseManagedRepoIfAny(workflow);
+		// Do NOT release the managed-repo refcount here. Error is a retriable
+		// state — the user can click "Retry step" and we re-enter the spawn path
+		// at the same worktree. If we released now and this workflow held the
+		// last ref, the clone would be deleted and retry would fail with a
+		// missing-cwd error. Release happens on `completeWorkflow` and `cancel`,
+		// which are the only truly terminal transitions for a URL-sourced
+		// workflow. Cleanup of stuck-in-error workflows is handled by explicit
+		// user action (cancel) or purge.
 
 		const shortError = error.length > 200 ? `${error.slice(0, 197)}...` : error;
 		this.emitAlert(

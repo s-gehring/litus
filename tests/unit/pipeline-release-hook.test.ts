@@ -97,13 +97,17 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		expect(releaseCalls[0]).toEqual({ owner: "Baz", repo: "Qux" });
 	});
 
-	test("handleStepError calls release exactly once when managedRepo is set", async () => {
+	test("handleStepError does NOT release when managedRepo is set (error is retriable)", async () => {
+		// Error is a retriable state, not a terminal one: `retryStep` re-enters
+		// the spawn path at the same worktree, so releasing (and potentially
+		// deleting) the clone on error would make every retry fail with a
+		// missing-cwd error. Release is deferred to `completeWorkflow` or
+		// `cancelPipeline`, which are the only true one-way exits.
 		const { orch, engine, releaseCalls } = createTestDeps();
 		const wf = makeWorkflow({
 			status: "running",
 			managedRepo: { owner: "Err", repo: "Path" },
 		});
-		// Ensure the current step is NOT feedback-implementer (which early-returns).
 		wf.currentStepIndex = 0;
 		engine.setWorkflow(wf);
 
@@ -111,14 +115,12 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 
 		await new Promise((r) => setTimeout(r, 10));
 
-		expect(releaseCalls).toHaveLength(1);
-		expect(releaseCalls[0]).toEqual({ owner: "Err", repo: "Path" });
+		expect(releaseCalls).toHaveLength(0);
+		expect(wf.managedRepo).toEqual({ owner: "Err", repo: "Path" });
+		expect(wf.status).toBe("error");
 	});
 
-	test("re-entry into handleStepError (retry → error) does not double-release", async () => {
-		// `error → running` is a valid transition (retry). A retried workflow
-		// can fail again and re-enter `handleStepError`; the release hook must
-		// not fire a second time for the same acquire.
+	test("handleStepError preserves managedRepo across re-entry so retry can spawn again", async () => {
 		const { orch, engine, releaseCalls } = createTestDeps();
 		const wf = makeWorkflow({
 			status: "running",
@@ -128,14 +130,14 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		engine.setWorkflow(wf);
 
 		asPrivate(orch).handleStepError(wf.id, "boom");
-		// Simulate retry re-arming the step so the second error path runs fully.
 		wf.status = "running";
 		wf.steps[wf.currentStepIndex].status = "running";
 		asPrivate(orch).handleStepError(wf.id, "boom again");
 
 		await new Promise((r) => setTimeout(r, 10));
 
-		expect(releaseCalls).toHaveLength(1);
+		expect(releaseCalls).toHaveLength(0);
+		expect(wf.managedRepo).toEqual({ owner: "Err", repo: "Path" });
 	});
 });
 
@@ -183,22 +185,7 @@ describe("PipelineOrchestrator — release() failure is contained", () => {
 		expect(wf.managedRepo).toBeNull();
 	});
 
-	test("handleStepError still transitions to error when release rejects", async () => {
-		const { orch, engine, releaseCalls } = createTestDeps({
-			releaseReject: new Error("rm failed: EPERM"),
-		});
-		const wf = makeWorkflow({
-			status: "running",
-			managedRepo: { owner: "Err", repo: "Path" },
-		});
-		wf.currentStepIndex = 0;
-		engine.setWorkflow(wf);
-
-		asPrivate(orch).handleStepError(wf.id, "boom");
-		await new Promise((r) => setTimeout(r, 10));
-
-		expect(releaseCalls).toHaveLength(1);
-		expect(wf.status).toBe("error");
-		expect(wf.managedRepo).toBeNull();
-	});
+	// handleStepError used to release on error, so a rejecting release had to
+	// be proven non-fatal for the error transition. Release no longer fires on
+	// error, so the corresponding scenario is gone.
 });
