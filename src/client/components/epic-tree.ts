@@ -107,7 +107,7 @@ export function computeTreeEdges(
 			let status: TreeEdge["status"] = "waiting";
 			if (depWf) {
 				if (depWf.status === "completed") status = "satisfied";
-				else if (depWf.status === "error" || depWf.status === "cancelled") status = "blocked";
+				else if (depWf.status === "error" || depWf.status === "aborted") status = "blocked";
 			}
 			edges.push({ from: depId, to: node.workflowId, status });
 		}

@@ -5,7 +5,7 @@ export const STATUS_LABELS: Record<string, string> = {
 	waiting_for_dependencies: "Waiting: Deps",
 	paused: "Paused",
 	completed: "Done",
-	cancelled: "Cancelled",
+	aborted: "Aborted",
 	error: "Error",
 };
 
@@ -16,7 +16,7 @@ export const STATUS_CLASSES: Record<string, string> = {
 	waiting_for_dependencies: "card-status-waiting-deps",
 	paused: "card-status-paused",
 	completed: "card-status-completed",
-	cancelled: "card-status-cancelled",
+	aborted: "card-status-aborted",
 	error: "card-status-error",
 };
 

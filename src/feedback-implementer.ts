@@ -161,7 +161,7 @@ export function parseAgentResult(output: string): ParsedAgentResult {
 
 /**
  * Recovery helper for interrupted feedback-implementer runs (FR-020). Mutates
- * the workflow in place to: mark the in-flight entry cancelled with summary
+ * the workflow in place to: mark the in-flight entry aborted with summary
  * "Interrupted by server restart", reset the feedback-implementer step to
  * pending, rewind currentStepIndex to merge-pr, and set both step and workflow
  * status to paused. Also clears feedbackPreRunHead — the next iteration starts
@@ -177,7 +177,7 @@ export function recoverInterruptedFeedbackImplementer(workflow: Workflow): void 
 	const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
 	if (latest && latest.outcome === null) {
 		latest.outcome = {
-			value: "cancelled",
+			value: "aborted",
 			summary: "Interrupted by server restart",
 			commitRefs: [],
 			warnings: [],

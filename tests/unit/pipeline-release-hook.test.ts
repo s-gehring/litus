@@ -50,7 +50,7 @@ function asPrivate(orch: PipelineOrchestrator): PrivateOrchestrator {
 }
 
 describe("PipelineOrchestrator — managed-repo release hook", () => {
-	test("cancelPipeline calls release exactly once when managedRepo is set", async () => {
+	test("abortPipeline calls release exactly once when managedRepo is set", async () => {
 		const { orch, engine, releaseCalls } = createTestDeps();
 		const wf = makeWorkflow({
 			status: "paused",
@@ -58,7 +58,7 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		});
 		engine.setWorkflow(wf);
 
-		orch.cancelPipeline(wf.id);
+		orch.abortPipeline(wf.id);
 
 		// Release is scheduled via a promise chain — wait a tick
 		await new Promise((r) => setTimeout(r, 10));
@@ -67,7 +67,7 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		expect(releaseCalls[0]).toEqual({ owner: "Foo", repo: "Bar" });
 	});
 
-	test("cancelPipeline does NOT call release when managedRepo is null", async () => {
+	test("abortPipeline does NOT call release when managedRepo is null", async () => {
 		const { orch, engine, releaseCalls } = createTestDeps();
 		const wf = makeWorkflow({
 			status: "paused",
@@ -75,7 +75,7 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		});
 		engine.setWorkflow(wf);
 
-		orch.cancelPipeline(wf.id);
+		orch.abortPipeline(wf.id);
 		await new Promise((r) => setTimeout(r, 10));
 
 		expect(releaseCalls).toHaveLength(0);
@@ -102,7 +102,7 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		// the spawn path at the same worktree, so releasing (and potentially
 		// deleting) the clone on error would make every retry fail with a
 		// missing-cwd error. Release is deferred to `completeWorkflow` or
-		// `cancelPipeline`, which are the only true one-way exits.
+		// `abortPipeline`, which are the only true one-way exits.
 		const { orch, engine, releaseCalls } = createTestDeps();
 		const wf = makeWorkflow({
 			status: "running",
@@ -140,7 +140,7 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		expect(wf.managedRepo).toEqual({ owner: "Err", repo: "Path" });
 	});
 
-	test("cancelPipeline from error state releases the managed-repo refcount", async () => {
+	test("abortPipeline from error state releases the managed-repo refcount", async () => {
 		// Error is not terminal for refcount, so the refcount sits on an
 		// errored workflow until the user chooses a one-way exit. Cancelling
 		// from error IS that exit — it must fire exactly one release so the
@@ -158,12 +158,12 @@ describe("PipelineOrchestrator — managed-repo release hook", () => {
 		expect(releaseCalls).toHaveLength(0);
 		expect(wf.status).toBe("error");
 
-		orch.cancelPipeline(wf.id);
+		orch.abortPipeline(wf.id);
 		await new Promise((r) => setTimeout(r, 10));
 
 		expect(releaseCalls).toHaveLength(1);
 		expect(releaseCalls[0]).toEqual({ owner: "Err", repo: "Path" });
-		expect(wf.status).toBe("cancelled");
+		expect(wf.status).toBe("aborted");
 		expect(wf.managedRepo).toBeNull();
 	});
 });
@@ -174,7 +174,7 @@ describe("PipelineOrchestrator — release() failure is contained", () => {
 	// rejection or leave the workflow in a non-terminal state — callers rely on
 	// these hooks being no-throw relative to the surrounding terminal transition.
 
-	test("cancelPipeline still transitions to cancelled when release rejects", async () => {
+	test("abortPipeline still transitions to aborted when release rejects", async () => {
 		const { orch, engine, releaseCalls } = createTestDeps({
 			releaseReject: new Error("rm failed: EBUSY"),
 		});
@@ -184,13 +184,13 @@ describe("PipelineOrchestrator — release() failure is contained", () => {
 		});
 		engine.setWorkflow(wf);
 
-		orch.cancelPipeline(wf.id);
+		orch.abortPipeline(wf.id);
 		await new Promise((r) => setTimeout(r, 10));
 
 		expect(releaseCalls).toHaveLength(1);
-		// Workflow reached cancelled state; the rejected release did not
+		// Workflow reached aborted state; the rejected release did not
 		// prevent the transition or leave managedRepo set.
-		expect(wf.status).toBe("cancelled");
+		expect(wf.status).toBe("aborted");
 		expect(wf.managedRepo).toBeNull();
 	});
 

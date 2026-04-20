@@ -463,7 +463,7 @@ describe("recoverInterruptedFeedbackImplementer corner cases", () => {
 		expect(latest.outcome?.value).toBe("success");
 		expect(latest.outcome?.summary).toBe("done already");
 		// Workflow is still rewound to merge-pr pause even when no in-flight entry
-		// needed cancelling — this is the FR-020 contract.
+		// needed aborting — this is the FR-020 contract.
 		const mergeIdx = wf.steps.findIndex((s) => s.name === "merge-pr");
 		expect(wf.currentStepIndex).toBe(mergeIdx);
 		expect(wf.status).toBe("paused");
@@ -480,7 +480,7 @@ describe("recoverInterruptedFeedbackImplementer corner cases", () => {
 		expect(() => recover(wf)).not.toThrow();
 
 		const latest = wf.feedbackEntries[wf.feedbackEntries.length - 1];
-		expect(latest.outcome?.value).toBe("cancelled");
+		expect(latest.outcome?.value).toBe("aborted");
 		expect(wf.status).toBe("paused");
 	});
 

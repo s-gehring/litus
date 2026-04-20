@@ -482,7 +482,7 @@ const FEEDBACK_OUTCOME_CLASSES: Record<FeedbackOutcomeValue, string> = {
 	success: "outcome-success",
 	"no changes": "outcome-no-changes",
 	failed: "outcome-failed",
-	cancelled: "outcome-cancelled",
+	aborted: "outcome-aborted",
 };
 
 const FEEDBACK_PREVIEW_MAX_CHARS = 140;

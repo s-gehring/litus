@@ -53,12 +53,12 @@ test.describe("retry after error", () => {
 		// Clean termination so the per-test teardown doesn't race a still-
 		// running pipeline against the server shutdown.
 		await abortRun(card);
-		await expect(card.statusBadge()).toHaveClass(/\bcancelled\b/, { timeout: 30_000 });
+		await expect(card.statusBadge()).toHaveClass(/\baborted\b/, { timeout: 30_000 });
 	});
 
-	test("abort from error state transitions to cancelled", async ({ page, server, sandbox }) => {
+	test("abort from error state transitions to aborted", async ({ page, server, sandbox }) => {
 		// Separate from the retry path: the user must be able to decide that
-		// an errored workflow is unrecoverable and put it into `cancelled`
+		// an errored workflow is unrecoverable and put it into `aborted`
 		// directly. Without this the managed-repo refcount would stay held
 		// indefinitely on a stuck workflow (error is non-terminal for
 		// refcount).
@@ -79,7 +79,7 @@ test.describe("retry after error", () => {
 
 		await abortRun(card);
 
-		await expect(card.statusBadge()).toHaveClass(/\bcancelled\b/, { timeout: 30_000 });
+		await expect(card.statusBadge()).toHaveClass(/\baborted\b/, { timeout: 30_000 });
 		await expect(card.retryAction()).toHaveCount(0);
 		await expect(card.abortAction()).toHaveCount(0);
 	});

@@ -98,12 +98,12 @@ describe("WorkflowEngine", () => {
 			expect(engine.getWorkflow()?.status).toBe("error");
 		});
 
-		test("paused → cancelled (abort)", async () => {
+		test("paused → aborted (abort)", async () => {
 			const w = await engine.createWorkflow("test", "/tmp/test-repo");
 			engine.transition(w.id, "running");
 			engine.transition(w.id, "paused");
-			engine.transition(w.id, "cancelled");
-			expect(engine.getWorkflow()?.status).toBe("cancelled");
+			engine.transition(w.id, "aborted");
+			expect(engine.getWorkflow()?.status).toBe("aborted");
 		});
 
 		test("waiting_for_input → running", async () => {
@@ -114,12 +114,12 @@ describe("WorkflowEngine", () => {
 			expect(engine.getWorkflow()?.status).toBe("running");
 		});
 
-		test("waiting_for_input → cancelled", async () => {
+		test("waiting_for_input → aborted", async () => {
 			const w = await engine.createWorkflow("test", "/tmp/test-repo");
 			engine.transition(w.id, "running");
 			engine.transition(w.id, "waiting_for_input");
-			engine.transition(w.id, "cancelled");
-			expect(engine.getWorkflow()?.status).toBe("cancelled");
+			engine.transition(w.id, "aborted");
+			expect(engine.getWorkflow()?.status).toBe("aborted");
 		});
 	});
 
@@ -152,14 +152,14 @@ describe("WorkflowEngine", () => {
 			expect(engine.getWorkflow()?.activeInvocation).toBeNull();
 		});
 
-		test("running → waiting_for_input → cancelled clears activeInvocation", async () => {
+		test("running → waiting_for_input → aborted clears activeInvocation", async () => {
 			const w = await engine.createWorkflow("t", "/tmp/r");
 			engine.transition(w.id, "running");
 			seedActive();
 			engine.transition(w.id, "waiting_for_input");
 			// waiting_for_input is not a terminal state — value must persist.
 			expect(engine.getWorkflow()?.activeInvocation).not.toBeNull();
-			engine.transition(w.id, "cancelled");
+			engine.transition(w.id, "aborted");
 			expect(engine.getWorkflow()?.activeInvocation).toBeNull();
 		});
 
@@ -195,18 +195,18 @@ describe("WorkflowEngine", () => {
 			expect(() => engine.transition(w.id, "running")).toThrow("Invalid transition");
 		});
 
-		test("cancelled → running throws", async () => {
+		test("aborted → running throws", async () => {
 			const w = await engine.createWorkflow("test", "/tmp/test-repo");
 			engine.transition(w.id, "running");
 			engine.transition(w.id, "paused");
-			engine.transition(w.id, "cancelled");
+			engine.transition(w.id, "aborted");
 			expect(() => engine.transition(w.id, "running")).toThrow("Invalid transition");
 		});
 
-		test("running → cancelled throws (must pause first)", async () => {
+		test("running → aborted throws (must pause first)", async () => {
 			const w = await engine.createWorkflow("test", "/tmp/test-repo");
 			engine.transition(w.id, "running");
-			expect(() => engine.transition(w.id, "cancelled")).toThrow("Invalid transition");
+			expect(() => engine.transition(w.id, "aborted")).toThrow("Invalid transition");
 		});
 
 		test("error → running is allowed (retry)", async () => {

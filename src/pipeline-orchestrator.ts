@@ -595,12 +595,12 @@ export class PipelineOrchestrator {
 		});
 	}
 
-	cancelPipeline(workflowId: string): void {
+	abortPipeline(workflowId: string): void {
 		runInWorkflowContext(workflowId, () => {
 			const workflow = this.getWorkflowOrThrow(workflowId);
 
 			if (this.currentAuditRunId) {
-				this.auditLogger.endRun(this.currentAuditRunId, { cancelled: true });
+				this.auditLogger.endRun(this.currentAuditRunId, { aborted: true });
 				this.currentAuditRunId = null;
 			}
 
@@ -613,15 +613,15 @@ export class PipelineOrchestrator {
 
 			const step = workflow.steps[workflow.currentStepIndex];
 
-			// If aborting a feedback-implementer run, record the in-flight entry as cancelled
+			// If aborting a feedback-implementer run, record the in-flight entry as aborted
 			// (FR-019). Git-based commit detection runs fire-and-forget — the outcome is
 			// immediately persisted with commitRefs: [] and backfilled when detection resolves.
 			if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
 				const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
 				if (latest && latest.outcome === null) {
 					latest.outcome = {
-						value: "cancelled",
-						summary: "Cancelled by user abort",
+						value: "aborted",
+						summary: "Aborted by user",
 						commitRefs: [],
 						warnings: [],
 					};
@@ -638,13 +638,13 @@ export class PipelineOrchestrator {
 								}
 							})
 							.catch((err) => {
-								// Best-effort commit backfill — agent already cancelled.
-								// Surface the failure so a missing commitRefs on a cancelled
+								// Best-effort commit backfill — agent already aborted.
+								// Surface the failure so a missing commitRefs on an aborted
 								// entry can be traced back to this path instead of silently
 								// showing []. Production detectNewCommits swallows its own
 								// errors; this fires only when a custom/test-injected fn throws.
 								logger.warn(
-									`[pipeline] Post-cancel commit backfill failed for workflow ${workflowId}: ${toErrorMessage(err)}`,
+									`[pipeline] Post-abort commit backfill failed for workflow ${workflowId}: ${toErrorMessage(err)}`,
 								);
 							});
 					}
@@ -658,10 +658,10 @@ export class PipelineOrchestrator {
 				step.status === "paused"
 			) {
 				step.status = "error";
-				step.error = "Cancelled by user";
+				step.error = "Aborted by user";
 			}
 
-			this.tryTransition(workflowId, "cancelled");
+			this.tryTransition(workflowId, "aborted");
 
 			step.pid = null;
 			this.flushPersistDebounce();
@@ -670,10 +670,10 @@ export class PipelineOrchestrator {
 
 			// If this workflow cloned from a URL, release the managed-repo refcount so the
 			// clone is cleaned up once it has no remaining consumers. sync-repo (which is
-			// the release hook for normal completion) does not run on cancel.
+			// the release hook for normal completion) does not run on abort.
 			this.releaseManagedRepoIfAny(workflow);
 
-			// Update epic dependency status for siblings if this workflow was cancelled,
+			// Update epic dependency status for siblings if this workflow was aborted,
 			// and emit `epic-finished` when every sibling has reached a terminal state.
 			if (workflow.epicId) {
 				this.checkEpicDependencies(workflow).catch((err) => {
@@ -1207,7 +1207,7 @@ export class PipelineOrchestrator {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 
-		// If workflow was paused/cancelled while monitoring, ignore the result
+		// If workflow was paused/aborted while monitoring, ignore the result
 		if (workflow.status !== "running") return;
 
 		if (result.passed) {
@@ -1469,7 +1469,7 @@ export class PipelineOrchestrator {
 
 		// An async callback (classifyWithHaiku in handleStepComplete, gatherAllFailureLogs,
 		// resolveConflicts, syncRepo, etc.) can resolve after the user has paused or
-		// cancelled the workflow. Advancing in that case would silently start the next
+		// aborted the workflow. Advancing in that case would silently start the next
 		// step and override the user's intent to stop.
 		if (workflow.status !== "running") {
 			logger.info(
@@ -1705,7 +1705,7 @@ export class PipelineOrchestrator {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 
-		// If the user paused/cancelled while mergePr was in-flight, do not advance
+		// If the user paused/aborted while mergePr was in-flight, do not advance
 		// or route back to monitor-ci. Otherwise the async merge completion would
 		// silently restart the pipeline behind a paused workflow status.
 		if (workflow.status !== "running") {
@@ -1797,7 +1797,7 @@ export class PipelineOrchestrator {
 	 * not be re-counted if it somehow survives as a non-terminal record on disk.
 	 *
 	 * INVARIANT — caller contract: the workflow MUST have already been transitioned
-	 * to a terminal state (completed/cancelled/error) AND that state MUST have
+	 * to a terminal state (completed/aborted/error) AND that state MUST have
 	 * been persisted before this method is invoked. Both `persistWorkflow` here
 	 * and `managedRepoStore.release` are fire-and-forget; the ordering that makes
 	 * this safe is: terminal-state-save happens in the caller → this method's
@@ -1878,7 +1878,7 @@ export class PipelineOrchestrator {
 		for (const w of allWorkflows) {
 			if (w.epicId === triggerWorkflow.epicId) {
 				if (w.status === "completed") completedIds.add(w.id);
-				if (w.status === "error" || w.status === "cancelled") errorIds.add(w.id);
+				if (w.status === "error" || w.status === "aborted") errorIds.add(w.id);
 			}
 		}
 		// The trigger workflow just completed — ensure it's in the set even if
@@ -1901,7 +1901,7 @@ export class PipelineOrchestrator {
 		// Emit `epic-finished` when every workflow in the epic has reached a
 		// terminal state. Dedup on (type, epicId) in AlertQueue guarantees at-most-once.
 		const epicWorkflows = allWorkflows.filter((w) => w.epicId === triggerWorkflow.epicId);
-		const terminal = (s: WorkflowStatus) => s === "completed" || s === "error" || s === "cancelled";
+		const terminal = (s: WorkflowStatus) => s === "completed" || s === "error" || s === "aborted";
 		const allTerminal =
 			epicWorkflows.length > 0 &&
 			epicWorkflows.every((w) => w.id === triggerWorkflow.id || terminal(w.status));
@@ -2068,10 +2068,10 @@ export class PipelineOrchestrator {
 		// state — the user can click "Retry step" and we re-enter the spawn path
 		// at the same worktree. If we released now and this workflow held the
 		// last ref, the clone would be deleted and retry would fail with a
-		// missing-cwd error. Release happens on `completeWorkflow` and `cancel`,
+		// missing-cwd error. Release happens on `completeWorkflow` and `abort`,
 		// which are the only truly terminal transitions for a URL-sourced
 		// workflow. Cleanup of stuck-in-error workflows is handled by explicit
-		// user action (cancel) or purge.
+		// user action (abort) or purge.
 
 		const shortError = error.length > 200 ? `${error.slice(0, 197)}...` : error;
 		this.emitAlert(

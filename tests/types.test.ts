@@ -147,28 +147,28 @@ describe("VALID_TRANSITIONS", () => {
 		]);
 	});
 
-	test("paused can transition to running, cancelled, or error", () => {
-		expect(VALID_TRANSITIONS.paused).toEqual(["running", "cancelled", "error"]);
+	test("paused can transition to running, aborted, or error", () => {
+		expect(VALID_TRANSITIONS.paused).toEqual(["running", "aborted", "error"]);
 	});
 
-	test("waiting_for_input can transition to running or cancelled", () => {
-		expect(VALID_TRANSITIONS.waiting_for_input).toEqual(["running", "cancelled"]);
+	test("waiting_for_input can transition to running or aborted", () => {
+		expect(VALID_TRANSITIONS.waiting_for_input).toEqual(["running", "aborted"]);
 	});
 
-	test("waiting_for_dependencies can transition to running or cancelled", () => {
-		expect(VALID_TRANSITIONS.waiting_for_dependencies).toEqual(["running", "cancelled"]);
+	test("waiting_for_dependencies can transition to running or aborted", () => {
+		expect(VALID_TRANSITIONS.waiting_for_dependencies).toEqual(["running", "aborted"]);
 	});
 
-	test("completed and cancelled are terminal states", () => {
+	test("completed and aborted are terminal states", () => {
 		expect(VALID_TRANSITIONS.completed).toEqual([]);
-		expect(VALID_TRANSITIONS.cancelled).toEqual([]);
+		expect(VALID_TRANSITIONS.aborted).toEqual([]);
 	});
 
-	test("error can transition to running (retry) or cancelled (abort)", () => {
-		// `cancelled` is the user's escape hatch from an errored workflow:
+	test("error can transition to running (retry) or aborted (abort)", () => {
+		// `aborted` is the user's escape hatch from an errored workflow:
 		// without it the managed-repo refcount would stay held indefinitely,
 		// since error is not a terminal state for retention purposes.
-		expect(VALID_TRANSITIONS.error).toEqual(["running", "cancelled"]);
+		expect(VALID_TRANSITIONS.error).toEqual(["running", "aborted"]);
 	});
 
 	test("all workflow statuses are covered", () => {
@@ -179,7 +179,7 @@ describe("VALID_TRANSITIONS", () => {
 			"waiting_for_dependencies",
 			"paused",
 			"completed",
-			"cancelled",
+			"aborted",
 			"error",
 		];
 		expect(allStatuses).toHaveLength(8);
@@ -404,7 +404,7 @@ describe("Workflow Lifecycle", () => {
 			"waiting_for_dependencies",
 			"paused",
 			"completed",
-			"cancelled",
+			"aborted",
 			"error",
 		];
 		const statusSet = new Set(allStatuses);
@@ -781,7 +781,7 @@ describe("ClientMessage variants", () => {
 	test("epic and config command variants (5)", () => {
 		const msgs: ClientMessage[] = [
 			{ type: "epic:start", description: "Build app", autoStart: true },
-			{ type: "epic:cancel" },
+			{ type: "epic:abort" },
 			{ type: "config:get" },
 			{ type: "config:save", config: {} },
 			{ type: "config:reset" },
@@ -801,7 +801,7 @@ describe("ClientMessage variants", () => {
 			"workflow:start-existing",
 			"workflow:force-start",
 			"epic:start",
-			"epic:cancel",
+			"epic:abort",
 			"config:get",
 			"config:save",
 			"config:reset",

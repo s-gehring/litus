@@ -85,6 +85,19 @@ export class WorkflowStore {
 			if (!data.mergeCycle) {
 				data.mergeCycle = { attempt: 0, maxAttempts: 3 };
 			}
+			// Migration: rename the terminal status "cancelled" → "aborted" (the
+			// wire protocol and UI now call this "Abort"/"Aborted" throughout).
+			// Workflows persisted before the rename show up on disk with the old
+			// name; normalise on load so downstream code only ever sees "aborted".
+			if (data.status === "cancelled") data.status = "aborted";
+			// Migration: same rename for in-flight feedback outcomes.
+			if (Array.isArray(data.feedbackEntries)) {
+				for (const entry of data.feedbackEntries) {
+					if (entry?.outcome?.value === "cancelled") {
+						entry.outcome.value = "aborted";
+					}
+				}
+			}
 			// Migration: backfill epic fields for pre-epic workflows
 			if (data.epicId === undefined) data.epicId = null;
 			if (data.epicTitle === undefined) data.epicTitle = null;

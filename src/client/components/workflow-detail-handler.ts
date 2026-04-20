@@ -98,7 +98,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		autoSelectStep(wf);
 
 		const isTerminal =
-			wf.status === "cancelled" || wf.status === "completed" || wf.status === "error";
+			wf.status === "aborted" || wf.status === "completed" || wf.status === "error";
 		if (wf.pendingQuestion && !isTerminal) {
 			showQuestion(wf.pendingQuestion);
 		} else {

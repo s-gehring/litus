@@ -74,11 +74,11 @@ function createFakeEngine() {
 			if (workflow) {
 				workflow.status = status;
 				// Mirror real WorkflowEngine.transition's clear-on-terminal behavior so
-				// tests cover the cancel/complete paths (CR-2).
+				// tests cover the abort/complete paths (CR-2).
 				if (
 					status === "idle" ||
 					status === "completed" ||
-					status === "cancelled" ||
+					status === "aborted" ||
 					status === "error"
 				) {
 					workflow.activeInvocation = null;
@@ -258,15 +258,15 @@ describe("PipelineOrchestrator.activeInvocation", () => {
 		expect(wf.activeInvocation).toBeNull();
 	});
 
-	test("cancelPipeline clears activeInvocation to null", async () => {
+	test("abortPipeline clears activeInvocation to null", async () => {
 		await startAndFlush();
 		const wf = getWf(engine);
 		expect(wf.activeInvocation).not.toBeNull();
 
-		orchestrator.cancelPipeline(wf.id);
+		orchestrator.abortPipeline(wf.id);
 
 		expect(wf.activeInvocation).toBeNull();
-		expect(wf.status).toBe("cancelled");
+		expect(wf.status).toBe("aborted");
 	});
 
 	test("a step with empty-string configured model still populates activeInvocation (UI shows 'default')", async () => {

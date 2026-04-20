@@ -497,7 +497,7 @@ describe("ManagedRepoStore — release + seed", () => {
 		expect(store.getStateForTest("missing/one")).toBeUndefined();
 	});
 
-	test("seedFromWorkflows treats cancelled as terminal", async () => {
+	test("seedFromWorkflows treats aborted as terminal", async () => {
 		const baseDir = "/root/.litus/repos";
 		const existing = new Set<string>([join(baseDir, "foo", "bar")]);
 		const { deps } = mockDeps({ baseDir, existing });
@@ -506,7 +506,7 @@ describe("ManagedRepoStore — release + seed", () => {
 		await store.seedFromWorkflows([
 			{
 				managedRepo: { owner: "foo", repo: "bar" },
-				status: "cancelled",
+				status: "aborted",
 			} as never,
 		]);
 

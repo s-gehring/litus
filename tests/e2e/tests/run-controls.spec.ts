@@ -50,7 +50,7 @@ test.describe("run-control surface", () => {
 			// Resume returns the workflow to a running (or immediately
 			// waiting-for-input at clarify) state, proving the control cycle
 			// round-trips. A positive regex catches regressions that flip
-			// resume into `error`/`cancelled`/`completed`, which a plain
+			// resume into `error`/`aborted`/`completed`, which a plain
 			// "not paused" check would silently accept.
 			await expect(card.statusBadge()).toHaveClass(/\b(running|waiting_for_input)\b/, {
 				timeout: 30_000,
@@ -61,7 +61,7 @@ test.describe("run-control surface", () => {
 	test.describe("manual mode", () => {
 		test.use({ autoMode: "manual" });
 
-		test("abort from waiting_for_input cancels the workflow", async ({ page, server, sandbox }) => {
+		test("abort from waiting_for_input aborts the workflow", async ({ page, server, sandbox }) => {
 			test.setTimeout(120_000);
 			const app = new AppPage(page);
 			await app.goto(server.baseUrl);
@@ -77,12 +77,12 @@ test.describe("run-control surface", () => {
 
 			await abortRun(card);
 
-			// Abort terminates the workflow in `cancelled`. Tolerating `error`
+			// Abort terminates the workflow in `aborted`. Tolerating `error`
 			// here would mask a regression that turns abort into a failed
-			// run, so pin to cancelled exactly. The Abort action itself must
+			// run, so pin to aborted exactly. The Abort action itself must
 			// also go away — a lingering action button post-abort is the
 			// kind of control-name failure SC-004 demands we catch.
-			await expect(card.statusBadge()).toHaveClass(/\bcancelled\b/, { timeout: 30_000 });
+			await expect(card.statusBadge()).toHaveClass(/\baborted\b/, { timeout: 30_000 });
 			await expect(card.pauseAction()).toHaveCount(0);
 			await expect(card.resumeAction()).toHaveCount(0);
 			await expect(card.abortAction()).toHaveCount(0);

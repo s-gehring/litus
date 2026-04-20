@@ -71,7 +71,7 @@ describe("Card strip rendering logic", () => {
 			running: "card-status-running",
 			waiting_for_input: "card-status-waiting",
 			completed: "card-status-completed",
-			cancelled: "card-status-cancelled",
+			aborted: "card-status-aborted",
 			error: "card-status-error",
 		};
 

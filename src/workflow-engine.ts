@@ -113,7 +113,7 @@ export class WorkflowEngine {
 		if (
 			newStatus === "idle" ||
 			newStatus === "completed" ||
-			newStatus === "cancelled" ||
+			newStatus === "aborted" ||
 			newStatus === "error"
 		) {
 			w.activeInvocation = null;

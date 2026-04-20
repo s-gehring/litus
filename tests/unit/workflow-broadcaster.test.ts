@@ -8,13 +8,13 @@ import { WorkflowStore } from "../../src/workflow-store";
 import { makeWorkflow } from "../helpers";
 
 /**
- * Regression for code-review-4 §1.3: after `cancelPipeline` deletes the
- * orchestrator, the post-cancel commit-backfill callback still fires
+ * Regression for code-review-4 §1.3: after `abortPipeline` deletes the
+ * orchestrator, the post-abort commit-backfill callback still fires
  * `onStateChange`. The server must load the persisted workflow from disk and
  * broadcast it so the client sees the backfilled `commitRefs` without a page
  * reload.
  */
-describe("broadcastPersistedWorkflowState (cancelPipeline post-delete fallback)", () => {
+describe("broadcastPersistedWorkflowState (abortPipeline post-delete fallback)", () => {
 	let baseDir: string;
 	let store: WorkflowStore;
 
@@ -45,7 +45,7 @@ describe("broadcastPersistedWorkflowState (cancelPipeline post-delete fallback)"
 	}
 
 	test("broadcasts persisted state when the orchestrator is gone", async () => {
-		const wf = makeWorkflow({ id: "wf-cancel-1" });
+		const wf = makeWorkflow({ id: "wf-abort-1" });
 		wf.feedbackEntries = [
 			{
 				id: "fe-1",
@@ -54,8 +54,8 @@ describe("broadcastPersistedWorkflowState (cancelPipeline post-delete fallback)"
 				submittedAt: "2026-04-13T00:00:00.000Z",
 				submittedAtStepName: "merge-pr",
 				outcome: {
-					value: "cancelled",
-					summary: "Cancelled by user abort",
+					value: "aborted",
+					summary: "Aborted by user",
 					commitRefs: ["backfill-abc"],
 					warnings: [],
 				},
@@ -64,7 +64,7 @@ describe("broadcastPersistedWorkflowState (cancelPipeline post-delete fallback)"
 		await store.save(wf);
 
 		const sent: ServerMessage[] = [];
-		await broadcastPersistedWorkflowState("wf-cancel-1", store, strip, (m) => sent.push(m));
+		await broadcastPersistedWorkflowState("wf-abort-1", store, strip, (m) => sent.push(m));
 
 		expect(sent).toHaveLength(1);
 		const msg = sent[0];

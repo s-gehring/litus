@@ -5,14 +5,14 @@ const OUTCOME_LABELS: Record<FeedbackOutcomeValue, string> = {
 	success: "success",
 	"no changes": "no changes",
 	failed: "failed",
-	cancelled: "cancelled",
+	aborted: "aborted",
 };
 
 const OUTCOME_CLASSES: Record<FeedbackOutcomeValue, string> = {
 	success: "outcome-success",
 	"no changes": "outcome-no-changes",
 	failed: "outcome-failed",
-	cancelled: "outcome-cancelled",
+	aborted: "outcome-aborted",
 };
 
 function formatTimestamp(iso: string): string {
