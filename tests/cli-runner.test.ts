@@ -1,9 +1,17 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { CLICallbacks } from "../src/cli-runner";
 import { CLIRunner } from "../src/cli-runner";
 import type { ToolUsage, Workflow } from "../src/types";
 
 const originalSpawn = Bun.spawn;
+
+// Real directory used as the worktreePath in every workflow: the CLI runner now
+// existsSync-checks the cwd before spawning, so a hard-coded phantom path would
+// hit the missing-cwd guard instead of reaching the mocked Bun.spawn.
+const WORKTREE_DIR = mkdtempSync(join(tmpdir(), "cli-runner-test-"));
 
 // Typed helper for mocking Bun.spawn in tests
 const BunGlobal = globalThis as unknown as { Bun: { spawn: unknown } };
@@ -21,8 +29,8 @@ function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 		id,
 		specification: "test",
 		status: "running",
-		targetRepository: "/tmp/test-repo",
-		worktreePath: "/tmp/test-worktree",
+		targetRepository: WORKTREE_DIR,
+		worktreePath: WORKTREE_DIR,
 		worktreeBranch: "test-branch",
 		featureBranch: null,
 		summary: "",
@@ -83,6 +91,7 @@ describe("CLIRunner", () => {
 
 	afterAll(() => {
 		BunGlobal.Bun.spawn = originalSpawn;
+		rmSync(WORKTREE_DIR, { recursive: true, force: true });
 	});
 
 	describe("model and effort flags", () => {
@@ -261,7 +270,7 @@ describe("CLIRunner", () => {
 			});
 
 			runner.start(
-				makeWorkflow("w2", { worktreePath: "/tmp/test-worktree" }),
+				makeWorkflow("w2", { worktreePath: WORKTREE_DIR }),
 				makeCallbacks({
 					onOutput: (text) => outputs.push(text),
 					onTools: (tools) => toolCalls.push(tools),
@@ -311,7 +320,7 @@ describe("CLIRunner", () => {
 			});
 
 			runner.start(
-				makeWorkflow("w-tools", { worktreePath: "/tmp/test-worktree" }),
+				makeWorkflow("w-tools", { worktreePath: WORKTREE_DIR }),
 				makeCallbacks({
 					onTools: (tools) => toolCalls.push(tools),
 					onComplete: () => resolveComplete(),
@@ -347,7 +356,7 @@ describe("CLIRunner", () => {
 			});
 
 			runner.start(
-				makeWorkflow("w3", { worktreePath: "/tmp/test-worktree" }),
+				makeWorkflow("w3", { worktreePath: WORKTREE_DIR }),
 				makeCallbacks({ onComplete: () => resolveComplete() }),
 			);
 
@@ -376,7 +385,7 @@ describe("CLIRunner", () => {
 			});
 
 			runner.start(
-				makeWorkflow("w4", { worktreePath: "/tmp/test-worktree" }),
+				makeWorkflow("w4", { worktreePath: WORKTREE_DIR }),
 				makeCallbacks({ onError: (err) => resolveError(err) }),
 			);
 
@@ -398,7 +407,7 @@ describe("CLIRunner", () => {
 				pid: 1,
 			});
 
-			runner.start(makeWorkflow("w5", { worktreePath: "/tmp/test-worktree" }), makeCallbacks());
+			runner.start(makeWorkflow("w5", { worktreePath: WORKTREE_DIR }), makeCallbacks());
 
 			runner.kill("w5");
 			expect(killed).toBe(true);
@@ -406,6 +415,75 @@ describe("CLIRunner", () => {
 
 		test("kill on non-existent workflow does not throw", () => {
 			expect(() => runner.kill("nonexistent")).not.toThrow();
+		});
+	});
+
+	describe("missing worktree directory", () => {
+		test("start() surfaces a clear error and does not spawn when the cwd does not exist", async () => {
+			let spawnCalled = false;
+			BunGlobal.Bun.spawn = () => {
+				spawnCalled = true;
+				return {
+					stdout: new ReadableStream({ start() {} }),
+					stderr: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					exited: Promise.resolve(0),
+					kill: () => {},
+					pid: 1,
+				};
+			};
+
+			let errorMsg = "";
+			runner.start(
+				makeWorkflow("w-missing-cwd", { worktreePath: "/definitely/does/not/exist/xyz" }),
+				makeCallbacks({
+					onError: (err) => {
+						errorMsg = err;
+					},
+				}),
+			);
+
+			await new Promise((r) => setTimeout(r, 10));
+			expect(spawnCalled).toBe(false);
+			expect(errorMsg).toContain("Worktree directory missing");
+			expect(errorMsg).toContain("/definitely/does/not/exist/xyz");
+		});
+
+		test("resume() surfaces a clear error and does not spawn when the cwd does not exist", async () => {
+			let spawnCalled = false;
+			BunGlobal.Bun.spawn = () => {
+				spawnCalled = true;
+				return {
+					stdout: new ReadableStream({ start() {} }),
+					stderr: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					exited: Promise.resolve(0),
+					kill: () => {},
+					pid: 1,
+				};
+			};
+
+			let errorMsg = "";
+			runner.resume(
+				"w-missing-cwd-resume",
+				"sess-xyz",
+				"/definitely/does/not/exist/xyz",
+				makeCallbacks({
+					onError: (err) => {
+						errorMsg = err;
+					},
+				}),
+			);
+
+			await new Promise((r) => setTimeout(r, 10));
+			expect(spawnCalled).toBe(false);
+			expect(errorMsg).toContain("Worktree directory missing");
 		});
 	});
 
