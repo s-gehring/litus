@@ -47,6 +47,7 @@ import type {
 	WorkflowStatus,
 } from "../src/types";
 import {
+	getStepDefinitionsForKind,
 	PIPELINE_STEP_DEFINITIONS,
 	shouldAutoAnswer,
 	shouldPauseBeforeMerge,
@@ -190,7 +191,7 @@ describe("VALID_TRANSITIONS", () => {
 });
 
 describe("PIPELINE_STEP_DEFINITIONS", () => {
-	test("has exactly 14 steps in correct order", () => {
+	test("spec workflow has exactly 14 steps in correct order", () => {
 		const expectedNames: PipelineStepName[] = [
 			"setup",
 			"specify",
@@ -207,7 +208,7 @@ describe("PIPELINE_STEP_DEFINITIONS", () => {
 			"merge-pr",
 			"sync-repo",
 		];
-		expect(PIPELINE_STEP_DEFINITIONS.map((s) => s.name)).toEqual(expectedNames);
+		expect(getStepDefinitionsForKind("spec").map((s) => s.name)).toEqual(expectedNames);
 	});
 
 	test("every step has a non-empty displayName", () => {
@@ -427,9 +428,10 @@ describe("Workflow Lifecycle", () => {
 		expect(q.detectedAt).toBe("2026-04-06T12:00:00Z");
 	});
 
-	test("Workflow shape with all 30 fields", () => {
+	test("Workflow shape with all 31 fields", () => {
 		const w: Workflow = {
 			id: "w-1",
+			workflowKind: "spec",
 			specification: "Add feature X",
 			status: "idle",
 			targetRepository: null,
@@ -468,7 +470,7 @@ describe("Workflow Lifecycle", () => {
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:00:00Z",
 		};
-		expect(Object.keys(w)).toHaveLength(31);
+		expect(Object.keys(w)).toHaveLength(32);
 		expect(w.status).toBe("idle");
 	});
 
@@ -529,6 +531,7 @@ describe("Workflow Lifecycle", () => {
 	test("WorkflowIndexEntry shape", () => {
 		const entry: WorkflowIndexEntry = {
 			id: "w-1",
+			workflowKind: "spec",
 			branch: "feat/x",
 			status: "completed",
 			summary: "Added feature X",
@@ -565,7 +568,7 @@ describe("Pipeline Step Progression", () => {
 		expect(new Set(names).size).toBe(14);
 	});
 
-	test("PIPELINE_STEP_DEFINITIONS match PipelineStepName order", () => {
+	test("getStepDefinitionsForKind('spec') matches PipelineStepName order", () => {
 		const expectedOrder: PipelineStepName[] = [
 			"setup",
 			"specify",
@@ -582,9 +585,10 @@ describe("Pipeline Step Progression", () => {
 			"merge-pr",
 			"sync-repo",
 		];
-		expect(PIPELINE_STEP_DEFINITIONS).toHaveLength(14);
+		const specSteps = getStepDefinitionsForKind("spec");
+		expect(specSteps).toHaveLength(14);
 		for (let i = 0; i < expectedOrder.length; i++) {
-			expect(PIPELINE_STEP_DEFINITIONS[i].name).toBe(expectedOrder[i]);
+			expect(specSteps[i].name).toBe(expectedOrder[i]);
 		}
 	});
 
@@ -620,6 +624,7 @@ describe("ServerMessage variants", () => {
 				type: "workflow:created",
 				workflow: {
 					id: "w-1",
+					workflowKind: "spec",
 					specification: "test",
 					status: "idle",
 					targetRepository: null,
@@ -1141,6 +1146,7 @@ describe("WorkflowClientState shape", () => {
 		const clientState: WorkflowClientState = {
 			state: {
 				id: "w-1",
+				workflowKind: "spec",
 				specification: "test",
 				status: "running",
 				targetRepository: null,

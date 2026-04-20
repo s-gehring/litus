@@ -134,6 +134,7 @@ describe("WorkflowStore", () => {
 		const index: WorkflowIndexEntry[] = JSON.parse(await Bun.file(indexPath).text());
 		index.push({
 			id: "corrupt-2",
+			workflowKind: "spec",
 			branch: "test",
 			status: "running",
 			summary: "",
@@ -271,5 +272,66 @@ describe("WorkflowStore", () => {
 		expect(index).toHaveLength(2);
 		const ids = index.map((e) => e.id).sort();
 		expect(ids).toEqual(["scan-1", "scan-2"]);
+	});
+
+	describe("workflowKind back-compat migration (FR-012)", () => {
+		test("loading a per-workflow file with no workflowKind defaults to 'spec'", async () => {
+			const wf = makeWorkflow({ id: "legacy-1" });
+			await store.save(wf);
+			const filePath = join(baseDir, `${wf.id}.json`);
+			const raw = JSON.parse(await Bun.file(filePath).text());
+			// Simulate a pre-quick-fix on-disk shape: strip workflowKind entirely
+			delete raw.workflowKind;
+			writeFileSync(filePath, JSON.stringify(raw, null, 2));
+
+			const loaded = await store.load(wf.id);
+			assertDefined(loaded);
+			expect(loaded.workflowKind).toBe("spec");
+		});
+
+		test("loading an index entry with no workflowKind normalizes to 'spec'", async () => {
+			const wf = makeWorkflow({ id: "legacy-2" });
+			await store.save(wf);
+			// Rewrite the index so the entry has no workflowKind field
+			const indexPath = join(baseDir, "index.json");
+			const entries: Array<Partial<WorkflowIndexEntry>> = JSON.parse(
+				await Bun.file(indexPath).text(),
+			);
+			for (const e of entries) delete (e as Record<string, unknown>).workflowKind;
+			writeFileSync(indexPath, JSON.stringify(entries, null, 2));
+
+			const loadedIndex = await store.loadIndex();
+			expect(loadedIndex[0].workflowKind).toBe("spec");
+		});
+
+		test("loading then saving persists the defaulted workflowKind on disk", async () => {
+			const wf = makeWorkflow({ id: "legacy-3" });
+			await store.save(wf);
+			const filePath = join(baseDir, `${wf.id}.json`);
+			const raw = JSON.parse(await Bun.file(filePath).text());
+			delete raw.workflowKind;
+			writeFileSync(filePath, JSON.stringify(raw, null, 2));
+
+			const loaded = await store.load(wf.id);
+			assertDefined(loaded);
+			await store.save(loaded);
+
+			const roundTripped = JSON.parse(await Bun.file(filePath).text());
+			expect(roundTripped.workflowKind).toBe("spec");
+		});
+
+		test("round-trips a workflowKind: 'quick-fix' workflow", async () => {
+			const wf = makeWorkflow({ id: "qf-1" });
+			wf.workflowKind = "quick-fix";
+			await store.save(wf);
+			const loaded = await store.load(wf.id);
+			assertDefined(loaded);
+			expect(loaded.workflowKind).toBe("quick-fix");
+
+			const index = await store.loadIndex();
+			const entry = index.find((e) => e.id === "qf-1");
+			assertDefined(entry);
+			expect(entry.workflowKind).toBe("quick-fix");
+		});
 	});
 });

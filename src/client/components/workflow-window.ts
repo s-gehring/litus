@@ -33,6 +33,21 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 	statusBadge.textContent = status.replaceAll("_", " ");
 	statusBadge.className = `status-badge ${status}`;
 
+	// Workflow kind pill next to the status badge (rendered only for quick-fix).
+	const existingKind = document.getElementById("workflow-kind-pill");
+	if (workflow?.workflowKind === "quick-fix") {
+		let pill = existingKind as HTMLElement | null;
+		if (!pill) {
+			pill = document.createElement("span");
+			pill.id = "workflow-kind-pill";
+			pill.className = "workflow-kind-pill kind-quick-fix";
+			statusBadge.after(pill);
+		}
+		pill.textContent = "Quick Fix";
+	} else if (existingKind) {
+		existingKind.remove();
+	}
+
 	// Show current step name in status area
 	const stepLabel = $("#current-step-label");
 	const isActive = status === "running" || status === "waiting_for_input";

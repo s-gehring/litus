@@ -13,7 +13,7 @@ import type {
 	Workflow,
 	WorkflowStatus,
 } from "../../src/types";
-import { PIPELINE_STEP_DEFINITIONS, STEP } from "../../src/types";
+import { getStepDefinitionsForKind, STEP } from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
 
 // ── Minimal fakes (similar to pipeline-orchestrator.test.ts but self-contained) ──
@@ -71,6 +71,7 @@ function createFakeEngine() {
 			const now = new Date().toISOString();
 			workflow = {
 				id: "itest-wf",
+				workflowKind: "spec",
 				specification: spec,
 				status: "idle" as WorkflowStatus,
 				targetRepository,
@@ -82,7 +83,7 @@ function createFakeEngine() {
 				flavor: "",
 				pendingQuestion: null,
 				lastOutput: "",
-				steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
+				steps: getStepDefinitionsForKind("spec").map((def) => ({
 					name: def.name,
 					displayName: def.displayName,
 					status: "pending" as const,

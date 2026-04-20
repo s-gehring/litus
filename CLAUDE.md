@@ -1,4 +1,4 @@
-# Litus Development Guidelines
+﻿# Litus Development Guidelines
 
 ## Tech Stack
 

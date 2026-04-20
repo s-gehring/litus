@@ -3,8 +3,8 @@ import { cp, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { configStore } from "./config-store";
 import { gitSpawn } from "./git-logger";
-import type { EpicAnalysisResult, Question, Workflow, WorkflowStatus } from "./types";
-import { PIPELINE_STEP_DEFINITIONS, VALID_TRANSITIONS as transitions } from "./types";
+import type { EpicAnalysisResult, Question, Workflow, WorkflowKind, WorkflowStatus } from "./types";
+import { getStepDefinitionsForKind, VALID_TRANSITIONS as transitions } from "./types";
 
 export class WorkflowEngine {
 	private workflow: Workflow | null = null;
@@ -21,13 +21,20 @@ export class WorkflowEngine {
 		specification: string,
 		targetRepository: string,
 		managedRepo: Workflow["managedRepo"] = null,
+		options: { workflowKind?: WorkflowKind } = {},
 	): Promise<Workflow> {
+		const workflowKind: WorkflowKind = options.workflowKind ?? "spec";
+		if (workflowKind === "quick-fix" && specification.trim() === "") {
+			throw new Error("Quick Fix description must not be empty.");
+		}
 		const id = randomUUID();
 		const shortId = id.slice(0, 8);
 
 		const now = new Date().toISOString();
+		const stepDefs = getStepDefinitionsForKind(workflowKind);
 		this.workflow = {
 			id,
+			workflowKind,
 			specification,
 			status: "idle",
 			targetRepository,
@@ -39,7 +46,7 @@ export class WorkflowEngine {
 			flavor: "",
 			pendingQuestion: null,
 			lastOutput: "",
-			steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
+			steps: stepDefs.map((def) => ({
 				name: def.name,
 				displayName: def.displayName,
 				status: "pending" as const,
@@ -217,6 +224,44 @@ export class WorkflowEngine {
 			}
 		}
 	}
+}
+
+/**
+ * Derive a lowercase-kebab slug from a quick-fix description.
+ * Keeps ASCII letters/digits, collapses everything else to a single dash,
+ * trims leading/trailing dashes, and caps the length at 40 characters.
+ */
+export function slugifyFixDescription(description: string): string {
+	const slug = description
+		.toLowerCase()
+		.normalize("NFKD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "")
+		.slice(0, 40)
+		.replace(/^-+|-+$/g, "");
+	return slug || "fix";
+}
+
+/**
+ * Compute the next available `fix/NNN-<slug>` branch name given the user's
+ * description and the list of existing branch names in the repo. Sequence
+ * numbers are allocated independently from speckit by scanning only branches
+ * matching `fix/NNN-...`.
+ */
+export function nextFixBranchName(description: string, existingBranches: string[]): string {
+	const slug = slugifyFixDescription(description);
+	const used = new Set<number>();
+	const pattern = /^fix\/(\d{3})-/;
+	for (const raw of existingBranches) {
+		const name = raw.replace(/^\*?\s*/, "").replace(/^(remotes\/[^/]+\/)/, "");
+		const m = name.match(pattern);
+		if (m) used.add(parseInt(m[1], 10));
+	}
+	let n = 1;
+	while (used.has(n)) n++;
+	const seq = String(n).padStart(3, "0");
+	return `fix/${seq}-${slug}`;
 }
 
 /** Create multiple workflows from an epic decomposition result. */

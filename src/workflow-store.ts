@@ -109,6 +109,10 @@ export class WorkflowStore {
 			if (data.feedbackPreRunHead === undefined) data.feedbackPreRunHead = null;
 			if (data.activeInvocation === undefined) data.activeInvocation = null;
 			if (data.managedRepo === undefined) data.managedRepo = null;
+			// Migration: default missing workflowKind to "spec" for pre-quick-fix workflows
+			if (data.workflowKind !== "spec" && data.workflowKind !== "quick-fix") {
+				data.workflowKind = "spec";
+			}
 			// Migration: backfill per-step history for pre-history workflows
 			for (const step of data.steps) {
 				if (!Array.isArray(step.history)) step.history = [];
@@ -158,7 +162,13 @@ export class WorkflowStore {
 		const indexFile = this.indexPath();
 		try {
 			const content = await Bun.file(indexFile).text();
-			return JSON.parse(content) as WorkflowIndexEntry[];
+			const entries = JSON.parse(content) as WorkflowIndexEntry[];
+			for (const e of entries) {
+				if (e.workflowKind !== "spec" && e.workflowKind !== "quick-fix") {
+					e.workflowKind = "spec";
+				}
+			}
+			return entries;
 		} catch (err) {
 			if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") {
 				logger.warn("[workflow-store] Index corrupted, rebuilding:", err);
@@ -212,6 +222,7 @@ export class WorkflowStore {
 
 			const entry: WorkflowIndexEntry = {
 				id: workflow.id,
+				workflowKind: workflow.workflowKind,
 				branch: workflow.worktreeBranch,
 				status: workflow.status,
 				summary: workflow.summary,
@@ -245,6 +256,7 @@ export class WorkflowStore {
 				if (workflow) {
 					index.push({
 						id: workflow.id,
+						workflowKind: workflow.workflowKind,
 						branch: workflow.worktreeBranch,
 						status: workflow.status,
 						summary: workflow.summary,

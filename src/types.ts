@@ -228,12 +228,17 @@ export type PipelineStepName =
 	| "implement"
 	| "review"
 	| "implement-review"
+	| "fix-implement"
 	| "commit-push-pr"
 	| "monitor-ci"
 	| "fix-ci"
 	| "feedback-implementer"
 	| "merge-pr"
 	| "sync-repo";
+
+// Workflow kind: "spec" is the existing Speckit pipeline; "quick-fix" is the
+// direct-implementation pipeline driven by the user's fix description.
+export type WorkflowKind = "spec" | "quick-fix";
 
 // Pipeline step status
 export type PipelineStepStatus =
@@ -280,6 +285,7 @@ export interface PipelineStep {
 // Lightweight metadata for fast workflow listing without loading full state
 export interface WorkflowIndexEntry {
 	id: string;
+	workflowKind: WorkflowKind;
 	branch: string;
 	status: WorkflowStatus;
 	summary: string;
@@ -380,12 +386,53 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 		prompt:
 			"Commit all uncommitted changes in atomic commits. Then push the branch and open a PR using gh, which is already authenticated for the current repository.",
 	},
+	{ name: "fix-implement", displayName: "Fix Implementation", prompt: "" },
 	{ name: "monitor-ci", displayName: "Monitoring CI", prompt: "" },
 	{ name: "fix-ci", displayName: "Fixing CI", prompt: "" },
 	{ name: "feedback-implementer", displayName: "Applying Feedback", prompt: "" },
 	{ name: "merge-pr", displayName: "Merging PR", prompt: "" },
 	{ name: "sync-repo", displayName: "Syncing Repository", prompt: "" },
 ];
+
+const SPEC_ORDER: ReadonlyArray<PipelineStepName> = [
+	"setup",
+	"specify",
+	"clarify",
+	"plan",
+	"tasks",
+	"implement",
+	"review",
+	"implement-review",
+	"commit-push-pr",
+	"monitor-ci",
+	"fix-ci",
+	"feedback-implementer",
+	"merge-pr",
+	"sync-repo",
+];
+
+const QUICK_FIX_ORDER: ReadonlyArray<PipelineStepName> = [
+	"setup",
+	"fix-implement",
+	"commit-push-pr",
+	"monitor-ci",
+	"fix-ci",
+	"feedback-implementer",
+	"merge-pr",
+	"sync-repo",
+];
+
+// Ordered step list for each workflow kind.
+export function getStepDefinitionsForKind(
+	kind: WorkflowKind,
+): ReadonlyArray<{ name: PipelineStepName; displayName: string; prompt: string }> {
+	const order = kind === "quick-fix" ? QUICK_FIX_ORDER : SPEC_ORDER;
+	return order.map((name) => {
+		const def = PIPELINE_STEP_DEFINITIONS.find((d) => d.name === name);
+		if (!def) throw new Error(`Missing step definition for ${name}`);
+		return def;
+	});
+}
 
 // Typed step name constants — compile-time checked via `satisfies`
 export const STEP = {
@@ -397,6 +444,7 @@ export const STEP = {
 	IMPLEMENT: "implement",
 	REVIEW: "review",
 	IMPLEMENT_REVIEW: "implement-review",
+	FIX_IMPLEMENT: "fix-implement",
 	COMMIT_PUSH_PR: "commit-push-pr",
 	MONITOR_CI: "monitor-ci",
 	FIX_CI: "fix-ci",
@@ -447,6 +495,7 @@ export interface ActiveAIInvocation {
 // Workflow entity (extended with pipeline fields)
 export interface Workflow {
 	id: string;
+	workflowKind: WorkflowKind;
 	specification: string;
 	status: WorkflowStatus;
 	targetRepository: string | null;
@@ -473,11 +522,14 @@ export interface Workflow {
 	activeWorkStartedAt: string | null;
 	feedbackEntries: FeedbackEntry[];
 	/**
-	 * Git HEAD SHA captured when the current feedback-implementer iteration
-	 * started. Persisted on the workflow so pause→resume (including across a
-	 * server restart) counts commits from the original pre-run head rather than
-	 * re-snapshotting and losing commits that already landed. Null when no FI
-	 * iteration is in flight.
+	 * Git HEAD SHA captured when the current commit-producing iteration started.
+	 * Used by both `feedback-implementer` (spec flow) and `fix-implement`
+	 * (quick-fix flow): each writes the pre-run HEAD here and, on completion,
+	 * compares against the current HEAD to either count new commits
+	 * (feedback-implementer) or detect an empty diff (fix-implement). Persisted
+	 * on the workflow so pause→resume (including across a server restart) counts
+	 * commits from the original pre-run head rather than re-snapshotting and
+	 * losing commits that already landed. Null when no iteration is in flight.
 	 */
 	feedbackPreRunHead: string | null;
 	activeInvocation: ActiveAIInvocation | null;
@@ -718,6 +770,7 @@ export type ClientMessage =
 			specification: string;
 			targetRepository?: string;
 			submissionId?: string;
+			workflowKind?: WorkflowKind;
 	  }
 	| { type: "workflow:answer"; workflowId: string; questionId: string; answer: string }
 	| { type: "workflow:skip"; workflowId: string; questionId: string }

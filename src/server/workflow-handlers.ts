@@ -15,9 +15,24 @@ import { resolveTargetRepo, validateTextInput, withOrchestrator } from "./handle
 
 export const handleStart: MessageHandler = async (ws, data, deps) => {
 	const msg = data as ClientMessage & { type: "workflow:start" };
-	const { specification, targetRepository, submissionId } = msg;
+	const { specification, targetRepository, submissionId, workflowKind } = msg;
 
-	const inputError = validateTextInput(specification, "Specification");
+	if (typeof specification !== "string") {
+		deps.sendTo(ws, {
+			type: "error",
+			message:
+				workflowKind === "quick-fix"
+					? "Quick Fix description must not be empty."
+					: "Specification must be non-empty",
+		});
+		return;
+	}
+	const inputError =
+		workflowKind === "quick-fix"
+			? validateTextInput(specification, "Quick Fix description", {
+					emptyMessage: "Quick Fix description must not be empty.",
+				})
+			: validateTextInput(specification, "Specification");
 	if (inputError) {
 		deps.sendTo(ws, { type: "error", message: inputError });
 		return;
@@ -33,6 +48,7 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 			specification.trim(),
 			resolved.path,
 			resolved.managedRepo ?? null,
+			{ workflowKind: workflowKind ?? "spec" },
 		);
 		deps.orchestrators.set(workflow.id, orch);
 		committed = true;
@@ -177,24 +193,40 @@ export const handleFeedback: MessageHandler = withOrchestrator((ws, data, deps, 
 		return;
 	}
 
-	// Contract: feedback (including the empty-resume path) is only valid at the
-	// manual-mode merge-pr pause. Validate uniformly before branching on text.
-	if (workflow.status !== "paused") {
-		deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
-		return;
-	}
 	const step = workflow.steps[workflow.currentStepIndex];
-	if (step?.name !== STEP.MERGE_PR) {
-		deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
-		return;
-	}
-	if (deps.configStore.get().autoMode !== "manual") {
-		deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
-		return;
+
+	// FR-016: an errored fix-implement step accepts appended feedback regardless
+	// of autoMode — the appended text is treated as retry guidance for the next
+	// fix-implement run.
+	const isErroredFixImplement = workflow.status === "error" && step?.name === STEP.FIX_IMPLEMENT;
+
+	if (!isErroredFixImplement) {
+		// Contract: feedback (including the empty-resume path) is only valid at the
+		// manual-mode merge-pr pause. Validate uniformly before branching on text.
+		if (workflow.status !== "paused") {
+			deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
+			return;
+		}
+		if (step?.name !== STEP.MERGE_PR) {
+			deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
+			return;
+		}
+		if (deps.configStore.get().autoMode !== "manual") {
+			deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
+			return;
+		}
 	}
 
-	// Empty → Resume. All other validation has already passed.
+	// Empty → Resume for the paused/merge-pr path. For an errored fix-implement,
+	// empty feedback is not a valid retry trigger.
 	if (text.trim() === "") {
+		if (isErroredFixImplement) {
+			deps.sendTo(ws, {
+				type: "error",
+				message: "Feedback text is required to retry fix-implement with context",
+			});
+			return;
+		}
 		orch.resume(workflowId);
 		return;
 	}

@@ -8,6 +8,7 @@ import { WorkflowStore } from "../src/workflow-store";
 function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
 	return {
 		id: "test-id-1",
+		workflowKind: "spec",
 		specification: "test spec",
 		status: "completed",
 		targetRepository: "/tmp/test-repo",

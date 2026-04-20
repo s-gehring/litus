@@ -1,12 +1,13 @@
 import { expect } from "bun:test";
 import { DEFAULT_CONFIG } from "../src/config-store";
 import type { Workflow, WorkflowState } from "../src/types";
-import { PIPELINE_STEP_DEFINITIONS } from "../src/types";
+import { getStepDefinitionsForKind } from "../src/types";
 
 export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 	const now = new Date().toISOString();
 	return {
 		id: overrides?.id ?? `wf-${Date.now()}`,
+		workflowKind: "spec",
 		specification: "Build a feature",
 		status: "idle",
 		targetRepository: "/tmp/test-repo",
@@ -18,7 +19,7 @@ export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 		flavor: "",
 		pendingQuestion: null,
 		lastOutput: "",
-		steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
+		steps: getStepDefinitionsForKind("spec").map((def) => ({
 			name: def.name,
 			displayName: def.displayName,
 			status: "pending" as const,
@@ -71,6 +72,7 @@ export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 export function makeWorkflowState(overrides?: Partial<WorkflowState>): WorkflowState {
 	return {
 		id: overrides?.id ?? `wf-${Date.now()}`,
+		workflowKind: "spec",
 		specification: "Build a feature",
 		status: "idle",
 		targetRepository: "/tmp/test-repo",
