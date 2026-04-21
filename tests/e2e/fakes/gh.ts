@@ -1,5 +1,22 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync } from "node:fs";
+/**
+ * Fake `gh` CLI used by the E2E harness.
+ *
+ * Response-selection semantics (subtle — read before changing):
+ *   - `scenario.gh[key]` may be a single `GhResponse` or an array of them.
+ *   - When it's an array, entries with `matchFlags` are tried match-first
+ *     (the first whose `matchFlags` fully match the invocation's flags wins).
+ *   - When no match is found, we fall back to advancing a PER-SUBCOMMAND FIFO
+ *     counter (persisted in a sidecar file alongside `LITUS_E2E_COUNTER`).
+ *     Consecutive calls to the same subcommand key without `matchFlags`
+ *     consume successive array entries; once exhausted, the LAST entry
+ *     repeats indefinitely. This gives scenarios deterministic, readable
+ *     control over state transitions (e.g. `pr view` flipping from OPEN to
+ *     MERGED after the first poll).
+ *   - A single-object entry (not an array) always returns that object, and
+ *     never advances the per-subcommand counter.
+ */
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { GhResponse, ScenarioScript } from "../harness/scenario-types";
 
 const FAKE = "gh";
@@ -76,22 +93,62 @@ function matches(response: GhResponse, flags: Record<string, string>): boolean {
 	return true;
 }
 
+function ghCounterFile(): string | null {
+	const base = process.env.LITUS_E2E_COUNTER;
+	if (!base) return null;
+	return `${base}.gh.json`;
+}
+
+function readGhCounters(): Record<string, number> {
+	const file = ghCounterFile();
+	if (!file || !existsSync(file)) return {};
+	try {
+		const parsed = JSON.parse(readFileSync(file, "utf8"));
+		return typeof parsed === "object" && parsed !== null ? parsed : {};
+	} catch {
+		return {};
+	}
+}
+
+function writeGhCounters(counters: Record<string, number>): void {
+	const file = ghCounterFile();
+	if (!file) return;
+	try {
+		writeFileSync(file, JSON.stringify(counters));
+	} catch {
+		// best-effort
+	}
+}
+
 function pickResponse(
 	entry: GhResponse | GhResponse[],
 	flags: Record<string, string>,
+	key: string,
 ): GhResponse | null {
-	const list = Array.isArray(entry) ? entry : [entry];
-	// Prefer responses whose matchFlags actually match; fall back to an
-	// unconstrained one.
-	let fallback: GhResponse | null = null;
-	for (const r of list) {
-		if (r.matchFlags && Object.keys(r.matchFlags).length > 0) {
-			if (matches(r, flags)) return r;
-		} else if (fallback === null) {
-			fallback = r;
+	// Single-object entry: return as-is, never advance any counter.
+	if (!Array.isArray(entry)) return entry;
+
+	// Match-first: a response with matchFlags that fully match takes
+	// precedence and does NOT consume a FIFO slot (matchFlags selection is
+	// content-addressed, not order-sensitive).
+	for (const r of entry) {
+		if (r.matchFlags && Object.keys(r.matchFlags).length > 0 && matches(r, flags)) {
+			return r;
 		}
 	}
-	return fallback;
+
+	// Otherwise, FIFO across unconstrained entries, with last-entry-repeats.
+	const unconstrained = entry.filter(
+		(r) => !r.matchFlags || Object.keys(r.matchFlags).length === 0,
+	);
+	if (unconstrained.length === 0) return null;
+
+	const counters = readGhCounters();
+	const idx = counters[key] ?? 0;
+	const picked = unconstrained[Math.min(idx, unconstrained.length - 1)] ?? null;
+	counters[key] = idx + 1;
+	writeGhCounters(counters);
+	return picked;
 }
 
 function keyPrefixes(positional: string[]): string[] {
@@ -122,7 +179,7 @@ async function main() {
 	for (const key of keyPrefixes(parsed.positional)) {
 		const entry = scenario.gh[key];
 		if (!entry) continue;
-		const resp = pickResponse(entry, parsed.flags);
+		const resp = pickResponse(entry, parsed.flags, key);
 		if (resp) {
 			matched = resp;
 			break;

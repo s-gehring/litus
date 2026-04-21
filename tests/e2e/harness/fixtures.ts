@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test as base } from "@playwright/test";
 import { createSandbox, type Sandbox } from "./sandbox";
-import { type ServerProcess, spawnServer } from "./server";
+import { type ServerHandle, spawnServer } from "./server";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -12,7 +12,7 @@ export interface Fixtures {
 	autoMode: "manual" | "normal" | "full-auto";
 	sandbox: Sandbox;
 	scenario: { path: string; name: string };
-	server: ServerProcess;
+	server: ServerHandle;
 }
 
 export const test = base.extend<Fixtures>({

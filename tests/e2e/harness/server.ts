@@ -3,10 +3,25 @@ import { open } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildPathWithFakes } from "./fakes-path";
 
+/**
+ * Backwards-compatible shape consumed by existing tests. New fields
+ * (`restart`) are additive; existing consumers that only read
+ * `baseUrl`/`logPath`/`stop` continue to work unchanged.
+ */
 export interface ServerProcess {
 	baseUrl: string;
 	logPath: string;
 	stop: () => Promise<void>;
+}
+
+export interface ServerHandle extends ServerProcess {
+	/**
+	 * Kill the current Bun server process (SIGTERM then SIGKILL after 5s),
+	 * then respawn against the same `homeDir`/`scenarioPath`/`counterFile`.
+	 * `baseUrl` is updated in place to the new port. Callers MUST NOT
+	 * destructure `baseUrl`; use property access so they see the new value.
+	 */
+	restart: () => Promise<void>;
 }
 
 export interface SpawnServerOptions {
@@ -22,8 +37,13 @@ const READY_MARKER = "Litus running at http://localhost:";
 // overridable via env for slower sandboxes / debugging.
 const READY_TIMEOUT_MS = Number(process.env.LITUS_E2E_SERVER_READY_MS ?? 30_000);
 
-export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProcess> {
-	const logFile = await open(opts.logPath, "w");
+interface RawSpawn {
+	baseUrl: string;
+	stop: () => Promise<void>;
+}
+
+async function spawnOnce(opts: SpawnServerOptions): Promise<RawSpawn> {
+	const logFile = await open(opts.logPath, "a");
 	const logStream = logFile.createWriteStream();
 
 	// Strip any inherited `Path` (Windows casing) so only our `PATH` wins;
@@ -132,9 +152,34 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProce
 		}
 	};
 
-	return {
-		baseUrl: url,
+	return { baseUrl: url, stop };
+}
+
+export async function spawnServer(opts: SpawnServerOptions): Promise<ServerHandle> {
+	let current = await spawnOnce(opts);
+
+	const handle: ServerHandle = {
+		baseUrl: current.baseUrl,
 		logPath: opts.logPath,
-		stop,
+		stop: async () => {
+			await current.stop();
+		},
+		restart: async () => {
+			await current.stop();
+			current = await spawnOnce(opts);
+			handle.baseUrl = current.baseUrl;
+		},
 	};
+
+	return handle;
+}
+
+/**
+ * Stop the server backing `handle` and respawn it against the same options.
+ * Mutates `handle.baseUrl` in place so non-destructured callers observe the
+ * fresh URL. Prefer the `handle.restart()` method — this free function is a
+ * thin wrapper for test code that reads more naturally as an imperative.
+ */
+export async function respawnServer(handle: ServerHandle): Promise<void> {
+	await handle.restart();
 }
