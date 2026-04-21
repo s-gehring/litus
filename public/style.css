@@ -134,26 +134,51 @@ header h1 {
   box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
 }
 
-/* Epic card accent */
+/* Per-kind size envelopes — scale is the only size channel (FR-013) */
+.workflow-card--spec {
+  --card-scale: var(--card-scale-spec);
+}
+
+.workflow-card--quick-fix {
+  --card-scale: var(--card-scale-quick-fix);
+}
+
+.workflow-card--epic,
 .epic-card {
-  border: 2px solid var(--accent-blue);
+  --card-scale: var(--card-scale-epic);
+  border: var(--epic-outline-width) solid var(--accent-blue);
+  outline: var(--epic-outline-width) solid var(--accent-blue);
+  outline-offset: var(--epic-outline-offset);
   background: linear-gradient(135deg, var(--surface) 0%, rgba(74, 158, 255, 0.08) 100%);
-  box-shadow: 0 0 6px rgba(74, 158, 255, 0.15);
+  box-shadow: 0 0 var(--epic-glow-radius) var(--epic-glow-color);
 }
 
-.epic-card:hover {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 10px rgba(74, 158, 255, 0.25);
-}
-
+.workflow-card--epic.card-expanded,
 .epic-card.card-expanded {
   border-color: var(--accent-blue);
-  box-shadow: 0 0 12px rgba(74, 158, 255, 0.35);
+  box-shadow: 0 0 calc(var(--epic-glow-radius) + 2px) var(--epic-glow-color);
 }
 
+.workflow-card--epic.card-error-glow,
 .epic-card.card-error-glow {
   border-color: var(--accent);
-  box-shadow: 0 0 8px rgba(233, 69, 96, 0.3);
+  outline-color: var(--accent);
+  box-shadow: 0 0 var(--epic-glow-radius) rgba(233, 69, 96, 0.35);
+}
+
+/* Epic hover/focus pulse — glow only, no layout-affecting properties (FR-010) */
+@keyframes epic-pulse {
+  0%, 100% { box-shadow: 0 0 var(--epic-glow-radius) var(--epic-glow-color); }
+  50% { box-shadow: 0 0 calc(var(--epic-glow-radius) + 6px) var(--epic-glow-color); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .workflow-card--epic:hover,
+  .workflow-card--epic:focus-visible,
+  .epic-card:hover,
+  .epic-card:focus-visible {
+    animation: epic-pulse 2s ease-in-out infinite;
+  }
 }
 
 /* Pulse animation for waiting_for_input */

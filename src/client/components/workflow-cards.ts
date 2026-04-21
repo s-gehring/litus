@@ -76,7 +76,8 @@ function createCompactCard(
 	onClick: (workflowId: string) => void,
 ): HTMLElement {
 	const card = document.createElement("div");
-	card.className = "workflow-card";
+	const kind: CardKind = wf.workflowKind === "quick-fix" ? "quick-fix" : "spec";
+	card.className = `workflow-card workflow-card--${kind}`;
 	card.dataset.workflowId = wf.id;
 
 	if (expandedWorkflowId === wf.id) {
@@ -98,14 +99,6 @@ function createCompactCard(
 	badge.className = `card-status ${STATUS_CLASSES[wf.status] || "card-status-idle"}`;
 	badge.textContent = STATUS_LABELS[wf.status] || wf.status;
 	card.appendChild(badge);
-
-	// Quick Fix kind label
-	if (wf.workflowKind === "quick-fix") {
-		const kindLabel = document.createElement("span");
-		kindLabel.className = "card-kind-label card-kind-quick-fix";
-		kindLabel.textContent = "Quick Fix";
-		card.appendChild(kindLabel);
-	}
 
 	// Epic label
 	if (wf.epicId && wf.epicTitle) {
@@ -149,6 +142,8 @@ function createCompactCard(
 	// Timer
 	card.appendChild(createTimerElement(wf.activeWorkMs, wf.activeWorkStartedAt, formatTimer));
 
+	appendTypeBadge(card, kind);
+
 	card.addEventListener("click", () => onClick(wf.id));
 
 	return card;
@@ -183,7 +178,7 @@ function createAggregatedEpicCard(
 	onClick: (id: string) => void,
 ): HTMLElement {
 	const card = document.createElement("div");
-	card.className = "workflow-card epic-card";
+	card.className = "workflow-card workflow-card--epic epic-card";
 	card.dataset.epicId = agg.epicId;
 
 	const cardId = `${EPIC_CARD_PREFIX}${agg.epicId}`;
@@ -221,6 +216,8 @@ function createAggregatedEpicCard(
 	// Timer — sum of active work time across children
 	card.appendChild(createTimerElement(agg.activeWorkMs, agg.activeWorkStartedAt, formatTimer));
 
+	appendTypeBadge(card, "epic");
+
 	card.addEventListener("click", () => onClick(cardId));
 
 	return card;
@@ -232,7 +229,7 @@ function createEpicAnalysisCard(
 	onClick: (id: string) => void,
 ): HTMLElement {
 	const card = document.createElement("div");
-	card.className = "workflow-card epic-card";
+	card.className = "workflow-card workflow-card--epic epic-card";
 	card.dataset.epicId = epic.epicId;
 
 	if (expandedId === epic.epicId) {
@@ -273,6 +270,8 @@ function createEpicAnalysisCard(
 	timer.dataset.activeWorkStartedAt = isAnalyzing ? epic.startedAt : "";
 	timer.textContent = formatTimer(elapsedMs, isAnalyzing ? epic.startedAt : null);
 	card.appendChild(timer);
+
+	appendTypeBadge(card, "epic");
 
 	card.addEventListener("click", () => onClick(epic.epicId));
 
