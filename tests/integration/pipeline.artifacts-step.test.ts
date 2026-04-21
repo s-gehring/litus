@@ -1,0 +1,283 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { CLICallbacks, CLIRunner } from "../../src/cli-runner";
+import { configStore, DEFAULT_CONFIG } from "../../src/config-store";
+import type { PipelineCallbacks } from "../../src/pipeline-orchestrator";
+import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
+import type { EffortLevel, PipelineStepStatus, Workflow, WorkflowStatus } from "../../src/types";
+import { getStepDefinitionsForKind, STEP } from "../../src/types";
+import {
+	snapshotStepArtifacts as _unused,
+	getArtifactsRoot,
+	listArtifacts,
+} from "../../src/workflow-artifacts";
+import type { WorkflowEngine } from "../../src/workflow-engine";
+import { WorkflowStore } from "../../src/workflow-store";
+
+void _unused; // keep import side-effect style in sync with other integration tests
+
+const cleanupDirs: string[] = [];
+
+beforeEach(() => {
+	// Ensure each test starts from built-in defaults, even if a prior test in
+	// the same process polluted the config store.
+	configStore.reset();
+});
+
+afterEach(() => {
+	while (cleanupDirs.length > 0) {
+		const dir = cleanupDirs.pop();
+		if (dir) {
+			try {
+				rmSync(dir, { recursive: true, force: true });
+			} catch {}
+		}
+	}
+});
+
+function registerCleanup(dir: string): void {
+	cleanupDirs.push(dir);
+}
+
+function makeSpecWorkflow(id: string, worktreePath: string, branch: string): Workflow {
+	const steps = getStepDefinitionsForKind("spec").map((def) => ({
+		name: def.name,
+		displayName: def.displayName,
+		status: "pending" as PipelineStepStatus,
+		prompt: def.prompt,
+		sessionId: null,
+		output: "",
+		outputLog: [],
+		error: null,
+		startedAt: null,
+		completedAt: null as string | null,
+		pid: null,
+		history: [],
+	}));
+	const now = new Date().toISOString();
+	return {
+		id,
+		workflowKind: "spec",
+		specification: "demo",
+		status: "running",
+		targetRepository: "/tmp/repo",
+		worktreePath,
+		worktreeBranch: branch,
+		featureBranch: branch,
+		error: null,
+		summary: "",
+		stepSummary: "",
+		flavor: "",
+		pendingQuestion: null,
+		lastOutput: "",
+		steps,
+		currentStepIndex: steps.findIndex((s) => s.name === STEP.ARTIFACTS),
+		reviewCycle: {
+			iteration: 1,
+			maxIterations: DEFAULT_CONFIG.limits.reviewCycleMaxIterations,
+			lastSeverity: null,
+		},
+		ciCycle: {
+			attempt: 0,
+			maxAttempts: 3,
+			monitorStartedAt: null,
+			globalTimeoutMs: 30 * 60 * 1000,
+			lastCheckResults: [],
+			failureLogs: [],
+		},
+		mergeCycle: { attempt: 0, maxAttempts: 3 },
+		prUrl: null,
+		epicId: null,
+		epicTitle: null,
+		epicDependencies: [],
+		epicDependencyStatus: null,
+		epicAnalysisMs: 0,
+		activeWorkMs: 0,
+		activeWorkStartedAt: null,
+		feedbackEntries: [],
+		feedbackPreRunHead: null,
+		activeInvocation: null,
+		managedRepo: null,
+		createdAt: now,
+		updatedAt: now,
+	};
+}
+
+interface StubCli {
+	runner: CLIRunner;
+	startCalls: Array<{ workflow: Workflow; callbacks: CLICallbacks }>;
+	lastStarted: () => { workflow: Workflow; callbacks: CLICallbacks } | undefined;
+}
+
+function makeStubCli(): StubCli {
+	const startCalls: Array<{ workflow: Workflow; callbacks: CLICallbacks }> = [];
+	const runner = {
+		start(
+			workflow: Workflow,
+			callbacks: CLICallbacks,
+			_extraEnv?: Record<string, string>,
+			_model?: string,
+			_effort?: EffortLevel,
+		) {
+			startCalls.push({ workflow, callbacks });
+		},
+		resume() {},
+		kill() {
+			const last = startCalls[startCalls.length - 1];
+			last?.callbacks.onError("process killed");
+		},
+		killAll() {},
+	} as unknown as CLIRunner;
+	return {
+		runner,
+		startCalls,
+		lastStarted: () => startCalls[startCalls.length - 1],
+	};
+}
+
+function makeStubEngine(wf: Workflow) {
+	return {
+		getWorkflow: () => wf,
+		setWorkflow: () => {},
+		createWorkflow: async () => wf,
+		transition: (_id: string, status: WorkflowStatus) => {
+			wf.status = status;
+		},
+		updateLastOutput: () => {},
+		setQuestion: () => {},
+		clearQuestion: () => {},
+		updateSummary: () => {},
+		updateStepSummary: () => {},
+		createWorktree: async () => wf.worktreePath ?? "/tmp/wt",
+		copyGitignoredFiles: async () => {},
+		removeWorktree: async () => {},
+		moveWorktree: async () => wf.worktreePath ?? "/tmp/wt",
+	} as unknown as WorkflowEngine;
+}
+
+describe("US1: artifacts step runs and collects files for spec workflows", () => {
+	let baseDir: string;
+	let store: WorkflowStore;
+
+	beforeEach(() => {
+		baseDir = join(tmpdir(), `artifacts-t010-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(baseDir, { recursive: true });
+		store = new WorkflowStore(baseDir);
+		registerCleanup(baseDir);
+	});
+
+	test("LLM writes manifest + files → step completes with outcome=with-files and files appear in listArtifacts", async () => {
+		const id = `wf-a-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const worktreePath = join(baseDir, "worktree");
+		mkdirSync(worktreePath, { recursive: true });
+		const branch = "feat-artifacts";
+
+		const wf = makeSpecWorkflow(id, worktreePath, branch);
+		registerCleanup(getArtifactsRoot(id));
+
+		const cli = makeStubCli();
+		const engine = makeStubEngine(wf);
+		const callbacks: PipelineCallbacks = {
+			onStepChange: () => {},
+			onOutput: () => {},
+			onTools: () => {},
+			onComplete: () => {},
+			onError: () => {},
+			onStateChange: () => {},
+		};
+
+		const orch = new PipelineOrchestrator(callbacks, {
+			engine,
+			cliRunner: cli.runner,
+			workflowStore: store,
+		});
+
+		orch.startPipelineFromWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+
+		// The artifacts step should have been dispatched via the stub CLI.
+		expect(cli.startCalls.length).toBe(1);
+		const invocation = cli.lastStarted();
+		expect(invocation).toBeDefined();
+
+		// The orchestrator always injects its own prompt for the artifacts step
+		// (the static prompt in PIPELINE_STEP_DEFINITIONS is empty). Confirm
+		// the built prompt references the output directory so the LLM knows
+		// where to write files.
+		const outputDir = join(worktreePath, "specs", branch, "artifacts-output");
+		expect(invocation?.workflow.specification).toContain(outputDir);
+
+		// Simulate the LLM writing two artifacts + a manifest into the output dir.
+		mkdirSync(outputDir, { recursive: true });
+		writeFileSync(join(outputDir, "test-report.md"), "# All green\n");
+		writeFileSync(join(outputDir, "coverage.json"), JSON.stringify({ lines: 0.95 }));
+		writeFileSync(
+			join(outputDir, "manifest.json"),
+			JSON.stringify({
+				version: 1,
+				artifacts: [
+					{ path: "test-report.md", description: "Playwright + bun test summary" },
+					{ path: "coverage.json", description: "Line coverage" },
+				],
+			}),
+		);
+
+		// Drive CLI completion.
+		invocation?.callbacks.onOutput("Summary of what was generated");
+		invocation?.callbacks.onComplete();
+		await new Promise((r) => setTimeout(r, 30));
+
+		const artifactsStep = wf.steps[wf.currentStepIndex - 1] ?? wf.steps[wf.currentStepIndex];
+		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
+		expect(step?.status).toBe("completed");
+		expect(step?.outcome).toBe("with-files");
+		void artifactsStep; // silence unused
+
+		const items = listArtifacts(wf).items.filter((i) => i.step === "artifacts");
+		expect(items.map((i) => i.relPath).sort()).toEqual(["coverage.json", "test-report.md"]);
+		expect(items.find((i) => i.relPath === "test-report.md")?.description).toBe(
+			"Playwright + bun test summary",
+		);
+	});
+
+	test("LLM emits empty manifest → outcome=empty and no files listed", async () => {
+		const id = `wf-e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const worktreePath = join(baseDir, "worktree-empty");
+		mkdirSync(worktreePath, { recursive: true });
+		const branch = "feat-empty";
+
+		const wf = makeSpecWorkflow(id, worktreePath, branch);
+		registerCleanup(getArtifactsRoot(id));
+
+		const cli = makeStubCli();
+		const engine = makeStubEngine(wf);
+		const orch = new PipelineOrchestrator(
+			{
+				onStepChange: () => {},
+				onOutput: () => {},
+				onTools: () => {},
+				onComplete: () => {},
+				onError: () => {},
+				onStateChange: () => {},
+			},
+			{ engine, cliRunner: cli.runner, workflowStore: store },
+		);
+
+		orch.startPipelineFromWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+
+		const outputDir = join(worktreePath, "specs", branch, "artifacts-output");
+		mkdirSync(outputDir, { recursive: true });
+		writeFileSync(join(outputDir, "manifest.json"), JSON.stringify({ version: 1, artifacts: [] }));
+
+		cli.lastStarted()?.callbacks.onComplete();
+		await new Promise((r) => setTimeout(r, 30));
+
+		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
+		expect(step?.status).toBe("completed");
+		expect(step?.outcome).toBe("empty");
+		expect(listArtifacts(wf).items.some((i) => i.step === "artifacts")).toBe(false);
+	});
+});

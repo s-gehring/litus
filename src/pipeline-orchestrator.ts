@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { readdirSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { buildArtifactsPrompt } from "./artifacts-prompt";
 import { AuditLogger } from "./audit-logger";
 import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
@@ -57,7 +58,12 @@ import {
 	type Workflow,
 	type WorkflowStatus,
 } from "./types";
-import { snapshotStepArtifacts } from "./workflow-artifacts";
+import {
+	type ArtifactsCollectionResult,
+	collectArtifactsFromManifest,
+	getWorkflowBranch,
+	snapshotStepArtifacts,
+} from "./workflow-artifacts";
 import { runInWorkflowContext } from "./workflow-context";
 import { nextFixBranchName, WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
@@ -73,8 +79,20 @@ const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {
 	[STEP.IMPLEMENT]: "implement",
 	[STEP.REVIEW]: "review",
 	[STEP.IMPLEMENT_REVIEW]: "implementReview",
+	[STEP.ARTIFACTS]: "artifacts",
 	[STEP.COMMIT_PUSH_PR]: "commitPushPr",
 };
+
+// Per-workflow state for the artifacts step's wall-clock timeout enforcement.
+// The CLI runner has only an idle timer; the artifacts step spec requires a
+// separate wall-clock budget (FR-016, SC-007).
+interface ArtifactsStepState {
+	timeoutHandle: ReturnType<typeof setTimeout>;
+	timedOut: boolean;
+	outputDir: string;
+	perFileMaxBytes: number;
+	perStepMaxBytes: number;
+}
 
 export interface PipelineDeps {
 	engine?: WorkflowEngine;
@@ -188,6 +206,7 @@ export class PipelineOrchestrator {
 	private getGitHeadFn: (cwd: string) => Promise<string | null>;
 	private detectNewCommitsFn: (preRunHead: string, cwd: string) => Promise<string[]>;
 	private maxStepOutputChars: number;
+	private artifactsState: Map<string, ArtifactsStepState> = new Map();
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
@@ -527,6 +546,14 @@ export class PipelineOrchestrator {
 				return;
 			}
 
+			if (step.name === STEP.ARTIFACTS) {
+				// Artifacts uses a dynamically-built prompt (output dir varies per
+				// workflow) and its own wall-clock timer; the generic runStep path
+				// would spawn the CLI with the empty static prompt and no budget.
+				this.runArtifactsStep(workflow);
+				return;
+			}
+
 			const cwd = requireWorktreePath(workflow);
 			const config = configStore.get();
 			const configKey = STEP_CONFIG_KEY[step.name];
@@ -545,6 +572,7 @@ export class PipelineOrchestrator {
 			const workflow = this.getActiveWorkflow(workflowId);
 			if (!workflow || workflow.status !== "running") return;
 
+			this.clearArtifactsTimer(workflowId);
 			this.stepRunner.killProcess(workflowId);
 			this.ciMonitor.abort();
 
@@ -609,6 +637,11 @@ export class PipelineOrchestrator {
 				this.runMergePr(workflow);
 			} else if (step.name === STEP.SYNC_REPO) {
 				this.runSyncRepo(workflow);
+			} else if (step.name === STEP.ARTIFACTS) {
+				// Don't resume the prior artifacts session — its timer and output
+				// dir state are gone. Restart the step from scratch with a fresh
+				// wall-clock budget and manifest.
+				this.runArtifactsStep(workflow);
 			} else if (step.sessionId) {
 				const resumedConfig = configStore.get();
 				const resumedConfigKey = STEP_CONFIG_KEY[step.name];
@@ -645,6 +678,7 @@ export class PipelineOrchestrator {
 				this.currentAuditRunId = null;
 			}
 
+			this.clearArtifactsTimer(workflowId);
 			this.stepRunner.killProcess(workflowId);
 			this.ciMonitor.abort();
 			this.summarizer.cleanup(workflowId);
@@ -1043,6 +1077,11 @@ export class PipelineOrchestrator {
 			this.runFixImplement(workflow).catch((err) => {
 				this.handleStepError(workflow.id, toErrorMessage(err));
 			});
+			return;
+		}
+
+		if (step.name === STEP.ARTIFACTS) {
+			this.runArtifactsStep(workflow);
 			return;
 		}
 
@@ -1569,6 +1608,144 @@ export class PipelineOrchestrator {
 		});
 	}
 
+	private clearArtifactsTimer(workflowId: string): ArtifactsStepState | null {
+		const entry = this.artifactsState.get(workflowId);
+		if (!entry) return null;
+		clearTimeout(entry.timeoutHandle);
+		this.artifactsState.delete(workflowId);
+		return entry;
+	}
+
+	private runArtifactsStep(workflow: Workflow): void {
+		// Abort any stale timer from a previous attempt on the same workflow.
+		this.clearArtifactsTimer(workflow.id);
+
+		const cwd = requireWorktreePath(workflow);
+		const config = configStore.get();
+		const branch = getWorkflowBranch(workflow);
+		const outputDir = join(cwd, "specs", branch, "artifacts-output");
+
+		try {
+			mkdirSync(outputDir, { recursive: true });
+		} catch (err) {
+			this.handleStepError(
+				workflow.id,
+				`Failed to prepare artifacts output directory: ${toErrorMessage(err)}`,
+			);
+			return;
+		}
+
+		const timeoutMs = config.timing.artifactsTimeoutMs;
+		const state: ArtifactsStepState = {
+			timeoutHandle: setTimeout(() => {
+				const entry = this.artifactsState.get(workflow.id);
+				if (!entry) return;
+				entry.timedOut = true;
+				logger.warn(
+					`[artifacts] Wall-clock timeout ${timeoutMs}ms hit for workflow ${workflow.id} — killing CLI`,
+				);
+				this.stepRunner.killProcess(workflow.id);
+			}, timeoutMs),
+			timedOut: false,
+			outputDir,
+			perFileMaxBytes: config.limits.artifactsPerFileMaxBytes,
+			perStepMaxBytes: config.limits.artifactsPerStepMaxBytes,
+		};
+		this.artifactsState.set(workflow.id, state);
+
+		if (this.currentAuditRunId) {
+			this.auditLogger.logArtifactsStart(this.currentAuditRunId, {
+				workflowId: workflow.id,
+				model: config.models.artifacts,
+				effort: config.efforts.artifacts,
+			});
+		}
+
+		const prompt = buildArtifactsPrompt(outputDir);
+		this.runStep(workflow, prompt, cwd, config.models.artifacts, config.efforts.artifacts);
+	}
+
+	private completeArtifactsStep(workflow: Workflow): void {
+		const state = this.clearArtifactsTimer(workflow.id);
+		if (!state) {
+			// No state — step completed without ever starting timer (shouldn't
+			// happen, but don't crash). Treat as empty.
+			this.finishArtifactsStep(workflow, {
+				outcome: "empty",
+				accepted: [],
+				rejections: [],
+				errorKind: null,
+				errorMessage: null,
+			});
+			return;
+		}
+
+		const result = collectArtifactsFromManifest(workflow, state.outputDir, {
+			perFileMaxBytes: state.perFileMaxBytes,
+			perStepMaxBytes: state.perStepMaxBytes,
+		});
+		this.finishArtifactsStep(workflow, result);
+	}
+
+	private finishArtifactsStep(workflow: Workflow, result: ArtifactsCollectionResult): void {
+		const step = workflow.steps[workflow.currentStepIndex];
+
+		for (const rej of result.rejections) {
+			const reasonLabel =
+				rej.reason === "file-cap-exceeded"
+					? "exceeds the per-file cap"
+					: "would exceed the per-step total cap";
+			this.handleStepOutput(
+				workflow.id,
+				`[artifacts] Rejected ${rej.relPath} (${rej.sizeBytes} bytes — ${reasonLabel})`,
+			);
+		}
+
+		if (result.outcome === "error") {
+			const reason = result.errorMessage ?? "artifacts collection failed";
+			this.auditArtifactsEnd(workflow.id, "error", {
+				reason: `${result.errorKind}: ${reason}`,
+				rejections: result.rejections.map((r) => ({ relPath: r.relPath, reason: r.reason })),
+			});
+			step.outcome = null;
+			this.handleStepError(workflow.id, reason);
+			return;
+		}
+
+		step.outcome = result.outcome;
+		this.auditArtifactsEnd(workflow.id, result.outcome, {
+			files: result.accepted.map((a) => ({ relPath: a.relPath, sizeBytes: a.sizeBytes })),
+			rejections: result.rejections.map((r) => ({ relPath: r.relPath, reason: r.reason })),
+		});
+
+		if (result.outcome === "empty") {
+			this.handleStepOutput(workflow.id, "[artifacts] Step completed with no files produced");
+		} else {
+			this.handleStepOutput(workflow.id, `[artifacts] Collected ${result.accepted.length} file(s)`);
+		}
+
+		this.advanceAfterStep(workflow.id);
+	}
+
+	private auditArtifactsEnd(
+		workflowId: string,
+		outcome: "with-files" | "empty" | "error",
+		extras: {
+			reason?: string;
+			files?: Array<{ relPath: string; sizeBytes: number }>;
+			rejections?: Array<{ relPath: string; reason: string }>;
+		},
+	): void {
+		if (!this.currentAuditRunId) return;
+		this.auditLogger.logArtifactsEnd(this.currentAuditRunId, {
+			workflowId,
+			outcome,
+			reason: extras.reason,
+			files: extras.files,
+			rejections: extras.rejections,
+		});
+	}
+
 	private handleStepComplete(workflowId: string): void {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
@@ -1582,6 +1759,14 @@ export class PipelineOrchestrator {
 		this.callbacks.onStateChange(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
+
+		// Artifacts runs before the empty-output guard: the LLM may legitimately
+		// emit only the manifest and exit with no chat text. Collection is
+		// driven by the manifest file on disk, not by the step's transcript.
+		if (step.name === STEP.ARTIFACTS) {
+			this.completeArtifactsStep(workflow);
+			return;
+		}
 
 		// Guard: CLI step completed with no output — process likely exited
 		// before actually running (e.g. Windows .cmd wrapper, spawn failure).
@@ -1846,7 +2031,10 @@ export class PipelineOrchestrator {
 			this.persistWorkflow(workflow);
 			this.startStep(workflow);
 		} else {
-			workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.COMMIT_PUSH_PR);
+			// Spec workflows run the Artifacts step between the review loop
+			// and PR creation. Quick-fix / epic orders don't contain the
+			// implement-review step, so this branch is only ever hit for specs.
+			workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.ARTIFACTS);
 			this.startStep(workflow);
 		}
 	}
@@ -2238,6 +2426,23 @@ export class PipelineOrchestrator {
 		this.callbacks.onStateChange(workflowId);
 
 		const step = workflow.steps[workflow.currentStepIndex];
+
+		// Artifacts: translate a timer-induced kill into the timeout reason so
+		// the UI and audit log show "timeout" rather than the raw CLI exit
+		// message. Non-timeout errors (LLM non-zero exit, spawn failure) keep
+		// their original message and log as `llm-error`.
+		if (step.name === STEP.ARTIFACTS) {
+			const artifactsState = this.clearArtifactsTimer(workflowId);
+			const timedOut = artifactsState?.timedOut === true;
+			const finalMessage = timedOut
+				? `Artifacts step exceeded wall-clock timeout (${configStore.get().timing.artifactsTimeoutMs}ms)`
+				: error;
+			this.auditArtifactsEnd(workflowId, "error", {
+				reason: timedOut ? `timeout: ${finalMessage}` : `llm-error: ${error}`,
+			});
+			step.outcome = null;
+			error = finalMessage;
+		}
 
 		// Feedback-implementer pre-commit failure: record failed outcome and rewind
 		// to merge-pr pause. Do NOT transition the workflow to error state.
