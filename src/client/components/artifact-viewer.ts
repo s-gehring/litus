@@ -7,6 +7,32 @@ interface OpenArtifactOptions {
 	triggerEl: HTMLElement | null;
 }
 
+// Preview dispatch: pick a renderer based on the descriptor's content type
+// (manifest hint for artifacts step) or filename extension. Unsupported kinds
+// fall back to a download-only notice.
+type PreviewKind = "markdown" | "image" | "text" | "json" | "unsupported";
+
+function inferPreviewKind(descriptor: ArtifactDescriptor): PreviewKind {
+	const ct = descriptor.contentType?.toLowerCase() ?? "";
+	if (ct.startsWith("image/")) return "image";
+	if (ct === "text/markdown" || ct === "application/markdown") return "markdown";
+	if (ct === "application/json" || ct.endsWith("+json")) return "json";
+	if (ct.startsWith("text/")) return "text";
+
+	const rel = descriptor.relPath.toLowerCase();
+	const dot = rel.lastIndexOf(".");
+	const ext = dot >= 0 ? rel.slice(dot) : "";
+	if ([".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"].includes(ext)) {
+		return "image";
+	}
+	if (ext === ".md") return "markdown";
+	if (ext === ".json") return "json";
+	if ([".txt", ".log", ".csv", ".yaml", ".yml", ".xml", ".html", ".htm"].includes(ext)) {
+		return "text";
+	}
+	return "unsupported";
+}
+
 /**
  * Open a modal rendering the markdown content of one artifact. Fetches the
  * current bytes from `/content` on each open (no cache). Shows an inline
@@ -111,10 +137,37 @@ export function openArtifactViewer(opts: OpenArtifactOptions): void {
 
 	dialog.focus();
 
-	void fetch(
-		`/api/workflows/${encodeURIComponent(workflowId)}/artifacts/${encodeURIComponent(descriptor.id)}/content`,
-		{ cache: "no-store" },
-	)
+	const previewKind = inferPreviewKind(descriptor);
+	const contentUrl = `/api/workflows/${encodeURIComponent(workflowId)}/artifacts/${encodeURIComponent(descriptor.id)}/content`;
+
+	if (previewKind === "image") {
+		body.textContent = "";
+		const img = document.createElement("img");
+		img.className = "artifact-modal-image";
+		img.alt = descriptor.displayLabel;
+		img.src = contentUrl;
+		img.onerror = () => {
+			body.textContent = "";
+			const empty = document.createElement("div");
+			empty.className = "artifact-modal-unavailable";
+			empty.textContent = "Artifact unavailable.";
+			body.appendChild(empty);
+		};
+		body.appendChild(img);
+		return;
+	}
+
+	if (previewKind === "unsupported") {
+		body.textContent = "";
+		const notice = document.createElement("div");
+		notice.className = "artifact-modal-unavailable";
+		notice.textContent =
+			"Inline preview is not available for this file type. Use the Download button above to save the file.";
+		body.appendChild(notice);
+		return;
+	}
+
+	void fetch(contentUrl, { cache: "no-store" })
 		.then(async (res) => {
 			if (res.status === 404) {
 				body.textContent = "";
@@ -129,7 +182,28 @@ export function openArtifactViewer(opts: OpenArtifactOptions): void {
 				return;
 			}
 			const text = await res.text();
-			body.innerHTML = renderMarkdown(text);
+
+			if (previewKind === "markdown") {
+				body.innerHTML = renderMarkdown(text);
+				return;
+			}
+
+			// text / json renderers share a <pre> fallback — readable, no script
+			// injection surface. JSON is pretty-printed when possible, otherwise
+			// shown verbatim.
+			let rendered = text;
+			if (previewKind === "json") {
+				try {
+					rendered = JSON.stringify(JSON.parse(text), null, 2);
+				} catch {
+					// Fall back to the raw bytes if JSON parsing fails.
+				}
+			}
+			body.textContent = "";
+			const pre = document.createElement("pre");
+			pre.className = "artifact-modal-text";
+			pre.textContent = rendered;
+			body.appendChild(pre);
 		})
 		.catch((err) => {
 			body.textContent = `Failed to load artifact: ${err instanceof Error ? err.message : String(err)}`;

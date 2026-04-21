@@ -323,4 +323,55 @@ describe("artifacts HTTP: download endpoint", () => {
 			expect(await res.text()).toBe(content);
 		});
 	});
+
+	test("artifacts-step download honours the manifest's contentType hint and returns original bytes", async () => {
+		// Stage a fake manifest-collected artifact directly in the persistent
+		// store + a descriptions sidecar with a custom contentType. listArtifacts
+		// then picks them up and the download handler should emit that exact
+		// MIME type instead of inferring from the file extension.
+		const id = `wf-ct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const content = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x42]);
+		const stepDir = join(getArtifactsRoot(id), "artifacts", "_");
+		mkdirSync(stepDir, { recursive: true });
+		const storePath = join(stepDir, "screenshot.bin");
+		writeFileSync(storePath, content);
+		writeFileSync(
+			join(stepDir, "descriptions.json"),
+			JSON.stringify({
+				"screenshot.bin": {
+					description: "Playwright smoke-test screenshot",
+					contentType: "image/png",
+				},
+			}),
+		);
+		try {
+			const wf = makeWorkflow({
+				id,
+				worktreePath: "/tmp",
+				featureBranch: "feat",
+			});
+			const list = (await (
+				await handleArtifactList(id, depsWith(wf))
+			).json()) as ArtifactListResponse;
+			const entry = list.items.find((i) => i.step === "artifacts");
+			expect(entry?.contentType).toBe("image/png");
+			if (!entry) throw new Error("artifacts descriptor missing");
+
+			const contentRes = await handleArtifactContent(id, entry.id, depsWith(wf));
+			expect(contentRes.headers.get("Content-Type")).toBe("image/png");
+
+			const downloadRes = await handleArtifactDownload(id, entry.id, depsWith(wf));
+			expect(downloadRes.headers.get("Content-Type")).toBe("image/png");
+			// Bytes must round-trip unchanged.
+			const arrBuf = await downloadRes.arrayBuffer();
+			expect(Buffer.from(arrBuf).equals(content)).toBe(true);
+		} finally {
+			try {
+				unlinkSync(storePath);
+			} catch {}
+			try {
+				unlinkSync(join(stepDir, "descriptions.json"));
+			} catch {}
+		}
+	});
 });

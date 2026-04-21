@@ -25,6 +25,11 @@ interface ArtifactLookupEntry {
 	step: PipelineStepName;
 	relPath: string;
 	runOrdinal: number | null;
+	/**
+	 * Manifest-declared MIME hint for artifacts-step entries. When set, the
+	 * download/content handlers prefer this over extension-based inference.
+	 */
+	contentType?: string;
 }
 
 // Module-global so minted artifact IDs stay resolvable across HTTP request
@@ -38,6 +43,7 @@ export function mintArtifactId(
 	step: PipelineStepName,
 	relPath: string,
 	runOrdinal: number | null,
+	contentType?: string,
 ): string {
 	const normalizedRel = relPath.replace(/\\/g, "/");
 	const input = `${workflowId}|${step}|${normalizedRel}|${runOrdinal ?? ""}`;
@@ -48,6 +54,7 @@ export function mintArtifactId(
 		step,
 		relPath: normalizedRel,
 		runOrdinal,
+		contentType,
 	});
 	return id;
 }
@@ -177,6 +184,7 @@ function buildDescriptor(
 	displayLabel: string,
 	absolutePath: string,
 	runOrdinal: number | null,
+	contentType?: string,
 ): ArtifactDescriptor | null {
 	let stat: ReturnType<typeof statSync>;
 	try {
@@ -185,7 +193,7 @@ function buildDescriptor(
 		return null;
 	}
 	if (!stat.isFile()) return null;
-	const id = mintArtifactId(workflowId, step, relPath, runOrdinal);
+	const id = mintArtifactId(workflowId, step, relPath, runOrdinal, contentType);
 	return {
 		id,
 		step,
@@ -652,7 +660,15 @@ export function listArtifacts(workflow: Workflow): ArtifactListResponse {
 	) => {
 		const abs = getArtifactSnapshotPath(workflow.id, step, runOrdinal, relPath);
 		if (!abs) return;
-		const d = buildDescriptor(workflow.id, step, relPath, displayLabel, abs, runOrdinal);
+		const d = buildDescriptor(
+			workflow.id,
+			step,
+			relPath,
+			displayLabel,
+			abs,
+			runOrdinal,
+			extras?.contentType,
+		);
 		if (!d) return;
 		if (extras?.description) d.description = extras.description;
 		if (extras?.contentType) d.contentType = extras.contentType;

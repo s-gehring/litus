@@ -41,7 +41,18 @@ function openDropdown(
 		btn.type = "button";
 		btn.className = "artifact-dropdown-item";
 		btn.setAttribute("role", "menuitem");
-		btn.textContent = d.displayLabel;
+		// Artifacts-step entries carry an LLM-provided description. Render it on
+		// a second line so the dropdown surfaces what each file actually is.
+		const labelEl = document.createElement("span");
+		labelEl.className = "artifact-dropdown-label";
+		labelEl.textContent = d.displayLabel;
+		btn.appendChild(labelEl);
+		if (d.step === "artifacts" && d.description) {
+			const descEl = document.createElement("span");
+			descEl.className = "artifact-dropdown-description";
+			descEl.textContent = d.description;
+			btn.appendChild(descEl);
+		}
 		btn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			menu.remove();
