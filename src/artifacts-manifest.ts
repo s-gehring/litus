@@ -14,37 +14,6 @@ export interface ArtifactsManifest {
 	artifacts: ArtifactsManifestEntry[];
 }
 
-export const ARTIFACTS_MANIFEST_SCHEMA = {
-	$schema: "https://json-schema.org/draft/2020-12/schema",
-	$id: "https://litus.local/schemas/artifacts-manifest.json",
-	title: "Artifacts Step Manifest",
-	description:
-		"Emitted by the Artifacts-step LLM into <output-dir>/manifest.json. Lists every file the LLM wants kept as a workflow artifact. Only files named here are collected; any other files in the output directory are ignored.",
-	type: "object",
-	required: ["version", "artifacts"],
-	additionalProperties: false,
-	properties: {
-		version: { const: 1 },
-		artifacts: {
-			type: "array",
-			minItems: 0,
-			items: { $ref: "#/$defs/ManifestEntry" },
-		},
-	},
-	$defs: {
-		ManifestEntry: {
-			type: "object",
-			required: ["path", "description"],
-			additionalProperties: false,
-			properties: {
-				path: { type: "string", minLength: 1 },
-				description: { type: "string", minLength: 1, maxLength: 500 },
-				contentType: { type: "string", minLength: 1 },
-			},
-		},
-	},
-} as const;
-
 export const DESCRIPTION_MAX_LENGTH = 500;
 
 export type ManifestParseError =

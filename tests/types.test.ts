@@ -196,7 +196,7 @@ describe("VALID_TRANSITIONS", () => {
 });
 
 describe("PIPELINE_STEP_DEFINITIONS", () => {
-	test("spec workflow has exactly 14 steps in correct order", () => {
+	test("spec workflow has exactly 15 steps in correct order", () => {
 		const expectedNames: PipelineStepName[] = [
 			"setup",
 			"specify",
@@ -206,6 +206,7 @@ describe("PIPELINE_STEP_DEFINITIONS", () => {
 			"implement",
 			"review",
 			"implement-review",
+			"artifacts",
 			"commit-push-pr",
 			"monitor-ci",
 			"fix-ci",
@@ -354,16 +355,21 @@ describe("EffortLevel exhaustiveness", () => {
 });
 
 describe("AuditEventType exhaustiveness", () => {
-	test("has exactly 5 values", () => {
-		const values: AuditEventType[] = [
-			"pipeline_start",
-			"pipeline_end",
-			"query",
-			"answer",
-			"commit",
-		];
-		expect(values).toHaveLength(5);
-		expect(new Set(values).size).toBe(5);
+	test("covers every declared event-type value", () => {
+		// Compile-time exhaustiveness: adding a new AuditEventType without
+		// listing it here fails the build.
+		const coverage: Record<AuditEventType, true> = {
+			pipeline_start: true,
+			pipeline_end: true,
+			query: true,
+			answer: true,
+			commit: true,
+			"workflow.reset": true,
+			"artifacts.step.start": true,
+			"artifacts.step.end": true,
+		};
+		const values = Object.keys(coverage) as AuditEventType[];
+		expect(new Set(values).size).toBe(values.length);
 	});
 });
 
@@ -553,7 +559,7 @@ describe("Workflow Lifecycle", () => {
 // ── Phase 4: Pipeline Step Progression ──────────────────────
 
 describe("Pipeline Step Progression", () => {
-	test("PipelineStepName has exactly 14 values in execution order", () => {
+	test("PipelineStepName has exactly 15 values in execution order", () => {
 		const names: PipelineStepName[] = [
 			"setup",
 			"specify",
@@ -563,6 +569,7 @@ describe("Pipeline Step Progression", () => {
 			"implement",
 			"review",
 			"implement-review",
+			"artifacts",
 			"commit-push-pr",
 			"monitor-ci",
 			"fix-ci",
@@ -570,8 +577,8 @@ describe("Pipeline Step Progression", () => {
 			"merge-pr",
 			"sync-repo",
 		];
-		expect(names).toHaveLength(14);
-		expect(new Set(names).size).toBe(14);
+		expect(names).toHaveLength(15);
+		expect(new Set(names).size).toBe(15);
 	});
 
 	test("getStepDefinitionsForKind('spec') matches PipelineStepName order", () => {
@@ -584,6 +591,7 @@ describe("Pipeline Step Progression", () => {
 			"implement",
 			"review",
 			"implement-review",
+			"artifacts",
 			"commit-push-pr",
 			"monitor-ci",
 			"fix-ci",
@@ -592,7 +600,7 @@ describe("Pipeline Step Progression", () => {
 			"sync-repo",
 		];
 		const specSteps = getStepDefinitionsForKind("spec");
-		expect(specSteps).toHaveLength(14);
+		expect(specSteps).toHaveLength(15);
 		for (let i = 0; i < expectedOrder.length; i++) {
 			expect(specSteps[i].name).toBe(expectedOrder[i]);
 		}

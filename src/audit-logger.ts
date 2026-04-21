@@ -118,6 +118,8 @@ export class AuditLogger {
 			reason?: string;
 			files?: Array<{ relPath: string; sizeBytes: number }>;
 			rejections?: Array<{ relPath: string; reason: string }>;
+			caps?: { perFileMaxBytes: number; perStepMaxBytes: number };
+			timeoutMs?: number;
 		},
 	): void {
 		this.writeEvent(runId, {
@@ -130,6 +132,8 @@ export class AuditLogger {
 				outcome: payload.outcome,
 				files: payload.files ?? [],
 				rejections: payload.rejections ?? [],
+				caps: payload.caps ?? null,
+				timeoutMs: payload.timeoutMs ?? null,
 			},
 		});
 	}

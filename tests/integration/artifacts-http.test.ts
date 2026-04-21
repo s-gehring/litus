@@ -134,7 +134,7 @@ describe("artifacts HTTP: list endpoint", () => {
 		expect(body.error).toBe("workflow_not_found");
 	});
 
-	test("review / implement-review descriptors pair by runOrdinal", () => {
+	test("review / implement-review descriptors pair by runOrdinal", async () => {
 		seedSnapshot("wf-ord", "review", 1, "code-review.md", "r1");
 		seedSnapshot("wf-ord", "review", 2, "code-review-2.md", "r2");
 		seedSnapshot("wf-ord", "review", 3, "code-review-3.md", "r3");
@@ -145,20 +145,19 @@ describe("artifacts HTTP: list endpoint", () => {
 			worktreePath: "/tmp",
 			featureBranch: "001-feat",
 		});
-		return handleArtifactList("wf-ord", depsWith(wf)).then(async (res) => {
-			const body = (await res.json()) as ArtifactListResponse;
-			const reviews = body.items.filter((i) => i.step === "review");
-			const impls = body.items.filter((i) => i.step === "implement-review");
-			expect(reviews.map((r) => r.runOrdinal)).toEqual([1, 2, 3]);
-			expect(impls.map((i) => i.runOrdinal)).toEqual([1, 2]);
-			const secondReview = reviews.find((r) => r.runOrdinal === 2);
-			expect(secondReview?.relPath).toBe("code-review-2.md");
-			for (const ord of [1, 2]) {
-				const r = reviews.find((x) => x.runOrdinal === ord);
-				const i = impls.find((x) => x.runOrdinal === ord);
-				expect(r?.relPath).toBe(i?.relPath ?? "");
-			}
-		});
+		const res = await handleArtifactList("wf-ord", depsWith(wf));
+		const body = (await res.json()) as ArtifactListResponse;
+		const reviews = body.items.filter((i) => i.step === "review");
+		const impls = body.items.filter((i) => i.step === "implement-review");
+		expect(reviews.map((r) => r.runOrdinal)).toEqual([1, 2, 3]);
+		expect(impls.map((i) => i.runOrdinal)).toEqual([1, 2]);
+		const secondReview = reviews.find((r) => r.runOrdinal === 2);
+		expect(secondReview?.relPath).toBe("code-review-2.md");
+		for (const ord of [1, 2]) {
+			const r = reviews.find((x) => x.runOrdinal === ord);
+			const i = impls.find((x) => x.runOrdinal === ord);
+			expect(r?.relPath).toBe(i?.relPath ?? "");
+		}
 	});
 
 	test("returns empty items when no snapshots exist", async () => {

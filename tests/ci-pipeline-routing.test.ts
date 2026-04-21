@@ -242,6 +242,8 @@ describe("CI Pipeline Routing", () => {
 				logQuery: () => {},
 				logAnswer: () => {},
 				logCommit: () => {},
+				logArtifactsStart: () => {},
+				logArtifactsEnd: () => {},
 			} as never,
 			workflowStore: {
 				save: async () => {},

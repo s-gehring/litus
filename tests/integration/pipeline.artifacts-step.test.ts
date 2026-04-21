@@ -8,15 +8,9 @@ import type { PipelineCallbacks } from "../../src/pipeline-orchestrator";
 import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import type { EffortLevel, PipelineStepStatus, Workflow, WorkflowStatus } from "../../src/types";
 import { getStepDefinitionsForKind, STEP } from "../../src/types";
-import {
-	snapshotStepArtifacts as _unused,
-	getArtifactsRoot,
-	listArtifacts,
-} from "../../src/workflow-artifacts";
+import { getArtifactsRoot, listArtifacts } from "../../src/workflow-artifacts";
 import type { WorkflowEngine } from "../../src/workflow-engine";
 import { WorkflowStore } from "../../src/workflow-store";
-
-void _unused; // keep import side-effect style in sync with other integration tests
 
 const cleanupDirs: string[] = [];
 
@@ -229,11 +223,9 @@ describe("US1: artifacts step runs and collects files for spec workflows", () =>
 		invocation?.callbacks.onComplete();
 		await new Promise((r) => setTimeout(r, 30));
 
-		const artifactsStep = wf.steps[wf.currentStepIndex - 1] ?? wf.steps[wf.currentStepIndex];
 		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
 		expect(step?.status).toBe("completed");
 		expect(step?.outcome).toBe("with-files");
-		void artifactsStep; // silence unused
 
 		const items = listArtifacts(wf).items.filter((i) => i.step === "artifacts");
 		expect(items.map((i) => i.relPath).sort()).toEqual(["coverage.json", "test-report.md"]);
@@ -506,5 +498,48 @@ describe("US1: artifacts step runs and collects files for spec workflows", () =>
 		expect(step?.status).toBe("completed");
 		expect(step?.outcome).toBe("empty");
 		expect(listArtifacts(wf).items.some((i) => i.step === "artifacts")).toBe(false);
+	});
+
+	test("US5: wall-clock timeout kills the CLI and surfaces a timeout: error (FR-016)", async () => {
+		const id = `wf-timeout-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const worktreePath = join(baseDir, "worktree-timeout");
+		mkdirSync(worktreePath, { recursive: true });
+		const branch = "feat-timeout";
+
+		const wf = makeSpecWorkflow(id, worktreePath, branch);
+		registerCleanup(getArtifactsRoot(id));
+
+		const cli = makeStubCli();
+		const engine = makeStubEngine(wf);
+		const orch = new PipelineOrchestrator(
+			{
+				onStepChange: () => {},
+				onOutput: () => {},
+				onTools: () => {},
+				onComplete: () => {},
+				onError: () => {},
+				onStateChange: () => {},
+			},
+			{ engine, cliRunner: cli.runner, workflowStore: store },
+		);
+
+		orch.startPipelineFromWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+
+		// The min timeout enforced by configStore (60s) is too long to wait for
+		// the real setTimeout to fire in-test. Simulate the timer callback by
+		// flipping the state's `timedOut` flag, then dispatch the CLI kill the
+		// timer would normally produce. handleStepError recognises the flag and
+		// produces the wall-clock-timeout reason.
+		// biome-ignore lint/suspicious/noExplicitAny: access to private state for focused test
+		const artifactsState = (orch as any).artifactsState.get(id);
+		expect(artifactsState).toBeDefined();
+		artifactsState.timedOut = true;
+		cli.lastStarted()?.callbacks.onError("process killed");
+		await new Promise((r) => setTimeout(r, 30));
+
+		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
+		expect(step?.status).toBe("error");
+		expect(step?.error ?? "").toContain("exceeded wall-clock timeout");
 	});
 });

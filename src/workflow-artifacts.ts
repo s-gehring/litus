@@ -209,7 +209,11 @@ function buildDescriptor(
 
 const PLAN_BASE_FILES = ["plan.md", "research.md", "data-model.md", "quickstart.md"] as const;
 
-const STEP_ORDER: PipelineStepName[] = [
+// Subset of pipeline step names that produce listable artifacts, in the order
+// they should appear in the UI. This is NOT the pipeline's execution order —
+// execution order lives in `SPEC_ORDER` / `getStepDefinitionsForKind` and is
+// authoritative for routing. Keep this list sorted for display only.
+const ARTIFACT_PRODUCING_STEPS: PipelineStepName[] = [
 	"specify",
 	"clarify",
 	"plan",
@@ -259,7 +263,9 @@ export type ArtifactsCollectionOutcome = "with-files" | "empty" | "error";
 export type ArtifactsCollectionErrorKind =
 	| "manifest-missing"
 	| "manifest-invalid"
-	| "manifest-file-missing";
+	| "manifest-file-missing"
+	| "state-missing"
+	| "descriptions-sidecar-write-failed";
 
 export interface ArtifactsRejection {
 	relPath: string;
@@ -438,7 +444,14 @@ export function collectArtifactsFromManifest(
 	}
 
 	if (accepted.length > 0) {
-		writeDescriptionsSidecar(workflow.id, descriptions);
+		try {
+			writeDescriptionsSidecar(workflow.id, descriptions);
+		} catch (err) {
+			return errorResult(
+				"descriptions-sidecar-write-failed",
+				`Failed to write descriptions sidecar: ${(err as Error).message}`,
+			);
+		}
 	}
 
 	return {
@@ -682,7 +695,7 @@ export function listArtifacts(workflow: Workflow): ArtifactListResponse {
 	// Enumerate from the persistent snapshot store. The workflow state no
 	// longer gates visibility — a snapshot's existence is the authoritative
 	// signal that the step produced it.
-	for (const step of STEP_ORDER) {
+	for (const step of ARTIFACT_PRODUCING_STEPS) {
 		const stepDir = join(root, step);
 		const acceptFor =
 			step === "plan" ? planStepAccept : step === "artifacts" ? artifactsStepAccept : undefined;
@@ -715,8 +728,8 @@ export function listArtifacts(workflow: Workflow): ArtifactListResponse {
 	}
 
 	items.sort((a, b) => {
-		const sa = STEP_ORDER.indexOf(a.step);
-		const sb = STEP_ORDER.indexOf(b.step);
+		const sa = ARTIFACT_PRODUCING_STEPS.indexOf(a.step);
+		const sb = ARTIFACT_PRODUCING_STEPS.indexOf(b.step);
 		if (sa !== sb) return sa - sb;
 		if (a.runOrdinal != null && b.runOrdinal != null && a.runOrdinal !== b.runOrdinal) {
 			return a.runOrdinal - b.runOrdinal;

@@ -1617,6 +1617,10 @@ export class PipelineOrchestrator {
 	}
 
 	private runArtifactsStep(workflow: Workflow): void {
+		// The wall-clock timer below lives only on this orchestrator instance.
+		// A server restart drops it along with the in-flight step; on resume the
+		// user must retry/resume to re-arm a fresh timer. Acceptable for the
+		// single-user local app.
 		// Abort any stale timer from a previous attempt on the same workflow.
 		this.clearArtifactsTimer(workflow.id);
 
@@ -1668,14 +1672,19 @@ export class PipelineOrchestrator {
 	private completeArtifactsStep(workflow: Workflow): void {
 		const state = this.clearArtifactsTimer(workflow.id);
 		if (!state) {
-			// No state — step completed without ever starting timer (shouldn't
-			// happen, but don't crash). Treat as empty.
+			// Indicates the step completed without ever arming its timer — a
+			// "shouldn't happen" branch that would otherwise silently mint an
+			// empty outcome and mask whatever bug put us here. Surface it as an
+			// error so both the audit log and the workflow state reflect the
+			// anomaly.
+			const reason = "artifacts step completed without timer state";
+			logger.warn(`[artifacts] ${reason} for workflow ${workflow.id}`);
 			this.finishArtifactsStep(workflow, {
-				outcome: "empty",
+				outcome: "error",
 				accepted: [],
 				rejections: [],
-				errorKind: null,
-				errorMessage: null,
+				errorKind: "state-missing",
+				errorMessage: reason,
 			});
 			return;
 		}
@@ -1737,12 +1746,21 @@ export class PipelineOrchestrator {
 		},
 	): void {
 		if (!this.currentAuditRunId) return;
+		// Include the caps + timeout in effect so auditors can distinguish
+		// between "rejected because the file was huge" and "rejected because the
+		// cap was just lowered" (FR-015).
+		const config = configStore.get();
 		this.auditLogger.logArtifactsEnd(this.currentAuditRunId, {
 			workflowId,
 			outcome,
 			reason: extras.reason,
 			files: extras.files,
 			rejections: extras.rejections,
+			caps: {
+				perFileMaxBytes: config.limits.artifactsPerFileMaxBytes,
+				perStepMaxBytes: config.limits.artifactsPerStepMaxBytes,
+			},
+			timeoutMs: config.timing.artifactsTimeoutMs,
 		});
 	}
 

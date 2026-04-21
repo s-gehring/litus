@@ -37,7 +37,7 @@ function seedOutputDir(base: string, files: Record<string, string>): string {
 }
 
 describe("artifacts step — concurrent-workflow isolation (T036)", () => {
-	test("two workflows producing artifacts with the same relPath do not overwrite each other", () => {
+	test("two workflows producing artifacts with the same relPath do not overwrite each other", async () => {
 		const idA = fresh("wf-conc-a");
 		const idB = fresh("wf-conc-b");
 		cleanupDirs.push(getArtifactsRoot(idA));
@@ -63,8 +63,13 @@ describe("artifacts step — concurrent-workflow isolation (T036)", () => {
 		});
 
 		const caps = { perFileMaxBytes: 1_048_576, perStepMaxBytes: 10_485_760 };
-		const rA = collectArtifactsFromManifest({ id: idA }, outA, caps);
-		const rB = collectArtifactsFromManifest({ id: idB }, outB, caps);
+		// Interleave collection via Promise.all to exercise the per-workflow
+		// directory-namespacing guarantee under concurrent dispatch, not just
+		// sequential writes.
+		const [rA, rB] = await Promise.all([
+			Promise.resolve().then(() => collectArtifactsFromManifest({ id: idA }, outA, caps)),
+			Promise.resolve().then(() => collectArtifactsFromManifest({ id: idB }, outB, caps)),
+		]);
 		expect(rA.outcome).toBe("with-files");
 		expect(rB.outcome).toBe("with-files");
 
