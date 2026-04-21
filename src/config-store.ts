@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "./config-metadata";
 import { logger } from "./logger";
+import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
 import type {
 	AppConfig,
 	AutoMode,
@@ -181,7 +182,11 @@ Rules:
   the whole epic — do not invent splits just to produce more items
 - If parts are infeasible, set \`infeasibleNotes\` to explain why
 - If the ENTIRE epic is infeasible, \`specs\` can be an empty array with \`infeasibleNotes\` explaining why`,
-		feedbackImplementerInstruction: `You are applying the user's latest feedback to the current feature branch, which already has an open PR at \${prUrl}.
+		feedbackImplementerInstruction: `${CLAUDE_MD_CONTRACT_HEADER}
+
+---
+
+You are applying the user's latest feedback to the current feature branch, which already has an open PR at \${prUrl}.
 
 \${feedbackContext}
 
@@ -508,6 +513,22 @@ export class ConfigStore {
 					missingVariables: [],
 					message:
 						"Sentinel marker `FEEDBACK_IMPLEMENTER_RESULT` not present — the orchestrator cannot parse agent-reported outcome, materiallyRelevant, or prDescriptionUpdate fields",
+				});
+			}
+
+			// feedback-implementer is the one CLI-spawned step whose prompt
+			// builder does NOT prepend CLAUDE_MD_CONTRACT_HEADER (the default
+			// template embeds it inline). A user who customizes this template
+			// and drops the anchor phrase silently loses SC-003 — warn them.
+			if (
+				key === "feedbackImplementerInstruction" &&
+				!value.includes("CLAUDE.md is Litus-managed local context")
+			) {
+				warnings.push({
+					path: `prompts.${key}`,
+					missingVariables: [],
+					message:
+						"Anchor phrase `CLAUDE.md is Litus-managed local context` not present — agents will not be told that CLAUDE.md is Litus-managed and may edit it unnecessarily",
 				});
 			}
 		}

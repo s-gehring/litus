@@ -444,7 +444,7 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 		name: "commit-push-pr",
 		displayName: "Creating PR",
 		prompt:
-			"Commit all uncommitted changes in atomic commits. Then push the branch and open a PR using gh, which is already authenticated for the current repository.",
+			"Commit all uncommitted changes in atomic, Conventional-Commits-style commits on the current branch. DO NOT push, DO NOT run `git push`, and DO NOT run `gh pr create` — Litus will push and open the PR after you exit. DO NOT stage or commit CLAUDE.md; leave any CLAUDE.md edits uncommitted in the working tree. When you have finished committing the other changes, exit.",
 	},
 	{ name: "fix-implement", displayName: "Fix Implementation", prompt: "" },
 	{ name: "monitor-ci", displayName: "Monitoring CI", prompt: "" },
