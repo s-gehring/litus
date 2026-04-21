@@ -230,6 +230,18 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 					if (msg.workflow?.epicId !== currentEpicId) break;
 					const treeContainer = document.querySelector<HTMLElement>(".epic-tree-container");
 					if (treeContainer && updateEpicTreeRow(treeContainer, msg.workflow.id, msg.workflow)) {
+						// Surgical row update skips the full re-render, so refresh
+						// the aggregate summary + status badge so the counter
+						// ("N/M completed") tracks completions in real time.
+						const agg = deps.getState().getEpicAggregates().get(currentEpicId);
+						if (agg) {
+							updateSummary(
+								`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`,
+							);
+							const statusBadge = $("#workflow-status");
+							statusBadge.textContent = agg.status;
+							statusBadge.className = `status-badge ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
+						}
 						break;
 					}
 					renderFull();
