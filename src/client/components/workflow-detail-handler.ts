@@ -107,10 +107,13 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 			hideQuestion();
 		}
 
+		const currentStepName = wf.steps[wf.currentStepIndex]?.name;
 		const feedbackEligible =
-			wf.status === "paused" &&
-			deps.getAutoMode() === "manual" &&
-			wf.steps[wf.currentStepIndex]?.name === STEP.MERGE_PR;
+			(wf.status === "paused" &&
+				deps.getAutoMode() === "manual" &&
+				currentStepName === STEP.MERGE_PR) ||
+			// FR-016: errored fix-implement accepts appended retry context.
+			(wf.status === "error" && currentStepName === STEP.FIX_IMPLEMENT);
 		if (!feedbackEligible) {
 			hideFeedbackPanel();
 		} else if (isFeedbackPanelVisible()) {
@@ -174,6 +177,17 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 				className: "btn-secondary",
 				onClick: () => deps.send({ type: "workflow:retry", workflowId: wf.id }),
 			});
+			// FR-016: an errored fix-implement step accepts appended feedback as
+			// retry context — expose the same feedback panel used for manual-mode
+			// merge-pr pauses. `handleFeedback` enforces the status/step invariant
+			// server-side; this button is the only UI entry point.
+			if (wf.steps[wf.currentStepIndex]?.name === STEP.FIX_IMPLEMENT) {
+				actions.push({
+					label: "Provide Feedback",
+					className: "btn-secondary",
+					onClick: () => deps.openFeedbackPanel(wf),
+				});
+			}
 			// Abort is offered alongside Retry so the user can put an unrecoverable
 			// workflow into a terminal state. Without it, a stuck error holds its
 			// managed-repo refcount indefinitely (error is non-terminal for refcount).

@@ -724,6 +724,108 @@ function openSpecModal(): void {
 	modal.show();
 }
 
+function openQuickFixModal(): void {
+	const content = document.createElement("div");
+
+	const repoField = document.createElement("div");
+	repoField.className = "modal-field";
+	const repoLabel = document.createElement("label");
+	repoLabel.textContent = "Target Repository";
+	repoField.appendChild(repoLabel);
+	const repoPicker = createFolderPicker("~/git");
+	repoPicker.setValue(stateManager.getLastTargetRepo());
+	repoField.appendChild(repoPicker.element);
+	repoField.appendChild(createRepoHint());
+
+	const descField = document.createElement("div");
+	descField.className = "modal-field";
+	const descLabel = document.createElement("label");
+	descLabel.textContent = "Fix Description";
+	descField.appendChild(descLabel);
+	const descInput = document.createElement("textarea");
+	descInput.placeholder = "Describe the small fix you want the agent to make...";
+	descInput.rows = 5;
+	descField.appendChild(descInput);
+
+	const errorEl = document.createElement("div");
+	errorEl.className = "modal-error hidden";
+
+	const actions = document.createElement("div");
+	actions.className = "modal-actions";
+	const btnStart = document.createElement("button");
+	btnStart.className = "btn btn-primary";
+	btnStart.textContent = "Start";
+	btnStart.disabled = true;
+	actions.appendChild(btnStart);
+
+	content.appendChild(repoField);
+	content.appendChild(descField);
+	content.appendChild(errorEl);
+	content.appendChild(actions);
+
+	const modal = createModal("Quick Fix", content);
+
+	const cloneStatus = document.createElement("div");
+	cloneStatus.className = "modal-clone-status hidden";
+	content.appendChild(cloneStatus);
+
+	function setFormDisabled(disabled: boolean) {
+		descInput.disabled = disabled;
+		btnStart.disabled = disabled || descInput.value.trim() === "";
+		repoPicker.element
+			.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button")
+			.forEach((el) => {
+				el.disabled = disabled;
+			});
+	}
+
+	descInput.addEventListener("input", () => {
+		btnStart.disabled = descInput.value.trim() === "";
+	});
+
+	function submit() {
+		const desc = descInput.value.trim();
+		if (!desc) {
+			errorEl.textContent = "Fix description is required";
+			errorEl.classList.remove("hidden");
+			return;
+		}
+		errorEl.classList.add("hidden");
+		const targetRepo = repoPicker.getValue();
+
+		if (targetRepo && looksLikeGitUrl(targetRepo)) {
+			const submissionId = crypto.randomUUID();
+			attachCloneSubmission(modal, cloneStatus, errorEl, setFormDisabled, submissionId);
+			send({
+				type: "workflow:start",
+				workflowKind: "quick-fix",
+				specification: desc,
+				targetRepository: targetRepo,
+				submissionId,
+			});
+			return;
+		}
+
+		send({
+			type: "workflow:start",
+			workflowKind: "quick-fix",
+			specification: desc,
+			...(targetRepo ? { targetRepository: targetRepo } : {}),
+		});
+		modal.hide();
+	}
+
+	btnStart.addEventListener("click", submit);
+	descInput.addEventListener("keydown", (e) => {
+		if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+			e.preventDefault();
+			submit();
+		}
+	});
+
+	modal.show();
+}
+
 function openEpicModal(): void {
 	const content = document.createElement("div");
 
@@ -829,6 +931,9 @@ function openEpicModal(): void {
 document.addEventListener("DOMContentLoaded", () => {
 	const btnSubmitAnswer = $("#btn-submit-answer") as HTMLButtonElement;
 	const btnSkip = $("#btn-skip-question") as HTMLButtonElement;
+
+	const btnQuickFix = document.getElementById("btn-quick-fix");
+	if (btnQuickFix) btnQuickFix.addEventListener("click", openQuickFixModal);
 
 	const btnNewSpec = document.getElementById("btn-new-spec");
 	if (btnNewSpec) btnNewSpec.addEventListener("click", openSpecModal);

@@ -84,6 +84,14 @@ function createCompactCard(
 	badge.textContent = STATUS_LABELS[wf.status] || wf.status;
 	card.appendChild(badge);
 
+	// Quick Fix kind label
+	if (wf.workflowKind === "quick-fix") {
+		const kindLabel = document.createElement("span");
+		kindLabel.className = "card-kind-label card-kind-quick-fix";
+		kindLabel.textContent = "Quick Fix";
+		card.appendChild(kindLabel);
+	}
+
 	// Epic label
 	if (wf.epicId && wf.epicTitle) {
 		const epicLabel = document.createElement("span");

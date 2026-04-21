@@ -27,6 +27,7 @@ function createDeferredPromise<T = void>() {
 function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 	return {
 		id,
+		workflowKind: "spec",
 		specification: "test",
 		status: "running",
 		targetRepository: WORKTREE_DIR,

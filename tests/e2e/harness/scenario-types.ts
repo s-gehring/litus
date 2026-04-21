@@ -44,6 +44,14 @@ export interface ClaudeInvocationScript {
 	exitCode?: number;
 	delayMs?: number;
 	files?: ScenarioFile[];
+	/**
+	 * When set, the fake runs `git add -A && git commit -m <message>` in its
+	 * CWD after materialising `files` and before emitting output. This lets
+	 * scenarios move HEAD the same way a real `claude` invocation would in
+	 * steps (notably `fix-implement`) that classify success by pre/post HEAD
+	 * divergence.
+	 */
+	commit?: { message: string };
 }
 
 export interface GhResponse {

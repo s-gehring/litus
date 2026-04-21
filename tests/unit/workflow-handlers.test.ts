@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import type { ClientMessage, Workflow } from "../../src/types";
+import { getStepDefinitionsForKind } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockWebSocket } from "../test-infra/mock-websocket";
@@ -196,6 +197,108 @@ describe("workflow-handlers", () => {
 
 			const msgs = sentMessages.get(mockWs) ?? [];
 			expect(msgs.some((m) => m.type === "error" && m.message === "Disk full")).toBe(true);
+		});
+
+		test("quick-fix: rejects empty specification with kind-specific error", async () => {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleStart>[0];
+			const { deps, sentMessages } = createMockHandlerDeps();
+
+			await handleStart(
+				mockWs,
+				{
+					type: "workflow:start",
+					specification: "   ",
+					targetRepository: "/mock/repo",
+					workflowKind: "quick-fix",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(mockWs) ?? [];
+			expect(
+				msgs.some(
+					(m) => m.type === "error" && m.message === "Quick Fix description must not be empty.",
+				),
+			).toBe(true);
+		});
+
+		test("quick-fix: rejects oversize specification", async () => {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleStart>[0];
+			const { deps, sentMessages } = createMockHandlerDeps();
+
+			await handleStart(
+				mockWs,
+				{
+					type: "workflow:start",
+					specification: "x".repeat(100_001),
+					targetRepository: "/mock/repo",
+					workflowKind: "quick-fix",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(mockWs) ?? [];
+			expect(
+				msgs.some((m) => m.type === "error" && m.message.includes("exceeds maximum length")),
+			).toBe(true);
+		});
+
+		test("quick-fix: non-string specification surfaces 'is required' error (not 'must not be empty')", async () => {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleStart>[0];
+			const { deps, sentMessages } = createMockHandlerDeps();
+
+			await handleStart(
+				mockWs,
+				{
+					type: "workflow:start",
+					specification: undefined as unknown as string,
+					targetRepository: "/mock/repo",
+					workflowKind: "quick-fix",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(mockWs) ?? [];
+			expect(
+				msgs.some((m) => m.type === "error" && m.message === "Quick Fix description is required"),
+			).toBe(true);
+		});
+
+		test("quick-fix: success path forwards workflowKind to startPipeline", async () => {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleStart>[0];
+
+			const startedWorkflow = makeWorkflow({ workflowKind: "quick-fix", status: "running" });
+			const startPipelineCalls: unknown[][] = [];
+			const mockOrch = {
+				startPipeline: async (spec: string, repo: string, managed: unknown, opts: unknown) => {
+					startPipelineCalls.push([spec, repo, managed, opts]);
+					return startedWorkflow;
+				},
+			} as unknown as PipelineOrchestrator;
+
+			const { deps } = createMockHandlerDeps({
+				createOrchestrator: () => mockOrch,
+			});
+
+			mockValidationResult = { valid: true, effectivePath: "/mock/repo" };
+
+			await handleStart(
+				mockWs,
+				{
+					type: "workflow:start",
+					specification: "Fix the thing",
+					targetRepository: "/mock/repo",
+					workflowKind: "quick-fix",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(startPipelineCalls).toHaveLength(1);
+			expect(startPipelineCalls[0]?.[3]).toEqual({ workflowKind: "quick-fix" });
 		});
 
 		test("rejects invalid target repository", async () => {
@@ -773,6 +876,160 @@ describe("workflow-handlers", () => {
 					type: "workflow:feedback",
 					workflowId: wf.id,
 					text: "",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls).toHaveLength(0);
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some(
+					(m) =>
+						m.type === "error" &&
+						m.message === "Workflow is not paused at a feedback-eligible step",
+				),
+			).toBe(true);
+		});
+	});
+
+	describe("handleFeedback — FR-016 errored fix-implement", () => {
+		function quickFixSetup(status: Workflow["status"] = "error") {
+			// Build a quick-fix workflow with the fix-implement step as current.
+			const quickFixSteps: Workflow["steps"] = getStepDefinitionsForKind("quick-fix").map(
+				(def) => ({
+					name: def.name,
+					displayName: def.displayName,
+					status: "pending",
+					prompt: def.prompt,
+					sessionId: null,
+					output: "",
+					outputLog: [],
+					error: null,
+					startedAt: null,
+					completedAt: null,
+					pid: null,
+					history: [],
+				}),
+			);
+			const fixIdx = quickFixSteps.findIndex((s) => s.name === "fix-implement");
+			quickFixSteps[fixIdx].status = "error";
+			const s = setup({
+				workflowKind: "quick-fix",
+				steps: quickFixSteps,
+				currentStepIndex: fixIdx,
+				status,
+			});
+			// autoMode intentionally non-manual: FR-016 retry-with-context must work
+			// regardless of autoMode.
+			// biome-ignore lint/suspicious/noExplicitAny: partial mock save
+			(s.deps.configStore.save as any)({ autoMode: "normal" });
+			return s;
+		}
+
+		test("accepts non-empty feedback on errored fix-implement regardless of autoMode", () => {
+			const { ws, deps, calls, wf } = quickFixSetup();
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "also update the tests",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls).toHaveLength(1);
+			expect(calls[0].method).toBe("submitFeedback");
+			expect(calls[0].args).toEqual([wf.id, "also update the tests"]);
+		});
+
+		test("rejects empty feedback with retry-specific message", () => {
+			const { ws, deps, sentMessages, calls, wf } = quickFixSetup();
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "   ",
+				} as ClientMessage,
+				deps,
+			);
+
+			expect(calls).toHaveLength(0);
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some(
+					(m) =>
+						m.type === "error" &&
+						m.message === "Feedback text is required to retry fix-implement with context",
+				),
+			).toBe(true);
+		});
+
+		test("rejects text over max length", () => {
+			const { ws, deps, sentMessages, wf } = quickFixSetup();
+			const oversize = "x".repeat(100_001);
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: oversize,
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some((m) => m.type === "error" && m.message.includes("exceeds maximum length")),
+			).toBe(true);
+		});
+
+		test("rejects when an in-flight feedback entry already exists", () => {
+			const { ws, deps, sentMessages, wf } = quickFixSetup();
+			wf.feedbackEntries = [
+				{
+					id: "in-flight-1",
+					iteration: 1,
+					text: "previous retry",
+					submittedAt: new Date().toISOString(),
+					submittedAtStepName: "fix-implement",
+					outcome: null,
+				},
+			];
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "another",
+				} as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some(
+					(m) => m.type === "error" && m.message === "A feedback iteration is already in progress",
+				),
+			).toBe(true);
+		});
+
+		test("does not accept non-error status on fix-implement (falls through to normal guards)", () => {
+			// A running quick-fix at fix-implement must NOT be treated as
+			// feedback-eligible — only the error + fix-implement combo is FR-016.
+			const { ws, deps, sentMessages, calls, wf } = quickFixSetup("running");
+
+			handleFeedback(
+				ws,
+				{
+					type: "workflow:feedback",
+					workflowId: wf.id,
+					text: "retry guidance",
 				} as ClientMessage,
 				deps,
 			);

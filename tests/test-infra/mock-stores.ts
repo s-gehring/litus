@@ -48,6 +48,7 @@ export function createMockWorkflowStore(): MockWorkflowStore {
 		async loadIndex(): Promise<WorkflowIndexEntry[]> {
 			const result = Array.from(workflows.values()).map((w) => ({
 				id: w.id,
+				workflowKind: w.workflowKind,
 				branch: w.worktreeBranch,
 				status: w.status,
 				summary: w.summary,

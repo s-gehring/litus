@@ -18,6 +18,12 @@ import {
 	reconcileOutcome,
 } from "./feedback-implementer";
 import { buildFeedbackContext } from "./feedback-injector";
+import {
+	buildFixImplementPrompt,
+	classifyFixImplementDiff,
+	FIX_IMPLEMENT_EMPTY_DIFF_MESSAGE,
+	FIX_IMPLEMENT_HEAD_READ_FAILED_MESSAGE,
+} from "./fix-implementer";
 import { gitSpawn } from "./git-logger";
 import { logger } from "./logger";
 import type { ManagedRepoStore } from "./managed-repo-store";
@@ -53,7 +59,7 @@ import {
 } from "./types";
 import { snapshotStepArtifacts } from "./workflow-artifacts";
 import { runInWorkflowContext } from "./workflow-context";
-import { WorkflowEngine } from "./workflow-engine";
+import { nextFixBranchName, WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
 
 export type { PipelineCallbacks } from "./types";
@@ -265,8 +271,14 @@ export class PipelineOrchestrator {
 		specification: string,
 		targetRepository: string,
 		managedRepo: Workflow["managedRepo"] = null,
+		options: { workflowKind?: import("./types").WorkflowKind } = {},
 	): Promise<Workflow> {
-		const workflow = await this.engine.createWorkflow(specification, targetRepository, managedRepo);
+		const workflow = await this.engine.createWorkflow(
+			specification,
+			targetRepository,
+			managedRepo,
+			options,
+		);
 		return runInWorkflowContext(workflow.id, async () => {
 			this.engine.transition(workflow.id, "running");
 
@@ -495,6 +507,17 @@ export class PipelineOrchestrator {
 				return;
 			}
 
+			if (step.name === STEP.FIX_IMPLEMENT) {
+				// fix-implement has an empty static prompt and depends on a
+				// pre-run HEAD snapshot. Falling through to runStep(step.prompt)
+				// would spawn the CLI with no prompt and leave completeFixImplement
+				// comparing against a stale/null pre-run HEAD.
+				this.runFixImplement(workflow).catch((err) => {
+					this.handleStepError(workflow.id, toErrorMessage(err));
+				});
+				return;
+			}
+
 			const cwd = requireWorktreePath(workflow);
 			const config = configStore.get();
 			const configKey = STEP_CONFIG_KEY[step.name];
@@ -695,6 +718,44 @@ export class PipelineOrchestrator {
 			const workflow = this.getWorkflowOrThrow(workflowId);
 			const trimmed = text.trim();
 
+			const step = workflow.steps[workflow.currentStepIndex];
+
+			// FR-016: on an errored fix-implement step, appended feedback is treated
+			// as retry context and the step is re-entered via runFixImplement. Empty
+			// text is not a "resume" here — the workflow is in `error`, not paused —
+			// so reject it instead of silently no-op'ing.
+			if (workflow.status === "error" && step?.name === STEP.FIX_IMPLEMENT) {
+				if (trimmed === "") {
+					logger.warn(
+						`[pipeline] submitFeedback rejected for workflow ${workflowId}: empty feedback on errored fix-implement`,
+					);
+					return;
+				}
+				if (workflow.feedbackEntries.some((e) => e.outcome === null)) {
+					logger.warn(
+						`[pipeline] submitFeedback rejected for workflow ${workflowId}: an in-flight feedback entry already exists`,
+					);
+					return;
+				}
+
+				const now = new Date().toISOString();
+				const entry: FeedbackEntry = {
+					id: randomUUID(),
+					iteration: workflow.feedbackEntries.length + 1,
+					text: trimmed,
+					submittedAt: now,
+					submittedAtStepName: STEP.FIX_IMPLEMENT,
+					outcome: null,
+				};
+				workflow.feedbackEntries.push(entry);
+				workflow.updatedAt = now;
+
+				this.stepRunner.resetStep(step);
+				this.engine.transition(workflowId, "running");
+				this.startStep(workflow);
+				return;
+			}
+
 			if (trimmed === "") {
 				this.resume(workflowId);
 				return;
@@ -708,7 +769,6 @@ export class PipelineOrchestrator {
 				);
 				return;
 			}
-			const step = workflow.steps[workflow.currentStepIndex];
 			if (step.name !== STEP.MERGE_PR) {
 				logger.warn(
 					`[pipeline] submitFeedback rejected for workflow ${workflowId}: current step=${step.name}, expected ${STEP.MERGE_PR}`,
@@ -753,6 +813,57 @@ export class PipelineOrchestrator {
 			this.engine.transition(workflowId, "running");
 			this.startStep(workflow);
 		});
+	}
+
+	private async runFixImplement(workflow: Workflow): Promise<void> {
+		const cwd = requireWorktreePath(workflow);
+		const preRunHead = await this.getGitHeadFn(cwd);
+		workflow.feedbackPreRunHead = preRunHead;
+		this.persistWorkflow(workflow);
+
+		const current = this.getActiveWorkflow(workflow.id);
+		const currentStep = current?.steps[current.currentStepIndex];
+		if (
+			!current ||
+			current.status !== "running" ||
+			currentStep?.name !== STEP.FIX_IMPLEMENT ||
+			currentStep.status !== "running"
+		) {
+			return;
+		}
+
+		const config = configStore.get();
+		const prompt = buildFixImplementPrompt(workflow);
+		this.runStep(workflow, prompt, cwd, config.models.implement, config.efforts.implement);
+	}
+
+	private async completeFixImplement(workflow: Workflow): Promise<void> {
+		const cwd = workflow.worktreePath;
+		const preRunHead = workflow.feedbackPreRunHead;
+		const postRunHead = cwd ? await this.getGitHeadFn(cwd) : null;
+		workflow.feedbackPreRunHead = null;
+
+		const diff = classifyFixImplementDiff(preRunHead, postRunHead);
+		if (diff.kind === "head-read-failed") {
+			this.handleStepError(workflow.id, FIX_IMPLEMENT_HEAD_READ_FAILED_MESSAGE);
+			return;
+		}
+		if (diff.kind === "empty") {
+			// Mark the latest in-flight feedback entry (if any) as produced no changes
+			const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
+			if (latest && latest.outcome === null) {
+				latest.outcome = {
+					value: "no changes",
+					summary: FIX_IMPLEMENT_EMPTY_DIFF_MESSAGE,
+					commitRefs: [],
+					warnings: [],
+				};
+			}
+			this.handleStepError(workflow.id, FIX_IMPLEMENT_EMPTY_DIFF_MESSAGE);
+			return;
+		}
+		this.persistWorkflow(workflow);
+		this.advanceAfterStep(workflow.id);
 	}
 
 	private async runFeedbackImplementer(workflow: Workflow): Promise<void> {
@@ -905,6 +1016,13 @@ export class PipelineOrchestrator {
 
 		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
 			this.runFeedbackImplementer(workflow).catch((err) => {
+				this.handleStepError(workflow.id, toErrorMessage(err));
+			});
+			return;
+		}
+
+		if (step.name === STEP.FIX_IMPLEMENT) {
+			this.runFixImplement(workflow).catch((err) => {
 				this.handleStepError(workflow.id, toErrorMessage(err));
 			});
 			return;
@@ -1109,6 +1227,10 @@ export class PipelineOrchestrator {
 	}
 
 	private initSpeckitInWorktree(workflow: Workflow): void {
+		if (workflow.workflowKind === "quick-fix") {
+			this.initQuickFixBranch(workflow);
+			return;
+		}
 		const cwd = requireWorktreePath(workflow);
 		this.handleStepOutput(workflow.id, "[speckit] Ensuring spec-kit skills in worktree");
 
@@ -1133,6 +1255,70 @@ export class PipelineOrchestrator {
 			.catch((err) => {
 				this.handleStepError(workflow.id, `Failed to initialize spec-kit: ${toErrorMessage(err)}`);
 			});
+	}
+
+	private async initQuickFixBranch(workflow: Workflow): Promise<void> {
+		try {
+			const cwd = requireWorktreePath(workflow);
+			const targetRepo = requireTargetRepository(workflow);
+			this.handleStepOutput(workflow.id, "[quick-fix] Allocating fix branch name");
+
+			const branchList = await gitSpawn(["git", "branch", "-a"], { cwd });
+			// Pause/abort race: matches the pattern used by every sibling setup
+			// continuation — after each await, bail if the workflow is no longer
+			// running so we don't mutate featureBranch / worktree on disk behind a
+			// user who has already paused or aborted.
+			{
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf || wf.status !== "running") return;
+			}
+			const existing = branchList.code === 0 ? branchList.stdout.split(/\r?\n/) : [];
+			const branchName = nextFixBranchName(workflow.specification, existing);
+
+			const checkout = await gitSpawn(["git", "checkout", "-b", branchName], { cwd });
+			{
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf || wf.status !== "running") return;
+			}
+			if (checkout.code !== 0) {
+				this.handleStepError(
+					workflow.id,
+					`Failed to create fix branch ${branchName}: ${checkout.stderr || checkout.code}`,
+				);
+				return;
+			}
+			this.handleStepOutput(workflow.id, `✓ Created fix branch ${branchName}`);
+
+			workflow.featureBranch = branchName;
+			workflow.worktreeBranch = branchName;
+
+			// Rename worktree dir to match the branch (non-fatal on failure).
+			if (workflow.worktreePath) {
+				const newRelativePath = `.worktrees/${branchName.replace(/\//g, "-")}`;
+				try {
+					const newAbsPath = await this.engine.moveWorktree(
+						workflow.worktreePath,
+						newRelativePath,
+						targetRepo,
+					);
+					const wf = this.getActiveWorkflow(workflow.id);
+					if (!wf || wf.status !== "running") return;
+					workflow.worktreePath = newAbsPath;
+				} catch (err) {
+					logger.warn(
+						`[pipeline] Quick-fix worktree rename failed (non-fatal): ${toErrorMessage(err)}`,
+					);
+				}
+			}
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflow.id);
+			this.advanceAfterStep(workflow.id);
+		} catch (err) {
+			this.handleStepError(
+				workflow.id,
+				`Failed to initialize quick-fix branch: ${toErrorMessage(err)}`,
+			);
+		}
 	}
 
 	private runMonitorCi(workflow: Workflow): void {
@@ -1294,10 +1480,13 @@ export class PipelineOrchestrator {
 	): void {
 		// Inject accumulated user feedback as authoritative context into every
 		// CLI-spawned step (FR-010). Skip for feedback-implementer, whose prompt
-		// template already interpolates ${feedbackContext} directly.
+		// template already interpolates ${feedbackContext} directly, and for
+		// fix-implement, whose prompt builder (`buildFixImplementPrompt`) already
+		// appends any in-flight retry-guidance inline — prepending here would
+		// duplicate the same text under a second header.
 		const step = workflow.steps[workflow.currentStepIndex];
 		let finalPrompt = prompt;
-		if (step?.name !== STEP.FEEDBACK_IMPLEMENTER) {
+		if (step?.name !== STEP.FEEDBACK_IMPLEMENTER && step?.name !== STEP.FIX_IMPLEMENT) {
 			const feedbackCtx = buildFeedbackContext(workflow);
 			if (feedbackCtx) {
 				finalPrompt = `${feedbackCtx}\n\n---\n\n${prompt}`;
@@ -1394,6 +1583,13 @@ export class PipelineOrchestrator {
 		// submission via the FR-016 in-flight guard.
 		if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
 			this.advanceAfterStep(workflowId);
+			return;
+		}
+
+		if (step.name === STEP.FIX_IMPLEMENT) {
+			this.completeFixImplement(workflow).catch((err) => {
+				this.handleStepError(workflowId, toErrorMessage(err));
+			});
 			return;
 		}
 

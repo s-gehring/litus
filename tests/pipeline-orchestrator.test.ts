@@ -13,7 +13,7 @@ import type {
 	Workflow,
 	WorkflowStatus,
 } from "../src/types";
-import { PIPELINE_STEP_DEFINITIONS } from "../src/types";
+import { getStepDefinitionsForKind } from "../src/types";
 
 // ── Fake dependencies (no mock.module — uses DI) ──────────────────────
 
@@ -26,6 +26,7 @@ function createFakeEngine() {
 			const now = new Date().toISOString();
 			workflow = {
 				id: "test-wf-id",
+				workflowKind: "spec",
 				specification: spec,
 				status: "idle" as WorkflowStatus,
 				targetRepository,
@@ -37,7 +38,7 @@ function createFakeEngine() {
 				flavor: "",
 				pendingQuestion: null,
 				lastOutput: "",
-				steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
+				steps: getStepDefinitionsForKind("spec").map((def) => ({
 					name: def.name,
 					displayName: def.displayName,
 					status: "pending" as const,
@@ -3179,6 +3180,7 @@ function makeCallbacksWorkflowForRecovery(): Workflow {
 	const now = new Date().toISOString();
 	const wf: Workflow = {
 		id: "recovery-test",
+		workflowKind: "spec",
 		specification: "test",
 		status: "running" as WorkflowStatus,
 		targetRepository: "/tmp/repo",
@@ -3190,7 +3192,7 @@ function makeCallbacksWorkflowForRecovery(): Workflow {
 		flavor: "",
 		pendingQuestion: null,
 		lastOutput: "",
-		steps: PIPELINE_STEP_DEFINITIONS.map((def) => ({
+		steps: getStepDefinitionsForKind("spec").map((def) => ({
 			name: def.name,
 			displayName: def.displayName,
 			status: "pending" as const,

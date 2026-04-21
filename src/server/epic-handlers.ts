@@ -32,7 +32,7 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 	const msg = data as ClientMessage & { type: "epic:start" };
 	const { description, targetRepository, autoStart, submissionId } = msg;
 
-	const inputError = validateTextInput(description, "Epic description", 10);
+	const inputError = validateTextInput(description, "Epic description", { minLength: 10 });
 	if (inputError) {
 		deps.sendTo(ws, { type: "error", message: inputError });
 		return;

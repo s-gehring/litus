@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import type { PipelineStepName } from "../../src/types";
 import { PIPELINE_STEP_DEFINITIONS, STEP } from "../../src/types";
 
 describe("STEP constant drift detection", () => {
 	test("every PIPELINE_STEP_DEFINITIONS entry has a matching STEP key", () => {
-		const stepValues = new Set(Object.values(STEP));
+		const stepValues: Set<PipelineStepName> = new Set(Object.values(STEP));
 		for (const def of PIPELINE_STEP_DEFINITIONS) {
 			expect(stepValues.has(def.name)).toBe(true);
 		}

@@ -73,8 +73,14 @@ export function withOrchestrator(
 const MAX_INPUT_LENGTH = 100_000;
 
 /** Validate a text input is non-empty and under the max length. Returns an error message or null. */
-export function validateTextInput(value: string, label: string, minLength = 1): string | null {
+export function validateTextInput(
+	value: string,
+	label: string,
+	options: { minLength?: number; emptyMessage?: string } = {},
+): string | null {
+	const minLength = options.minLength ?? 1;
 	if (!value || value.trim().length < minLength) {
+		if (options.emptyMessage) return options.emptyMessage;
 		return minLength > 1
 			? `${label} must be at least ${minLength} characters`
 			: `${label} must be non-empty`;
