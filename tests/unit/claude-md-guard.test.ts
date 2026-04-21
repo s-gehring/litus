@@ -101,6 +101,11 @@ async function makeFixture(opts: {
 			// work is a completely separate repo; origin is added as remote
 			// but has no shared ancestor with work's master.
 			await mustRun(["git", "init", "-b", "master"], work);
+			// guardClaudeMd's internal `git commit` uses gitSpawn which does NOT
+			// forward GIT_AUTHOR_* env vars; configure local identity so CI
+			// (no global user.name/email) can commit.
+			await mustRun(["git", "config", "user.email", "t@e.com"], work);
+			await mustRun(["git", "config", "user.name", "Test"], work);
 			writeFileSync(join(work, "other.txt"), "other");
 			await mustRun(["git", "add", "."], work);
 			await mustRun(["git", "commit", "-m", "independent"], work);
@@ -111,6 +116,11 @@ async function makeFixture(opts: {
 		} else {
 			// clone so HEAD starts at origin/master base content
 			await mustRun(["git", "clone", origin, work], process.cwd());
+			// guardClaudeMd's internal `git commit` uses gitSpawn which does NOT
+			// forward GIT_AUTHOR_* env vars; configure local identity so CI
+			// (no global user.name/email) can commit.
+			await mustRun(["git", "config", "user.email", "t@e.com"], work);
+			await mustRun(["git", "config", "user.name", "Test"], work);
 			await mustRun(["git", "switch", "-c", "feat"], work);
 
 			if (opts.branchAction === "delete") {
