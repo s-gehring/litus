@@ -11,6 +11,10 @@ export class AppPage {
 		return this.page.locator("#btn-new-spec");
 	}
 
+	quickFixButton(): Locator {
+		return this.page.locator("#btn-quick-fix");
+	}
+
 	cardStrip(): Locator {
 		return this.page.locator("#card-strip");
 	}

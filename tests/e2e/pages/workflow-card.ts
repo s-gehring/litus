@@ -10,6 +10,7 @@ export type PipelineStepName =
 	| "review"
 	| "implement-review"
 	| "commit-push-pr"
+	| "fix-implement"
 	| "monitor-ci"
 	| "fix-ci"
 	| "feedback-implementer"
@@ -37,6 +38,7 @@ const DISPLAY_NAME: Record<PipelineStepName, string> = {
 	review: "Reviewing",
 	"implement-review": "Fixing Review",
 	"commit-push-pr": "Creating PR",
+	"fix-implement": "Fix Implementation",
 	"monitor-ci": "Monitoring CI",
 	"fix-ci": "Fixing CI",
 	"feedback-implementer": "Applying Feedback",

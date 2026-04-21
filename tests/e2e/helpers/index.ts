@@ -22,6 +22,7 @@ export {
 	setAutomationMode,
 } from "./run-controls";
 export { type ServerMessage, ServerMessageObserver } from "./server-messages";
+export { startQuickFix } from "./start-quick-fix";
 export { submitFeedback } from "./submit-feedback";
 export { triggerFailure } from "./trigger-failure";
 export { waitForStep } from "./wait-for-step";

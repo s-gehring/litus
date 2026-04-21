@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { ScenarioFile, ScenarioScript } from "../harness/scenario-types";
@@ -165,6 +166,36 @@ async function main() {
 	// the server's artifact snapshotter — which runs after step completion —
 	// picks them up as real workflow outputs.
 	writeScenarioFiles(script.files, idx);
+
+	// Scripted commit: some steps (notably `fix-implement`) classify success by
+	// HEAD divergence before/after the claude invocation. Without a real commit
+	// from the fake, those steps would see an empty diff and fail. When a
+	// scenario entry sets `commit`, stage everything in CWD and create one
+	// commit with the given message.
+	if (script.commit) {
+		const env = {
+			...process.env,
+			GIT_AUTHOR_NAME: "Litus E2E",
+			GIT_AUTHOR_EMAIL: "e2e@litus.local",
+			GIT_COMMITTER_NAME: "Litus E2E",
+			GIT_COMMITTER_EMAIL: "e2e@litus.local",
+		};
+		const add = spawnSync("git", ["add", "-A"], { cwd: process.cwd(), env });
+		if (add.status !== 0) {
+			die(
+				`claude invocation ${idx}: scripted \`git add -A\` failed (${add.status}): ${add.stderr?.toString() ?? ""}`,
+			);
+		}
+		const commit = spawnSync("git", ["commit", "-m", script.commit.message, "--allow-empty"], {
+			cwd: process.cwd(),
+			env,
+		});
+		if (commit.status !== 0) {
+			die(
+				`claude invocation ${idx}: scripted \`git commit\` failed (${commit.status}): ${commit.stderr?.toString() ?? ""}`,
+			);
+		}
+	}
 
 	if (outputFormat === "stream-json") {
 		if (!script.events) {
