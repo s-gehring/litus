@@ -201,6 +201,89 @@ describe("CLIRunner", () => {
 			expect(capturedArgs).not.toContain("--model");
 			expect(capturedArgs).not.toContain("--effort");
 		});
+
+		test("resume() includes --model and --effort when both are provided", async () => {
+			let capturedArgs: string[] = [];
+			const { promise, resolve } = createDeferredPromise();
+
+			BunGlobal.Bun.spawn = (args: string[]) => {
+				capturedArgs = args;
+				return {
+					stdout: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					stderr: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					exited: Promise.resolve(0),
+					kill: () => {},
+					pid: 1,
+				};
+			};
+
+			runner.resume(
+				"w-resume-model",
+				"sess-xyz",
+				WORKTREE_DIR,
+				makeCallbacks({ onComplete: () => resolve() }),
+				undefined,
+				undefined,
+				"claude-opus-4-7",
+				"max",
+			);
+
+			await promise;
+			expect(capturedArgs).toContain("--resume");
+			expect(capturedArgs).toContain("sess-xyz");
+			expect(capturedArgs).toContain("--model");
+			expect(capturedArgs).toContain("claude-opus-4-7");
+			expect(capturedArgs).toContain("--effort");
+			expect(capturedArgs).toContain("max");
+		});
+
+		test("resume() omits --model when model is empty string", async () => {
+			let capturedArgs: string[] = [];
+			const { promise, resolve } = createDeferredPromise();
+
+			BunGlobal.Bun.spawn = (args: string[]) => {
+				capturedArgs = args;
+				return {
+					stdout: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					stderr: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					exited: Promise.resolve(0),
+					kill: () => {},
+					pid: 1,
+				};
+			};
+
+			runner.resume(
+				"w-resume-no-model",
+				"sess-abc",
+				WORKTREE_DIR,
+				makeCallbacks({ onComplete: () => resolve() }),
+				undefined,
+				undefined,
+				"",
+				"low",
+			);
+
+			await promise;
+			expect(capturedArgs).not.toContain("--model");
+			expect(capturedArgs).toContain("--effort");
+			expect(capturedArgs).toContain("low");
+		});
 	});
 
 	describe("handleStreamEvent (via streamOutput)", () => {
