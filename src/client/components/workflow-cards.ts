@@ -2,6 +2,7 @@ import type {
 	EpicAggregatedState,
 	EpicClientState,
 	WorkflowClientState,
+	WorkflowKind,
 	WorkflowState,
 } from "../../types";
 import { $, createTimerElement } from "../dom";
@@ -23,7 +24,16 @@ const CARD_KIND_LABELS: Record<CardKind, string> = {
 	"quick-fix": "Quick Fix",
 };
 
-function appendTypeBadge(card: HTMLElement, kind: CardKind): void {
+function kindFromWorkflow(workflowKind: WorkflowKind): CardKind {
+	switch (workflowKind) {
+		case "quick-fix":
+			return "quick-fix";
+		case "spec":
+			return "spec";
+	}
+}
+
+function prependTypeBadge(card: HTMLElement, kind: CardKind): void {
 	const badge = document.createElement("span");
 	badge.className = `card-type-badge card-type-badge--${kind}`;
 	badge.textContent = CARD_KIND_LABELS[kind];
@@ -76,7 +86,7 @@ function createCompactCard(
 	onClick: (workflowId: string) => void,
 ): HTMLElement {
 	const card = document.createElement("div");
-	const kind: CardKind = wf.workflowKind === "quick-fix" ? "quick-fix" : "spec";
+	const kind: CardKind = kindFromWorkflow(wf.workflowKind);
 	card.className = `workflow-card workflow-card--${kind}`;
 	card.dataset.workflowId = wf.id;
 
@@ -142,7 +152,7 @@ function createCompactCard(
 	// Timer
 	card.appendChild(createTimerElement(wf.activeWorkMs, wf.activeWorkStartedAt, formatTimer));
 
-	appendTypeBadge(card, kind);
+	prependTypeBadge(card, kind);
 
 	card.addEventListener("click", () => onClick(wf.id));
 
@@ -178,7 +188,7 @@ function createAggregatedEpicCard(
 	onClick: (id: string) => void,
 ): HTMLElement {
 	const card = document.createElement("div");
-	card.className = "workflow-card workflow-card--epic epic-card";
+	card.className = "workflow-card workflow-card--epic";
 	card.dataset.epicId = agg.epicId;
 
 	const cardId = `${EPIC_CARD_PREFIX}${agg.epicId}`;
@@ -216,7 +226,7 @@ function createAggregatedEpicCard(
 	// Timer — sum of active work time across children
 	card.appendChild(createTimerElement(agg.activeWorkMs, agg.activeWorkStartedAt, formatTimer));
 
-	appendTypeBadge(card, "epic");
+	prependTypeBadge(card, "epic");
 
 	card.addEventListener("click", () => onClick(cardId));
 
@@ -229,7 +239,7 @@ function createEpicAnalysisCard(
 	onClick: (id: string) => void,
 ): HTMLElement {
 	const card = document.createElement("div");
-	card.className = "workflow-card workflow-card--epic epic-card";
+	card.className = "workflow-card workflow-card--epic";
 	card.dataset.epicId = epic.epicId;
 
 	if (expandedId === epic.epicId) {
@@ -255,8 +265,7 @@ function createEpicAnalysisCard(
 	// Summary or description
 	const summary = document.createElement("span");
 	summary.className = "card-summary";
-	const summaryText = epic.title || epic.description;
-	summary.textContent = summaryText.length > 120 ? `${summaryText.slice(0, 120)}...` : summaryText;
+	summary.textContent = epic.title || epic.description;
 	card.appendChild(summary);
 
 	// Timer — compute elapsed ms for completed/error epics, live for analyzing
@@ -271,7 +280,7 @@ function createEpicAnalysisCard(
 	timer.textContent = formatTimer(elapsedMs, isAnalyzing ? epic.startedAt : null);
 	card.appendChild(timer);
 
-	appendTypeBadge(card, "epic");
+	prependTypeBadge(card, "epic");
 
 	card.addEventListener("click", () => onClick(epic.epicId));
 
