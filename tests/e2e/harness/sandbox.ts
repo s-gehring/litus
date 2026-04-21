@@ -8,6 +8,13 @@ export interface Sandbox {
 	/** A fully-initialised git repository inside the sandbox, suitable for
 	 * passing as `targetRepository` to `workflow:start`. */
 	targetRepo: string;
+	/**
+	 * Absolute path to a prebuilt, real-git working tree used as the source
+	 * for the `clone.useTemplate` side-effect in `tests/e2e/fakes/git.ts`.
+	 * Exposed via the `LITUS_E2E_CLONE_TEMPLATE` env var so the fake can copy
+	 * it into a scripted clone's destination.
+	 */
+	cloneTemplate: string;
 	counterFile: string;
 	serverLogPath: string;
 	configPath: string;
@@ -93,6 +100,28 @@ async function initTargetRepo(dir: string, originDir: string): Promise<void> {
 	await runCmd("git", ["push", "origin", "master"], dir, env);
 }
 
+/**
+ * Build a minimal real-git working tree with a single commit on `master`.
+ * The tree is used as the source of the `clone.useTemplate` side-effect in
+ * the `git` fake: the fake recursively copies it to the scripted clone's
+ * destination and rewrites `origin` to the scripted URL. At least one
+ * commit is required so `git worktree add` (invoked downstream by the
+ * server's managed-repo flow) succeeds against the cloned copy.
+ */
+async function initCloneTemplate(dir: string): Promise<void> {
+	await mkdir(dir, { recursive: true });
+	const env = {
+		GIT_AUTHOR_NAME: "Litus E2E",
+		GIT_AUTHOR_EMAIL: "e2e@litus.local",
+		GIT_COMMITTER_NAME: "Litus E2E",
+		GIT_COMMITTER_EMAIL: "e2e@litus.local",
+	};
+	await runCmd("git", ["init", "-b", "master"], dir, env);
+	await writeFile(join(dir, "README.md"), "# E2E Clone Template\n", "utf8");
+	await runCmd("git", ["add", "-A"], dir, env);
+	await runCmd("git", ["commit", "-m", "chore: template initial commit"], dir, env);
+}
+
 export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sandbox> {
 	const homeDir = await mkdtemp(join(tmpdir(), "litus-e2e-"));
 	const counterFile = join(homeDir, ".litus-e2e-claude-counter.json");
@@ -103,7 +132,9 @@ export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sa
 	const originRepo = join(homeDir, "github-origin.git");
 	const litusDir = join(homeDir, ".litus");
 	const configPath = join(litusDir, "config.json");
+	const cloneTemplate = join(homeDir, "clone-template");
 	await initTargetRepo(targetRepo, originRepo);
+	await initCloneTemplate(cloneTemplate);
 	if (opts.autoMode || opts.configOverrides) {
 		await mkdir(litusDir, { recursive: true });
 		const merged: Record<string, unknown> = {
@@ -116,6 +147,7 @@ export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sa
 	return {
 		homeDir,
 		targetRepo,
+		cloneTemplate,
 		counterFile,
 		serverLogPath,
 		configPath,

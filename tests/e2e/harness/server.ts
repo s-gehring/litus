@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { open } from "node:fs/promises";
 import { resolve } from "node:path";
-import { buildPathWithFakes } from "./fakes-path";
+import { buildPathWithFakes, discoverRealGit } from "./fakes-path";
 
 /**
  * Backwards-compatible shape consumed by existing tests. New fields
@@ -30,6 +30,10 @@ export interface SpawnServerOptions {
 	counterFile: string;
 	logPath: string;
 	repoRoot: string;
+	/** Absolute path to the prebuilt working tree used as source for
+	 * `clone.useTemplate` side-effect in the `git` fake. Exposed via
+	 * `LITUS_E2E_CLONE_TEMPLATE` to the spawned server. */
+	cloneTemplate: string;
 }
 
 const READY_MARKER = "Litus running at http://localhost:";
@@ -66,6 +70,8 @@ async function spawnOnce(opts: SpawnServerOptions): Promise<RawSpawn> {
 		PATH: buildPathWithFakes(process.env.PATH ?? process.env.Path),
 		LITUS_E2E_SCENARIO: opts.scenarioPath,
 		LITUS_E2E_COUNTER: opts.counterFile,
+		LITUS_E2E_REAL_GIT: discoverRealGit(process.env.PATH ?? process.env.Path),
+		LITUS_E2E_CLONE_TEMPLATE: opts.cloneTemplate,
 		PORT: "0",
 	};
 

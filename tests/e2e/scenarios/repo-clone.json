@@ -1,0 +1,27 @@
+{
+	"name": "repo-clone",
+	"claude": [],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com account e2e\n" },
+		"repo clone": {
+			"exitCode": 1,
+			"stderr": "gh: not logged in. Run `gh auth login` to authenticate.\n"
+		}
+	},
+	"git": {
+		"clone": [
+			{
+				"matchArg": { "0": "https://github.com/litus/fails.git" },
+				"exitCode": 128,
+				"stderr": "fatal: repository 'https://github.com/litus/fails.git/' not found\n"
+			},
+			{
+				"matchArg": { "0": "https://github.com/litus/succeeds.git" },
+				"exitCode": 0,
+				"delayMs": 250,
+				"clone": { "useTemplate": true }
+			}
+		]
+	}
+}

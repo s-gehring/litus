@@ -21,8 +21,15 @@ export class SpecFormPage {
 		return this.modal().locator(".btn.btn-primary");
 	}
 
+	/** Error surface for both validation and clone failures (scoped to the
+	 * clone flow by calling-spec timing: wait until `repo:clone-error` fires). */
 	errorMessage(): Locator {
 		return this.modal().locator(".modal-error");
+	}
+
+	/** Progress text rendered while a managed-repo clone is in flight. */
+	cloneStatus(): Locator {
+		return this.modal().locator(".modal-clone-status");
 	}
 
 	fieldError(): Locator {
