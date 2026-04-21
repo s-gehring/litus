@@ -235,8 +235,14 @@ function buildNumericSection(sectionKey: string): HTMLElement {
 			}
 		});
 
+		// Swap the formatted display (e.g. "1,800,000") for raw digits on focus so
+		// the user can edit without fighting group separators. Using `select()`
+		// alongside means a subsequent keystroke replaces the whole value — and,
+		// importantly, Playwright's `fill()` sees the raw digits so it doesn't end
+		// up appending to the formatted string.
 		input.addEventListener("focus", () => {
 			input.value = input.dataset.rawValue ?? input.value;
+			input.select();
 		});
 
 		input.addEventListener("change", () => {
@@ -434,18 +440,20 @@ export function updateConfigPage(config: AppConfig, warnings?: ConfigWarning[]):
 		if (!sectionData) continue;
 
 		const value = sectionData[key];
-		if (value !== undefined) {
-			if (input.classList.contains("cfg-number-input")) {
-				const numVal = Number(value);
-				(input as HTMLInputElement).dataset.rawValue = String(numVal);
-				if (document.activeElement !== input) {
-					input.value = formatNumber(numVal);
-				} else {
-					input.value = String(numVal);
-				}
-			} else {
-				input.value = String(value);
+		if (value === undefined) continue;
+
+		// Don't clobber the input the user is actively editing — a `config:state`
+		// broadcast can arrive between `fill` and the `change` dispatch, and
+		// overwriting mid-edit loses whatever was just typed.
+		const isFocused = document.activeElement === input;
+		if (input.classList.contains("cfg-number-input")) {
+			const numVal = Number(value);
+			(input as HTMLInputElement).dataset.rawValue = String(numVal);
+			if (!isFocused) {
+				input.value = formatNumber(numVal);
 			}
+		} else if (!isFocused) {
+			input.value = String(value);
 		}
 	}
 
@@ -459,7 +467,7 @@ export function updateConfigPage(config: AppConfig, warnings?: ConfigWarning[]):
 		if (!sectionData) continue;
 
 		const value = sectionData[key];
-		if (value !== undefined) {
+		if (value !== undefined && document.activeElement !== select) {
 			select.value = String(value);
 		}
 	}
