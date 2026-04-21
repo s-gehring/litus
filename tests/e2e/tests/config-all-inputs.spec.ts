@@ -119,16 +119,42 @@ test.describe("every config input persists to disk", () => {
 			await cfg.activateTab(section);
 			// Use a value clearly above `min` and distinct from the default, so either
 			// a silent floor-at-min or a silent-revert-to-default would be visible.
-			const value = Math.max(meta.min, meta.defaultValue) + meta.min + 1;
+			const rawTarget = Math.max(meta.min, meta.defaultValue) + meta.min + 1;
 			const input = page.locator(`input[data-cfg-path="${meta.key}"]`);
+
+			if (meta.inputKind === "size" || meta.inputKind === "duration") {
+				// Unit-aware inputs multiply the typed number by the selected unit's
+				// factor (MB/GB or minutes/hours). Pin the unit to the smallest option
+				// so we can compute the canonical value the commit will store.
+				const smallestUnit = meta.inputKind === "size" ? "MB" : "minutes";
+				const factor = meta.inputKind === "size" ? 1_048_576 : 60_000;
+				const unitSelect = page.locator(`select[data-cfg-unit-for="${meta.key}"]`);
+				if ((await unitSelect.inputValue()) !== smallestUnit) {
+					const unitBroadcast = observer.waitFor((m) => m.type === "config:state");
+					await unitSelect.selectOption(smallestUnit);
+					await unitBroadcast;
+				}
+				const displayed = Math.ceil(rawTarget / factor);
+				const canonical = displayed * factor;
+				const broadcast = observer.waitFor((m) => m.type === "config:state");
+				await input.fill(String(displayed));
+				await input.dispatchEvent("change");
+				await broadcast;
+
+				const onDisk = await readConfigJson(sandbox.homeDir);
+				const sectionObj = onDisk[section] as Record<string, number>;
+				expect(sectionObj[key]).toBe(canonical);
+				continue;
+			}
+
 			const broadcast = observer.waitFor((m) => m.type === "config:state");
-			await input.fill(String(value));
+			await input.fill(String(rawTarget));
 			await input.dispatchEvent("change");
 			await broadcast;
 
 			const onDisk = await readConfigJson(sandbox.homeDir);
 			const sectionObj = onDisk[section] as Record<string, number>;
-			expect(sectionObj[key]).toBe(value);
+			expect(sectionObj[key]).toBe(rawTarget);
 		}
 	});
 
