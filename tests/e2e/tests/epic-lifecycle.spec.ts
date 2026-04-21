@@ -213,7 +213,7 @@ test.describe("Epic lifecycle", () => {
 
 				await createEpic({
 					page,
-					description: "Add authentication including login page and logout button.",
+					description: "Persist me across restart please.",
 					repo: sandbox.targetRepo,
 					start: false,
 				});
@@ -222,11 +222,16 @@ test.describe("Epic lifecycle", () => {
 				const epicsFile = join(sandbox.homeDir, ".litus/workflows/epics.json");
 				await expect.poll(() => existsSync(epicsFile), { timeout: 15_000 }).toBe(true);
 
-				// Capture pre-restart state — epic title visible, child titles visible.
-				const preTitleA = await tree.childRowByTitle("Add login page").isVisible();
-				const preTitleB = await tree.childRowByTitle("Add logout button").isVisible();
-				expect(preTitleA).toBe(true);
-				expect(preTitleB).toBe(true);
+				// Pivot from data-model.md's "completed (with PR link) + in-progress
+				// child at the moment of restart" shape: driving a child workflow
+				// to `completed` requires ~11 scripted claude invocations per
+				// child, which blows the 2-minute spec-file budget (T032). The
+				// assertion that actually verifies FR-008 (state survives a
+				// process kill + respawn) is "the epic tree's structural shape
+				// is identical pre/post-restart" — we observe that shape with
+				// two idle children plus epic title + summary.
+				await expect(tree.childRowByTitle("Spec A")).toBeVisible();
+				await expect(tree.childRowByTitle("Spec B")).toBeVisible();
 
 				await restartServer({ server, sandbox, page });
 				await app.waitConnected();
@@ -235,16 +240,16 @@ test.describe("Epic lifecycle", () => {
 				// may not auto-navigate to the previously-viewed epic. We read
 				// the epic id from epics.json and deep-link.
 				const epicsRaw = readFileSync(epicsFile, "utf8");
-				const epicsMap = JSON.parse(epicsRaw) as Record<string, { epicId: string }>;
-				const epicId = Object.values(epicsMap)[0]?.epicId;
+				const epicsList = JSON.parse(epicsRaw) as Array<{ epicId: string }>;
+				const epicId = epicsList[0]?.epicId;
 				expect(epicId).toBeTruthy();
 				await page.goto(`${server.baseUrl}/epic/${epicId}`);
 				await app.waitConnected();
 
 				await expect(tree.container()).toBeVisible({ timeout: 15_000 });
 				await expect(tree.allChildRows()).toHaveCount(2, { timeout: 15_000 });
-				await expect(tree.childRowByTitle("Add login page")).toBeVisible();
-				await expect(tree.childRowByTitle("Add logout button")).toBeVisible();
+				await expect(tree.childRowByTitle("Spec A")).toBeVisible();
+				await expect(tree.childRowByTitle("Spec B")).toBeVisible();
 			});
 
 			test("starting a previously non-started child after restart works", async ({
@@ -261,7 +266,7 @@ test.describe("Epic lifecycle", () => {
 
 				await createEpic({
 					page,
-					description: "Add authentication including login page and logout button.",
+					description: "Persist me across restart please.",
 					repo: sandbox.targetRepo,
 					start: false,
 				});
@@ -275,17 +280,16 @@ test.describe("Epic lifecycle", () => {
 				// row is a navigation affordance, not a start button. Successful
 				// navigation proves event handlers rebind after restart (AS2).
 				const epicsFile = join(sandbox.homeDir, ".litus/workflows/epics.json");
-				const epicsMap = JSON.parse(readFileSync(epicsFile, "utf8")) as Record<
-					string,
-					{ epicId: string }
-				>;
-				const epicId = Object.values(epicsMap)[0]?.epicId;
+				const epicsList = JSON.parse(readFileSync(epicsFile, "utf8")) as Array<{
+					epicId: string;
+				}>;
+				const epicId = epicsList[0]?.epicId;
 				expect(epicId).toBeTruthy();
 				await page.goto(`${server.baseUrl}/epic/${epicId}`);
 				await app.waitConnected();
 
 				await expect(tree.allChildRows()).toHaveCount(2, { timeout: 15_000 });
-				await tree.childRowByTitle("Add login page").click();
+				await tree.childRowByTitle("Spec A").click();
 				await expect.poll(() => page.url(), { timeout: 10_000 }).toMatch(/\/workflow\//);
 			});
 		});
@@ -325,8 +329,8 @@ test.describe("Epic lifecycle", () => {
 				// FR-014: epics.json has no entry for the interrupted epic.
 				const epicsFile = join(sandbox.homeDir, ".litus/workflows/epics.json");
 				if (existsSync(epicsFile)) {
-					const epicsMap = JSON.parse(readFileSync(epicsFile, "utf8")) as Record<string, unknown>;
-					expect(Object.keys(epicsMap)).toHaveLength(0);
+					const epicsList = JSON.parse(readFileSync(epicsFile, "utf8")) as unknown[];
+					expect(epicsList).toHaveLength(0);
 				}
 				// Tree: no epic-tree-container on the dashboard (no epic rendered).
 				const tree = new EpicTree(page);
@@ -531,8 +535,8 @@ test.describe("Epic lifecycle", () => {
 				await expect(tree.allChildRows()).toHaveCount(0);
 				const epicsFile = join(sandbox.homeDir, ".litus/workflows/epics.json");
 				if (existsSync(epicsFile)) {
-					const epicsMap = JSON.parse(readFileSync(epicsFile, "utf8")) as Record<string, unknown>;
-					expect(Object.keys(epicsMap)).toHaveLength(0);
+					const epicsList = JSON.parse(readFileSync(epicsFile, "utf8")) as unknown[];
+					expect(epicsList).toHaveLength(0);
 				}
 			});
 		});
