@@ -18,6 +18,19 @@ export interface CreateSandboxOptions {
 	/** When set, writes a minimal `~/.litus/config.json` with `autoMode` set
 	 * to this value before the server spawns. */
 	autoMode?: "manual" | "normal" | "full-auto";
+	/**
+	 * Arbitrary partial-config overrides merged into the written
+	 * `~/.litus/config.json` before the server spawns. Shallow merged at the
+	 * top level; nested objects are replaced wholesale.
+	 *
+	 * Used by the epic E2E tests to:
+	 *   - Replace the multi-line `prompts.epicDecomposition` template with a
+	 *     single-line version so Windows `.cmd` argument passing (which drops
+	 *     newlines in args via `%*`) doesn't truncate the prompt.
+	 *   - Force `limits.maxJsonRetries` to 1 so the malformed-JSON edge-case
+	 *     scenario terminates quickly.
+	 */
+	configOverrides?: Record<string, unknown>;
 }
 
 async function runCmd(
@@ -91,9 +104,13 @@ export async function createSandbox(opts: CreateSandboxOptions = {}): Promise<Sa
 	const litusDir = join(homeDir, ".litus");
 	const configPath = join(litusDir, "config.json");
 	await initTargetRepo(targetRepo, originRepo);
-	if (opts.autoMode) {
+	if (opts.autoMode || opts.configOverrides) {
 		await mkdir(litusDir, { recursive: true });
-		await writeFile(configPath, JSON.stringify({ autoMode: opts.autoMode }, null, 2), "utf8");
+		const merged: Record<string, unknown> = {
+			...(opts.autoMode ? { autoMode: opts.autoMode } : {}),
+			...(opts.configOverrides ?? {}),
+		};
+		await writeFile(configPath, JSON.stringify(merged, null, 2), "utf8");
 	}
 	let disposed = false;
 	return {

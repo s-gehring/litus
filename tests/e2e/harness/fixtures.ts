@@ -10,6 +10,7 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "
 export interface Fixtures {
 	scenarioName: string;
 	autoMode: "manual" | "normal" | "full-auto";
+	configOverrides: Record<string, unknown> | null;
 	sandbox: Sandbox;
 	scenario: { path: string; name: string };
 	server: ServerHandle;
@@ -18,9 +19,13 @@ export interface Fixtures {
 export const test = base.extend<Fixtures>({
 	scenarioName: ["happy-path", { option: true }],
 	autoMode: ["manual", { option: true }],
+	configOverrides: [null, { option: true }],
 
-	sandbox: async ({ autoMode }, use) => {
-		const sandbox = await createSandbox({ autoMode });
+	sandbox: async ({ autoMode, configOverrides }, use) => {
+		const sandbox = await createSandbox({
+			autoMode,
+			configOverrides: configOverrides ?? undefined,
+		});
 		try {
 			await use(sandbox);
 		} finally {

@@ -22,11 +22,16 @@ export class EpicTree {
 	}
 
 	epicNode(): Locator {
-		return this.page.locator("#summary");
+		// `#workflow-summary` is the shared summary slot used by both
+		// workflow-detail and epic-detail handlers (see
+		// `workflow-window.ts#updateSummary`). For epics it carries
+		// `${title} (${completed}/${total} completed)` in tree-view and the
+		// epic title/description in analysis-view.
+		return this.page.locator("#workflow-summary");
 	}
 
 	aggregationSummary(): Locator {
-		return this.page.locator("#summary");
+		return this.page.locator("#workflow-summary");
 	}
 
 	aggregationBadge(): Locator {

@@ -1,0 +1,74 @@
+{
+	"name": "epic-aggregation",
+	"classifier": "nit\n",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "epic-agg-analyzer" },
+				{
+					"type": "assistant",
+					"session_id": "epic-agg-analyzer",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "```json\n{\"title\":\"Add auth module\",\"summary\":\"Split auth work\",\"specs\":[{\"id\":\"A\",\"title\":\"Add login page\",\"description\":\"Add a login page to the app.\",\"dependencies\":[]},{\"id\":\"B\",\"title\":\"Add logout button\",\"description\":\"Add a logout button to the header.\",\"dependencies\":[]}]}\n```"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "epic-agg-analyzer",
+					"result": "```json\n{\"title\":\"Add auth module\",\"summary\":\"Split auth work\",\"specs\":[{\"id\":\"A\",\"title\":\"Add login page\",\"description\":\"Add a login page to the app.\",\"dependencies\":[]},{\"id\":\"B\",\"title\":\"Add logout button\",\"description\":\"Add a logout button to the header.\",\"dependencies\":[]}]}\n```"
+				}
+			]
+		},
+		{
+			"exitCode": 1,
+			"delayMs": 200,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "agg-child-specify-fail-1" },
+				{
+					"type": "result",
+					"subtype": "error",
+					"session_id": "agg-child-specify-fail-1",
+					"result": "scripted failure: child specify step"
+				}
+			]
+		},
+		{
+			"exitCode": 1,
+			"delayMs": 300,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "agg-child-specify-fail-2" },
+				{
+					"type": "result",
+					"subtype": "error",
+					"session_id": "agg-child-specify-fail-2",
+					"result": "scripted failure: child specify step"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": {
+			"exitCode": 0,
+			"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/42\",\"number\":42}"
+		},
+		"pr merge": { "exitCode": 0, "stdout": "Merged pull request #42 (Squash and merge)\n" },
+		"pr checks": {
+			"exitCode": 0,
+			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"
+		},
+		"pr create": {
+			"exitCode": 0,
+			"stdout": "https://github.com/example/repo/pull/42\n"
+		},
+		"run view": { "exitCode": 0, "stdout": "" }
+	}
+}
