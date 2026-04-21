@@ -1785,7 +1785,12 @@ export class PipelineOrchestrator {
 	}
 
 	private routeToImplementReview(workflow: Workflow): void {
-		workflow.reviewCycle.iteration++;
+		// NOTE: reviewCycle.iteration is NOT bumped here. It tracks the
+		// currently-running review iteration and must stay stable across the
+		// review → implement-review pair so artifact snapshots for both steps
+		// line up on the same ordinal / code-review file. It is bumped in
+		// `handleImplementReviewComplete` only when the cycle loops back for
+		// another review.
 
 		const implReviewIndex = this.requireStepIndex(workflow, STEP.IMPLEMENT_REVIEW);
 
@@ -1810,6 +1815,11 @@ export class PipelineOrchestrator {
 		if (
 			shouldLoopReview(severity, workflow.reviewCycle.iteration, workflow.reviewCycle.maxIterations)
 		) {
+			// Advance the iteration counter only when we actually loop back
+			// for a new review. This keeps iteration equal to the number of
+			// review cycles that have actually started.
+			workflow.reviewCycle.iteration++;
+
 			// Reset review step and loop back
 			const step = workflow.steps[reviewIndex];
 			this.stepRunner.resetStep(step, "pending");
