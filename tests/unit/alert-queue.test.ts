@@ -111,29 +111,6 @@ describe("AlertQueue", () => {
 		});
 	});
 
-	test("dismissWhere filters by type + workflowId", async () => {
-		await withTempDir(async (dir) => {
-			const clock = fakeClock();
-			const q = new AlertQueue(new AlertStore(dir), {
-				now: clock.now,
-				dedupWindowMs: 0,
-			});
-			clock.advance(1);
-			q.emit(makeInput({ type: "question-asked", workflowId: "wf1" }));
-			clock.advance(1);
-			q.emit(makeInput({ type: "question-asked", workflowId: "wf2" }));
-			clock.advance(1);
-			q.emit(makeInput({ type: "error", workflowId: "wf1" }));
-			const removed = q.dismissWhere({ type: "question-asked", workflowId: "wf1" });
-			expect(removed).toHaveLength(1);
-			expect(q.list().map((a) => `${a.type}:${a.workflowId}`)).toEqual([
-				"error:wf1",
-				"question-asked:wf2",
-			]);
-			await q.flush();
-		});
-	});
-
 	test("loadFromDisk restores sorted state + dedup map", async () => {
 		await withTempDir(async (dir) => {
 			const clock = fakeClock();

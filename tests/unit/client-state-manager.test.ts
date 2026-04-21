@@ -1371,3 +1371,47 @@ describe("getLastTargetRepo", () => {
 		expect(mgr.getLastTargetRepo()).toBe("/repo/a");
 	});
 });
+
+describe("alert:seen handling", () => {
+	function seedAlert(mgr: ClientStateManager, id: string, seen: boolean): void {
+		mgr.handleMessage({
+			type: "alert:list",
+			alerts: [
+				{
+					id,
+					type: "workflow-finished",
+					title: "t",
+					description: "d",
+					workflowId: null,
+					epicId: null,
+					targetRoute: "/x",
+					createdAt: Date.now(),
+					seen,
+				},
+			],
+		});
+	}
+
+	test("flips a known alert's seen flag to true and returns a global/updated StateChange", () => {
+		const mgr = createManager();
+		seedAlert(mgr, "a1", false);
+		const change = mgr.handleMessage({ type: "alert:seen", alertIds: ["a1"] });
+		expect(mgr.getAlerts().get("a1")?.seen).toBe(true);
+		expect(change).toEqual({ scope: { entity: "global" }, action: "updated" });
+	});
+
+	test("unknown id is a no-op (future-proof per contracts/websocket.md)", () => {
+		const mgr = createManager();
+		seedAlert(mgr, "a1", false);
+		const change = mgr.handleMessage({ type: "alert:seen", alertIds: ["unknown"] });
+		expect(mgr.getAlerts().get("a1")?.seen).toBe(false);
+		expect(change).toEqual({ scope: { entity: "global" }, action: "updated" });
+	});
+
+	test("already-seen alert stays seen (seen cannot revert to false)", () => {
+		const mgr = createManager();
+		seedAlert(mgr, "a1", true);
+		mgr.handleMessage({ type: "alert:seen", alertIds: ["a1"] });
+		expect(mgr.getAlerts().get("a1")?.seen).toBe(true);
+	});
+});

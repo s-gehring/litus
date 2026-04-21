@@ -165,8 +165,8 @@ describe("alert-list row meta rendering", () => {
 		// The alert-list component fires onNavigate on every row click; the
 		// production wiring (app.ts) pairs `onNavigate` with a
 		// `send(alert:dismiss)` so FR-011 ("remove entirely") flows through the
-		// WebSocket. See `tests/integration/alert-list.test.ts` "row click wired
-		// to send(alert:dismiss) …" for the full path-level contract.
+		// WebSocket — see the "row click wired to send(alert:dismiss) …" test
+		// below for the full path-level contract.
 		seenRow?.click();
 		expect(state.navigated).toBe("alert_seen");
 		// Dismiss button still works on seen rows.

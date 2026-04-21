@@ -13,7 +13,7 @@ function createHarness(queue: AlertQueue) {
 		broadcasted.push(msg);
 	};
 	const activePaths: Set<string> = new Set();
-	const { emitAlert, dismissAlertsWhere, markAlertsSeenWhere } = createAlertBroadcasters(
+	const { emitAlert, markAlertsSeenWhere } = createAlertBroadcasters(
 		queue,
 		broadcast,
 		() => activePaths,
@@ -24,7 +24,6 @@ function createHarness(queue: AlertQueue) {
 	return {
 		emit: emitAlert,
 		dismissId,
-		dismissWhere: dismissAlertsWhere,
 		markSeenWhere: markAlertsSeenWhere,
 		broadcasted,
 		broadcast,
@@ -81,19 +80,6 @@ describe("alert lifecycle", () => {
 			await reloaded.flush();
 			expect((await store.load()).map((a) => a.id)).not.toContain(firstId);
 
-			// Auto-clear broadcast for question alerts.
-			tick += 10_000;
-			h2.emit({
-				type: "question-asked",
-				title: "Q",
-				description: "?",
-				workflowId: "wf-3",
-				epicId: null,
-				targetRoute: "/workflow/wf-3",
-			});
-			h2.dismissWhere({ type: "question-asked", workflowId: "wf-3" });
-			const lastBroadcast = h2.broadcasted[h2.broadcasted.length - 1];
-			expect(lastBroadcast.type).toBe("alert:dismissed");
 			await reloaded.flush();
 		});
 	});

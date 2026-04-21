@@ -452,6 +452,62 @@ describe("Router", () => {
 		});
 	});
 
+	describe("setNavigateListener", () => {
+		test("fires on every successful navigate with the target path", () => {
+			const router = new Router(container);
+			router.register("/a", makeHandler());
+			router.register("/b", makeHandler());
+			const calls: string[] = [];
+			router.setNavigateListener((p) => calls.push(p));
+			router.navigate("/a");
+			router.navigate("/b");
+			expect(calls).toEqual(["/a", "/b"]);
+		});
+
+		test("fires after mount (listener sees the new currentPath)", () => {
+			const router = new Router(container);
+			router.register("/a", makeHandler());
+			const observed: Array<string | null> = [];
+			router.setNavigateListener(() => {
+				observed.push(router.currentPath);
+			});
+			router.navigate("/a");
+			expect(observed).toEqual(["/a"]);
+		});
+
+		test("fires on start()'s initial replace-navigate", () => {
+			const router = new TestRouter(container, "/page");
+			router.setTestPathname("/page");
+			router.register("/page", makeHandler());
+			const calls: string[] = [];
+			router.setNavigateListener((p) => calls.push(p));
+			router.start();
+			expect(calls).toEqual(["/page"]);
+		});
+
+		test("does not fire on same-path early-return", () => {
+			const router = new Router(container);
+			router.register("/a", makeHandler());
+			router.navigate("/a");
+			const calls: string[] = [];
+			router.setNavigateListener((p) => calls.push(p));
+			router.navigate("/a");
+			expect(calls).toEqual([]);
+		});
+
+		test("second setNavigateListener call replaces the previous listener", () => {
+			const router = new Router(container);
+			router.register("/a", makeHandler());
+			const first: string[] = [];
+			const second: string[] = [];
+			router.setNavigateListener((p) => first.push(p));
+			router.setNavigateListener((p) => second.push(p));
+			router.navigate("/a");
+			expect(first).toEqual([]);
+			expect(second).toEqual(["/a"]);
+		});
+	});
+
 	describe("sibling non-interference (registration-after-boot)", () => {
 		test("registering a new route does not mount or affect siblings", () => {
 			const router = new Router(container);

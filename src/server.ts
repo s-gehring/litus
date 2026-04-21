@@ -83,7 +83,7 @@ const epicAnalysisRef: { current: EpicAnalysisProcess | null } = { current: null
 // Per-WS-connection current path (for create-as-seen and route-triggered seen).
 const clientRoutes = new Map<ServerWebSocket<WsData>, string>();
 
-const { emitAlert, dismissAlertsWhere, markAlertsSeenWhere } = createAlertBroadcasters(
+const { emitAlert, markAlertsSeenWhere } = createAlertBroadcasters(
 	sharedAlertQueue,
 	(msg) => broadcast(msg),
 	() => clientRoutes.values(),
@@ -153,7 +153,6 @@ function createCallbacks() {
 			broadcastWorkflowState(dependentWorkflowId);
 		},
 		onAlertEmit: emitAlert,
-		onAlertDismissWhere: dismissAlertsWhere,
 		onAlertMarkSeenWhere: markAlertsSeenWhere,
 	};
 }

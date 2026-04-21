@@ -791,8 +791,6 @@ export interface PipelineCallbacks {
 	 * `alertQueue.emit` + broadcast. Dedup/cap/persistence are the queue's job.
 	 */
 	onAlertEmit?: (input: Omit<Alert, "id" | "createdAt" | "seen">) => void;
-	/** Bulk-dismiss alerts matching a filter (used for auto-clearing question alerts). */
-	onAlertDismissWhere?: (filter: { type: AlertType; workflowId?: string; epicId?: string }) => void;
 	/**
 	 * Mark alerts matching the predicate as seen (FR-005: question-asked flips
 	 * to seen when the workflow exits `waiting_for_input`). The server

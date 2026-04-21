@@ -1,12 +1,12 @@
 import type { AlertQueue } from "../alert-queue";
-import type { Alert, AlertType, ServerMessage } from "../types";
+import type { Alert, ServerMessage } from "../types";
 
 export type BroadcastFn = (msg: ServerMessage) => void;
 
 /**
- * Build the `onAlertEmit` / `onAlertDismissWhere` trio plus the `markSeenWhere`
- * helper that `server.ts` wires into every orchestrator and the route-changed
- * handler. Extracted so tests can exercise the same glue that production uses.
+ * Build the `onAlertEmit` pair plus the `markSeenWhere` helper that `server.ts`
+ * wires into every orchestrator and the route-changed handler. Extracted so
+ * tests can exercise the same glue that production uses.
  *
  * `getActivePaths` returns the set of paths currently viewed by connected
  * clients, used to decide create-as-seen (FR-007).
@@ -34,17 +34,6 @@ export function createAlertBroadcasters(
 		}
 	};
 
-	const dismissAlertsWhere = (filter: {
-		type: AlertType;
-		workflowId?: string;
-		epicId?: string;
-	}): void => {
-		const removed = queue.dismissWhere(filter);
-		if (removed.length > 0) {
-			broadcast({ type: "alert:dismissed", alertIds: removed });
-		}
-	};
-
 	/**
 	 * Mark every alert matching the predicate as seen and broadcast the resulting
 	 * id list as `alert:seen`. Defensive: never flips `type === "error"` to
@@ -57,5 +46,5 @@ export function createAlertBroadcasters(
 		}
 	};
 
-	return { emitAlert, dismissAlertsWhere, markAlertsSeenWhere };
+	return { emitAlert, markAlertsSeenWhere };
 }

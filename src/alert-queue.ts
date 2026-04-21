@@ -60,6 +60,11 @@ export class AlertQueue {
 	 * Emit a new alert. Returns the alert and an optional evicted id when the
 	 * 100-alert cap forced oldest-eviction. Returns null when suppressed by the
 	 * 5 s `(type, workflowId|epicId)` dedup window.
+	 *
+	 * The optional `seen` flag is pre-computed by `createAlertBroadcasters` based
+	 * on active client routes (FR-007 create-as-seen). Other callers should omit
+	 * it — passing `true` would bypass the create-as-seen invariant that only
+	 * applies when a live client already views the target route.
 	 */
 	emit(
 		input: Omit<Alert, "id" | "createdAt" | "seen"> & { seen?: boolean },
@@ -117,20 +122,6 @@ export class AlertQueue {
 		}
 		if (changed.length > 0) this.persist();
 		return changed;
-	}
-
-	dismissWhere(filter: { type: AlertType; workflowId?: string; epicId?: string }): string[] {
-		const removed: string[] = [];
-		this.alerts = this.alerts.filter((a) => {
-			const match =
-				a.type === filter.type &&
-				(filter.workflowId === undefined || a.workflowId === filter.workflowId) &&
-				(filter.epicId === undefined || a.epicId === filter.epicId);
-			if (match) removed.push(a.id);
-			return !match;
-		});
-		if (removed.length > 0) this.persist();
-		return removed;
 	}
 
 	/**
