@@ -43,6 +43,7 @@ import { workflowCreatedTarget } from "./components/workflow-created-route";
 import { createWorkflowDetailHandler } from "./components/workflow-detail-handler";
 import { appendOutput, setDefaultModelDisplayName } from "./components/workflow-window";
 import { $ } from "./dom";
+import { attachFolderValidation } from "./folder-validation";
 import { Router } from "./router";
 
 const stateManager = new ClientStateManager();
@@ -534,118 +535,6 @@ function createRepoHint(): HTMLDivElement {
 	hint.appendChild(urlCode);
 	hint.appendChild(document.createTextNode(")"));
 	return hint;
-}
-
-type FolderExistsResponse =
-	| { exists: true; usable: true }
-	| {
-			exists: true;
-			usable: false;
-			reason: "not_a_directory" | "permission_denied" | "not_a_git_repo";
-	  }
-	| { exists: false; usable: false; reason: "not_found" };
-
-function folderErrorMessageFor(res: FolderExistsResponse): string | null {
-	if (res.exists && res.usable) return null;
-	if (!res.exists) return "Folder does not exist.";
-	if (res.reason === "not_a_directory") return "Path is not a folder.";
-	if (res.reason === "not_a_git_repo") return "Folder is not a git repository.";
-	if (res.reason === "permission_denied") {
-		return "Folder is not accessible (permission denied).";
-	}
-	return "Folder is not accessible.";
-}
-
-/**
- * Probe `/api/folder-exists` for `trimmedPath`. URLs are skipped (empty string
- * → null so the caller treats them as "no local folder to validate"; a GitHub
- * URL is validated server-side during the subsequent start flow). Returns the
- * error message to display inline, or null when the folder is usable.
- * Fail-closed on network / 5xx so an unreachable probe blocks submit
- * (contracts/http-folder-exists.md).
- */
-async function probeFolder(trimmedPath: string): Promise<string | null> {
-	if (!trimmedPath) return null;
-	if (looksLikeGitUrl(trimmedPath)) return null;
-	try {
-		const res = await fetch(`/api/folder-exists?path=${encodeURIComponent(trimmedPath)}`);
-		if (res.status === 400) return "Folder path is required.";
-		if (!res.ok) return "Could not validate folder — please try again.";
-		const body = (await res.json()) as FolderExistsResponse;
-		return folderErrorMessageFor(body);
-	} catch {
-		return "Could not validate folder — please try again.";
-	}
-}
-
-/**
- * Wire blur-time folder-existence validation to a picker. Creates a dedicated
- * field-scoped error element adjacent to the picker (FR-012: "inline validation
- * error on the folder field") and appends it to `field`, so the message does
- * not collide with top-level modal errors. Exposes a `submitCheck` that
- * re-probes synchronously and blocks submit on any error.
- */
-function attachFolderValidation(
-	picker: ReturnType<typeof createFolderPicker>,
-	field: HTMLElement,
-): {
-	submitCheck: () => Promise<boolean>;
-} {
-	let inFlight = 0;
-	const fieldErrorEl = document.createElement("div");
-	fieldErrorEl.className = "modal-field-error hidden";
-	field.appendChild(fieldErrorEl);
-
-	const successEl = document.createElement("div");
-	successEl.className = "modal-field-success hidden";
-	successEl.setAttribute("aria-label", "Valid target repository");
-	successEl.textContent = "✓ Valid git repository";
-	field.appendChild(successEl);
-
-	function setError(msg: string | null, validated: boolean) {
-		if (msg) {
-			fieldErrorEl.textContent = msg;
-			fieldErrorEl.classList.remove("hidden");
-			successEl.classList.add("hidden");
-		} else {
-			fieldErrorEl.textContent = "";
-			fieldErrorEl.classList.add("hidden");
-			if (validated) {
-				successEl.classList.remove("hidden");
-			} else {
-				successEl.classList.add("hidden");
-			}
-		}
-	}
-
-	picker.onBlurValidate((value) => {
-		inFlight++;
-		void probeFolder(value)
-			.then((err) => {
-				// GitHub-URL inputs return `null` from probeFolder without
-				// hitting the server (they're validated later during clone);
-				// suppress the green check in that case so the affordance
-				// reads as "validated the folder" rather than "looks URL-ish".
-				const validated = err === null && value !== "" && !looksLikeGitUrl(value);
-				setError(err, validated);
-			})
-			.finally(() => {
-				inFlight--;
-			});
-	});
-
-	return {
-		async submitCheck() {
-			// If a blur probe is still in flight, block — the user tabbed away then
-			// immediately clicked submit before the server responded.
-			if (inFlight > 0) return false;
-			const value = picker.getValue();
-			const err = await probeFolder(value);
-			const validated = err === null && value !== "" && !looksLikeGitUrl(value);
-			setError(err, validated);
-			return err === null;
-		},
-	};
 }
 
 function openSpecModal(): void {
