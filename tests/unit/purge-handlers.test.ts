@@ -13,13 +13,32 @@ import { createMockWebSocket } from "../test-infra/mock-websocket";
 // ── Module mocks ──────────────────────────────────────────────────────
 
 const gitSpawnCalls: { args: string[]; cwd?: string }[] = [];
-let gitSpawnImpl: (
+type GitSpawnImpl = (
 	args: string[],
 	opts?: { cwd?: string },
-) => Promise<{ code: number; stdout: string; stderr: string }> = async (args, opts) => {
+) => Promise<{ code: number; stdout: string; stderr: string }>;
+
+// Default: delegate to a real spawn. Bun `mock.module` persists for the
+// whole test run, so if this file's mocked impl were the default, other
+// test files exercising the real `gitSpawn` (e.g. claude-md-guard) would
+// see empty {code:0, stdout:"", stderr:""} and misbehave.
+const realGitSpawnImpl: GitSpawnImpl = async (args, opts) => {
+	const proc = Bun.spawn(args, {
+		cwd: opts?.cwd,
+		stdout: "pipe",
+		stderr: "pipe",
+		windowsHide: true,
+	});
+	const code = await proc.exited;
+	const stdout = await new Response(proc.stdout as ReadableStream).text();
+	const stderr = await new Response(proc.stderr as ReadableStream).text();
+	return { code, stdout, stderr };
+};
+const trackingGitSpawnImpl: GitSpawnImpl = async (args, opts) => {
 	gitSpawnCalls.push({ args, cwd: opts?.cwd });
 	return { code: 0, stdout: "", stderr: "" };
 };
+let gitSpawnImpl: GitSpawnImpl = realGitSpawnImpl;
 
 mock.module("../../src/git-logger", () => ({
 	gitSpawn: (args: string[], opts?: { cwd?: string }) => gitSpawnImpl(args, opts),
@@ -32,10 +51,12 @@ describe("purge-handlers", () => {
 
 	beforeAll(() => {
 		tmpRepo = mkdtempSync(join(tmpdir(), "purge-test-"));
+		gitSpawnImpl = trackingGitSpawnImpl;
 	});
 
 	afterAll(() => {
 		rmSync(tmpRepo, { recursive: true, force: true });
+		gitSpawnImpl = realGitSpawnImpl;
 	});
 
 	describe("handlePurgeAll", () => {
