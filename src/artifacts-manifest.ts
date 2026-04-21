@@ -1,6 +1,5 @@
-// Artifacts-step manifest contract. Mirrors
-// specs/001-implementation-artifacts/contracts/manifest.schema.json so the
-// runtime validator and the shipped schema stay in sync. The LLM emits
+// Artifacts-step manifest contract. Mirrors artifacts-manifest.schema.json so
+// the runtime validator and the shipped schema stay in sync. The LLM emits
 // `manifest.json` into its output directory; only files listed here are kept.
 
 export interface ArtifactsManifestEntry {

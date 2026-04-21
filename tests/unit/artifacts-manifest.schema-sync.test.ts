@@ -7,15 +7,7 @@ import { parseArtifactsManifest } from "../../src/artifacts-manifest";
 // validator in src/artifacts-manifest.ts. Rather than re-deriving the schema
 // in code, we read it from disk and exercise the validator against payloads
 // that respect or violate specific schema fields.
-const SCHEMA_PATH = join(
-	__dirname,
-	"..",
-	"..",
-	"specs",
-	"001-implementation-artifacts",
-	"contracts",
-	"manifest.schema.json",
-);
+const SCHEMA_PATH = join(__dirname, "..", "..", "src", "artifacts-manifest.schema.json");
 
 interface JsonSchema {
 	properties?: { version?: { const?: number } };
