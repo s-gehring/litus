@@ -8,10 +8,12 @@ export {
 	selectAndSave,
 	setAndSave,
 } from "./config-actions";
+export { createEpic } from "./create-epic";
 export { createSpecification } from "./create-specification";
 export { deepLink } from "./deep-link";
 export { mergePullRequest } from "./merge-pr";
 export { openArtifact } from "./open-artifact";
+export { restartServer } from "./restart-server";
 export {
 	type AutomationMode,
 	abortRun,

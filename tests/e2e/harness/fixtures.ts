@@ -3,24 +3,29 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test as base } from "@playwright/test";
 import { createSandbox, type Sandbox } from "./sandbox";
-import { type ServerProcess, spawnServer } from "./server";
+import { type ServerHandle, spawnServer } from "./server";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 export interface Fixtures {
 	scenarioName: string;
 	autoMode: "manual" | "normal" | "full-auto";
+	configOverrides: Record<string, unknown> | null;
 	sandbox: Sandbox;
 	scenario: { path: string; name: string };
-	server: ServerProcess;
+	server: ServerHandle;
 }
 
 export const test = base.extend<Fixtures>({
 	scenarioName: ["happy-path", { option: true }],
 	autoMode: ["manual", { option: true }],
+	configOverrides: [null, { option: true }],
 
-	sandbox: async ({ autoMode }, use) => {
-		const sandbox = await createSandbox({ autoMode });
+	sandbox: async ({ autoMode, configOverrides }, use) => {
+		const sandbox = await createSandbox({
+			autoMode,
+			configOverrides: configOverrides ?? undefined,
+		});
 		try {
 			await use(sandbox);
 		} finally {

@@ -1,0 +1,35 @@
+{
+	"name": "epic-infeasible",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "epic-infeasible-analyzer" },
+				{
+					"type": "assistant",
+					"session_id": "epic-infeasible-analyzer",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "```json\n{\"title\":\"Infeasible epic\",\"specs\":[],\"infeasibleNotes\":\"This epic is infeasible given the current codebase because it requires a Postscript-based kernel rewrite with no available tooling.\"}\n```"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "epic-infeasible-analyzer",
+					"result": "```json\n{\"title\":\"Infeasible epic\",\"specs\":[],\"infeasibleNotes\":\"This epic is infeasible given the current codebase because it requires a Postscript-based kernel rewrite with no available tooling.\"}\n```"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": { "exitCode": 0, "stdout": "{}" },
+		"pr create": { "exitCode": 0, "stdout": "" }
+	}
+}

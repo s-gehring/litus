@@ -1,0 +1,45 @@
+{
+	"name": "epic-dependency-chain",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "epic-dep-analyzer" },
+				{
+					"type": "assistant",
+					"session_id": "epic-dep-analyzer",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "```json\n{\"title\":\"Dependency chain\",\"summary\":\"Spec B depends on Spec A.\",\"specs\":[{\"id\":\"A\",\"title\":\"Spec A\",\"description\":\"Spec A description.\",\"dependencies\":[]},{\"id\":\"B\",\"title\":\"Spec B\",\"description\":\"Spec B depends on Spec A landing first.\",\"dependencies\":[\"A\"]}]}\n```"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "epic-dep-analyzer",
+					"result": "```json\n{\"title\":\"Dependency chain\",\"summary\":\"Spec B depends on Spec A.\",\"specs\":[{\"id\":\"A\",\"title\":\"Spec A\",\"description\":\"Spec A description.\",\"dependencies\":[]},{\"id\":\"B\",\"title\":\"Spec B\",\"description\":\"Spec B depends on Spec A landing first.\",\"dependencies\":[\"A\"]}]}\n```"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": [
+			{
+				"exitCode": 0,
+				"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/42\",\"number\":42}"
+			},
+			{
+				"exitCode": 0,
+				"stdout": "{\"state\":\"MERGED\",\"url\":\"https://github.com/example/repo/pull/42\",\"number\":42,\"mergeCommit\":{\"oid\":\"abc123\"}}"
+			}
+		],
+		"pr merge": { "exitCode": 0, "stdout": "Merged pull request #42 (Squash and merge)\n" },
+		"pr create": { "exitCode": 0, "stdout": "https://github.com/example/repo/pull/42\n" }
+	}
+}

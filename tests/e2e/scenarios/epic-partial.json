@@ -1,0 +1,35 @@
+{
+	"name": "epic-partial",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "epic-partial-analyzer" },
+				{
+					"type": "assistant",
+					"session_id": "epic-partial-analyzer",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "```json\n{\"title\":\"Partial decomposition\",\"summary\":\"Partial decomposition: one spec identified; remaining scope needs more input.\",\"specs\":[{\"id\":\"A\",\"title\":\"Add login page\",\"description\":\"Add a login page to the app.\",\"dependencies\":[]}],\"infeasibleNotes\":\"Partial: remaining scope requires clarification before a second spec can be authored.\"}\n```"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "epic-partial-analyzer",
+					"result": "```json\n{\"title\":\"Partial decomposition\",\"summary\":\"Partial decomposition: one spec identified; remaining scope needs more input.\",\"specs\":[{\"id\":\"A\",\"title\":\"Add login page\",\"description\":\"Add a login page to the app.\",\"dependencies\":[]}],\"infeasibleNotes\":\"Partial: remaining scope requires clarification before a second spec can be authored.\"}\n```"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": { "exitCode": 0, "stdout": "{}" },
+		"pr create": { "exitCode": 0, "stdout": "" }
+	}
+}

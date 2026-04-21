@@ -3,10 +3,25 @@ import { open } from "node:fs/promises";
 import { resolve } from "node:path";
 import { buildPathWithFakes } from "./fakes-path";
 
+/**
+ * Backwards-compatible shape consumed by existing tests. New fields
+ * (`restart`) are additive; existing consumers that only read
+ * `baseUrl`/`logPath`/`stop` continue to work unchanged.
+ */
 export interface ServerProcess {
 	baseUrl: string;
 	logPath: string;
 	stop: () => Promise<void>;
+}
+
+export interface ServerHandle extends ServerProcess {
+	/**
+	 * Kill the current Bun server process (SIGTERM then SIGKILL after 5s),
+	 * then respawn against the same `homeDir`/`scenarioPath`/`counterFile`.
+	 * `baseUrl` is updated in place to the new port. Callers MUST NOT
+	 * destructure `baseUrl`; use property access so they see the new value.
+	 */
+	restart: () => Promise<void>;
 }
 
 export interface SpawnServerOptions {
@@ -22,9 +37,18 @@ const READY_MARKER = "Litus running at http://localhost:";
 // overridable via env for slower sandboxes / debugging.
 const READY_TIMEOUT_MS = Number(process.env.LITUS_E2E_SERVER_READY_MS ?? 30_000);
 
-export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProcess> {
-	const logFile = await open(opts.logPath, "w");
+interface RawSpawn {
+	baseUrl: string;
+	stop: () => Promise<void>;
+}
+
+async function spawnOnce(opts: SpawnServerOptions): Promise<RawSpawn> {
+	const logFile = await open(opts.logPath, "a");
 	const logStream = logFile.createWriteStream();
+	// The log is opened in append mode so post-restart lifetimes accumulate
+	// (valuable for post-mortem when a test fails after restarting the
+	// server). Mark lifetime boundaries so log triage isn't ambiguous.
+	logStream.write(`=== litus-e2e server lifetime start at ${new Date().toISOString()} ===\n`);
 
 	// Strip any inherited `Path` (Windows casing) so only our `PATH` wins;
 	// otherwise on Windows the child may pick up a pre-existing `Path` that
@@ -113,16 +137,18 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProce
 		} catch {
 			// ignore
 		}
-		await Promise.race([
-			exitedPromise,
-			new Promise<void>((r) => setTimeout(r, 5000)).then(() => {
-				try {
-					proc.kill("SIGKILL");
-				} catch {
-					// ignore
-				}
-			}),
-		]);
+		// Race SIGTERM's exit against a 5s ladder; if the ladder wins,
+		// escalate to SIGKILL. The final `await exitedPromise` below is
+		// unconditional so we always observe the real process exit,
+		// regardless of which branch of the race fired.
+		const killTimer = new Promise<void>((r) => setTimeout(r, 5000)).then(() => {
+			try {
+				proc.kill("SIGKILL");
+			} catch {
+				// ignore
+			}
+		});
+		await Promise.race([exitedPromise, killTimer]);
 		await exitedPromise;
 		try {
 			await logStream.end();
@@ -132,9 +158,24 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<ServerProce
 		}
 	};
 
-	return {
-		baseUrl: url,
+	return { baseUrl: url, stop };
+}
+
+export async function spawnServer(opts: SpawnServerOptions): Promise<ServerHandle> {
+	let current = await spawnOnce(opts);
+
+	const handle: ServerHandle = {
+		baseUrl: current.baseUrl,
 		logPath: opts.logPath,
-		stop,
+		stop: async () => {
+			await current.stop();
+		},
+		restart: async () => {
+			await current.stop();
+			current = await spawnOnce(opts);
+			handle.baseUrl = current.baseUrl;
+		},
 	};
+
+	return handle;
 }
