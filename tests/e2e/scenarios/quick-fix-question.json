@@ -1,0 +1,69 @@
+{
+	"name": "quick-fix-question",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-fix-implement" },
+				{
+					"type": "assistant",
+					"session_id": "sess-fix-implement",
+					"message": {
+						"content": [
+							{
+								"type": "tool_use",
+								"name": "AskUserQuestion",
+								"input": {
+									"question": "Should the quick-fix also update the README reference?"
+								}
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-fix-implement",
+					"result": "Awaiting operator answer before proceeding."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-fix-implement-resume" },
+				{
+					"type": "assistant",
+					"session_id": "sess-fix-implement-resume",
+					"message": {
+						"content": [{ "type": "text", "text": "Fix applied after clarification." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-fix-implement-resume",
+					"result": "Fix applied after clarification."
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": {
+			"exitCode": 0,
+			"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/77\",\"number\":77}"
+		},
+		"pr checks": {
+			"exitCode": 0,
+			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"
+		},
+		"pr merge --auto": { "exitCode": 0, "stdout": "Merged pull request #77 (Squash and merge)\n" },
+		"pr merge": { "exitCode": 0, "stdout": "Merged pull request #77 (Squash and merge)\n" },
+		"pr create": {
+			"exitCode": 0,
+			"stdout": "https://github.com/example/repo/pull/77\n"
+		},
+		"run view": { "exitCode": 0, "stdout": "" }
+	}
+}
