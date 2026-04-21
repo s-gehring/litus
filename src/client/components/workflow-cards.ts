@@ -15,6 +15,21 @@ import {
 // Store reference for dependency name resolution
 let allWorkflowsRef: ReadonlyMap<string, WorkflowClientState> | null = null;
 
+type CardKind = "epic" | "spec" | "quick-fix";
+
+const CARD_KIND_LABELS: Record<CardKind, string> = {
+	epic: "Epic",
+	spec: "Spec",
+	"quick-fix": "Quick Fix",
+};
+
+function appendTypeBadge(card: HTMLElement, kind: CardKind): void {
+	const badge = document.createElement("span");
+	badge.className = `card-type-badge card-type-badge--${kind}`;
+	badge.textContent = CARD_KIND_LABELS[kind];
+	card.prepend(badge);
+}
+
 export function renderCardStrip(
 	cardOrder: readonly string[],
 	workflows: ReadonlyMap<string, WorkflowClientState>,

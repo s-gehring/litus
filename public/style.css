@@ -16,6 +16,21 @@
   --accent-blue: #4a9eff;
   --border: #2a2a4a;
   --radius: 8px;
+
+  /* Work-item card visualization — central design tokens (001-card-visualization) */
+  --card-base-width-min: 180px;
+  --card-base-width-max: 220px;
+  --card-base-padding-y: 10px;
+  --card-base-padding-x: 12px;
+  --card-scale-epic: 1.25;
+  --card-scale-spec: 1;
+  --card-scale-quick-fix: 0.8;
+  --accent-orange: #f0943c;
+  --quick-fix-surface-tint: rgba(240, 148, 60, 0.10);
+  --epic-glow-color: rgba(74, 158, 255, 0.35);
+  --epic-glow-radius: 10px;
+  --epic-outline-width: 2px;
+  --epic-outline-offset: 2px;
 }
 
 body {
@@ -72,6 +87,7 @@ header h1 {
 
 .card-strip {
   display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
   padding: 8px 0;
   overflow-x: auto;
@@ -97,9 +113,10 @@ header h1 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 180px;
-  max-width: 220px;
-  padding: 10px 12px;
+  min-width: calc(var(--card-base-width-min) * var(--card-scale, 1));
+  max-width: calc(var(--card-base-width-max) * var(--card-scale, 1));
+  padding: calc(var(--card-base-padding-y) * var(--card-scale, 1))
+           calc(var(--card-base-padding-x) * var(--card-scale, 1));
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -192,6 +209,19 @@ header h1 {
   font-size: 0.7rem;
   color: var(--text-dim);
   font-family: "Cascadia Code", "Fira Code", monospace;
+}
+
+/* Card type badge — shared slot across all card kinds */
+.card-type-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  align-self: flex-start;
+  background: var(--border);
+  color: var(--text-dim);
 }
 
 /* ── Welcome area ───────────────────────────────────────── */
@@ -938,9 +968,10 @@ body::-webkit-scrollbar-track {
   }
 
   .workflow-card {
-    min-width: 150px;
-    max-width: 180px;
-    padding: 8px 10px;
+    --card-base-width-min: 150px;
+    --card-base-width-max: 180px;
+    --card-base-padding-y: 8px;
+    --card-base-padding-x: 10px;
   }
 
   .status-area {
