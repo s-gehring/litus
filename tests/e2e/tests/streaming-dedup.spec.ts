@@ -26,6 +26,10 @@ test("streamed assistant text is not duplicated in the output log", async ({
 
 	const card = new WorkflowCardPage(page);
 	await waitForStep(card, "specify", "completed", { timeoutMs: 60_000 });
+	// Pin the output log to the specify step — otherwise once the pipeline
+	// advances to clarify the client auto-selects the new step and clears the
+	// streamed specify output we're trying to sample.
+	await card.stepIndicator("specify").click();
 	// Wait until the pipeline advances past specify so all streamed output for
 	// the specify step has been rendered into the log before we sample it.
 	await waitForStep(card, "clarify", "waiting", { timeoutMs: 60_000 });
