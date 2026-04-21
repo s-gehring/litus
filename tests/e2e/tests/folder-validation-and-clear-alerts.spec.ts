@@ -56,6 +56,54 @@ test.describe("spec-modal folder validation", () => {
 	});
 });
 
+// ── Folder validation: hung probe must not silently abort submit ─
+
+test.describe("spec-modal folder validation: hung probe", () => {
+	test.use({ scenarioName: "peripheral-alerts", autoMode: "manual" });
+
+	test("clicking Start while a blur probe is hung surfaces a visible error instead of silently aborting", async ({
+		page,
+		server,
+		sandbox,
+	}) => {
+		test.setTimeout(60_000);
+
+		// Hang every /api/folder-exists call past the client-side 5s probe
+		// timeout. The fix under test: probeFolder aborts via AbortController,
+		// submitCheck awaits the pending blur probe, and surfaces the inline
+		// "Could not validate folder" error rather than swallowing the click.
+		await page.route("**/api/folder-exists*", async () => {
+			await new Promise((r) => setTimeout(r, 20_000));
+		});
+
+		const app = new AppPage(page);
+		await app.goto(server.baseUrl);
+		await app.waitConnected();
+
+		const form = new SpecFormPage(page);
+		await app.newSpecButton().click();
+		await expect(form.modal()).toBeVisible();
+
+		// Kick off a blur probe that will hang on the stubbed endpoint.
+		await form.repoInput().fill(sandbox.targetRepo);
+		await form.repoInput().blur();
+
+		// Fill spec so the only thing standing between click and start is the
+		// folder probe, then click Start while the blur probe is in flight.
+		await form.specificationInput().fill("Hung-probe regression guard");
+		await form.submitButton().click();
+
+		// Within the 5s probe timeout (+ slack), the inline error must surface
+		// visibly. Without the fix, submitCheck would resolve to false silently
+		// and the user would see nothing.
+		await expect(form.fieldError()).toBeVisible({ timeout: 15_000 });
+		await expect(form.fieldError()).toContainText(/try again/i);
+		await expect(form.fieldSuccess()).toBeHidden();
+		// Modal stays open — no silent dismissal.
+		await expect(form.modal()).toBeVisible();
+	});
+});
+
 // ── Folder validation: quick-fix modal ──────────────────────────
 
 test.describe("quick-fix-modal folder validation", () => {
