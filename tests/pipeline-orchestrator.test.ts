@@ -243,7 +243,7 @@ function makeCallbacks(): PipelineCallbacks {
 		onStateChange: mock(() => {}),
 		onEpicDependencyUpdate: mock(() => {}),
 		onAlertEmit: mock(() => {}),
-		onAlertDismissWhere: mock(() => {}),
+		onAlertMarkSeenWhere: mock(() => {}),
 	};
 }
 
@@ -1086,6 +1086,14 @@ describe("PipelineOrchestrator", () => {
 			orchestrator.abortPipeline("test-wf-id");
 
 			expect(wf.status).toBe("aborted");
+			const markSeen = callbacks.onAlertMarkSeenWhere as unknown as {
+				mock: { calls: unknown[][] };
+			};
+			const marked = markSeen.mock.calls.some((c) => {
+				const pred = c[0] as (a: { type: string; workflowId?: string }) => boolean;
+				return pred({ type: "question-asked", workflowId: "test-wf-id" });
+			});
+			expect(marked).toBe(true);
 		});
 	});
 
@@ -3021,7 +3029,7 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			expect(alertCalls().some((a) => a.type === "question-asked")).toBe(false);
 		});
 
-		test("answering a question dismisses the question-asked alert (FR-013)", async () => {
+		test("answering a question marks the question-asked alert as seen (FR-013)", async () => {
 			await startAndFlush("test");
 			cli.getLastCallbacks().onSessionId("sess-1");
 			const question: Question = {
@@ -3034,12 +3042,14 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 			orchestrator.answerQuestion("test-wf-id", "q1", "yes");
-			const dismiss = callbacks.onAlertDismissWhere as unknown as { mock: { calls: unknown[][] } };
-			const dismissed = dismiss.mock.calls.some((c) => {
-				const f = c[0] as { type: string; workflowId?: string };
-				return f.type === "question-asked" && f.workflowId === "test-wf-id";
+			const markSeen = callbacks.onAlertMarkSeenWhere as unknown as {
+				mock: { calls: unknown[][] };
+			};
+			const marked = markSeen.mock.calls.some((c) => {
+				const pred = c[0] as (a: { type: string; workflowId?: string }) => boolean;
+				return pred({ type: "question-asked", workflowId: "test-wf-id" });
 			});
-			expect(dismissed).toBe(true);
+			expect(marked).toBe(true);
 		});
 
 		test("pr-opened-manual emits only in manual mode on first PR URL (FR-004)", async () => {
@@ -3163,11 +3173,11 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			expect(callOrder).toEqual(["waitForPendingWrites", "loadAll"]);
 		});
 
-		test("handleStepError dismisses pending question-asked alert", async () => {
+		test("handleStepError marks pending question-asked alert as seen", async () => {
 			await startAndFlush("test");
 			const wf = getWf(engine);
-			// Simulate a pending question; handleStepError should clear it so
-			// the user is not left with an alert pointing at a dead workflow.
+			// Simulate a pending question; handleStepError should mark any
+			// pending question alert seen so its badge contribution is cleared.
 			wf.pendingQuestion = {
 				id: "q1",
 				content: "?",
@@ -3175,12 +3185,14 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			};
 			// biome-ignore lint/suspicious/noExplicitAny: private access for focused test
 			(orchestrator as any).handleStepError(wf.id, "boom");
-			const dismiss = callbacks.onAlertDismissWhere as unknown as { mock: { calls: unknown[][] } };
-			const dismissedQuestion = dismiss.mock.calls.some((c) => {
-				const f = c[0] as { type: string; workflowId?: string };
-				return f.type === "question-asked" && f.workflowId === wf.id;
+			const markSeen = callbacks.onAlertMarkSeenWhere as unknown as {
+				mock: { calls: unknown[][] };
+			};
+			const markedQuestion = markSeen.mock.calls.some((c) => {
+				const pred = c[0] as (a: { type: string; workflowId?: string }) => boolean;
+				return pred({ type: "question-asked", workflowId: wf.id });
 			});
-			expect(dismissedQuestion).toBe(true);
+			expect(markedQuestion).toBe(true);
 		});
 	});
 });

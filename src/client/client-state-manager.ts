@@ -198,6 +198,8 @@ export class ClientStateManager {
 				return this.handleAlertCreated(msg);
 			case "alert:dismissed":
 				return this.handleAlertDismissed(msg);
+			case "alert:seen":
+				return this.handleAlertSeen(msg);
 			case "purge:progress":
 				return { scope: { entity: "none" }, action: "updated" };
 			case "purge:complete":
@@ -421,6 +423,14 @@ export class ClientStateManager {
 	): StateChange {
 		for (const id of msg.alertIds) this.alerts.delete(id);
 		return { scope: { entity: "global" }, action: "removed" };
+	}
+
+	private handleAlertSeen(msg: Extract<ServerMessage, { type: "alert:seen" }>): StateChange {
+		for (const id of msg.alertIds) {
+			const a = this.alerts.get(id);
+			if (a && !a.seen) a.seen = true;
+		}
+		return { scope: { entity: "global" }, action: "updated" };
 	}
 
 	private handlePurgeComplete(): StateChange {

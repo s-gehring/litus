@@ -16,6 +16,7 @@ function makeAlert(overrides: Partial<Alert> = {}): Alert {
 		epicId: null,
 		targetRoute: "",
 		createdAt: Date.now(),
+		seen: false,
 		...overrides,
 	};
 }

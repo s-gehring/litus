@@ -10,7 +10,7 @@ import type { ManagedRepoStore } from "../managed-repo-store";
 import type { PipelineOrchestrator } from "../pipeline-orchestrator";
 import type { Summarizer } from "../summarizer";
 import { validateTargetRepository } from "../target-repo-validator";
-import type { ClientMessage, ServerMessage, Workflow, WorkflowState } from "../types";
+import type { Alert, ClientMessage, ServerMessage, Workflow, WorkflowState } from "../types";
 import type { WorkflowStore } from "../workflow-store";
 
 export type WsData = Record<string, never>;
@@ -27,6 +27,10 @@ export interface HandlerDeps {
 	configStore: ConfigStore;
 	managedRepoStore: ManagedRepoStore;
 	alertQueue: AlertQueue;
+	/** Per-WS-connection current path. Populated by `alert:route-changed`. */
+	clientRoutes: Map<ServerWebSocket<WsData>, string>;
+	/** Mark matching non-error alerts as seen and broadcast `alert:seen`. */
+	markAlertsSeenWhere: (predicate: (a: Alert) => boolean) => void;
 	epicAnalysisRef: { current: EpicAnalysisProcess | null };
 	createOrchestrator: () => PipelineOrchestrator;
 	broadcastWorkflowState: (workflowId: string) => void;

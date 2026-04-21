@@ -627,6 +627,13 @@ export interface Alert {
 	targetRoute: string;
 	/** Epoch ms at server-side emission time. Used for sort order and eviction. */
 	createdAt: number;
+	/**
+	 * True once the user has been exposed to the alert in its source context.
+	 * Excluded from the badge count; rendered as dimmed in the list. Auto-flips
+	 * via question-answered / route-viewed / create-as-seen rules. `error` alerts
+	 * never auto-flip — only explicit dismissal removes them.
+	 */
+	seen: boolean;
 }
 
 // Server → Client messages
@@ -715,6 +722,7 @@ export type ServerMessage =
 	| { type: "alert:list"; alerts: Alert[] }
 	| { type: "alert:created"; alert: Alert }
 	| { type: "alert:dismissed"; alertIds: string[] }
+	| { type: "alert:seen"; alertIds: string[] }
 	| {
 			type: "error";
 			message: string;
@@ -782,9 +790,13 @@ export interface PipelineCallbacks {
 	 * Request emission of an alert. Server wires this to
 	 * `alertQueue.emit` + broadcast. Dedup/cap/persistence are the queue's job.
 	 */
-	onAlertEmit?: (input: Omit<Alert, "id" | "createdAt">) => void;
-	/** Bulk-dismiss alerts matching a filter (used for auto-clearing question alerts). */
-	onAlertDismissWhere?: (filter: { type: AlertType; workflowId?: string; epicId?: string }) => void;
+	onAlertEmit?: (input: Omit<Alert, "id" | "createdAt" | "seen">) => void;
+	/**
+	 * Mark alerts matching the predicate as seen (FR-003: question-asked flips
+	 * to seen when the workflow exits `waiting_for_input`). The server
+	 * broadcaster filters `type === "error"` defensively.
+	 */
+	onAlertMarkSeenWhere?: (predicate: (alert: Alert) => boolean) => void;
 }
 
 // ── State change types ──────────────────────────────────
@@ -839,4 +851,5 @@ export type ClientMessage =
 	| { type: "alert:list" }
 	| { type: "alert:dismiss"; alertId: string }
 	| { type: "alert:clear-all" }
+	| { type: "alert:route-changed"; path: string }
 	| { type: "purge:all" };

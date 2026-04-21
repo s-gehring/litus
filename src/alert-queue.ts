@@ -60,8 +60,15 @@ export class AlertQueue {
 	 * Emit a new alert. Returns the alert and an optional evicted id when the
 	 * 100-alert cap forced oldest-eviction. Returns null when suppressed by the
 	 * 5 s `(type, workflowId|epicId)` dedup window.
+	 *
+	 * The optional `seen` flag is pre-computed by `createAlertBroadcasters` based
+	 * on active client routes (FR-007 create-as-seen). Other callers should omit
+	 * it — passing `true` would bypass the create-as-seen invariant that only
+	 * applies when a live client already views the target route.
 	 */
-	emit(input: Omit<Alert, "id" | "createdAt">): { alert: Alert; evictedId: string | null } | null {
+	emit(
+		input: Omit<Alert, "id" | "createdAt" | "seen"> & { seen?: boolean },
+	): { alert: Alert; evictedId: string | null } | null {
 		const now = this.now();
 		const key = dedupKey(input.type, input.workflowId, input.epicId);
 		const last = this.dedupKeys.get(key);
@@ -75,6 +82,7 @@ export class AlertQueue {
 			description: truncate(input.description, MAX_DESCRIPTION_LEN),
 			id: makeAlertId(),
 			createdAt: now,
+			seen: input.seen ?? false,
 		};
 
 		let evictedId: string | null = null;
@@ -97,18 +105,23 @@ export class AlertQueue {
 		return true;
 	}
 
-	dismissWhere(filter: { type: AlertType; workflowId?: string; epicId?: string }): string[] {
-		const removed: string[] = [];
-		this.alerts = this.alerts.filter((a) => {
-			const match =
-				a.type === filter.type &&
-				(filter.workflowId === undefined || a.workflowId === filter.workflowId) &&
-				(filter.epicId === undefined || a.epicId === filter.epicId);
-			if (match) removed.push(a.id);
-			return !match;
-		});
-		if (removed.length > 0) this.persist();
-		return removed;
+	/**
+	 * Flip `seen = true` on every alert matching the predicate that is not
+	 * already seen and is not an error. Returns the ids of alerts that changed
+	 * state. Error alerts are filtered at this layer as defense-in-depth for
+	 * FR-006; the broadcaster (`createAlertBroadcasters`) also filters them so
+	 * the invariant holds even if a new caller wires directly into the queue.
+	 */
+	markSeenWhere(predicate: (a: Alert) => boolean): string[] {
+		const changed: string[] = [];
+		for (const a of this.alerts) {
+			if (!a.seen && a.type !== "error" && predicate(a)) {
+				a.seen = true;
+				changed.push(a.id);
+			}
+		}
+		if (changed.length > 0) this.persist();
+		return changed;
 	}
 
 	/**

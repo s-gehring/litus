@@ -5,7 +5,8 @@ import { atomicWrite } from "./atomic-write";
 import { logger } from "./logger";
 import type { Alert, AlertType } from "./types";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
+const SUPPORTED_VERSIONS: ReadonlySet<number> = new Set([1, 2]);
 
 const ALERT_TYPES: ReadonlySet<string> = new Set<AlertType>([
 	"question-asked",
@@ -20,13 +21,13 @@ interface PersistedFile {
 	alerts: unknown[];
 }
 
-function isValidAlert(v: unknown): v is Alert {
-	if (!v || typeof v !== "object") return false;
+function coerceAlert(v: unknown, version: number): Alert | null {
+	if (!v || typeof v !== "object") return null;
 	const a = v as Record<string, unknown>;
-	return (
+	const baseValid =
 		typeof a.id === "string" &&
 		typeof a.type === "string" &&
-		ALERT_TYPES.has(a.type) &&
+		ALERT_TYPES.has(a.type as string) &&
 		typeof a.title === "string" &&
 		typeof a.description === "string" &&
 		(a.workflowId === null || typeof a.workflowId === "string") &&
@@ -34,8 +35,22 @@ function isValidAlert(v: unknown): v is Alert {
 		typeof a.targetRoute === "string" &&
 		typeof a.createdAt === "number" &&
 		Number.isFinite(a.createdAt) &&
-		a.createdAt > 0
-	);
+		(a.createdAt as number) > 0;
+	if (!baseValid) return null;
+	// v1 → v2 migration: pre-existing alerts default to seen=true (FR-015).
+	const seen = typeof a.seen === "boolean" ? a.seen : version < 2 ? true : null;
+	if (seen === null) return null;
+	return {
+		id: a.id as string,
+		type: a.type as AlertType,
+		title: a.title as string,
+		description: a.description as string,
+		workflowId: a.workflowId as string | null,
+		epicId: a.epicId as string | null,
+		targetRoute: a.targetRoute as string,
+		createdAt: a.createdAt as number,
+		seen,
+	};
 }
 
 export class AlertStore {
@@ -61,15 +76,18 @@ export class AlertStore {
 				return [];
 			}
 			if (!data || typeof data !== "object") return [];
-			if (data.version !== SCHEMA_VERSION) {
+			const version =
+				typeof data.version === "number" && Number.isFinite(data.version) ? data.version : 1;
+			if (!SUPPORTED_VERSIONS.has(version)) {
 				logger.warn(`[alert-store] Unknown schema version ${data.version}; starting fresh`);
 				return [];
 			}
 			if (!Array.isArray(data.alerts)) return [];
 			const out: Alert[] = [];
 			for (const entry of data.alerts) {
-				if (isValidAlert(entry)) {
-					out.push(entry);
+				const coerced = coerceAlert(entry, version);
+				if (coerced) {
+					out.push(coerced);
 				} else {
 					logger.warn("[alert-store] Dropping invalid alert entry");
 				}
