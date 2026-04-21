@@ -124,17 +124,18 @@ test.describe("every config input persists to disk", () => {
 
 			if (meta.inputKind === "size" || meta.inputKind === "duration") {
 				// Unit-aware inputs multiply the typed number by the selected unit's
-				// factor (MB/GB or minutes/hours). Pin the unit to the smallest option
-				// so we can compute the canonical value the commit will store.
-				const smallestUnit = meta.inputKind === "size" ? "MB" : "minutes";
-				const factor = meta.inputKind === "size" ? 1_048_576 : 60_000;
+				// factor (MB/GB or minutes/hours). A `config:state` broadcast after a
+				// save may re-render the select to the "natural" unit for the
+				// current canonical value, so read whichever unit is actually
+				// selected at commit time and compute canonical from that.
+				const unitFactors: Record<string, number> =
+					meta.inputKind === "size"
+						? { MB: 1_048_576, GB: 1_073_741_824 }
+						: { minutes: 60_000, hours: 3_600_000 };
 				const unitSelect = page.locator(`select[data-cfg-unit-for="${meta.key}"]`);
-				if ((await unitSelect.inputValue()) !== smallestUnit) {
-					const unitBroadcast = observer.waitFor((m) => m.type === "config:state");
-					await unitSelect.selectOption(smallestUnit);
-					await unitBroadcast;
-				}
-				const displayed = Math.ceil(rawTarget / factor);
+				const selectedUnit = await unitSelect.inputValue();
+				const factor = unitFactors[selectedUnit];
+				const displayed = Math.max(1, Math.ceil(rawTarget / factor));
 				const canonical = displayed * factor;
 				const broadcast = observer.waitFor((m) => m.type === "config:state");
 				await input.fill(String(displayed));
