@@ -16,6 +16,23 @@
   --accent-blue: #4a9eff;
   --border: #2a2a4a;
   --radius: 8px;
+
+  /* Work-item card visualization — central design tokens (001-card-visualization) */
+  --card-base-width-min: 180px;
+  --card-base-width-max: 220px;
+  --card-base-padding-y: 10px;
+  --card-base-padding-x: 12px;
+  --card-scale-epic: 1.25;
+  --card-scale-spec: 1;
+  --card-scale-quick-fix: 0.8;
+  --accent-orange: #f0943c;
+  --quick-fix-surface-tint: rgba(240, 148, 60, 0.10);
+  --epic-glow-color: rgba(74, 158, 255, 0.35);
+  --epic-glow-radius: 6px;
+  --epic-glow-pulse-delta: 2px;
+  --epic-glow-expanded-delta: 2px;
+  --epic-outline-width: 2px;
+  --epic-outline-offset: 2px;
 }
 
 body {
@@ -72,6 +89,7 @@ header h1 {
 
 .card-strip {
   display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
   padding: 8px 0;
   overflow-x: auto;
@@ -97,9 +115,10 @@ header h1 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 180px;
-  max-width: 220px;
-  padding: 10px 12px;
+  min-width: calc(var(--card-base-width-min) * var(--card-scale, 1));
+  max-width: calc(var(--card-base-width-max) * var(--card-scale, 1));
+  padding: calc(var(--card-base-padding-y) * var(--card-scale, 1))
+           calc(var(--card-base-padding-x) * var(--card-scale, 1));
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -117,26 +136,67 @@ header h1 {
   box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
 }
 
-/* Epic card accent */
-.epic-card {
-  border: 2px solid var(--accent-blue);
+/* Per-kind size envelopes — scale is the only size channel (FR-013) */
+.workflow-card--spec {
+  --card-scale: var(--card-scale-spec);
+}
+
+.workflow-card--quick-fix {
+  --card-scale: var(--card-scale-quick-fix);
+  border-color: var(--accent-orange);
+  background: linear-gradient(135deg, var(--surface) 0%, var(--quick-fix-surface-tint) 100%);
+}
+
+/* Preserve Quick Fix warm-accent identity on hover (FR-005/R3) */
+.workflow-card--quick-fix:hover {
+  border-color: var(--accent-orange);
+}
+
+.card-type-badge--quick-fix {
+  background: var(--accent-orange);
+  color: #1a1a2e;
+}
+
+.card-type-badge--epic {
+  background: rgba(74, 158, 255, 0.2);
+  color: var(--accent-blue);
+}
+
+.card-type-badge--spec {
+  color: var(--text);
+}
+
+.workflow-card--epic {
+  --card-scale: var(--card-scale-epic);
+  border: var(--epic-outline-width) solid var(--accent-blue);
+  outline: var(--epic-outline-width) solid var(--accent-blue);
+  outline-offset: var(--epic-outline-offset);
   background: linear-gradient(135deg, var(--surface) 0%, rgba(74, 158, 255, 0.08) 100%);
-  box-shadow: 0 0 6px rgba(74, 158, 255, 0.15);
+  box-shadow: 0 0 var(--epic-glow-radius) var(--epic-glow-color);
 }
 
-.epic-card:hover {
+.workflow-card--epic.card-expanded {
   border-color: var(--accent-blue);
-  box-shadow: 0 0 10px rgba(74, 158, 255, 0.25);
+  box-shadow: 0 0 calc(var(--epic-glow-radius) + var(--epic-glow-expanded-delta)) var(--epic-glow-color);
 }
 
-.epic-card.card-expanded {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 12px rgba(74, 158, 255, 0.35);
-}
-
-.epic-card.card-error-glow {
+.workflow-card--epic.card-error-glow {
   border-color: var(--accent);
-  box-shadow: 0 0 8px rgba(233, 69, 96, 0.3);
+  outline-color: var(--accent);
+  box-shadow: 0 0 var(--epic-glow-radius) rgba(233, 69, 96, 0.35);
+}
+
+/* Epic hover/focus pulse — glow only, no layout-affecting properties (FR-010) */
+@keyframes epic-pulse {
+  0%, 100% { box-shadow: 0 0 var(--epic-glow-radius) var(--epic-glow-color); }
+  50% { box-shadow: 0 0 calc(var(--epic-glow-radius) + var(--epic-glow-pulse-delta)) var(--epic-glow-color); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .workflow-card--epic:hover,
+  .workflow-card--epic:focus-visible {
+    animation: epic-pulse 2s ease-in-out infinite;
+  }
 }
 
 /* Pulse animation for waiting_for_input */
@@ -177,9 +237,14 @@ header h1 {
 .card-summary {
   font-size: 0.72rem;
   color: var(--text);
-  white-space: normal;
   word-break: break-word;
   max-width: 80ch;
+  /* Truncate long titles so card height stays within the size envelope (FR-011) */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .card-step {
@@ -192,6 +257,19 @@ header h1 {
   font-size: 0.7rem;
   color: var(--text-dim);
   font-family: "Cascadia Code", "Fira Code", monospace;
+}
+
+/* Card type badge — shared slot across all card kinds */
+.card-type-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  align-self: flex-start;
+  background: var(--border);
+  color: var(--text-dim);
 }
 
 /* ── Welcome area ───────────────────────────────────────── */
@@ -938,9 +1016,10 @@ body::-webkit-scrollbar-track {
   }
 
   .workflow-card {
-    min-width: 150px;
-    max-width: 180px;
-    padding: 8px 10px;
+    --card-base-width-min: 150px;
+    --card-base-width-max: 180px;
+    --card-base-padding-y: 8px;
+    --card-base-padding-x: 10px;
   }
 
   .status-area {
