@@ -1,0 +1,64 @@
+{
+	"name": "streaming-dedup",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-specify" },
+				{
+					"type": "content_block_delta",
+					"session_id": "sess-specify",
+					"delta": { "text": "UNIQUE_STREAM_MARKER_AAA " }
+				},
+				{
+					"type": "content_block_delta",
+					"session_id": "sess-specify",
+					"delta": { "text": "UNIQUE_STREAM_MARKER_BBB" }
+				},
+				{
+					"type": "assistant",
+					"session_id": "sess-specify",
+					"message": {
+						"content": [
+							{ "type": "text", "text": "UNIQUE_STREAM_MARKER_AAA UNIQUE_STREAM_MARKER_BBB" }
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-specify",
+					"result": "Specification drafted."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-clarify" },
+				{
+					"type": "assistant",
+					"session_id": "sess-clarify",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "Question 1: Should the feature support dark mode?"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-clarify",
+					"result": "Question 1: Should the feature support dark mode?"
+				}
+			]
+		},
+		{ "text": "yes\n" }
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" }
+	}
+}
