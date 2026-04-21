@@ -376,6 +376,8 @@ export class PipelineOrchestrator {
 			}
 
 			const cwd = requireWorktreePath(workflow);
+			const answerConfig = configStore.get();
+			const answerConfigKey = STEP_CONFIG_KEY[step.name];
 			this.stepRunner.resumeStep(
 				workflowId,
 				sessionId,
@@ -383,6 +385,8 @@ export class PipelineOrchestrator {
 				this.buildStepCallbacks(workflowId),
 				this.buildStepEnv(workflow),
 				answer,
+				answerConfigKey ? answerConfig.models[answerConfigKey] : undefined,
+				answerConfigKey ? answerConfig.efforts[answerConfigKey] : undefined,
 			);
 		});
 	}
@@ -423,12 +427,17 @@ export class PipelineOrchestrator {
 
 			this.resetStepState();
 
+			const resumeConfig = configStore.get();
+			const resumeConfigKey = STEP_CONFIG_KEY[step.name];
 			this.stepRunner.resumeStep(
 				workflowId,
 				step.sessionId,
 				cwd,
 				this.buildStepCallbacks(workflowId),
 				this.buildStepEnv(workflow),
+				undefined,
+				resumeConfigKey ? resumeConfig.models[resumeConfigKey] : undefined,
+				resumeConfigKey ? resumeConfig.efforts[resumeConfigKey] : undefined,
 			);
 		});
 	}
@@ -579,12 +588,16 @@ export class PipelineOrchestrator {
 				this.runFixCi(workflow);
 			} else if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
 				if (step.sessionId) {
+					const fiConfig = configStore.get();
 					this.stepRunner.resumeStep(
 						workflowId,
 						step.sessionId,
 						cwd,
 						this.buildStepCallbacks(workflowId),
 						this.buildStepEnv(workflow),
+						undefined,
+						fiConfig.models.implement,
+						fiConfig.efforts.implement,
 					);
 				} else {
 					this.runFeedbackImplementer(workflow).catch((err) => {
@@ -597,12 +610,17 @@ export class PipelineOrchestrator {
 			} else if (step.name === STEP.SYNC_REPO) {
 				this.runSyncRepo(workflow);
 			} else if (step.sessionId) {
+				const resumedConfig = configStore.get();
+				const resumedConfigKey = STEP_CONFIG_KEY[step.name];
 				this.stepRunner.resumeStep(
 					workflowId,
 					step.sessionId,
 					cwd,
 					this.buildStepCallbacks(workflowId),
 					this.buildStepEnv(workflow),
+					undefined,
+					resumedConfigKey ? resumedConfig.models[resumedConfigKey] : undefined,
+					resumedConfigKey ? resumedConfig.efforts[resumedConfigKey] : undefined,
 				);
 			} else {
 				const config = configStore.get();

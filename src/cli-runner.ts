@@ -283,6 +283,8 @@ export class CLIRunner {
 		callbacks: CLICallbacks,
 		extraEnv?: Record<string, string>,
 		prompt?: string,
+		model?: string,
+		effort?: EffortLevel,
 	): void {
 		// Guard: kill any lingering process for this workflow
 		const existing = this.running.get(workflowId);
@@ -312,6 +314,12 @@ export class CLIRunner {
 			"--resume",
 			sessionId,
 		];
+		if (model && model.trim() !== "") {
+			args.push("--model", model);
+		}
+		if (effort) {
+			args.push("--effort", effort);
+		}
 
 		const env = cleanEnv(extraEnv);
 
