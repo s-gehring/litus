@@ -72,12 +72,13 @@ describe("T024: ModelConfig fields are all strings in defaults", () => {
 		"implement",
 		"review",
 		"implementReview",
+		"artifacts",
 		"commitPushPr",
 	] as const;
 
-	test("all 15 model fields exist in defaults", () => {
+	test("all 16 model fields exist in defaults", () => {
 		const modelKeys = Object.keys(DEFAULT_CONFIG.models) as (keyof AppConfig["models"])[];
-		expect(modelKeys).toHaveLength(15);
+		expect(modelKeys).toHaveLength(16);
 	});
 
 	test("required model fields have non-empty default values", () => {

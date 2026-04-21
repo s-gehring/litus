@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { MonitorResult } from "../src/ci-monitor";
 import type { CLICallbacks } from "../src/cli-runner";
 import { configStore, DEFAULT_CONFIG } from "../src/config-store";
@@ -293,6 +295,8 @@ describe("Merge & Sync Pipeline Routing", () => {
 				logQuery: mock(() => {}),
 				logAnswer: mock(() => {}),
 				logCommit: mock(() => {}),
+				logArtifactsStart: mock(() => {}),
+				logArtifactsEnd: mock(() => {}),
 			},
 			workflowStore: {
 				save: mock(async () => {}),
@@ -327,10 +331,23 @@ describe("Merge & Sync Pipeline Routing", () => {
 			cli.getLastCallbacks().onComplete();
 		}
 
-		// Review → implement-review → minor → commit-push-pr
+		// Review → implement-review → minor → artifacts → commit-push-pr
 		cli.getLastCallbacks().onComplete(); // review → implement-review
 		rc._pushClassifyResult("minor");
-		cli.getLastCallbacks().onComplete(); // implement-review → classify
+		cli.getLastCallbacks().onComplete(); // implement-review → classify → artifacts
+		await new Promise((r) => setTimeout(r, 20));
+
+		// artifacts completes with empty manifest → commit-push-pr
+		const branch = wf.featureBranch ?? wf.worktreeBranch;
+		const outputDir = join(
+			wf.worktreePath ?? "/tmp/test-worktree",
+			"specs",
+			branch,
+			"artifacts-output",
+		);
+		mkdirSync(outputDir, { recursive: true });
+		writeFileSync(join(outputDir, "manifest.json"), JSON.stringify({ version: 1, artifacts: [] }));
+		cli.getLastCallbacks().onComplete();
 		await new Promise((r) => setTimeout(r, 20));
 
 		// commit-push-pr → monitor-ci

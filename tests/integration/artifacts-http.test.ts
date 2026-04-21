@@ -134,7 +134,7 @@ describe("artifacts HTTP: list endpoint", () => {
 		expect(body.error).toBe("workflow_not_found");
 	});
 
-	test("review / implement-review descriptors pair by runOrdinal", () => {
+	test("review / implement-review descriptors pair by runOrdinal", async () => {
 		seedSnapshot("wf-ord", "review", 1, "code-review.md", "r1");
 		seedSnapshot("wf-ord", "review", 2, "code-review-2.md", "r2");
 		seedSnapshot("wf-ord", "review", 3, "code-review-3.md", "r3");
@@ -145,20 +145,19 @@ describe("artifacts HTTP: list endpoint", () => {
 			worktreePath: "/tmp",
 			featureBranch: "001-feat",
 		});
-		return handleArtifactList("wf-ord", depsWith(wf)).then(async (res) => {
-			const body = (await res.json()) as ArtifactListResponse;
-			const reviews = body.items.filter((i) => i.step === "review");
-			const impls = body.items.filter((i) => i.step === "implement-review");
-			expect(reviews.map((r) => r.runOrdinal)).toEqual([1, 2, 3]);
-			expect(impls.map((i) => i.runOrdinal)).toEqual([1, 2]);
-			const secondReview = reviews.find((r) => r.runOrdinal === 2);
-			expect(secondReview?.relPath).toBe("code-review-2.md");
-			for (const ord of [1, 2]) {
-				const r = reviews.find((x) => x.runOrdinal === ord);
-				const i = impls.find((x) => x.runOrdinal === ord);
-				expect(r?.relPath).toBe(i?.relPath ?? "");
-			}
-		});
+		const res = await handleArtifactList("wf-ord", depsWith(wf));
+		const body = (await res.json()) as ArtifactListResponse;
+		const reviews = body.items.filter((i) => i.step === "review");
+		const impls = body.items.filter((i) => i.step === "implement-review");
+		expect(reviews.map((r) => r.runOrdinal)).toEqual([1, 2, 3]);
+		expect(impls.map((i) => i.runOrdinal)).toEqual([1, 2]);
+		const secondReview = reviews.find((r) => r.runOrdinal === 2);
+		expect(secondReview?.relPath).toBe("code-review-2.md");
+		for (const ord of [1, 2]) {
+			const r = reviews.find((x) => x.runOrdinal === ord);
+			const i = impls.find((x) => x.runOrdinal === ord);
+			expect(r?.relPath).toBe(i?.relPath ?? "");
+		}
 	});
 
 	test("returns empty items when no snapshots exist", async () => {
@@ -322,5 +321,56 @@ describe("artifacts HTTP: download endpoint", () => {
 			const res = await handleArtifactDownload("wf-d2", spec.id, depsWith(wf));
 			expect(await res.text()).toBe(content);
 		});
+	});
+
+	test("artifacts-step download honours the manifest's contentType hint and returns original bytes", async () => {
+		// Stage a fake manifest-collected artifact directly in the persistent
+		// store + a descriptions sidecar with a custom contentType. listArtifacts
+		// then picks them up and the download handler should emit that exact
+		// MIME type instead of inferring from the file extension.
+		const id = `wf-ct-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const content = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x42]);
+		const stepDir = join(getArtifactsRoot(id), "artifacts", "_");
+		mkdirSync(stepDir, { recursive: true });
+		const storePath = join(stepDir, "screenshot.bin");
+		writeFileSync(storePath, content);
+		writeFileSync(
+			join(stepDir, "descriptions.json"),
+			JSON.stringify({
+				"screenshot.bin": {
+					description: "Playwright smoke-test screenshot",
+					contentType: "image/png",
+				},
+			}),
+		);
+		try {
+			const wf = makeWorkflow({
+				id,
+				worktreePath: "/tmp",
+				featureBranch: "feat",
+			});
+			const list = (await (
+				await handleArtifactList(id, depsWith(wf))
+			).json()) as ArtifactListResponse;
+			const entry = list.items.find((i) => i.step === "artifacts");
+			expect(entry?.contentType).toBe("image/png");
+			if (!entry) throw new Error("artifacts descriptor missing");
+
+			const contentRes = await handleArtifactContent(id, entry.id, depsWith(wf));
+			expect(contentRes.headers.get("Content-Type")).toBe("image/png");
+
+			const downloadRes = await handleArtifactDownload(id, entry.id, depsWith(wf));
+			expect(downloadRes.headers.get("Content-Type")).toBe("image/png");
+			// Bytes must round-trip unchanged.
+			const arrBuf = await downloadRes.arrayBuffer();
+			expect(Buffer.from(arrBuf).equals(content)).toBe(true);
+		} finally {
+			try {
+				unlinkSync(storePath);
+			} catch {}
+			try {
+				unlinkSync(join(stepDir, "descriptions.json"));
+			} catch {}
+		}
 	});
 });

@@ -220,6 +220,7 @@ describe("workflow:output and workflow:tools", () => {
 					maxClientOutputLines: 3,
 					epicTimeoutMs: 0,
 					cliIdleTimeoutMs: 0,
+					artifactsTimeoutMs: 0,
 				},
 			}),
 		});
@@ -685,6 +686,7 @@ describe("config:state, config:error, log, error, and unknown messages", () => {
 					maxClientOutputLines: 100,
 					epicTimeoutMs: 0,
 					cliIdleTimeoutMs: 0,
+					artifactsTimeoutMs: 0,
 				},
 			}),
 		});
@@ -717,6 +719,7 @@ describe("config:state, config:error, log, error, and unknown messages", () => {
 					maxClientOutputLines: 100,
 					epicTimeoutMs: 0,
 					cliIdleTimeoutMs: 0,
+					artifactsTimeoutMs: 0,
 				},
 			}),
 		});
@@ -734,6 +737,7 @@ describe("config:state, config:error, log, error, and unknown messages", () => {
 					maxClientOutputLines: 0,
 					epicTimeoutMs: 0,
 					cliIdleTimeoutMs: 0,
+					artifactsTimeoutMs: 0,
 				},
 			}),
 		});
@@ -1039,6 +1043,7 @@ describe("edge cases: output trimming boundaries", () => {
 					maxClientOutputLines: 5,
 					epicTimeoutMs: 0,
 					cliIdleTimeoutMs: 0,
+					artifactsTimeoutMs: 0,
 				},
 			}),
 		});
@@ -1070,6 +1075,7 @@ describe("edge cases: output trimming boundaries", () => {
 					maxClientOutputLines: 5,
 					epicTimeoutMs: 0,
 					cliIdleTimeoutMs: 0,
+					artifactsTimeoutMs: 0,
 				},
 			}),
 		});

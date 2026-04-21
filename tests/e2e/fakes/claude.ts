@@ -163,6 +163,40 @@ async function main() {
 		process.exit(0);
 	}
 
+	// Short-circuit the artifacts step. The step's prompt is dynamic (embeds a
+	// per-workflow output directory), so rather than forcing every scenario to
+	// carry a slot for it, the fake auto-handles it: parse the output dir out
+	// of the prompt, write an empty manifest there, and emit a minimal
+	// stream-json sequence so the orchestrator advances with outcome=empty.
+	if (promptArg.includes('"Generating Artifacts" step')) {
+		const match = promptArg.match(/(\S+)\/manifest\.json/);
+		if (!match) die("artifacts prompt missing manifest path");
+		const outputDir = match[1];
+		mkdirSync(outputDir, { recursive: true });
+		writeFileSync(
+			resolve(outputDir, "manifest.json"),
+			JSON.stringify({ version: 1, artifacts: [] }),
+		);
+		if (outputFormat === "stream-json") {
+			const events = [
+				{ type: "system", subtype: "init", session_id: "sess-artifacts" },
+				{
+					type: "result",
+					subtype: "success",
+					session_id: "sess-artifacts",
+					result: "No artifacts to collect.",
+				},
+			];
+			for (const event of events) process.stdout.write(`${JSON.stringify(event)}\n`);
+		} else {
+			process.stdout.write("No artifacts to collect.\n");
+		}
+		await new Promise<void>((resolveFlush) => {
+			process.stdout.write("", () => resolveFlush());
+		});
+		process.exit(0);
+	}
+
 	const counterFile = process.env.LITUS_E2E_COUNTER;
 	if (!counterFile) die("missing env LITUS_E2E_COUNTER");
 	const idx = nextIndex(counterFile as string);

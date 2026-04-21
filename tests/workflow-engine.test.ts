@@ -271,15 +271,16 @@ describe("WorkflowEngine", () => {
 	});
 
 	describe("pipeline fields", () => {
-		test("createWorkflow initializes steps array with 14 entries", async () => {
+		test("createWorkflow initializes steps array with 15 entries", async () => {
 			const w = await engine.createWorkflow("Build a login page", "/tmp/test-repo");
-			expect(w.steps).toHaveLength(14);
+			expect(w.steps).toHaveLength(15);
 			expect(w.steps[0].name).toBe("setup");
 			expect(w.steps[1].name).toBe("specify");
-			expect(w.steps[8].name).toBe("commit-push-pr");
-			expect(w.steps[11].name).toBe("feedback-implementer");
-			expect(w.steps[12].name).toBe("merge-pr");
-			expect(w.steps[13].name).toBe("sync-repo");
+			expect(w.steps[8].name).toBe("artifacts");
+			expect(w.steps[9].name).toBe("commit-push-pr");
+			expect(w.steps[12].name).toBe("feedback-implementer");
+			expect(w.steps[13].name).toBe("merge-pr");
+			expect(w.steps[14].name).toBe("sync-repo");
 		});
 
 		test("createWorkflow initializes feedbackEntries to empty array", async () => {

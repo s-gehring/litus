@@ -1206,6 +1206,21 @@ body::-webkit-scrollbar-track {
   color: var(--text-dim);
 }
 
+.cfg-unit-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.cfg-unit-input {
+  text-align: right;
+  width: 100px;
+}
+
 .cfg-text-input {
   width: 100%;
   padding: 6px 10px;
@@ -2098,6 +2113,22 @@ body::-webkit-scrollbar-track {
 .artifact-dropdown-item:hover {
   background: var(--surface-2);
 }
+.artifact-dropdown-label {
+  display: block;
+}
+.artifact-dropdown-description {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+  white-space: normal;
+}
+.artifacts-outcome-empty {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  font-style: italic;
+  margin-left: 6px;
+}
 
 /* Artifact viewer modal */
 .artifact-modal-overlay {
@@ -2257,6 +2288,24 @@ body::-webkit-scrollbar-track {
   font-style: italic;
   text-align: center;
   padding: 40px 20px;
+}
+.artifact-modal-image {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.artifact-modal-text {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  background: var(--surface-2);
+  padding: 12px;
+  border-radius: 4px;
+  margin: 0;
 }
 body.artifact-modal-open { overflow: hidden; }
 

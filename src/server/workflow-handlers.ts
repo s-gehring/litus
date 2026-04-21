@@ -395,7 +395,13 @@ async function resolveArtifactAbsolutePath(
 	artifactId: string,
 	deps: Pick<HandlerDeps, "orchestrators" | "sharedStore">,
 ): Promise<
-	| { kind: "ok"; absPath: string; workflow: Workflow; basename: string }
+	| {
+			kind: "ok";
+			absPath: string;
+			workflow: Workflow;
+			basename: string;
+			contentType: string;
+	  }
 	| { kind: "error"; response: Response }
 > {
 	const entry = lookupArtifact(artifactId);
@@ -414,7 +420,12 @@ async function resolveArtifactAbsolutePath(
 	if (!(await file.exists())) {
 		return { kind: "error", response: jsonError(404, "artifact_unavailable") };
 	}
-	return { kind: "ok", absPath, workflow, basename: basename(entry.relPath) };
+	const base = basename(entry.relPath);
+	// Artifacts-step entries may carry a manifest-declared MIME hint — honour
+	// it so e.g. a custom content type for a vendor-specific report format
+	// survives the round-trip. Other steps fall back to extension inference.
+	const contentType = entry.contentType ?? getMimeType(base);
+	return { kind: "ok", absPath, workflow, basename: base, contentType };
 }
 
 export async function handleArtifactContent(
@@ -427,7 +438,7 @@ export async function handleArtifactContent(
 	const file = Bun.file(resolved.absPath);
 	return new Response(file.stream(), {
 		headers: {
-			"Content-Type": getMimeType(resolved.basename),
+			"Content-Type": resolved.contentType,
 			"Cache-Control": "no-store",
 			"Content-Length": String(file.size),
 		},
@@ -452,7 +463,7 @@ export async function handleArtifactDownload(
 	const file = Bun.file(resolved.absPath);
 	return new Response(file.stream(), {
 		headers: {
-			"Content-Type": getMimeType(resolved.basename),
+			"Content-Type": resolved.contentType,
 			"Cache-Control": "no-store",
 			"Content-Length": String(file.size),
 			"Content-Disposition": `attachment; filename="${quoted}"; filename*=UTF-8''${encoded}`,

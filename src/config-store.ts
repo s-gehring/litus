@@ -35,6 +35,7 @@ export const DEFAULT_CONFIG: AppConfig = {
 		implement: "",
 		review: "",
 		implementReview: "",
+		artifacts: "",
 		commitPushPr: "",
 	},
 	efforts: {
@@ -52,6 +53,7 @@ export const DEFAULT_CONFIG: AppConfig = {
 		implement: "medium",
 		review: "medium",
 		implementReview: "medium",
+		artifacts: "medium",
 		commitPushPr: "medium",
 	},
 	prompts: {
@@ -218,6 +220,8 @@ Set \`prDescriptionUpdate\` to \`null\` when no PR description update was attemp
 		ciFixMaxAttempts: 10,
 		mergeMaxAttempts: 3,
 		maxJsonRetries: 2,
+		artifactsPerFileMaxBytes: 104_857_600,
+		artifactsPerStepMaxBytes: 1_073_741_824,
 	},
 	timing: {
 		ciGlobalTimeoutMs: 1_800_000,
@@ -228,6 +232,7 @@ Set \`prDescriptionUpdate\` to \`null\` when no PR description update was attemp
 		maxClientOutputLines: 5_000,
 		epicTimeoutMs: 900_000,
 		cliIdleTimeoutMs: 600_000,
+		artifactsTimeoutMs: 1_800_000,
 	},
 };
 
@@ -383,6 +388,7 @@ export class ConfigStore {
 			"implement",
 			"review",
 			"implementReview",
+			"artifacts",
 			"commitPushPr",
 		]);
 

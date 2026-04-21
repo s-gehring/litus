@@ -86,6 +86,58 @@ export class AuditLogger {
 		this.writeEvent(runId, { eventType, content, stepName, commitHash: null, metadata: null });
 	}
 
+	// Artifacts-step lifecycle events. `start` captures what the run was
+	// configured with; `end` captures the outcome, every file the step kept, and
+	// any rejection reasons (manifest/cap/timeout/LLM error). Matches FR-015.
+	logArtifactsStart(
+		runId: string,
+		payload: {
+			workflowId: string;
+			model: string;
+			effort: string | null;
+		},
+	): void {
+		this.writeEvent(runId, {
+			eventType: "artifacts.step.start",
+			content: null,
+			stepName: "artifacts",
+			commitHash: null,
+			metadata: {
+				workflowId: payload.workflowId,
+				model: payload.model,
+				effort: payload.effort,
+			},
+		});
+	}
+
+	logArtifactsEnd(
+		runId: string,
+		payload: {
+			workflowId: string;
+			outcome: "with-files" | "empty" | "error";
+			reason?: string;
+			files?: Array<{ relPath: string; sizeBytes: number }>;
+			rejections?: Array<{ relPath: string; reason: string }>;
+			caps?: { perFileMaxBytes: number; perStepMaxBytes: number };
+			timeoutMs?: number;
+		},
+	): void {
+		this.writeEvent(runId, {
+			eventType: "artifacts.step.end",
+			content: payload.reason ?? null,
+			stepName: "artifacts",
+			commitHash: null,
+			metadata: {
+				workflowId: payload.workflowId,
+				outcome: payload.outcome,
+				files: payload.files ?? [],
+				rejections: payload.rejections ?? [],
+				caps: payload.caps ?? null,
+				timeoutMs: payload.timeoutMs ?? null,
+			},
+		});
+	}
+
 	// Note: logCommit is not yet wired into the pipeline — requires commit detection in CLI output (deferred)
 	logCommit(
 		runId: string,

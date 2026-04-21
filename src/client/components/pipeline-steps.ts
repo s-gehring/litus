@@ -41,7 +41,18 @@ function openDropdown(
 		btn.type = "button";
 		btn.className = "artifact-dropdown-item";
 		btn.setAttribute("role", "menuitem");
-		btn.textContent = d.displayLabel;
+		// Artifacts-step entries carry an LLM-provided description. Render it on
+		// a second line so the dropdown surfaces what each file actually is.
+		const labelEl = document.createElement("span");
+		labelEl.className = "artifact-dropdown-label";
+		labelEl.textContent = d.displayLabel;
+		btn.appendChild(labelEl);
+		if (d.step === "artifacts" && d.description) {
+			const descEl = document.createElement("span");
+			descEl.className = "artifact-dropdown-description";
+			descEl.textContent = d.description;
+			btn.appendChild(descEl);
+		}
 		btn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			menu.remove();
@@ -153,6 +164,19 @@ export function renderPipelineSteps(
 			badge.className = "review-badge";
 			badge.textContent = `${workflow.ciCycle.attempt}/${workflow.ciCycle.maxAttempts}`;
 			el.appendChild(badge);
+		}
+
+		// Artifacts outcome annotation — distinguishes "completed with files"
+		// from "completed but the LLM produced no artifacts" so a user glancing
+		// at the pipeline can tell them apart without drilling into the step.
+		if (step.name === "artifacts" && step.status === "completed") {
+			const outcome = step.outcome;
+			if (outcome === "empty") {
+				const badge = document.createElement("span");
+				badge.className = "artifacts-outcome-empty";
+				badge.textContent = "(no files)";
+				el.appendChild(badge);
+			}
 		}
 
 		// Artifact affordance (only when ≥1 descriptor exists for this step)

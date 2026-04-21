@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CLICallbacks } from "../src/cli-runner";
@@ -219,6 +219,8 @@ function createFakeAuditLogger() {
 		logCommit: mock(
 			(_runId: string, _hash: string, _msg: string | null, _step: string | null) => {},
 		),
+		logArtifactsStart: mock((_runId: string, _payload: Record<string, unknown>) => {}),
+		logArtifactsEnd: mock((_runId: string, _payload: Record<string, unknown>) => {}),
 	};
 }
 
@@ -252,6 +254,20 @@ function getWf(eng: ReturnType<typeof createFakeEngine>): Workflow {
 	const wf = eng._getWorkflow();
 	if (!wf) throw new Error("Expected workflow to exist");
 	return wf;
+}
+
+/**
+ * Seed an empty manifest in the artifacts-output dir so that when the CLI
+ * stub's onComplete is called for the artifacts step, collection succeeds
+ * with outcome=empty and the orchestrator advances to commit-push-pr.
+ * Idempotent: safe to call even if the directory already exists.
+ */
+function seedEmptyArtifactsManifest(wf: Workflow): void {
+	const branch = wf.featureBranch ?? wf.worktreeBranch;
+	const worktreePath = wf.worktreePath ?? "/tmp/test-worktree";
+	const outputDir = join(worktreePath, "specs", branch, "artifacts-output");
+	mkdirSync(outputDir, { recursive: true });
+	writeFileSync(join(outputDir, "manifest.json"), JSON.stringify({ version: 1, artifacts: [] }));
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -324,7 +340,7 @@ describe("PipelineOrchestrator", () => {
 			expect(cli._startCalls.length).toBe(1);
 		});
 
-		test("pipeline has 14 steps in correct order", async () => {
+		test("pipeline has 15 steps in correct order", async () => {
 			await startAndFlush("test");
 			const wf = getWf(engine);
 
@@ -337,6 +353,7 @@ describe("PipelineOrchestrator", () => {
 				"implement",
 				"review",
 				"implement-review",
+				"artifacts",
 				"commit-push-pr",
 				"monitor-ci",
 				"fix-ci",
@@ -384,19 +401,28 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.currentStepIndex).toBe(7);
 			expect(wf.steps[7].name).toBe("implement-review");
 
-			// implement-review (7) completes → classify as minor → advance to commit-push-pr
+			// implement-review (7) completes → classify as minor → advance to artifacts (8)
 			rc._pushClassifyResult("minor");
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.currentStepIndex).toBe(8);
+			expect(wf.steps[8].name).toBe("artifacts");
 
-			// commit-push-pr (8) completes → routes to monitor-ci (9)
+			// artifacts (8) completes → empty manifest → advance to commit-push-pr (9)
+			seedEmptyArtifactsManifest(wf);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.currentStepIndex).toBe(9);
+			expect(wf.steps[9].name).toBe("commit-push-pr");
+
+			// commit-push-pr (9) completes → routes to monitor-ci (10)
 			// monitor-ci tries to discover PR URL asynchronously, then errors
 			cli.getLastCallbacks().onComplete();
 
-			expect(wf.currentStepIndex).toBe(9);
-			expect(wf.steps[9].name).toBe("monitor-ci");
+			expect(wf.currentStepIndex).toBe(10);
+			expect(wf.steps[10].name).toBe("monitor-ci");
 
 			// Wait for async PR URL discovery to fail
 			await new Promise((r) => setTimeout(r, 200));
@@ -660,7 +686,7 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.currentStepIndex).toBe(6); // back to review
 		});
 
-		test("stops cycling on minor severity → advances to commit-push-pr", async () => {
+		test("stops cycling on minor severity → advances to artifacts", async () => {
 			await advanceToReview();
 			const wf = getWf(engine);
 
@@ -670,7 +696,7 @@ describe("PipelineOrchestrator", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.currentStepIndex).toBe(8);
-			expect(wf.steps[8].name).toBe("commit-push-pr");
+			expect(wf.steps[8].name).toBe("artifacts");
 		});
 
 		test("stops cycling on trivial severity", async () => {
@@ -683,6 +709,7 @@ describe("PipelineOrchestrator", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.currentStepIndex).toBe(8);
+			expect(wf.steps[8].name).toBe("artifacts");
 		});
 
 		test("stops cycling on nit severity", async () => {
@@ -695,6 +722,7 @@ describe("PipelineOrchestrator", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.currentStepIndex).toBe(8);
+			expect(wf.steps[8].name).toBe("artifacts");
 		});
 
 		test("caps review cycling at maxIterations", async () => {
@@ -712,7 +740,8 @@ describe("PipelineOrchestrator", () => {
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
-			expect(wf.currentStepIndex).toBe(8); // commit-push-pr despite critical
+			expect(wf.currentStepIndex).toBe(8); // artifacts despite critical
+			expect(wf.steps[8].name).toBe("artifacts");
 			expect(wf.reviewCycle.iteration).toBe(16);
 		});
 	});
@@ -904,21 +933,29 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.currentStepIndex).toBe(7); // implement-review
 			expect(wf.steps[7].status).toBe("running");
 
-			// implement-review completes → classify as minor → advance to commit-push-pr
+			// implement-review completes → classify as minor → advance to artifacts
 			rc._pushClassifyResult("minor");
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.reviewCycle.lastSeverity).toBe("minor");
-			expect(wf.currentStepIndex).toBe(8); // commit-push-pr
-			expect(wf.steps[8].name).toBe("commit-push-pr");
+			expect(wf.currentStepIndex).toBe(8); // artifacts
+			expect(wf.steps[8].name).toBe("artifacts");
+
+			// artifacts completes with an empty manifest → advance to commit-push-pr
+			seedEmptyArtifactsManifest(wf);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(wf.currentStepIndex).toBe(9); // commit-push-pr
+			expect(wf.steps[9].name).toBe("commit-push-pr");
 
 			// commit-push-pr completes → routes to monitor-ci
 			// monitor-ci tries to discover PR URL asynchronously, then errors
 			cli.getLastCallbacks().onComplete();
 
-			expect(wf.currentStepIndex).toBe(9);
-			expect(wf.steps[9].name).toBe("monitor-ci");
+			expect(wf.currentStepIndex).toBe(10);
+			expect(wf.steps[10].name).toBe("monitor-ci");
 
 			// Wait for async PR URL discovery to fail
 			await new Promise((r) => setTimeout(r, 200));
@@ -941,17 +978,22 @@ describe("PipelineOrchestrator", () => {
 		});
 
 		test("pipeline completion calls auditLogger.endRun", async () => {
-			await startAndFlush("test");
+			const wf = await startAndFlush("test");
 
 			// Complete steps 1–5 (specify → implement); setup (0) already completed
 			for (let i = 0; i < 5; i++) {
 				cli.getLastCallbacks().onComplete();
 			}
 
-			// Review → implement-review → minor → commit-push-pr
+			// Review → implement-review → minor → artifacts → commit-push-pr
 			cli.getLastCallbacks().onComplete(); // review → implement-review
 			rc._pushClassifyResult("minor");
-			cli.getLastCallbacks().onComplete(); // implement-review → classify
+			cli.getLastCallbacks().onComplete(); // implement-review → classify → artifacts
+			await new Promise((r) => setTimeout(r, 20));
+
+			// artifacts completes with empty manifest → advances to commit-push-pr
+			seedEmptyArtifactsManifest(wf);
+			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
 			// commit-push-pr completes → monitor-ci tries to discover PR URL, then errors
@@ -3054,9 +3096,9 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 
 		test("pr-opened-manual emits only in manual mode on first PR URL (FR-004)", async () => {
 			configStore.save({ autoMode: "manual" });
-			await startAndFlush("test");
+			const wf = await startAndFlush("test");
 
-			// Advance through specify..implement-review to reach commit-push-pr (index 8)
+			// Advance through specify..implement-review to reach artifacts (index 8)
 			// setup(0) auto-completed; specify(1) running.
 			for (let i = 0; i < 5; i++) cli.getLastCallbacks().onComplete();
 			// review(6) → implement-review(7)
@@ -3065,7 +3107,11 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
-			const wf = getWf(engine);
+			// artifacts(8) completes with empty manifest → commit-push-pr(9)
+			seedEmptyArtifactsManifest(wf);
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+
 			expect(wf.steps[wf.currentStepIndex].name).toBe("commit-push-pr");
 
 			// Commit step emits PR URL in output
@@ -3078,10 +3124,13 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 
 		test("pr-opened-manual NOT emitted in normal mode", async () => {
 			configStore.save({ autoMode: "normal" });
-			await startAndFlush("test");
+			const wf = await startAndFlush("test");
 			for (let i = 0; i < 5; i++) cli.getLastCallbacks().onComplete();
 			cli.getLastCallbacks().onComplete();
 			rc._pushClassifyResult("minor");
+			cli.getLastCallbacks().onComplete();
+			await new Promise((r) => setTimeout(r, 20));
+			seedEmptyArtifactsManifest(wf);
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 			cli.getLastCallbacks().onOutput("PR opened at https://github.com/o/r/pull/42");
