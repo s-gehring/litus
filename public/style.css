@@ -1206,6 +1206,21 @@ body::-webkit-scrollbar-track {
   color: var(--text-dim);
 }
 
+.cfg-unit-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.cfg-unit-input {
+  text-align: right;
+  width: 100px;
+}
+
 .cfg-text-input {
   width: 100%;
   padding: 6px 10px;

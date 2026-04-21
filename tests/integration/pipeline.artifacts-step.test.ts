@@ -242,6 +242,155 @@ describe("US1: artifacts step runs and collects files for spec workflows", () =>
 		);
 	});
 
+	test("US3: files survive worktree + branch deletion and simulated restart", async () => {
+		const id = `wf-d-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const worktreePath = join(baseDir, "worktree-durable");
+		mkdirSync(worktreePath, { recursive: true });
+		const branch = "feat-durable";
+
+		const wf = makeSpecWorkflow(id, worktreePath, branch);
+		registerCleanup(getArtifactsRoot(id));
+
+		const cli = makeStubCli();
+		const engine = makeStubEngine(wf);
+		const orch = new PipelineOrchestrator(
+			{
+				onStepChange: () => {},
+				onOutput: () => {},
+				onTools: () => {},
+				onComplete: () => {},
+				onError: () => {},
+				onStateChange: () => {},
+			},
+			{ engine, cliRunner: cli.runner, workflowStore: store },
+		);
+
+		orch.startPipelineFromWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+
+		const outputDir = join(worktreePath, "specs", branch, "artifacts-output");
+		mkdirSync(outputDir, { recursive: true });
+		const originalBytes = "Durable content — should survive worktree removal.";
+		writeFileSync(join(outputDir, "report.md"), originalBytes);
+		writeFileSync(
+			join(outputDir, "manifest.json"),
+			JSON.stringify({
+				version: 1,
+				artifacts: [{ path: "report.md", description: "Run report" }],
+			}),
+		);
+
+		cli.lastStarted()?.callbacks.onComplete();
+		await new Promise((r) => setTimeout(r, 50));
+
+		// Wipe the worktree entirely and invalidate the branch association, then
+		// build a fresh Workflow object to mimic "server restart with only the
+		// persistent store available". Windows occasionally holds a transient
+		// lock from the async persist; tolerate that failure — the test's point
+		// is that listArtifacts still returns the file, which exercises the
+		// persistent-store path regardless of whether the worktree is gone.
+		try {
+			rmSync(worktreePath, { recursive: true, force: true });
+		} catch {
+			// Leave the worktree in place on EBUSY — the afterRestart workflow
+			// still has worktreePath: null below so listArtifacts ignores it.
+		}
+		const afterRestart = { ...wf, worktreePath: null, featureBranch: null };
+		const items = listArtifacts(afterRestart).items.filter((i) => i.step === "artifacts");
+		expect(items.length).toBe(1);
+		expect(items[0].relPath).toBe("report.md");
+
+		// Bytes must be identical.
+		const { readFileSync } = await import("node:fs");
+		const snapshotPath = join(getArtifactsRoot(id), "artifacts", "_", "report.md");
+		expect(readFileSync(snapshotPath, "utf-8")).toBe(originalBytes);
+	});
+
+	test("US4: config changes applied between runs take effect on the next run (no restart)", async () => {
+		// Save a custom model + effort + caps + timeout via the store, then run
+		// a fresh artifacts step and assert the CLI was invoked with the new
+		// model/effort and the new per-file cap is enforced.
+		const saveResult = configStore.save({
+			models: { artifacts: "claude-custom-artifacts" },
+			efforts: { artifacts: "high" },
+			limits: {
+				artifactsPerFileMaxBytes: 1_048_576,
+				artifactsPerStepMaxBytes: 4_194_304,
+			},
+			timing: { artifactsTimeoutMs: 5 * 60_000 },
+		});
+		expect(saveResult.errors).toEqual([]);
+
+		const id = `wf-cfg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const worktreePath = join(baseDir, "worktree-cfg");
+		mkdirSync(worktreePath, { recursive: true });
+		const branch = "feat-cfg";
+
+		const wf = makeSpecWorkflow(id, worktreePath, branch);
+		registerCleanup(getArtifactsRoot(id));
+
+		const startCalls: Array<{
+			workflow: Workflow;
+			callbacks: CLICallbacks;
+			model?: string;
+			effort?: EffortLevel;
+		}> = [];
+		const runner = {
+			start(
+				workflow: Workflow,
+				callbacks: CLICallbacks,
+				_extraEnv?: Record<string, string>,
+				model?: string,
+				effort?: EffortLevel,
+			) {
+				startCalls.push({ workflow, callbacks, model, effort });
+			},
+			resume() {},
+			kill() {},
+			killAll() {},
+		} as unknown as CLIRunner;
+
+		const engine = makeStubEngine(wf);
+		const orch = new PipelineOrchestrator(
+			{
+				onStepChange: () => {},
+				onOutput: () => {},
+				onTools: () => {},
+				onComplete: () => {},
+				onError: () => {},
+				onStateChange: () => {},
+			},
+			{ engine, cliRunner: runner, workflowStore: store },
+		);
+
+		orch.startPipelineFromWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(startCalls.length).toBe(1);
+		expect(startCalls[0].model).toBe("claude-custom-artifacts");
+		expect(startCalls[0].effort).toBe("high");
+
+		// Emit a manifest that declares one oversized file. With the new 1 MB
+		// per-file cap it must be rejected (soft), leaving outcome=empty.
+		const outputDir = join(worktreePath, "specs", branch, "artifacts-output");
+		mkdirSync(outputDir, { recursive: true });
+		writeFileSync(join(outputDir, "huge.md"), "x".repeat(1_048_577));
+		writeFileSync(
+			join(outputDir, "manifest.json"),
+			JSON.stringify({
+				version: 1,
+				artifacts: [{ path: "huge.md", description: "oversize" }],
+			}),
+		);
+
+		startCalls[0].callbacks.onComplete();
+		await new Promise((r) => setTimeout(r, 30));
+
+		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
+		expect(step?.status).toBe("completed");
+		expect(step?.outcome).toBe("empty");
+	});
+
 	test("LLM emits empty manifest → outcome=empty and no files listed", async () => {
 		const id = `wf-e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const worktreePath = join(baseDir, "worktree-empty");

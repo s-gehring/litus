@@ -148,6 +148,11 @@ function buildModelsSection(): HTMLElement {
 			description: "Applies fixes from review feedback",
 		},
 		{
+			key: "artifacts",
+			label: "Artifacts",
+			description: "Generates post-implementation artifacts (reports, test output, etc.)",
+		},
+		{
 			key: "commitPushPr",
 			label: "Commit / Push / PR",
 			description: "Commits changes and opens a pull request",
@@ -215,12 +220,121 @@ function buildModelRow(
 	return row;
 }
 
+// Unit-aware options for size / duration settings. Stored value is always in
+// canonical base units (bytes / ms); the UI renders a numeric value paired
+// with one of these unit options so the user never types raw bytes/seconds.
+const SIZE_UNITS: Array<{ label: string; factor: number }> = [
+	{ label: "MB", factor: 1_048_576 },
+	{ label: "GB", factor: 1_073_741_824 },
+];
+
+const DURATION_UNITS: Array<{ label: string; factor: number }> = [
+	{ label: "minutes", factor: 60_000 },
+	{ label: "hours", factor: 3_600_000 },
+];
+
+function pickDefaultUnit(
+	units: Array<{ label: string; factor: number }>,
+	canonicalValue: number,
+): { label: string; factor: number } {
+	// Prefer the largest unit that divides evenly AND produces a whole number
+	// ≥ 1. Falls back to the smallest unit otherwise so the displayed number
+	// never surprises with tiny fractions on first render.
+	for (let i = units.length - 1; i >= 0; i--) {
+		const u = units[i];
+		if (canonicalValue >= u.factor && canonicalValue % u.factor === 0) return u;
+	}
+	return units[0];
+}
+
+function buildUnitAwareInput(
+	meta: (typeof NUMERIC_SETTING_META)[number],
+	sectionKey: string,
+	fieldKey: string,
+): HTMLElement {
+	const units = meta.inputKind === "size" ? SIZE_UNITS : DURATION_UNITS;
+
+	const input = el("input", "cfg-number-input cfg-unit-input") as HTMLInputElement;
+	input.type = "text";
+	input.inputMode = "decimal";
+	input.dataset.cfgPath = meta.key;
+	input.dataset.cfgInputKind = meta.inputKind ?? "";
+	input.dataset.rawValue = String(meta.defaultValue);
+
+	const select = el("select", "cfg-unit-select") as HTMLSelectElement;
+	select.dataset.cfgUnitFor = meta.key;
+	for (const u of units) {
+		const option = el("option") as HTMLOptionElement;
+		option.value = u.label;
+		option.textContent = u.label;
+		select.appendChild(option);
+	}
+
+	const applyCanonical = (canonical: number): void => {
+		const unit = pickDefaultUnit(units, canonical);
+		select.value = unit.label;
+		input.dataset.rawValue = String(canonical);
+		const displayed = canonical / unit.factor;
+		// Keep trailing zeros out for whole values; otherwise keep up to 3 decimals.
+		input.value = Number.isInteger(displayed)
+			? String(displayed)
+			: displayed.toFixed(3).replace(/\.?0+$/, "");
+	};
+
+	applyCanonical(meta.defaultValue);
+
+	const commit = (): void => {
+		const raw = Number.parseFloat(input.value);
+		if (!Number.isFinite(raw) || raw <= 0) return;
+		const unit = units.find((u) => u.label === select.value) ?? units[0];
+		const canonical = Math.round(raw * unit.factor);
+		if (canonical < meta.min) return;
+		input.dataset.rawValue = String(canonical);
+		sendFn?.({
+			type: "config:save",
+			config: { [sectionKey]: { [fieldKey]: canonical } },
+		});
+	};
+
+	input.addEventListener("change", commit);
+	select.addEventListener("change", () => {
+		// Re-render the numeric input against the newly-selected unit without
+		// changing the canonical stored value.
+		const canonical = Number.parseInt(input.dataset.rawValue ?? "", 10);
+		if (Number.isFinite(canonical)) {
+			const unit = units.find((u) => u.label === select.value) ?? units[0];
+			const displayed = canonical / unit.factor;
+			input.value = Number.isInteger(displayed)
+				? String(displayed)
+				: displayed.toFixed(3).replace(/\.?0+$/, "");
+		}
+		commit();
+	});
+
+	const inputWrap = el("div", "cfg-input-wrap");
+	inputWrap.appendChild(input);
+	inputWrap.appendChild(select);
+	inputWrap.appendChild(makeResetButton(meta.key));
+	return inputWrap;
+}
+
 function buildNumericSection(sectionKey: string): HTMLElement {
 	const section = el("div", "cfg-section cfg-section--numeric");
 	const metas = NUMERIC_SETTING_META.filter((m) => m.key.startsWith(`${sectionKey}.`));
 
 	for (const meta of metas) {
 		const fieldKey = meta.key.split(".")[1];
+		const row = el("div", "cfg-field-row cfg-field-row--numeric");
+		const labelEl = el("label", "cfg-label", meta.label);
+		labelEl.title = meta.description;
+		row.appendChild(labelEl);
+
+		if (meta.inputKind === "size" || meta.inputKind === "duration") {
+			row.appendChild(buildUnitAwareInput(meta, sectionKey, fieldKey));
+			section.appendChild(row);
+			continue;
+		}
+
 		const input = el("input", "cfg-number-input") as HTMLInputElement;
 		input.type = "text";
 		input.inputMode = "numeric";
@@ -262,10 +376,6 @@ function buildNumericSection(sectionKey: string): HTMLElement {
 		if (unitSpan) inputWrap.appendChild(unitSpan);
 		inputWrap.appendChild(makeResetButton(meta.key));
 
-		const row = el("div", "cfg-field-row cfg-field-row--numeric");
-		const labelEl = el("label", "cfg-label", meta.label);
-		labelEl.title = meta.description;
-		row.appendChild(labelEl);
 		row.appendChild(inputWrap);
 		section.appendChild(row);
 	}
@@ -446,7 +556,27 @@ export function updateConfigPage(config: AppConfig, warnings?: ConfigWarning[]):
 		// broadcast can arrive between `fill` and the `change` dispatch, and
 		// overwriting mid-edit loses whatever was just typed.
 		const isFocused = document.activeElement === input;
-		if (input.classList.contains("cfg-number-input")) {
+		const kind = (input as HTMLInputElement).dataset.cfgInputKind;
+		if (kind === "size" || kind === "duration") {
+			// Unit-aware inputs: store canonical value, pick the natural unit,
+			// and render numeric-in-that-unit. Skip re-render mid-edit.
+			const canonical = Number(value);
+			(input as HTMLInputElement).dataset.rawValue = String(canonical);
+			const select = pageRoot.querySelector<HTMLSelectElement>(
+				`select[data-cfg-unit-for="${path}"]`,
+			);
+			const units = kind === "size" ? SIZE_UNITS : DURATION_UNITS;
+			const unit = pickDefaultUnit(units, canonical);
+			if (select && !isFocused) {
+				select.value = unit.label;
+			}
+			if (!isFocused) {
+				const displayed = canonical / unit.factor;
+				input.value = Number.isInteger(displayed)
+					? String(displayed)
+					: displayed.toFixed(3).replace(/\.?0+$/, "");
+			}
+		} else if (input.classList.contains("cfg-number-input")) {
 			const numVal = Number(value);
 			(input as HTMLInputElement).dataset.rawValue = String(numVal);
 			if (!isFocused) {
