@@ -538,13 +538,18 @@ function createRepoHint(): HTMLDivElement {
 
 type FolderExistsResponse =
 	| { exists: true; usable: true }
-	| { exists: true; usable: false; reason: "not_a_directory" | "permission_denied" }
+	| {
+			exists: true;
+			usable: false;
+			reason: "not_a_directory" | "permission_denied" | "not_a_git_repo";
+	  }
 	| { exists: false; usable: false; reason: "not_found" };
 
 function folderErrorMessageFor(res: FolderExistsResponse): string | null {
 	if (res.exists && res.usable) return null;
 	if (!res.exists) return "Folder does not exist.";
 	if (res.reason === "not_a_directory") return "Path is not a folder.";
+	if (res.reason === "not_a_git_repo") return "Folder is not a git repository.";
 	if (res.reason === "permission_denied") {
 		return "Folder is not accessible (permission denied).";
 	}
@@ -591,13 +596,25 @@ function attachFolderValidation(
 	fieldErrorEl.className = "modal-field-error hidden";
 	field.appendChild(fieldErrorEl);
 
-	function setError(msg: string | null) {
+	const successEl = document.createElement("div");
+	successEl.className = "modal-field-success hidden";
+	successEl.setAttribute("aria-label", "Valid target repository");
+	successEl.textContent = "✓ Valid git repository";
+	field.appendChild(successEl);
+
+	function setError(msg: string | null, validated: boolean) {
 		if (msg) {
 			fieldErrorEl.textContent = msg;
 			fieldErrorEl.classList.remove("hidden");
+			successEl.classList.add("hidden");
 		} else {
 			fieldErrorEl.textContent = "";
 			fieldErrorEl.classList.add("hidden");
+			if (validated) {
+				successEl.classList.remove("hidden");
+			} else {
+				successEl.classList.add("hidden");
+			}
 		}
 	}
 
@@ -605,7 +622,12 @@ function attachFolderValidation(
 		inFlight++;
 		void probeFolder(value)
 			.then((err) => {
-				setError(err);
+				// GitHub-URL inputs return `null` from probeFolder without
+				// hitting the server (they're validated later during clone);
+				// suppress the green check in that case so the affordance
+				// reads as "validated the folder" rather than "looks URL-ish".
+				const validated = err === null && value !== "" && !looksLikeGitUrl(value);
+				setError(err, validated);
 			})
 			.finally(() => {
 				inFlight--;
@@ -619,7 +641,8 @@ function attachFolderValidation(
 			if (inFlight > 0) return false;
 			const value = picker.getValue();
 			const err = await probeFolder(value);
-			setError(err);
+			const validated = err === null && value !== "" && !looksLikeGitUrl(value);
+			setError(err, validated);
 			return err === null;
 		},
 	};
@@ -765,6 +788,8 @@ function openQuickFixModal(): void {
 
 	const modal = createModal("Quick Fix", content);
 
+	const folderValidation = attachFolderValidation(repoPicker, repoField);
+
 	const cloneStatus = document.createElement("div");
 	cloneStatus.className = "modal-clone-status hidden";
 	content.appendChild(cloneStatus);
@@ -783,7 +808,7 @@ function openQuickFixModal(): void {
 		btnStart.disabled = descInput.value.trim() === "";
 	});
 
-	function submit() {
+	async function submit() {
 		const desc = descInput.value.trim();
 		if (!desc) {
 			errorEl.textContent = "Fix description is required";
@@ -791,6 +816,7 @@ function openQuickFixModal(): void {
 			return;
 		}
 		errorEl.classList.add("hidden");
+		if (!(await folderValidation.submitCheck())) return;
 		const targetRepo = repoPicker.getValue();
 
 		if (targetRepo && looksLikeGitUrl(targetRepo)) {
@@ -1064,6 +1090,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		},
 		onNavigate: (alert) => {
 			navigateToAlertTarget(alert);
+		},
+		onClearAll: () => {
+			send({ type: "alert:clear-all" });
 		},
 	});
 

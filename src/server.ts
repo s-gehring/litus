@@ -20,7 +20,7 @@ import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
 import { createAlertBroadcasters } from "./server/alert-broadcast";
-import { handleAlertDismiss, handleAlertList } from "./server/alert-handlers";
+import { handleAlertClearAll, handleAlertDismiss, handleAlertList } from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
 import { handleEpicAbort, handleEpicStart } from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
@@ -261,6 +261,7 @@ router.register("epic:abort", handleEpicAbort);
 router.register("purge:all", handlePurgeAll);
 router.register("alert:list", handleAlertList);
 router.register("alert:dismiss", handleAlertDismiss);
+router.register("alert:clear-all", handleAlertClearAll);
 
 // ── HTTP/WS server ──────────────────────────────────────
 async function listSubdirectories(parentDir: string): Promise<string[]> {
@@ -318,6 +319,15 @@ export async function handleFolderExists(raw: string | null): Promise<Response> 
 		const st = await stat(absResolved);
 		if (!st.isDirectory()) {
 			return Response.json({ exists: true, usable: false, reason: "not_a_directory" });
+		}
+		// A local folder is only "usable" as a target repo if it's a git
+		// repository. `.git` is a directory for standard repos and a file for
+		// worktrees / submodules — `stat` accepts either kind.
+		const { join } = await import("node:path");
+		try {
+			await stat(join(absResolved, ".git"));
+		} catch {
+			return Response.json({ exists: true, usable: false, reason: "not_a_git_repo" });
 		}
 		return Response.json({ exists: true, usable: true });
 	} catch (err) {

@@ -91,6 +91,40 @@ describe("getLastTargetRepo logic", () => {
 	});
 });
 
+describe("folder validation: success indicator + git-repo check", () => {
+	test("client maps not_a_git_repo response to a user-facing error", () => {
+		expect(appSource).toContain('reason === "not_a_git_repo"');
+		expect(appSource).toContain("Folder is not a git repository.");
+	});
+
+	test("FolderExistsResponse type includes not_a_git_repo reason", () => {
+		expect(appSource).toContain("not_a_git_repo");
+	});
+
+	test("attachFolderValidation appends a success indicator element", () => {
+		expect(appSource).toContain('"modal-field-success hidden"');
+		// Checkmark glyph is the visible affordance — keep it stable for e2e selectors.
+		expect(appSource).toContain("✓ Valid git repository");
+	});
+
+	test("server checks for .git presence in handleFolderExists", () => {
+		expect(serverSource).toContain('reason: "not_a_git_repo"');
+		expect(serverSource).toContain('".git"');
+	});
+});
+
+describe("alert clear-all wiring", () => {
+	test("client sends alert:clear-all when the panel button fires", () => {
+		expect(appSource).toContain('type: "alert:clear-all"');
+		expect(appSource).toContain("onClearAll");
+	});
+
+	test("server registers alert:clear-all handler", () => {
+		expect(serverSource).toContain('router.register("alert:clear-all"');
+		expect(serverSource).toContain("handleAlertClearAll");
+	});
+});
+
 describe("server-side /api/suggest-folders endpoint", () => {
 	test("endpoint registered at /api/suggest-folders", () => {
 		expect(serverSource).toContain('url.pathname === "/api/suggest-folders"');

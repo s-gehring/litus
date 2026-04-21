@@ -1727,6 +1727,13 @@ body::-webkit-scrollbar-track {
   margin-top: 4px;
 }
 
+.modal-field-success {
+  color: var(--accent-green, #2ecc71);
+  font-size: 0.8rem;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
 /* ── Folder Picker ─────────────────────────────────────── */
 
 .folder-picker {
@@ -1905,6 +1912,30 @@ body::-webkit-scrollbar-track {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   z-index: 900;
+}
+
+.alert-list-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-color, #2a2e40);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.alert-list-clear-all {
+  background: transparent;
+  border: 1px solid var(--border-color, #2a2e40);
+  color: var(--text-primary, #e6e6ea);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.alert-list-clear-all:hover {
+  opacity: 1;
+  color: var(--accent-red, #e94560);
+  border-color: var(--accent-red, #e94560);
 }
 
 .alert-list-empty {

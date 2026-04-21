@@ -68,6 +68,68 @@ describe("alert-list row meta rendering", () => {
 		expect(text).not.toMatch(/workflow [0-9a-f]{8}/);
 	});
 
+	test("renders 'Clear all' button when onClearAll is provided and alerts exist", () => {
+		const mgr = new ClientStateManager();
+		const a = makeAlert({ id: "alert_clear_1" });
+		mgr.handleMessage({ type: "alert:list", alerts: [a] });
+
+		let cleared = 0;
+		initAlertList({
+			getAlerts: () => mgr.getAlerts(),
+			getState: () => mgr,
+			onDismiss: () => {},
+			onNavigate: () => {},
+			onClearAll: () => {
+				cleared++;
+			},
+		});
+
+		showAlertList();
+		refreshAlertList();
+
+		const btn = document.querySelector<HTMLButtonElement>(".alert-list-clear-all");
+		expect(btn).not.toBeNull();
+		btn?.click();
+		expect(cleared).toBe(1);
+	});
+
+	test("does not render 'Clear all' button when alert list is empty", () => {
+		const mgr = new ClientStateManager();
+		mgr.handleMessage({ type: "alert:list", alerts: [] });
+
+		initAlertList({
+			getAlerts: () => mgr.getAlerts(),
+			getState: () => mgr,
+			onDismiss: () => {},
+			onNavigate: () => {},
+			onClearAll: () => {},
+		});
+
+		showAlertList();
+		refreshAlertList();
+
+		expect(document.querySelector(".alert-list-clear-all")).toBeNull();
+		expect(document.querySelector(".alert-list-empty")).not.toBeNull();
+	});
+
+	test("omits 'Clear all' button when onClearAll is not wired", () => {
+		const mgr = new ClientStateManager();
+		const a = makeAlert({ id: "alert_no_clear" });
+		mgr.handleMessage({ type: "alert:list", alerts: [a] });
+
+		initAlertList({
+			getAlerts: () => mgr.getAlerts(),
+			getState: () => mgr,
+			onDismiss: () => {},
+			onNavigate: () => {},
+		});
+
+		showAlertList();
+		refreshAlertList();
+
+		expect(document.querySelector(".alert-list-clear-all")).toBeNull();
+	});
+
 	test("does not show any hash hint when the workflow is missing from state", () => {
 		const mgr = new ClientStateManager();
 		const a = makeAlert({
