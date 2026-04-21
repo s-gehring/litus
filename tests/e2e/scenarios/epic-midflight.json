@@ -1,9 +1,8 @@
 {
 	"name": "epic-midflight",
-	"classifier": "nit\n",
 	"claude": [
 		{
-			"delayMs": 60000,
+			"delayMs": 3000,
 			"events": [
 				{ "type": "system", "subtype": "init", "session_id": "epic-midflight-analyzer" },
 				{

@@ -21,12 +21,16 @@ export class EpicTree {
 		return this.page.locator(".epic-tree-container .tree-empty");
 	}
 
+	/**
+	 * `#workflow-summary` is the shared summary slot used by both
+	 * workflow-detail and epic-detail handlers (see
+	 * `workflow-window.ts#updateSummary`). For epics it carries
+	 * `${title} (${completed}/${total} completed)` in tree-view and the
+	 * epic title/description in analysis-view, so both the "epic node
+	 * heading" and the "aggregation summary" are the same element — the
+	 * two accessors are aliases to communicate reader intent.
+	 */
 	epicNode(): Locator {
-		// `#workflow-summary` is the shared summary slot used by both
-		// workflow-detail and epic-detail handlers (see
-		// `workflow-window.ts#updateSummary`). For epics it carries
-		// `${title} (${completed}/${total} completed)` in tree-view and the
-		// epic title/description in analysis-view.
 		return this.page.locator("#workflow-summary");
 	}
 
@@ -38,19 +42,20 @@ export class EpicTree {
 		return this.page.locator("#workflow-status");
 	}
 
-	infeasibleNotes(): Locator {
-		return this.page.locator("#epic-analysis-notes");
-	}
-
 	/**
-	 * Approximation of a "partial decomposition" badge — the product does not
-	 * expose an explicit partial marker; we surface the analyzer notes (which
-	 * the scenario uses to describe the remaining unspecified scope) as the
-	 * observable signal. Tests should assert textual content that the scenario
-	 * author chose for the partial case.
+	 * Analyzer notes surface. Two DOM shapes depending on status:
+	 *   - `status === "infeasible"`: tree-view is skipped; notes render as
+	 *     `div.epic-analysis-notes.infeasible-notes-fullheight` inside
+	 *     `#output-log` (no id, see `renderAnalysisView`).
+	 *   - other statuses with analysis notes: tree-view renders a
+	 *     `#epic-analysis-notes` container above the tree (see
+	 *     `renderEpicAnalysisNotes`).
+	 * The combined locator covers both shapes so tests don't have to choose.
+	 * Partial decompositions route through the second shape; zero-specs and
+	 * pure-infeasible go through the first.
 	 */
-	partialBadge(): Locator {
-		return this.page.locator("#epic-analysis-notes");
+	infeasibleNotes(): Locator {
+		return this.page.locator("#epic-analysis-notes, .infeasible-notes-fullheight");
 	}
 
 	analyzerErrorBanner(): Locator {
@@ -76,14 +81,5 @@ export class EpicTree {
 
 	childStatus(workflowId: string): Locator {
 		return this.childRow(workflowId).locator(".card-status");
-	}
-
-	/** Clicking a child row opens its workflow card. */
-	startButton(workflowId: string): Locator {
-		return this.childRow(workflowId);
-	}
-
-	prLink(): Locator {
-		return this.page.locator('a[href*="/pull/"], a.pr-link').first();
 	}
 }

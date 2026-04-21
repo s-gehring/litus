@@ -189,8 +189,12 @@ test.describe("Epic lifecycle", () => {
 					timeout: 15_000,
 				});
 
-				// AS3 — child fails before PR: failed child row has no PR link.
-				await expect(page.locator('a[href*="/pull/"]')).toHaveCount(0);
+				// AS3 — child fails before PR: neither failed child row has a
+				// PR link. Scope the selector to the child rows so an
+				// unrelated PR link elsewhere on the page (dashboard/strip)
+				// would not silently tighten this assertion.
+				await expect(aRow.locator('a[href*="/pull/"]')).toHaveCount(0, { timeout: 15_000 });
+				await expect(bRow.locator('a[href*="/pull/"]')).toHaveCount(0, { timeout: 15_000 });
 			});
 		});
 	});
@@ -367,13 +371,11 @@ test.describe("Epic lifecycle", () => {
 				// tree container because there are no child workflows, and no
 				// start affordance exists (the epic never became a set of
 				// workflows).
-				await expect(page.locator(".infeasible-notes-fullheight")).toBeVisible({
+				await expect(tree.infeasibleNotes()).toBeVisible({ timeout: 15_000 });
+				await expect(tree.infeasibleNotes()).toContainText(/infeasible|cannot|impossible/i, {
 					timeout: 15_000,
 				});
-				await expect(page.locator(".infeasible-notes-fullheight")).toContainText(
-					/infeasible|cannot|impossible/i,
-				);
-				await expect(tree.allChildRows()).toHaveCount(0);
+				await expect(tree.allChildRows()).toHaveCount(0, { timeout: 15_000 });
 			});
 		});
 
@@ -384,13 +386,14 @@ test.describe("Epic lifecycle", () => {
 				configOverrides: EPIC_E2E_CONFIG_OVERRIDES,
 			});
 
-			// Pivot: the production UI has no explicit "partial" badge (see
-			// `src/client/components/epic-tree.ts` + `status-maps.ts`). The
-			// closest observable signal is `#epic-analysis-notes`, which
-			// renders whatever the analyzer returned in `summary` or
-			// `infeasibleNotes`. The scenario author encodes the partial
-			// nature in `summary`, and the test asserts that text is visible
-			// AND the startable specs render as tree nodes.
+			// The product has no explicit "partial" badge — partial
+			// decompositions surface as (a) a non-empty tree (the specs the
+			// analyzer could extract) + (b) analyzer notes carrying the
+			// unspecified remainder. See `spec.md` FR-010 for the documented
+			// product↔spec divergence. The test asserts the structural
+			// signals (child rows + notes element visible + non-empty) and
+			// also verifies the scenario-provided marker text as a coarse
+			// content check.
 			test("epic edge: partial decomposition marked partial", async ({ page, server, sandbox }) => {
 				test.setTimeout(60_000);
 
@@ -406,12 +409,15 @@ test.describe("Epic lifecycle", () => {
 					start: false,
 				});
 
-				// Present specs render as child rows.
+				// Structural partial signals: exactly one child row rendered
+				// (the spec the analyzer extracted) and the notes element is
+				// present and non-empty (carrying the unspecified scope).
 				await expect(tree.allChildRows()).toHaveCount(1, { timeout: 15_000 });
 				await expect(tree.childRowByTitle("Add login page")).toBeVisible();
-				// Partial signal: analysis notes carry the scenario-provided
-				// "partial decomposition" marker text.
-				await expect(tree.partialBadge()).toContainText(/partial/i, { timeout: 15_000 });
+				await expect(tree.infeasibleNotes()).toBeVisible({ timeout: 15_000 });
+				await expect(tree.infeasibleNotes()).not.toHaveText("");
+				// Content check against the scenario-provided marker text.
+				await expect(tree.infeasibleNotes()).toContainText(/partial/i, { timeout: 15_000 });
 			});
 		});
 
@@ -491,12 +497,10 @@ test.describe("Epic lifecycle", () => {
 				});
 
 				// No tree rows + no analyzer error banner.
-				await expect(tree.allChildRows()).toHaveCount(0);
-				await expect(tree.analyzerErrorBanner()).toHaveCount(0);
+				await expect(tree.allChildRows()).toHaveCount(0, { timeout: 15_000 });
+				await expect(tree.analyzerErrorBanner()).toHaveCount(0, { timeout: 15_000 });
 				// The infeasible-notes surface carries the zero-spec note.
-				await expect(page.locator(".infeasible-notes-fullheight")).toBeVisible({
-					timeout: 15_000,
-				});
+				await expect(tree.infeasibleNotes()).toBeVisible({ timeout: 15_000 });
 			});
 		});
 
@@ -535,10 +539,16 @@ test.describe("Epic lifecycle", () => {
 				// stays at "analyzing" because `renderFull()` isn't re-invoked
 				// on `epic:error`. The observable error signal is therefore the
 				// `.output-line.error` entry carrying the analyzer message.
-				await expect(page.locator(".output-line.error")).toContainText(/parse|JSON/i, {
-					timeout: 30_000,
-				});
-				await expect(tree.allChildRows()).toHaveCount(0);
+				// Analyzer emits the literal phrase "Could not parse
+				// decomposition result" (see `parseAnalysisResult` in
+				// `src/epic-analyzer.ts`) on malformed JSON. Match that
+				// specific wording so any log line containing "JSON"
+				// elsewhere in the server output can't satisfy the assert.
+				await expect(page.locator(".output-line.error")).toContainText(
+					/Could not parse decomposition result/i,
+					{ timeout: 30_000 },
+				);
+				await expect(tree.allChildRows()).toHaveCount(0, { timeout: 15_000 });
 				const epicsFile = join(sandbox.homeDir, ".litus/workflows/epics.json");
 				if (existsSync(epicsFile)) {
 					const epicsList = JSON.parse(readFileSync(epicsFile, "utf8")) as unknown[];
@@ -548,17 +558,15 @@ test.describe("Epic lifecycle", () => {
 		});
 	});
 
-	// T031: verify that (a) when a test exercised claude, at least one argv
-	// entry was recorded (the fake `claude` wrote it), and (b) every recorded
-	// invocation actually resolved to the fake — argv entries always start
-	// with `claude` or `-p` tokens that the production code passes through
-	// `Bun.spawn`. The harness itself guarantees no real `claude`/`gh` binaries
-	// leak onto PATH (see `harness/fakes-path.ts buildPathWithFakes` — it
-	// prepends the fakes dir and the server fixture wipes both `PATH` and
-	// `Path` from `process.env` before spawning the Bun server), so any call
-	// that escaped would surface as a mismatch between the captured argv count
-	// and the server's scenario-indexed `LITUS_E2E_COUNTER` value. Those two
-	// counters must agree.
+	// Bookkeeping consistency check for the fake `claude`. Both sides of
+	// this comparison are written by `tests/e2e/fakes/claude.ts` (the
+	// counter at :37 and the argv log at :174), so this is a regression
+	// guard for the fake's own IO — specifically the silent catch around
+	// `appendFileSync(argv)` at :178-180, which would otherwise allow a
+	// dropped argv entry to go undetected. It does NOT prove "real
+	// claude/gh binaries are absent from PATH" (T031's literal wording);
+	// that contract is enforced by `harness/fakes-path.ts buildPathWithFakes`
+	// + the PATH wipe in `server.ts`, not by any runtime assertion.
 	test.afterEach(async ({ sandbox }) => {
 		const argv = `${sandbox.counterFile}.argv.jsonl`;
 		if (existsSync(argv)) {

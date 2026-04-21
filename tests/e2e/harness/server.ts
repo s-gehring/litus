@@ -45,6 +45,10 @@ interface RawSpawn {
 async function spawnOnce(opts: SpawnServerOptions): Promise<RawSpawn> {
 	const logFile = await open(opts.logPath, "a");
 	const logStream = logFile.createWriteStream();
+	// The log is opened in append mode so post-restart lifetimes accumulate
+	// (valuable for post-mortem when a test fails after restarting the
+	// server). Mark lifetime boundaries so log triage isn't ambiguous.
+	logStream.write(`=== litus-e2e server lifetime start at ${new Date().toISOString()} ===\n`);
 
 	// Strip any inherited `Path` (Windows casing) so only our `PATH` wins;
 	// otherwise on Windows the child may pick up a pre-existing `Path` that
@@ -133,16 +137,18 @@ async function spawnOnce(opts: SpawnServerOptions): Promise<RawSpawn> {
 		} catch {
 			// ignore
 		}
-		await Promise.race([
-			exitedPromise,
-			new Promise<void>((r) => setTimeout(r, 5000)).then(() => {
-				try {
-					proc.kill("SIGKILL");
-				} catch {
-					// ignore
-				}
-			}),
-		]);
+		// Race SIGTERM's exit against a 5s ladder; if the ladder wins,
+		// escalate to SIGKILL. The final `await exitedPromise` below is
+		// unconditional so we always observe the real process exit,
+		// regardless of which branch of the race fired.
+		const killTimer = new Promise<void>((r) => setTimeout(r, 5000)).then(() => {
+			try {
+				proc.kill("SIGKILL");
+			} catch {
+				// ignore
+			}
+		});
+		await Promise.race([exitedPromise, killTimer]);
 		await exitedPromise;
 		try {
 			await logStream.end();
@@ -172,14 +178,4 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<ServerHandl
 	};
 
 	return handle;
-}
-
-/**
- * Stop the server backing `handle` and respawn it against the same options.
- * Mutates `handle.baseUrl` in place so non-destructured callers observe the
- * fresh URL. Prefer the `handle.restart()` method — this free function is a
- * thin wrapper for test code that reads more naturally as an imperative.
- */
-export async function respawnServer(handle: ServerHandle): Promise<void> {
-	await handle.restart();
 }

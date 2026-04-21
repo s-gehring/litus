@@ -25,7 +25,6 @@ export {
 	setAutomationMode,
 } from "./run-controls";
 export { type ServerMessage, ServerMessageObserver } from "./server-messages";
-export { startChildSpec } from "./start-child-spec";
 export { startQuickFix } from "./start-quick-fix";
 export { submitFeedback } from "./submit-feedback";
 export { triggerFailure } from "./trigger-failure";

@@ -13,6 +13,12 @@
  *     repeats indefinitely. This gives scenarios deterministic, readable
  *     control over state transitions (e.g. `pr view` flipping from OPEN to
  *     MERGED after the first poll).
+ *   - The per-subcommand FIFO sidecar path is only populated when
+ *     `LITUS_E2E_COUNTER` is set in the environment. If unset, the FIFO
+ *     silently degrades to "always return the first array entry" — array
+ *     entries past the first are never consumed. In practice the harness
+ *     always sets `LITUS_E2E_COUNTER`, so this is a defensive fallback
+ *     rather than a supported mode.
  *   - A single-object entry (not an array) always returns that object, and
  *     never advances the per-subcommand counter.
  */
