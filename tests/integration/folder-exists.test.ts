@@ -7,10 +7,17 @@ import { handleFolderExists } from "../../src/server";
 const root = join(homedir(), `.litus-folder-exists-test-${Date.now()}`);
 const subdir = join(root, "sub");
 const filePath = join(root, "file.txt");
+const gitRepo = join(root, "git-repo");
+const gitWorktree = join(root, "git-worktree");
 
 beforeAll(() => {
 	mkdirSync(subdir, { recursive: true });
 	writeFileSync(filePath, "hi");
+	// Standard git repo (.git as a directory).
+	mkdirSync(join(gitRepo, ".git"), { recursive: true });
+	// Worktree-style git repo (.git as a file pointing at the parent).
+	mkdirSync(gitWorktree, { recursive: true });
+	writeFileSync(join(gitWorktree, ".git"), "gitdir: ../git-repo/.git\n");
 });
 
 afterAll(() => {
@@ -32,8 +39,24 @@ describe("/api/folder-exists handler", () => {
 		expect(res.status).toBe(400);
 	});
 
-	test("happy path: existing directory under home → usable", async () => {
+	test("not_a_git_repo: existing directory without .git → usable=false", async () => {
 		const res = await handleFolderExists(subdir);
+		expect(res.status).toBe(200);
+		expect(await body(res)).toEqual({
+			exists: true,
+			usable: false,
+			reason: "not_a_git_repo",
+		});
+	});
+
+	test("happy path: existing git repo (.git directory) under home → usable", async () => {
+		const res = await handleFolderExists(gitRepo);
+		expect(res.status).toBe(200);
+		expect(await body(res)).toEqual({ exists: true, usable: true });
+	});
+
+	test("happy path: git worktree (.git as file pointer) → usable", async () => {
+		const res = await handleFolderExists(gitWorktree);
 		expect(res.status).toBe(200);
 		expect(await body(res)).toEqual({ exists: true, usable: true });
 	});

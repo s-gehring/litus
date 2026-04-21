@@ -15,6 +15,10 @@ export class AppPage {
 		return this.page.locator("#btn-quick-fix");
 	}
 
+	newEpicButton(): Locator {
+		return this.page.locator("#btn-new-epic");
+	}
+
 	cardStrip(): Locator {
 		return this.page.locator("#card-strip");
 	}

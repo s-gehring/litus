@@ -13,3 +13,10 @@ export const handleAlertDismiss: MessageHandler = (ws, data, deps) => {
 	}
 	deps.broadcast({ type: "alert:dismissed", alertIds: [data.alertId] });
 };
+
+export const handleAlertClearAll: MessageHandler = (_ws, data, deps) => {
+	if (data.type !== "alert:clear-all") return;
+	const ids = deps.alertQueue.clearAll();
+	if (ids.length === 0) return;
+	deps.broadcast({ type: "alert:dismissed", alertIds: ids });
+};

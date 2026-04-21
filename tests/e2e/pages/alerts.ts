@@ -46,6 +46,10 @@ export class AlertsPage {
 		return row.locator(".alert-list-dismiss");
 	}
 
+	clearAllButton(): Locator {
+		return this.listPanel().locator(".alert-list-clear-all");
+	}
+
 	async openList(): Promise<void> {
 		await this.bellButton().click();
 		// Assert the panel actually became visible so future callers that forget

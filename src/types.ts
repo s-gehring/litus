@@ -838,4 +838,5 @@ export type ClientMessage =
 	| { type: "config:reset"; key?: string }
 	| { type: "alert:list" }
 	| { type: "alert:dismiss"; alertId: string }
+	| { type: "alert:clear-all" }
 	| { type: "purge:all" };

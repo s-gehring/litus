@@ -24,4 +24,12 @@ export class SpecFormPage {
 	errorMessage(): Locator {
 		return this.modal().locator(".modal-error");
 	}
+
+	fieldError(): Locator {
+		return this.modal().locator(".modal-field-error");
+	}
+
+	fieldSuccess(): Locator {
+		return this.modal().locator(".modal-field-success");
+	}
 }

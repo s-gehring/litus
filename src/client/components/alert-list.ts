@@ -4,12 +4,14 @@ import { alertDisplayLabel } from "./alert-label";
 
 type DismissHandler = (alertId: string) => void;
 type NavigateHandler = (alert: Alert) => void;
+type ClearAllHandler = () => void;
 
 interface AlertListDeps {
 	getAlerts: () => ReadonlyMap<string, Alert>;
 	getState?: () => ClientStateManager;
 	onDismiss: DismissHandler;
 	onNavigate: NavigateHandler;
+	onClearAll?: ClearAllHandler;
 }
 
 let panelEl: HTMLElement | null = null;
@@ -40,6 +42,20 @@ function renderRows(): void {
 		empty.textContent = "No alerts";
 		panelEl.appendChild(empty);
 		return;
+	}
+	if (deps.onClearAll) {
+		const header = document.createElement("div");
+		header.className = "alert-list-header";
+		const clearBtn = document.createElement("button");
+		clearBtn.className = "alert-list-clear-all";
+		clearBtn.type = "button";
+		clearBtn.textContent = "Clear all alerts";
+		clearBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			deps?.onClearAll?.();
+		});
+		header.appendChild(clearBtn);
+		panelEl.appendChild(header);
 	}
 	for (const a of alerts) {
 		const row = document.createElement("div");

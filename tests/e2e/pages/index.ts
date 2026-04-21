@@ -4,6 +4,7 @@ export { ArtifactViewerPage } from "./artifact-viewer";
 export { ConfigPage } from "./config";
 export { ConfigPageObject } from "./config-page";
 export { DashboardLayoutPage } from "./dashboard-layout";
+export { EpicFormPage } from "./epic-form";
 export { FeedbackPanelPage } from "./feedback-panel";
 export { NotFoundPage } from "./not-found";
 export { QuestionPromptPage } from "./question-prompt";
