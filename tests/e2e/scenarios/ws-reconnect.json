@@ -1,0 +1,41 @@
+{
+	"name": "ws-reconnect",
+	"claude": [
+		{
+			"delayMs": 15000,
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-specify" },
+				{
+					"type": "assistant",
+					"session_id": "sess-specify",
+					"message": {
+						"content": [{ "type": "text", "text": "Specification drafted." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-specify",
+					"result": "Specification drafted."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-clarify" },
+				{
+					"type": "result",
+					"subtype": "error",
+					"session_id": "sess-clarify",
+					"result": "Scripted clarify failure to trigger post-reconnect alert"
+				}
+			],
+			"exitCode": 1
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" }
+	}
+}

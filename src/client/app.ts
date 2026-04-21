@@ -208,6 +208,10 @@ function handleMessage(msg: ServerMessage): void {
 
 	switch (msg.type) {
 		case "workflow:list": {
+			// E2E hook: monotonic counter so `ws-reconnect.spec.ts` can prove a
+			// *fresh* broadcast was received post-reconnect (not cached state).
+			const prev = Number(document.body.dataset.workflowListRevision ?? "0");
+			document.body.dataset.workflowListRevision = String(prev + 1);
 			renderCards();
 			// Pre-existing behaviour: on the dashboard, when exactly one top-level
 			// item exists, jump into its detail view. The `currentPath === "/"`

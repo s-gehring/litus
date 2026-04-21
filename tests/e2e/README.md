@@ -84,6 +84,7 @@ A dedicated GitHub Actions workflow (`.github/workflows/e2e.yml`) runs the suite
 - **Real `claude` / `gh` was invoked** — ensure `bunx playwright install chromium` is run and that `PATH` in the spawned server env starts with the fakes dir (the harness enforces this).
 - **Port already in use** — ephemeral ports are used; retry or check for orphaned server processes.
 - **Sandbox leaked** — teardown is idempotent; safe to `rm -rf $TMPDIR/litus-e2e-*` between runs.
+- **Simulating a mid-run WebSocket drop** — `await dropWebSocket({ server })` from `../helpers` closes the active server-side socket without killing the server; tolerant of no-active-socket and double-invocation. Gated on `LITUS_E2E_SCENARIO`, unreachable in production — see `specs/001-ws-reconnect-e2e/contracts/drop-ws.md` for the full contract.
 
 ## Spec files
 
@@ -91,5 +92,6 @@ A dedicated GitHub Actions workflow (`.github/workflows/e2e.yml`) runs the suite
 - `tests/run-controls.spec.ts` — workflow run-control surface: pause/resume, abort, full-auto merge, automation-mode toggle (`scenarios/run-controls.json`)
 - `tests/mid-run-question.spec.ts` — mid-run question handling in both manual and full-auto modes; asserts resume-call payload via the argv capture in `fakes/claude.ts` + `harness/claude-captures.ts` (`scenarios/mid-run-question.json`)
 - `tests/review-feedback-loop.spec.ts` — manual-mode feedback panel loop at the merge-pr pause, including iteration-history persistence (`scenarios/review-feedback-loop.json`)
+- `tests/ws-reconnect.spec.ts` — mid-run WebSocket drop: asserts disconnected indicator, reconnect, `workflow:list` re-hydration, and post-reconnect alert delivery (`scenarios/ws-reconnect.json`)
 
-Merge-conflict resolution dispatch and WebSocket reconnection resilience are **not yet implemented**.
+Merge-conflict resolution dispatch is **not yet implemented**.

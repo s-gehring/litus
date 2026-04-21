@@ -1,3 +1,4 @@
+import { createInterface } from "node:readline";
 import type { ServerWebSocket } from "bun";
 import { AlertQueue } from "./alert-queue";
 import { AlertStore } from "./alert-store";
@@ -83,6 +84,13 @@ const epicAnalysisRef: { current: EpicAnalysisProcess | null } = { current: null
 
 // Per-WS-connection current path (for create-as-seen and route-triggered seen).
 const clientRoutes = new Map<ServerWebSocket<WsData>, string>();
+
+// E2E-only: track open WebSockets so the harness can deterministically drop them
+// mid-run. Gated on LITUS_E2E_SCENARIO — in production this stays null and
+// every branch below is a no-op. See specs/001-ws-reconnect-e2e/contracts/drop-ws.md.
+const activeWebSockets: Set<ServerWebSocket<WsData>> | null = process.env.LITUS_E2E_SCENARIO
+	? new Set<ServerWebSocket<WsData>>()
+	: null;
 
 const { emitAlert, markAlertsSeenWhere } = createAlertBroadcasters(
 	sharedAlertQueue,
@@ -443,6 +451,7 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 		websocket: {
 			async open(ws: ServerWebSocket<WsData>) {
 				ws.subscribe(WS_TOPIC);
+				if (activeWebSockets) activeWebSockets.add(ws);
 				const workflows = await getAllWorkflowStates();
 				sendTo(ws, { type: "workflow:list", workflows });
 				sendTo(ws, {
@@ -460,6 +469,7 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 			},
 			close(ws: ServerWebSocket<WsData>) {
 				ws.unsubscribe(WS_TOPIC);
+				if (activeWebSockets) activeWebSockets.delete(ws);
 				clearClientRouteOnClose(ws, clientRoutes);
 			},
 		},
@@ -477,6 +487,40 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 		if (i === MAX_PORT_RETRIES - 1) throw err;
 		logger.warn(`Port ${port} in use, trying ${port + 1}...`);
 	}
+}
+
+// E2E-only: stdin line-protocol reader for harness-driven control commands.
+// Gated on LITUS_E2E_SCENARIO — in production this block never registers.
+// See specs/001-ws-reconnect-e2e/contracts/drop-ws.md.
+if (activeWebSockets) {
+	const rl = createInterface({ input: process.stdin });
+	rl.on("line", (line) => {
+		const trimmed = line.trim();
+		if (trimmed === "") return;
+		let cmd: { type?: string };
+		try {
+			cmd = JSON.parse(trimmed);
+		} catch {
+			logger.warn(`[e2e-control] ignoring non-JSON stdin line: ${trimmed}`);
+			return;
+		}
+		if (cmd.type === "drop-ws") {
+			for (const ws of activeWebSockets) {
+				try {
+					// 1001 "Going Away" reflects real-world drops (proxy timeout,
+					// laptop sleep) more faithfully than the default 1000 Normal
+					// Closure. The client reacts to `ws.onclose` regardless of
+					// code, but matching production drop semantics keeps the
+					// test honest.
+					ws.close(1001, "test-drop");
+				} catch {
+					// tolerant: already-closing sockets throw synchronously on some runtimes
+				}
+			}
+			return;
+		}
+		logger.warn(`[e2e-control] ignoring unrecognized command: ${trimmed}`);
+	});
 }
 
 // Detect the default model so the UI can show "Default (Opus 4.7)" rather
