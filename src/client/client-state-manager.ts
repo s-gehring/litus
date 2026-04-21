@@ -239,7 +239,7 @@ export class ClientStateManager {
 			this.rebuildEpicAggregates();
 			this.rebuildCardOrder();
 		} else if (!this.cardOrder.includes(msg.workflow.id)) {
-			this.cardOrder.push(msg.workflow.id);
+			this.cardOrder.unshift(msg.workflow.id);
 		}
 		return { scope: { entity: "workflow", id: msg.workflow.id }, action: "added" };
 	}
@@ -313,7 +313,7 @@ export class ClientStateManager {
 			if (!this.epics.has(pe.epicId)) {
 				this.epics.set(pe.epicId, { ...pe, outputLines: [] });
 				if (pe.workflowIds.length === 0 && !this.cardOrder.includes(pe.epicId)) {
-					this.cardOrder.push(pe.epicId);
+					this.cardOrder.unshift(pe.epicId);
 				}
 			}
 		}
@@ -336,7 +336,7 @@ export class ClientStateManager {
 			infeasibleNotes: null,
 			analysisSummary: null,
 		});
-		this.cardOrder.push(msg.epicId);
+		this.cardOrder.unshift(msg.epicId);
 		return { scope: { entity: "epic", id: msg.epicId }, action: "added" };
 	}
 
@@ -469,7 +469,7 @@ export class ClientStateManager {
 			});
 			this.trimOutput(seed);
 			if (!this.cardOrder.includes(wfState.id)) {
-				this.cardOrder.push(wfState.id);
+				this.cardOrder.unshift(wfState.id);
 			}
 		}
 	}
@@ -517,7 +517,7 @@ export class ClientStateManager {
 			}
 		}
 
-		items.sort((a, b) => a.sortDate.localeCompare(b.sortDate));
+		items.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
 		for (const item of items) {
 			this.cardOrder.push(item.key);
 		}

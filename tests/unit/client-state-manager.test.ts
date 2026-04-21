@@ -47,8 +47,8 @@ describe("workflow:list", () => {
 		const wf2 = makeWorkflowState({ id: "wf-b", createdAt: "2026-01-01T00:00:00Z" });
 		mgr.handleMessage({ type: "workflow:list", workflows: [wf1, wf2] });
 
-		// Card order should be sorted by date ascending
-		expect(mgr.getCardOrder()).toEqual(["wf-b", "wf-a"]);
+		// Card order should be sorted by date descending (newest first)
+		expect(mgr.getCardOrder()).toEqual(["wf-a", "wf-b"]);
 	});
 
 	test("rebuilds epic aggregates for epic children", () => {
@@ -1128,7 +1128,7 @@ describe("edge cases: step-change and duplicate IDs", () => {
 
 // T004: rebuildCardOrder sort order correctness
 describe("rebuildCardOrder sort order", () => {
-	test("sorts workflows by createdAt ascending", () => {
+	test("sorts workflows by createdAt descending", () => {
 		const mgr = createManager();
 		mgr.handleMessage({
 			type: "workflow:list",
@@ -1139,7 +1139,7 @@ describe("rebuildCardOrder sort order", () => {
 			],
 		});
 
-		expect(mgr.getCardOrder()).toEqual(["wf-a", "wf-b", "wf-c"]);
+		expect(mgr.getCardOrder()).toEqual(["wf-c", "wf-b", "wf-a"]);
 	});
 
 	test("identical sort dates produce stable order", () => {
@@ -1186,7 +1186,8 @@ describe("rebuildCardOrder sort order", () => {
 		const order = mgr.getCardOrder();
 		// Epic aggregate startDate = min(child createdAt) = 2026-01-01
 		// Standalone = 2026-01-02
-		expect(order).toEqual(["epic:epic-1", "standalone"]);
+		// Sorted newest first.
+		expect(order).toEqual(["standalone", "epic:epic-1"]);
 	});
 });
 
