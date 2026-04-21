@@ -124,6 +124,97 @@ describe("workflow-artifacts: step mapping and discovery", () => {
 		}
 	});
 
+	test("review snapshot writes code-review.md at ordinal 1 for the first iteration", async () => {
+		await withTempDir(async (dir) => {
+			seedSpecs(dir, "feat", { "code-review.md": "initial review body" });
+			const id = `wf-rev1-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+			const wf = makeWorkflow({ id, worktreePath: dir, featureBranch: "feat" });
+			wf.reviewCycle.iteration = 1;
+			snapshotStepArtifacts(wf, "review");
+			const reviews = listArtifacts(wf).items.filter((i) => i.step === "review");
+			expect(reviews.map((r) => r.runOrdinal)).toEqual([1]);
+			expect(reviews[0]?.relPath).toBe("code-review.md");
+		});
+	});
+
+	test("implement-review snapshot uses the SAME ordinal+file as the review it responds to", async () => {
+		// Regression: previously, reviewCycle.iteration was incremented
+		// between review and implement-review, which left implement-review
+		// snapshots pointing at a code-review-N.md that did not exist in
+		// the worktree. The correct invariant is that iteration is stable
+		// across the review → implement-review pair, and implement-review
+		// captures the same file — now carrying appended responses — under
+		// the same ordinal.
+		await withTempDir(async (dir) => {
+			seedSpecs(dir, "feat", { "code-review.md": "review only" });
+			const id = `wf-impl1-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+			const wf = makeWorkflow({ id, worktreePath: dir, featureBranch: "feat" });
+			wf.reviewCycle.iteration = 1;
+
+			// Review step snapshots its output.
+			snapshotStepArtifacts(wf, "review");
+
+			// Implement-review appends a response to the same file.
+			writeFileSync(
+				join(dir, "specs", "feat", "code-review.md"),
+				"review only\n\n## Response\nfixed it",
+			);
+			snapshotStepArtifacts(wf, "implement-review");
+
+			const impls = listArtifacts(wf).items.filter((i) => i.step === "implement-review");
+			expect(impls.map((i) => i.runOrdinal)).toEqual([1]);
+			expect(impls[0]?.relPath).toBe("code-review.md");
+			expect(impls[0]?.displayLabel).toBe("code-review.md (after fixes)");
+		});
+	});
+
+	test("multi-iteration review cycle snapshots pairs for every iteration", async () => {
+		await withTempDir(async (dir) => {
+			const id = `wf-cycle-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+			const wf = makeWorkflow({ id, worktreePath: dir, featureBranch: "feat" });
+			mkdirSync(join(dir, "specs", "feat"), { recursive: true });
+
+			// Iteration 1: review writes code-review.md, implement-review
+			// appends a response to the same file.
+			writeFileSync(join(dir, "specs", "feat", "code-review.md"), "r1");
+			wf.reviewCycle.iteration = 1;
+			snapshotStepArtifacts(wf, "review");
+			writeFileSync(join(dir, "specs", "feat", "code-review.md"), "r1 + response 1");
+			snapshotStepArtifacts(wf, "implement-review");
+
+			// Cycle loops back. The feedback-implementer bumps iteration
+			// before the next review runs.
+			wf.reviewCycle.iteration = 2;
+			writeFileSync(join(dir, "specs", "feat", "code-review-2.md"), "r2");
+			snapshotStepArtifacts(wf, "review");
+			writeFileSync(join(dir, "specs", "feat", "code-review-2.md"), "r2 + response 2");
+			snapshotStepArtifacts(wf, "implement-review");
+
+			// Third iteration — review only, cycle then advances.
+			wf.reviewCycle.iteration = 3;
+			writeFileSync(join(dir, "specs", "feat", "code-review-3.md"), "r3");
+			snapshotStepArtifacts(wf, "review");
+
+			const res = listArtifacts(wf);
+			const reviews = res.items.filter((i) => i.step === "review");
+			const impls = res.items.filter((i) => i.step === "implement-review");
+
+			// Three review iterations visible as separate artifacts.
+			expect(reviews.map((r) => r.runOrdinal)).toEqual([1, 2, 3]);
+			expect(reviews.map((r) => r.relPath)).toEqual([
+				"code-review.md",
+				"code-review-2.md",
+				"code-review-3.md",
+			]);
+
+			// Both implement-review runs are surfaced, paired with the review
+			// they responded to — not silently dropped as before the fix.
+			expect(impls.map((i) => i.runOrdinal)).toEqual([1, 2]);
+			expect(impls.map((i) => i.relPath)).toEqual(["code-review.md", "code-review-2.md"]);
+			expect(impls.every((i) => i.displayLabel.endsWith("(after fixes)"))).toBe(true);
+		});
+	});
+
 	test("snapshotStepArtifacts copies spec.md from specs root at specify time", async () => {
 		await withTempDir(async (dir) => {
 			seedSpecs(dir, "feat", { "spec.md": "original" });

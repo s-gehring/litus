@@ -618,10 +618,12 @@ describe("PipelineOrchestrator", () => {
 			await advanceToReview();
 			const wf = getWf(engine);
 
-			// Review completes → always goes to implement-review
+			// Review completes → always goes to implement-review. The
+			// iteration counter stays on the current review (it is only
+			// bumped when the cycle loops back for another review).
 			cli.getLastCallbacks().onComplete();
 
-			expect(wf.reviewCycle.iteration).toBe(2);
+			expect(wf.reviewCycle.iteration).toBe(1);
 			expect(wf.currentStepIndex).toBe(7); // implement-review
 			expect(wf.steps[7].name).toBe("implement-review");
 			expect(wf.steps[7].status).toBe("running");
@@ -701,7 +703,8 @@ describe("PipelineOrchestrator", () => {
 
 			wf.reviewCycle.iteration = 16;
 
-			// Review → implement-review (iteration becomes 17 which exceeds max)
+			// Review → implement-review (iteration stays at 16 — it only
+			// bumps when we actually loop back for another review).
 			cli.getLastCallbacks().onComplete();
 
 			// implement-review completes → classify as critical but capped
@@ -710,6 +713,7 @@ describe("PipelineOrchestrator", () => {
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.currentStepIndex).toBe(8); // commit-push-pr despite critical
+			expect(wf.reviewCycle.iteration).toBe(16);
 		});
 	});
 
@@ -872,26 +876,31 @@ describe("PipelineOrchestrator", () => {
 			expect(wf.currentStepIndex).toBe(6);
 			expect(wf.steps[6].name).toBe("review");
 
-			// First review completes → always routes to implement-review
+			// First review completes → always routes to implement-review.
+			// iteration stays at 1 until the cycle actually loops back.
 			cli.getLastCallbacks().onComplete();
 
-			expect(wf.reviewCycle.iteration).toBe(2);
+			expect(wf.reviewCycle.iteration).toBe(1);
 			expect(wf.currentStepIndex).toBe(7); // implement-review
 			expect(wf.steps[7].status).toBe("running");
 
-			// implement-review completes → classify as critical → loop back to review
+			// implement-review completes → classify as critical → loop back to
+			// review. The loop-back bumps iteration to 2 so the next review
+			// runs under its own ordinal.
 			rc._pushClassifyResult("critical");
 			cli.getLastCallbacks().onComplete();
 			await new Promise((r) => setTimeout(r, 20));
 
 			expect(wf.reviewCycle.lastSeverity).toBe("critical");
+			expect(wf.reviewCycle.iteration).toBe(2);
 			expect(wf.currentStepIndex).toBe(6); // review again
 			expect(wf.steps[6].status).toBe("running");
 
-			// Second review completes → implement-review again
+			// Second review completes → implement-review again. iteration
+			// stays at 2 — no bump on the review → implement-review hop.
 			cli.getLastCallbacks().onComplete();
 
-			expect(wf.reviewCycle.iteration).toBe(3);
+			expect(wf.reviewCycle.iteration).toBe(2);
 			expect(wf.currentStepIndex).toBe(7); // implement-review
 			expect(wf.steps[7].status).toBe("running");
 
