@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test } from "../harness/fixtures";
 import { triggerFailure } from "../helpers";
-import { AlertsPage, AppPage, SpecFormPage } from "../pages";
+import { AlertsPage, AppPage, EpicFormPage, QuickFixFormPage, SpecFormPage } from "../pages";
 
 // ── Folder validation: green checkmark + git-repo check ─────────
 
@@ -49,6 +49,90 @@ test.describe("spec-modal folder validation", () => {
 		// "Folder does not exist." error — regression guard so the new
 		// not_a_git_repo branch didn't accidentally shadow the not_found one.
 		await form.repoInput().fill(join(sandbox.homeDir, "does-not-exist-xyz-42"));
+		await form.repoInput().blur();
+		await expect(form.fieldError()).toBeVisible({ timeout: 10_000 });
+		await expect(form.fieldError()).toContainText(/does not exist/i);
+		await expect(form.fieldSuccess()).toBeHidden();
+	});
+});
+
+// ── Folder validation: quick-fix modal ──────────────────────────
+
+test.describe("quick-fix-modal folder validation", () => {
+	test.use({ scenarioName: "peripheral-alerts", autoMode: "manual" });
+
+	test("valid git repo shows green checkmark; non-git folder shows inline error", async ({
+		page,
+		server,
+		sandbox,
+	}) => {
+		test.setTimeout(60_000);
+
+		const app = new AppPage(page);
+		await app.goto(server.baseUrl);
+		await app.waitConnected();
+
+		const form = new QuickFixFormPage(page);
+		await app.quickFixButton().click();
+		await expect(form.modal()).toBeVisible();
+
+		await form.repoInput().fill(sandbox.targetRepo);
+		await form.repoInput().blur();
+		await expect(form.fieldSuccess()).toBeVisible({ timeout: 10_000 });
+		await expect(form.fieldSuccess()).toContainText("Valid git repository");
+		await expect(form.fieldError()).toBeHidden();
+
+		const nonGit = join(sandbox.homeDir, "qf-not-a-repo");
+		await mkdir(nonGit, { recursive: true });
+		await form.repoInput().fill(nonGit);
+		await form.repoInput().blur();
+		await expect(form.fieldError()).toBeVisible({ timeout: 10_000 });
+		await expect(form.fieldError()).toContainText(/git repository/i);
+		await expect(form.fieldSuccess()).toBeHidden();
+
+		await form.repoInput().fill(join(sandbox.homeDir, "qf-does-not-exist-xyz-42"));
+		await form.repoInput().blur();
+		await expect(form.fieldError()).toBeVisible({ timeout: 10_000 });
+		await expect(form.fieldError()).toContainText(/does not exist/i);
+		await expect(form.fieldSuccess()).toBeHidden();
+	});
+});
+
+// ── Folder validation: epic modal ───────────────────────────────
+
+test.describe("epic-modal folder validation", () => {
+	test.use({ scenarioName: "peripheral-alerts", autoMode: "manual" });
+
+	test("valid git repo shows green checkmark; non-git folder shows inline error", async ({
+		page,
+		server,
+		sandbox,
+	}) => {
+		test.setTimeout(60_000);
+
+		const app = new AppPage(page);
+		await app.goto(server.baseUrl);
+		await app.waitConnected();
+
+		const form = new EpicFormPage(page);
+		await app.newEpicButton().click();
+		await expect(form.modal()).toBeVisible();
+
+		await form.repoInput().fill(sandbox.targetRepo);
+		await form.repoInput().blur();
+		await expect(form.fieldSuccess()).toBeVisible({ timeout: 10_000 });
+		await expect(form.fieldSuccess()).toContainText("Valid git repository");
+		await expect(form.fieldError()).toBeHidden();
+
+		const nonGit = join(sandbox.homeDir, "epic-not-a-repo");
+		await mkdir(nonGit, { recursive: true });
+		await form.repoInput().fill(nonGit);
+		await form.repoInput().blur();
+		await expect(form.fieldError()).toBeVisible({ timeout: 10_000 });
+		await expect(form.fieldError()).toContainText(/git repository/i);
+		await expect(form.fieldSuccess()).toBeHidden();
+
+		await form.repoInput().fill(join(sandbox.homeDir, "epic-does-not-exist-xyz-42"));
 		await form.repoInput().blur();
 		await expect(form.fieldError()).toBeVisible({ timeout: 10_000 });
 		await expect(form.fieldError()).toContainText(/does not exist/i);
