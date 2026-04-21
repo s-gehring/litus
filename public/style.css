@@ -141,6 +141,23 @@ header h1 {
 
 .workflow-card--quick-fix {
   --card-scale: var(--card-scale-quick-fix);
+  border-color: var(--accent-orange);
+  background: linear-gradient(135deg, var(--surface) 0%, var(--quick-fix-surface-tint) 100%);
+}
+
+.card-type-badge--quick-fix {
+  background: var(--accent-orange);
+  color: #1a1a2e;
+}
+
+.card-type-badge--epic {
+  background: rgba(74, 158, 255, 0.2);
+  color: var(--accent-blue);
+}
+
+.card-type-badge--spec {
+  background: var(--border);
+  color: var(--text);
 }
 
 .workflow-card--epic,
