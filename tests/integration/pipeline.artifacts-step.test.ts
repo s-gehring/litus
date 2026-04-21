@@ -401,12 +401,7 @@ describe("US1: artifacts step runs and collects files for spec workflows", () =>
 		registerCleanup(getArtifactsRoot(id));
 
 		// Seed a prior-step snapshot so we can later assert it survived untouched.
-		const priorSnap = join(
-			getArtifactsRoot(id),
-			"specify",
-			"_",
-			"spec.md",
-		);
+		const priorSnap = join(getArtifactsRoot(id), "specify", "_", "spec.md");
 		mkdirSync(join(priorSnap, ".."), { recursive: true });
 		writeFileSync(priorSnap, "# prior content");
 
