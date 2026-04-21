@@ -166,6 +166,19 @@ export function renderPipelineSteps(
 			el.appendChild(badge);
 		}
 
+		// Artifacts outcome annotation — distinguishes "completed with files"
+		// from "completed but the LLM produced no artifacts" so a user glancing
+		// at the pipeline can tell them apart without drilling into the step.
+		if (step.name === "artifacts" && step.status === "completed") {
+			const outcome = step.outcome;
+			if (outcome === "empty") {
+				const badge = document.createElement("span");
+				badge.className = "artifacts-outcome-empty";
+				badge.textContent = "(no files)";
+				el.appendChild(badge);
+			}
+		}
+
 		// Artifact affordance (only when ≥1 descriptor exists for this step)
 		if (artifacts) {
 			const descriptors = artifacts.byStep.get(step.name);

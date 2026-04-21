@@ -2123,6 +2123,12 @@ body::-webkit-scrollbar-track {
   margin-top: 2px;
   white-space: normal;
 }
+.artifacts-outcome-empty {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  font-style: italic;
+  margin-left: 6px;
+}
 
 /* Artifact viewer modal */
 .artifact-modal-overlay {

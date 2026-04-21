@@ -391,6 +391,89 @@ describe("US1: artifacts step runs and collects files for spec workflows", () =>
 		expect(step?.outcome).toBe("empty");
 	});
 
+	test("US5: LLM exits non-zero → step goes to error with the CLI message; earlier-step artifacts untouched", async () => {
+		const id = `wf-llm-err-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const worktreePath = join(baseDir, "worktree-err");
+		mkdirSync(worktreePath, { recursive: true });
+		const branch = "feat-err";
+
+		const wf = makeSpecWorkflow(id, worktreePath, branch);
+		registerCleanup(getArtifactsRoot(id));
+
+		// Seed a prior-step snapshot so we can later assert it survived untouched.
+		const priorSnap = join(
+			getArtifactsRoot(id),
+			"specify",
+			"_",
+			"spec.md",
+		);
+		mkdirSync(join(priorSnap, ".."), { recursive: true });
+		writeFileSync(priorSnap, "# prior content");
+
+		const cli = makeStubCli();
+		const engine = makeStubEngine(wf);
+		const orch = new PipelineOrchestrator(
+			{
+				onStepChange: () => {},
+				onOutput: () => {},
+				onTools: () => {},
+				onComplete: () => {},
+				onError: () => {},
+				onStateChange: () => {},
+			},
+			{ engine, cliRunner: cli.runner, workflowStore: store },
+		);
+
+		orch.startPipelineFromWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+		cli.lastStarted()?.callbacks.onError("Claude exited with status 1: rate-limited");
+		await new Promise((r) => setTimeout(r, 30));
+
+		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
+		expect(step?.status).toBe("error");
+		expect(step?.error).toContain("rate-limited");
+
+		// Earlier-step snapshot is intact (FR-012 guarantee).
+		const { readFileSync } = await import("node:fs");
+		expect(readFileSync(priorSnap, "utf-8")).toBe("# prior content");
+	});
+
+	test("US5: missing manifest.json → error with the manifest-missing reason", async () => {
+		const id = `wf-no-man-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const worktreePath = join(baseDir, "worktree-no-man");
+		mkdirSync(worktreePath, { recursive: true });
+		const branch = "feat-no-man";
+
+		const wf = makeSpecWorkflow(id, worktreePath, branch);
+		registerCleanup(getArtifactsRoot(id));
+
+		const cli = makeStubCli();
+		const engine = makeStubEngine(wf);
+		const orch = new PipelineOrchestrator(
+			{
+				onStepChange: () => {},
+				onOutput: () => {},
+				onTools: () => {},
+				onComplete: () => {},
+				onError: () => {},
+				onStateChange: () => {},
+			},
+			{ engine, cliRunner: cli.runner, workflowStore: store },
+		);
+
+		orch.startPipelineFromWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+
+		// LLM exits cleanly but never wrote a manifest.json into the output dir.
+		cli.lastStarted()?.callbacks.onOutput("I finished, but forgot the manifest.");
+		cli.lastStarted()?.callbacks.onComplete();
+		await new Promise((r) => setTimeout(r, 30));
+
+		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
+		expect(step?.status).toBe("error");
+		expect(step?.error).toContain("No manifest.json");
+	});
+
 	test("LLM emits empty manifest → outcome=empty and no files listed", async () => {
 		const id = `wf-e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const worktreePath = join(baseDir, "worktree-empty");
