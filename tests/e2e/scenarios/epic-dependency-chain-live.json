@@ -1,0 +1,226 @@
+{
+	"name": "epic-dependency-chain-live",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "epic-dep-live-analyzer" },
+				{
+					"type": "assistant",
+					"session_id": "epic-dep-live-analyzer",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "```json\n{\"title\":\"Dependency chain live\",\"summary\":\"Spec B depends on Spec A.\",\"specs\":[{\"id\":\"A\",\"title\":\"Spec A\",\"description\":\"Spec A description.\",\"dependencies\":[]},{\"id\":\"B\",\"title\":\"Spec B\",\"description\":\"Spec B depends on Spec A landing first.\",\"dependencies\":[\"A\"]}]}\n```"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "epic-dep-live-analyzer",
+					"result": "```json\n{\"title\":\"Dependency chain live\",\"summary\":\"Spec B depends on Spec A.\",\"specs\":[{\"id\":\"A\",\"title\":\"Spec A\",\"description\":\"Spec A description.\",\"dependencies\":[]},{\"id\":\"B\",\"title\":\"Spec B\",\"description\":\"Spec B depends on Spec A landing first.\",\"dependencies\":[\"A\"]}]}\n```"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "a-specify" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "a-specify",
+					"result": "A/specify: scripted response (FIFO entry 1)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "a-clarify" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "a-clarify",
+					"result": "A/clarify: scripted response (FIFO entry 2)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "a-plan" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "a-plan",
+					"result": "A/plan: scripted response (FIFO entry 3)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "a-tasks" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "a-tasks",
+					"result": "A/tasks: scripted response (FIFO entry 4)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "a-implement" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "a-implement",
+					"result": "A/implement: scripted response (FIFO entry 5)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "a-review" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "a-review",
+					"result": "A/review: scripted response (FIFO entry 6). LGTM."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "a-implement-review" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "a-implement-review",
+					"result": "A/implement-review: scripted response (FIFO entry 7)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "a-commit-push-pr" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "a-commit-push-pr",
+					"result": "A/commit-push-pr: scripted response (FIFO entry 8). PR created: https://github.com/example/repo/pull/42"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "b-specify" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "b-specify",
+					"result": "B/specify: scripted response (FIFO entry 9)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "b-clarify" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "b-clarify",
+					"result": "B/clarify: scripted response (FIFO entry 10)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "b-plan" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "b-plan",
+					"result": "B/plan: scripted response (FIFO entry 11)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "b-tasks" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "b-tasks",
+					"result": "B/tasks: scripted response (FIFO entry 12)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "b-implement" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "b-implement",
+					"result": "B/implement: scripted response (FIFO entry 13)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "b-review" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "b-review",
+					"result": "B/review: scripted response (FIFO entry 14). LGTM."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "b-implement-review" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "b-implement-review",
+					"result": "B/implement-review: scripted response (FIFO entry 15)"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "b-commit-push-pr" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "b-commit-push-pr",
+					"result": "B/commit-push-pr: scripted response (FIFO entry 16). PR created: https://github.com/example/repo/pull/42"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr create": { "exitCode": 0, "stdout": "https://github.com/example/repo/pull/42\n" },
+		"pr checks": {
+			"exitCode": 0,
+			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"
+		},
+		"pr merge": { "exitCode": 0, "stdout": "Merged pull request #42 (Squash and merge)\n" },
+		"pr view": [
+			{
+				"exitCode": 0,
+				"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/42\",\"number\":42}"
+			},
+			{
+				"exitCode": 0,
+				"stdout": "{\"state\":\"MERGED\",\"url\":\"https://github.com/example/repo/pull/42\",\"number\":42,\"mergeCommit\":{\"oid\":\"abc123\"}}"
+			}
+		],
+		"run view": { "exitCode": 0, "stdout": "" }
+	}
+}
