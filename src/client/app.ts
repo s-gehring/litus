@@ -208,8 +208,11 @@ function handleMessage(msg: ServerMessage): void {
 
 	switch (msg.type) {
 		case "workflow:list": {
-			// E2E hook: monotonic counter so `ws-reconnect.spec.ts` can prove a
-			// *fresh* broadcast was received post-reconnect (not cached state).
+			// Production-safe test observability: one dataset write per workflow:list
+			// broadcast, no reader outside E2E. Lets tests distinguish a fresh
+			// broadcast from cached state (e.g., after a reconnect). Gating this
+			// client-side would require threading an env/query flag through the
+			// bundle; the cost is negligible and it is not read in production.
 			const prev = Number(document.body.dataset.workflowListRevision ?? "0");
 			document.body.dataset.workflowListRevision = String(prev + 1);
 			renderCards();

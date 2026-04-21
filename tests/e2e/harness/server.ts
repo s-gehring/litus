@@ -174,16 +174,15 @@ async function spawnOnce(opts: SpawnServerOptions): Promise<RawSpawn> {
 	const dropActiveWebSockets = (): Promise<void> =>
 		new Promise<void>((resolvePromise, rejectPromise) => {
 			const stream = proc.stdin;
-			const failed = (): void => {
-				rejectPromise(new Error("dropWebSocket: server subprocess has exited"));
-			};
-			if (!stream || stream.destroyed || stream.writableEnded) {
-				failed();
+			if (!stream) {
+				rejectPromise(new Error("dropWebSocket: server subprocess has no stdin"));
 				return;
 			}
+			// `write` on a destroyed/ended stream surfaces through the callback's
+			// `err` argument, so we don't need an explicit pre-check.
 			stream.write('{"type":"drop-ws"}\n', (err) => {
 				if (err) {
-					failed();
+					rejectPromise(new Error("dropWebSocket: server subprocess has exited"));
 					return;
 				}
 				resolvePromise();

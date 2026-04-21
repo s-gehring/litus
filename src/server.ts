@@ -513,8 +513,12 @@ if (activeWebSockets) {
 					// code, but matching production drop semantics keeps the
 					// test honest.
 					ws.close(1001, "test-drop");
-				} catch {
-					// tolerant: already-closing sockets throw synchronously on some runtimes
+				} catch (err) {
+					// tolerant: already-closing sockets throw synchronously on some runtimes.
+					// Log so a new error shape (bad args, protocol state violation) leaves
+					// a trail in server.log instead of silently succeeding. This block is
+					// already E2E-gated, so the noise never reaches production.
+					logger.warn(`[e2e-control] ws.close threw: ${err}`);
 				}
 			}
 			return;

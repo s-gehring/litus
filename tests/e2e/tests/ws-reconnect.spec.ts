@@ -57,15 +57,14 @@ test("ws-reconnect: UI recovers from a mid-run WebSocket drop", async ({
 	// FR-006 / AC-3: within 30 s of the drop the client reconnects AND
 	// re-hydrates workflow state, pipeline step indicators, and card-strip
 	// selection from the post-reconnect `workflow:list` broadcast.
+	// Subtract the elapsed-from-drop from the 30s budget so the inner timeout
+	// is a true wall-clock bound (not a fresh 30s clock starting at assertion).
+	const elapsedSinceDrop = Date.now() - dropAt;
+	const remainingBudget = Math.max(0, 30_000 - elapsedSinceDrop);
 	await expect(
 		page.locator("#connection-status.connected"),
-		"connection-status did not return to connected within 30 s of drop",
-	).toBeAttached({ timeout: 30_000 });
-	const connectedAt = Date.now();
-	expect(
-		connectedAt - dropAt,
-		`reconnect budget exceeded: ${connectedAt - dropAt}ms from drop to connected (spec clarification Q2: ≤30s)`,
-	).toBeLessThanOrEqual(30_000);
+		`connection-status did not return to connected within 30 s of drop (remaining budget: ${remainingBudget}ms)`,
+	).toBeAttached({ timeout: remainingBudget });
 
 	// SC-004: the post-reconnect `workflow:list` broadcast MUST have been
 	// received. Without this assertion, the test passes against cached state
@@ -78,21 +77,32 @@ test("ws-reconnect: UI recovers from a mid-run WebSocket drop", async ({
 		})
 		.toBeGreaterThan(revisionBeforeDrop);
 
-	// AC-5 post-condition: specify must STILL be `running` after reconnect.
-	// The 15s scripted delayMs guarantees specify hasn't completed within the
-	// reconnect window, so this post-reconnect status comes from the re-hydration
-	// broadcast — proving workflow state was rebuilt server-side truth, not stale.
+	// AC-5 post-condition: the 15s delay guarantees specify is still running at
+	// reconnect time, so the subsequent rendered-state assertions corroborate
+	// that the step didn't spuriously complete during the drop window. SC-004
+	// re-hydration is covered by the revision counter above; these assertions
+	// cannot independently distinguish cached from fresh state (the state
+	// manager re-populates within one synchronous call and does not reset
+	// expandedId on workflow:list).
 	await waitForStep(card, "specify", "running", { timeoutMs: 10_000 });
 
 	await expect(
 		card.stepIndicator("specify"),
-		"pipeline step indicator (specify) missing from card after reconnect (re-hydration broadcast consumed but step indicators not re-rendered)",
+		"pipeline step indicator (specify) missing after reconnect",
 	).toBeVisible({ timeout: 10_000 });
 
 	await expect(
 		app.cardStrip().locator(".workflow-card.card-expanded"),
-		"card-strip selection lost after reconnect (expanded workflow card not re-rendered from re-hydration broadcast)",
+		"card-strip selection missing after reconnect",
 	).toHaveCount(1, { timeout: 10_000 });
+
+	// FR-006: the top-level workflow-status surface must reflect the re-hydrated
+	// "running" status. The revision counter above proves the broadcast landed;
+	// this assertion names the workflow-state surface explicitly (SC-003).
+	await expect(
+		card.statusBadge(),
+		"workflow-status badge did not re-render after reconnect (FR-006 regression: workflow state surface)",
+	).toContainText(/running/i, { timeout: 10_000 });
 
 	// FR-007 / AC-4: the scripted clarify failure fires AFTER reconnect (the
 	// 15s specify delay ensures clarify starts post-reconnect) and surfaces as
