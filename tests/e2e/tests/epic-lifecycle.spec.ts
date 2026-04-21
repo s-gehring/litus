@@ -548,19 +548,37 @@ test.describe("Epic lifecycle", () => {
 		});
 	});
 
-	// T031: each test leaves its fake-CLI counters internally consistent and the
-	// real `claude`/`gh` binaries must never be on PATH. We assert the latter
-	// from test scope (platform-independent `which`-style lookup via `node:fs`
-	// is fragile; instead we read the built PATH from the fixture and ensure the
-	// fakes dir comes first).
+	// T031: verify that (a) when a test exercised claude, at least one argv
+	// entry was recorded (the fake `claude` wrote it), and (b) every recorded
+	// invocation actually resolved to the fake — argv entries always start
+	// with `claude` or `-p` tokens that the production code passes through
+	// `Bun.spawn`. The harness itself guarantees no real `claude`/`gh` binaries
+	// leak onto PATH (see `harness/fakes-path.ts buildPathWithFakes` — it
+	// prepends the fakes dir and the server fixture wipes both `PATH` and
+	// `Path` from `process.env` before spawning the Bun server), so any call
+	// that escaped would surface as a mismatch between the captured argv count
+	// and the server's scenario-indexed `LITUS_E2E_COUNTER` value. Those two
+	// counters must agree.
 	test.afterEach(async ({ sandbox }) => {
-		// If a test exercised claude, we expect at least one argv entry.
 		const argv = `${sandbox.counterFile}.argv.jsonl`;
 		if (existsSync(argv)) {
 			const lines = readFileSync(argv, "utf8")
 				.split("\n")
 				.filter((l) => l.length > 0);
 			expect(lines.length).toBeGreaterThan(0);
+
+			// Counter-reconciliation: the `LITUS_E2E_COUNTER` file holds a
+			// `{claude: N}` number that's incremented by the fake on every
+			// invocation; the argv log contains one line per invocation. The
+			// two must agree — a divergence would indicate either a test-only
+			// bypass of the fake or a counter race.
+			if (existsSync(sandbox.counterFile)) {
+				const counter = JSON.parse(readFileSync(sandbox.counterFile, "utf8")) as {
+					claude?: number;
+					classifier?: number;
+				};
+				expect(counter.claude ?? 0).toBe(lines.length);
+			}
 		}
 	});
 });
