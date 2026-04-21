@@ -19,6 +19,7 @@ export {
 	pauseRun,
 	resumeRun,
 	retryStep,
+	retryWorkflow,
 	setAutomationMode,
 } from "./run-controls";
 export { type ServerMessage, ServerMessageObserver } from "./server-messages";
