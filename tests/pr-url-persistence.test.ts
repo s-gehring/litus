@@ -61,6 +61,7 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
 		feedbackPreRunHead: null,
 		activeInvocation: null,
 		managedRepo: null,
+		error: null,
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
 		...overrides,

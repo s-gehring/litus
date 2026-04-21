@@ -123,7 +123,29 @@ export interface ConfigWarning {
 // ── Audit event types ─────────────────────────────────────
 
 // Audit event types
-export type AuditEventType = "pipeline_start" | "pipeline_end" | "query" | "answer" | "commit";
+export type AuditEventType =
+	| "pipeline_start"
+	| "pipeline_end"
+	| "query"
+	| "answer"
+	| "commit"
+	| "workflow.reset";
+
+// Payload persisted as a JSONL record when a workflow is reset via the retry-
+// workflow action. Matches contracts/audit-workflow-reset.md. Lives alongside
+// the run-scoped `AuditEvent` records in the same per-pipeline file, but is
+// produced outside a pipeline run (no `runId` / `sequenceNumber`).
+export interface WorkflowResetAuditEvent {
+	type: "workflow.reset";
+	timestamp: string;
+	actor: string;
+	workflowId: string;
+	epicId: string | null;
+	branch: string;
+	worktreePath: string;
+	artifactCount: number;
+	partialFailure: boolean;
+}
 
 export interface AuditEvent {
 	timestamp: string;
@@ -199,7 +221,13 @@ export type WorkflowStatus =
 	| "aborted"
 	| "error";
 
-// Valid state transitions
+// Valid state transitions.
+//
+// NOTE: `resetWorkflow` (src/workflow-engine.ts) intentionally bypasses this
+// table and sets `status = "idle"` directly. That path introduces two edges
+// not listed here — `aborted → idle` and `error → idle` — which are only
+// legal via the reset flow. `transition()` itself must continue to treat
+// `aborted`/`error` as terminal with respect to `running`/`aborted` only.
 export const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
 	idle: ["running", "waiting_for_dependencies"],
 	running: ["waiting_for_input", "completed", "error", "paused"],
@@ -482,6 +510,13 @@ export interface Workflow {
 	feedbackPreRunHead: string | null;
 	activeInvocation: ActiveAIInvocation | null;
 	managedRepo: { owner: string; repo: string } | null;
+	/**
+	 * Workflow-level error message (distinct from per-step errors). Populated by
+	 * `workflowEngine.resetWorkflow` on a partial-failure reset to name the
+	 * targets that could not be cleaned up (FR-009); cleared on successful
+	 * reset. Other workflow paths leave this null.
+	 */
+	error: { message: string } | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -625,7 +660,12 @@ export type ServerMessage =
 	| { type: "alert:list"; alerts: Alert[] }
 	| { type: "alert:created"; alert: Alert }
 	| { type: "alert:dismissed"; alertIds: string[] }
-	| { type: "error"; message: string };
+	| {
+			type: "error";
+			message: string;
+			requestType?: "workflow:retry-workflow";
+			code?: "invalid_state" | "not_found" | "persist_failed";
+	  };
 
 // Individual tool usage from CLI stream event
 export interface ToolUsage {
@@ -725,6 +765,7 @@ export type ClientMessage =
 	| { type: "workflow:resume"; workflowId: string }
 	| { type: "workflow:abort"; workflowId: string }
 	| { type: "workflow:retry"; workflowId: string }
+	| { type: "workflow:retry-workflow"; workflowId: string }
 	| {
 			type: "epic:start";
 			description: string;

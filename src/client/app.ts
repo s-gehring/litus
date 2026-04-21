@@ -536,6 +536,95 @@ function createRepoHint(): HTMLDivElement {
 	return hint;
 }
 
+type FolderExistsResponse =
+	| { exists: true; usable: true }
+	| { exists: true; usable: false; reason: "not_a_directory" | "permission_denied" }
+	| { exists: false; usable: false; reason: "not_found" };
+
+function folderErrorMessageFor(res: FolderExistsResponse): string | null {
+	if (res.exists && res.usable) return null;
+	if (!res.exists) return "Folder does not exist.";
+	if (res.reason === "not_a_directory") return "Path is not a folder.";
+	if (res.reason === "permission_denied") {
+		return "Folder is not accessible (permission denied).";
+	}
+	return "Folder is not accessible.";
+}
+
+/**
+ * Probe `/api/folder-exists` for `trimmedPath`. URLs are skipped (empty string
+ * → null so the caller treats them as "no local folder to validate"; a GitHub
+ * URL is validated server-side during the subsequent start flow). Returns the
+ * error message to display inline, or null when the folder is usable.
+ * Fail-closed on network / 5xx so an unreachable probe blocks submit
+ * (contracts/http-folder-exists.md).
+ */
+async function probeFolder(trimmedPath: string): Promise<string | null> {
+	if (!trimmedPath) return null;
+	if (looksLikeGitUrl(trimmedPath)) return null;
+	try {
+		const res = await fetch(`/api/folder-exists?path=${encodeURIComponent(trimmedPath)}`);
+		if (res.status === 400) return "Folder path is required.";
+		if (!res.ok) return "Could not validate folder — please try again.";
+		const body = (await res.json()) as FolderExistsResponse;
+		return folderErrorMessageFor(body);
+	} catch {
+		return "Could not validate folder — please try again.";
+	}
+}
+
+/**
+ * Wire blur-time folder-existence validation to a picker. Creates a dedicated
+ * field-scoped error element adjacent to the picker (FR-012: "inline validation
+ * error on the folder field") and appends it to `field`, so the message does
+ * not collide with top-level modal errors. Exposes a `submitCheck` that
+ * re-probes synchronously and blocks submit on any error.
+ */
+function attachFolderValidation(
+	picker: ReturnType<typeof createFolderPicker>,
+	field: HTMLElement,
+): {
+	submitCheck: () => Promise<boolean>;
+} {
+	let inFlight = 0;
+	const fieldErrorEl = document.createElement("div");
+	fieldErrorEl.className = "modal-field-error hidden";
+	field.appendChild(fieldErrorEl);
+
+	function setError(msg: string | null) {
+		if (msg) {
+			fieldErrorEl.textContent = msg;
+			fieldErrorEl.classList.remove("hidden");
+		} else {
+			fieldErrorEl.textContent = "";
+			fieldErrorEl.classList.add("hidden");
+		}
+	}
+
+	picker.onBlurValidate((value) => {
+		inFlight++;
+		void probeFolder(value)
+			.then((err) => {
+				setError(err);
+			})
+			.finally(() => {
+				inFlight--;
+			});
+	});
+
+	return {
+		async submitCheck() {
+			// If a blur probe is still in flight, block — the user tabbed away then
+			// immediately clicked submit before the server responded.
+			if (inFlight > 0) return false;
+			const value = picker.getValue();
+			const err = await probeFolder(value);
+			setError(err);
+			return err === null;
+		},
+	};
+}
+
 function openSpecModal(): void {
 	const content = document.createElement("div");
 
@@ -580,6 +669,8 @@ function openSpecModal(): void {
 	cloneStatus.className = "modal-clone-status hidden";
 	content.appendChild(cloneStatus);
 
+	const folderValidation = attachFolderValidation(repoPicker, repoField);
+
 	function setFormDisabled(disabled: boolean) {
 		specInput.disabled = disabled;
 		btnStart.disabled = disabled;
@@ -590,13 +681,15 @@ function openSpecModal(): void {
 			});
 	}
 
-	function submit() {
+	async function submit() {
 		const spec = specInput.value.trim();
 		if (!spec) {
 			errorEl.textContent = "Specification is required";
 			errorEl.classList.remove("hidden");
 			return;
 		}
+		const folderOk = await folderValidation.submitCheck();
+		if (!folderOk) return;
 		errorEl.classList.add("hidden");
 		const targetRepo = repoPicker.getValue();
 
@@ -620,11 +713,11 @@ function openSpecModal(): void {
 		modal.hide();
 	}
 
-	btnStart.addEventListener("click", submit);
+	btnStart.addEventListener("click", () => void submit());
 	specInput.addEventListener("keydown", (e) => {
 		if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
 			e.preventDefault();
-			submit();
+			void submit();
 		}
 	});
 
@@ -679,6 +772,8 @@ function openEpicModal(): void {
 	cloneStatus.className = "modal-clone-status hidden";
 	content.appendChild(cloneStatus);
 
+	const folderValidation = attachFolderValidation(repoPicker, repoField);
+
 	function setFormDisabled(disabled: boolean) {
 		descInput.disabled = disabled;
 		btnCreateStart.disabled = disabled;
@@ -690,13 +785,15 @@ function openEpicModal(): void {
 			});
 	}
 
-	function submitEpic(autoStart: boolean) {
+	async function submitEpic(autoStart: boolean) {
 		const desc = descInput.value.trim();
 		if (desc.length < 10) {
 			errorEl.textContent = "Description must be at least 10 characters";
 			errorEl.classList.remove("hidden");
 			return;
 		}
+		const folderOk = await folderValidation.submitCheck();
+		if (!folderOk) return;
 		errorEl.classList.add("hidden");
 		const targetRepo = repoPicker.getValue();
 
@@ -722,8 +819,8 @@ function openEpicModal(): void {
 		modal.hide();
 	}
 
-	btnCreateStart.addEventListener("click", () => submitEpic(true));
-	btnCreate.addEventListener("click", () => submitEpic(false));
+	btnCreateStart.addEventListener("click", () => void submitEpic(true));
+	btnCreate.addEventListener("click", () => void submitEpic(false));
 
 	modal.show();
 }

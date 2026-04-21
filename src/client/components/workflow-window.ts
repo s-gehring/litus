@@ -61,6 +61,19 @@ export function updateWorkflowStatus(workflow: WorkflowState | null): void {
 	}
 }
 
+export function updateWorkflowErrorBanner(workflow: WorkflowState | null): void {
+	const banner = document.getElementById("workflow-error-banner");
+	if (!banner) return;
+	const message = workflow?.status === "error" ? workflow.error?.message : undefined;
+	if (message) {
+		banner.textContent = message;
+		banner.classList.remove("hidden");
+	} else {
+		banner.textContent = "";
+		banner.classList.add("hidden");
+	}
+}
+
 const EPIC_STATUS_MAP: Record<EpicStatus, { label: string; css: string }> = {
 	analyzing: { label: "Analyzing Epic", css: "running" },
 	completed: { label: "completed", css: "completed" },
