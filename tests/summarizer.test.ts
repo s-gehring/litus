@@ -413,10 +413,29 @@ describe("Summarizer", () => {
 			expect(spawnMock).toHaveBeenCalledTimes(1);
 		});
 
-		test("whitespace-only chunks accumulating to 200+ chars trigger a summary normally", async () => {
+		test("whitespace-only recent window does not spawn a summary (avoids malformed Haiku input)", async () => {
 			const callback = mock(() => {});
 			summarizer.maybeSummarize("w1", " ".repeat(250), callback);
 
+			await flushAsync();
+
+			// Whitespace-only content is skipped: sending an empty ${text} to the
+			// summarizer LLM produces clarification-question responses instead of a
+			// status label.
+			expect(spawnMock).not.toHaveBeenCalled();
+			expect(callback).not.toHaveBeenCalled();
+		});
+
+		test("whitespace-only guard releases pending flag so later non-empty chunk can trigger", async () => {
+			const callback = mock(() => {});
+			summarizer.maybeSummarize("w1", " ".repeat(250), callback);
+			await flushAsync();
+
+			expect(spawnMock).not.toHaveBeenCalled();
+
+			// Advance past the interval and send real content — should trigger now.
+			now += 16_000;
+			summarizer.maybeSummarize("w1", `real-content-${"x".repeat(250)}`, callback);
 			await flushAsync();
 
 			expect(spawnMock).toHaveBeenCalledTimes(1);

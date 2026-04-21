@@ -47,6 +47,15 @@ export class Summarizer {
 
 			const recentText = recent.join("\n").slice(-1000);
 
+			// If the recent window is whitespace-only (spinners, blank lines), there is
+			// nothing meaningful to summarize. Sending an empty ${text} to Haiku has
+			// been observed to produce clarification-question responses rather than a
+			// status label, so skip the spawn entirely in that case.
+			if (!recentText.trim()) {
+				this.pendingSummary.set(workflowId, false);
+				return;
+			}
+
 			this.generateSummary(recentText)
 				.then((summary) => {
 					// Only deliver if workflow hasn't been cleaned up while we were generating
