@@ -1,4 +1,17 @@
-import type { MessageHandler } from "./handler-types";
+import type { ServerWebSocket } from "bun";
+import type { MessageHandler, WsData } from "./handler-types";
+
+/**
+ * Drop the per-connection stored path on disconnect. Keeps `getActivePaths()`
+ * from returning stale routes that would falsely flip new alerts to
+ * create-as-seen after the client is gone (FR-007 invariant).
+ */
+export function clearClientRouteOnClose(
+	ws: ServerWebSocket<WsData>,
+	clientRoutes: Map<ServerWebSocket<WsData>, string>,
+): void {
+	clientRoutes.delete(ws);
+}
 
 export const handleAlertList: MessageHandler = (ws, _data, deps) => {
 	deps.sendTo(ws, { type: "alert:list", alerts: deps.alertQueue.list() });
@@ -29,7 +42,8 @@ export const handleAlertClearAll: MessageHandler = (_ws, data, deps) => {
  */
 export const handleAlertRouteChanged: MessageHandler = (ws, data, deps) => {
 	if (data.type !== "alert:route-changed") return;
-	const path = typeof data.path === "string" ? data.path : "";
+	const raw = typeof data.path === "string" ? data.path : "";
+	const path = raw.length > 1 && raw.endsWith("/") ? raw.slice(0, -1) : raw;
 	if (!path) return;
 	deps.clientRoutes.set(ws, path);
 	deps.markAlertsSeenWhere((a) => a.targetRoute === path);

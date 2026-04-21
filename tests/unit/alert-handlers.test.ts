@@ -4,6 +4,7 @@ import { AlertQueue } from "../../src/alert-queue";
 import { AlertStore } from "../../src/alert-store";
 import { createAlertBroadcasters } from "../../src/server/alert-broadcast";
 import {
+	clearClientRouteOnClose,
 	handleAlertClearAll,
 	handleAlertDismiss,
 	handleAlertRouteChanged,
@@ -102,8 +103,10 @@ describe("handleAlertClearAll", () => {
 			expect(broadcast.alertIds).toEqual([id ?? ""]);
 		});
 	});
+});
 
-	test("handleAlertRouteChanged flips eligible non-error alerts to seen and broadcasts", async () => {
+describe("handleAlertRouteChanged", () => {
+	test("flips eligible non-error alerts to seen and broadcasts", async () => {
 		await withTempDir(async (dir) => {
 			const queue = new AlertQueue(new AlertStore(dir), { dedupWindowMs: 0 });
 			const r1 = queue.emit({
@@ -158,7 +161,7 @@ describe("handleAlertClearAll", () => {
 		});
 	});
 
-	test("handleAlertRouteChanged excludes error alerts regardless of targetRoute match", async () => {
+	test("excludes error alerts regardless of targetRoute match", async () => {
 		await withTempDir(async (dir) => {
 			const queue = new AlertQueue(new AlertStore(dir), { dedupWindowMs: 0 });
 			const r = queue.emit({
@@ -198,13 +201,7 @@ describe("handleAlertClearAll", () => {
 		});
 	});
 
-	test("handleAlertRouteChanged stores paths as-is (trailing slash is NOT normalized server-side)", async () => {
-		// Pins the contract: the server assumes the client has already normalized
-		// the path (Router.navigate strips trailing `/`). If a future caller sends
-		// "/workflow/abc/", the stored path keeps the slash and exact-match lookups
-		// against normalized targetRoutes silently miss. Documenting this so a
-		// regression in Router.normalizePath is caught here rather than silently
-		// breaking create-as-seen.
+	test("normalizes trailing slash server-side so /workflow/abc/ matches targetRoute /workflow/abc", async () => {
 		await withTempDir(async (dir) => {
 			const queue = new AlertQueue(new AlertStore(dir), { dedupWindowMs: 0 });
 			const r = queue.emit({
@@ -239,14 +236,98 @@ describe("handleAlertClearAll", () => {
 				deps,
 			);
 
-			expect(clientRoutes.get(fakeWs)).toBe("/workflow/abc/");
-			// No match against the stored "/workflow/abc" targetRoute.
+			expect(clientRoutes.get(fakeWs)).toBe("/workflow/abc");
+			expect(broadcasted).toHaveLength(1);
+			expect(queue.list()[0].seen).toBe(true);
+		});
+	});
+
+	test("preserves root path `/` (no over-normalization)", async () => {
+		await withTempDir(async (dir) => {
+			const queue = new AlertQueue(new AlertStore(dir), { dedupWindowMs: 0 });
+			const broadcasted: ServerMessage[] = [];
+			const clientRoutes = new Map<ServerWebSocket<WsData>, string>();
+			const { markAlertsSeenWhere } = createAlertBroadcasters(
+				queue,
+				(m) => broadcasted.push(m),
+				() => clientRoutes.values(),
+			);
+			const deps = {
+				alertQueue: queue,
+				broadcast: () => {},
+				sendTo: () => {},
+				clientRoutes,
+				markAlertsSeenWhere,
+			} as unknown as HandlerDeps;
+			const fakeWs = {} as ServerWebSocket<WsData>;
+
+			await handleAlertRouteChanged(fakeWs, { type: "alert:route-changed", path: "/" }, deps);
+
+			expect(clientRoutes.get(fakeWs)).toBe("/");
+		});
+	});
+
+	test("empty-path short-circuits: clientRoutes stays empty and nothing is broadcast", async () => {
+		await withTempDir(async (dir) => {
+			const queue = new AlertQueue(new AlertStore(dir), { dedupWindowMs: 0 });
+			queue.emit({
+				type: "workflow-finished",
+				title: "Done",
+				description: "",
+				workflowId: "wf-z",
+				epicId: null,
+				targetRoute: "",
+			});
+
+			const broadcasted: ServerMessage[] = [];
+			const clientRoutes = new Map<ServerWebSocket<WsData>, string>();
+			const { markAlertsSeenWhere } = createAlertBroadcasters(
+				queue,
+				(m) => broadcasted.push(m),
+				() => clientRoutes.values(),
+			);
+			const deps = {
+				alertQueue: queue,
+				broadcast: () => {},
+				sendTo: () => {},
+				clientRoutes,
+				markAlertsSeenWhere,
+			} as unknown as HandlerDeps;
+			const fakeWs = {} as ServerWebSocket<WsData>;
+
+			await handleAlertRouteChanged(fakeWs, { type: "alert:route-changed", path: "" }, deps);
+
+			expect(clientRoutes.size).toBe(0);
 			expect(broadcasted).toHaveLength(0);
 			expect(queue.list()[0].seen).toBe(false);
 		});
 	});
+});
 
-	test("handleAlertDismiss still works after clear-all (registry intact)", async () => {
+describe("clearClientRouteOnClose", () => {
+	test("removes the disconnected ws from clientRoutes (FR-007: no stale paths)", () => {
+		const clientRoutes = new Map<ServerWebSocket<WsData>, string>();
+		const wsA = {} as ServerWebSocket<WsData>;
+		const wsB = {} as ServerWebSocket<WsData>;
+		clientRoutes.set(wsA, "/workflow/a");
+		clientRoutes.set(wsB, "/workflow/b");
+
+		clearClientRouteOnClose(wsA, clientRoutes);
+
+		expect(clientRoutes.has(wsA)).toBe(false);
+		expect(clientRoutes.get(wsB)).toBe("/workflow/b");
+	});
+
+	test("no-op when ws was never registered", () => {
+		const clientRoutes = new Map<ServerWebSocket<WsData>, string>();
+		const ws = {} as ServerWebSocket<WsData>;
+		clearClientRouteOnClose(ws, clientRoutes);
+		expect(clientRoutes.size).toBe(0);
+	});
+});
+
+describe("handleAlertDismiss", () => {
+	test("removes the alert and broadcasts alert:dismissed", async () => {
 		await withTempDir(async (dir) => {
 			const queue = new AlertQueue(new AlertStore(dir), { dedupWindowMs: 0 });
 			const h = makeHarness(queue);
@@ -254,6 +335,54 @@ describe("handleAlertClearAll", () => {
 			const id = r?.alert.id ?? "";
 			await handleAlertDismiss({} as never, { type: "alert:dismiss", alertId: id }, h.deps);
 			expect(queue.list()).toHaveLength(0);
+			expect(h.broadcasted).toHaveLength(1);
+			const m = h.broadcasted[0];
+			if (m.type !== "alert:dismissed") throw new Error("expected alert:dismissed");
+			expect(m.alertIds).toEqual([id]);
+			expect(h.sentTo).toHaveLength(0);
+		});
+	});
+
+	test("still works after clear-all (registry intact): emit → clearAll → emit → dismiss", async () => {
+		await withTempDir(async (dir) => {
+			const queue = new AlertQueue(new AlertStore(dir), { dedupWindowMs: 0 });
+			const h = makeHarness(queue);
+			queue.emit(makeInput({ workflowId: "wf-before-clear" }));
+			await handleAlertClearAll({} as never, { type: "alert:clear-all" }, h.deps);
+			expect(queue.list()).toHaveLength(0);
+
+			const r = queue.emit(makeInput({ workflowId: "wf-after-clear" }));
+			const id = r?.alert.id ?? "";
+			await handleAlertDismiss({} as never, { type: "alert:dismiss", alertId: id }, h.deps);
+			expect(queue.list()).toHaveLength(0);
+			const lastBroadcast = h.broadcasted.at(-1);
+			if (!lastBroadcast || lastBroadcast.type !== "alert:dismissed") {
+				throw new Error("expected alert:dismissed");
+			}
+			expect(lastBroadcast.alertIds).toEqual([id]);
+		});
+	});
+
+	test("unknown alertId: sends one error back to caller and does not broadcast", async () => {
+		await withTempDir(async (dir) => {
+			const queue = new AlertQueue(new AlertStore(dir), { dedupWindowMs: 0 });
+			const r = queue.emit(makeInput({ workflowId: "wf-live" }));
+			expect(r).not.toBeNull();
+			const initialLen = queue.list().length;
+
+			const h = makeHarness(queue);
+			await handleAlertDismiss(
+				{} as never,
+				{ type: "alert:dismiss", alertId: "does-not-exist" },
+				h.deps,
+			);
+
+			expect(h.broadcasted).toHaveLength(0);
+			expect(h.sentTo).toHaveLength(1);
+			const err = h.sentTo[0];
+			if (err.type !== "error") throw new Error("expected error envelope");
+			expect(err.message).toMatch(/Unknown alertId: does-not-exist/);
+			expect(queue.list()).toHaveLength(initialLen);
 		});
 	});
 });

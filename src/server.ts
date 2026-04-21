@@ -21,6 +21,7 @@ import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
 import { createAlertBroadcasters } from "./server/alert-broadcast";
 import {
+	clearClientRouteOnClose,
 	handleAlertClearAll,
 	handleAlertDismiss,
 	handleAlertList,
@@ -459,7 +460,7 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 			},
 			close(ws: ServerWebSocket<WsData>) {
 				ws.unsubscribe(WS_TOPIC);
-				clientRoutes.delete(ws);
+				clearClientRouteOnClose(ws, clientRoutes);
 			},
 		},
 	});

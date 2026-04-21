@@ -49,8 +49,8 @@ export function createMockHandlerDeps(overrides?: Partial<HandlerDeps>): MockHan
 	const alertQueue =
 		overrides?.alertQueue ??
 		new AlertQueue(new AlertStore(join(tmpdir(), `litus-test-alerts-${randomUUID()}`)));
-	const clientRoutes: Map<ServerWebSocket<WsData>, string> = overrides?.clientRoutes ??
-	new Map<ServerWebSocket<WsData>, string>();
+	const defaultClientRoutes = new Map<ServerWebSocket<WsData>, string>();
+	const clientRoutes = overrides?.clientRoutes ?? defaultClientRoutes;
 	const defaultBroadcasters = createAlertBroadcasters(alertQueue, broadcast, () =>
 		clientRoutes.values(),
 	);

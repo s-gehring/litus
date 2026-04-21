@@ -1086,6 +1086,14 @@ describe("PipelineOrchestrator", () => {
 			orchestrator.abortPipeline("test-wf-id");
 
 			expect(wf.status).toBe("aborted");
+			const markSeen = callbacks.onAlertMarkSeenWhere as unknown as {
+				mock: { calls: unknown[][] };
+			};
+			const marked = markSeen.mock.calls.some((c) => {
+				const pred = c[0] as (a: { type: string; workflowId?: string }) => boolean;
+				return pred({ type: "question-asked", workflowId: "test-wf-id" });
+			});
+			expect(marked).toBe(true);
 		});
 	});
 

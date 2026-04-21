@@ -792,7 +792,7 @@ export interface PipelineCallbacks {
 	 */
 	onAlertEmit?: (input: Omit<Alert, "id" | "createdAt" | "seen">) => void;
 	/**
-	 * Mark alerts matching the predicate as seen (FR-005: question-asked flips
+	 * Mark alerts matching the predicate as seen (FR-003: question-asked flips
 	 * to seen when the workflow exits `waiting_for_input`). The server
 	 * broadcaster filters `type === "error"` defensively.
 	 */
