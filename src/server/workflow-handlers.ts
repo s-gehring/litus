@@ -18,12 +18,15 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 	const { specification, targetRepository, submissionId, workflowKind } = msg;
 
 	if (typeof specification !== "string") {
+		// Distinct from the empty-string case: the input is missing or of the wrong
+		// type, not merely blank. `validateTextInput` assumes a string, so we can't
+		// delegate this branch to it without changing its signature.
 		deps.sendTo(ws, {
 			type: "error",
 			message:
 				workflowKind === "quick-fix"
-					? "Quick Fix description must not be empty."
-					: "Specification must be non-empty",
+					? "Quick Fix description is required"
+					: "Specification is required",
 		});
 		return;
 	}

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
 	buildFixImplementPrompt,
+	classifyFixImplementDiff,
 	FIX_IMPLEMENT_EMPTY_DIFF_MESSAGE,
-	isEmptyDiff,
 } from "../../src/fix-implementer";
 import { WorkflowEngine } from "../../src/workflow-engine";
 
@@ -35,18 +35,18 @@ describe("fix-implementer prompt", () => {
 	});
 });
 
-describe("fix-implementer empty-diff detection", () => {
-	test("isEmptyDiff returns true when pre and post HEAD match", () => {
-		expect(isEmptyDiff("abc123", "abc123")).toBe(true);
+describe("fix-implementer diff classification", () => {
+	test("matching HEADs classify as empty", () => {
+		expect(classifyFixImplementDiff("abc123", "abc123")).toEqual({ kind: "empty" });
 	});
 
-	test("isEmptyDiff returns false when HEADs differ", () => {
-		expect(isEmptyDiff("abc123", "def456")).toBe(false);
+	test("differing HEADs classify as changes", () => {
+		expect(classifyFixImplementDiff("abc123", "def456")).toEqual({ kind: "changes" });
 	});
 
-	test("isEmptyDiff treats missing HEAD as empty (no advance)", () => {
-		expect(isEmptyDiff(null, "def456")).toBe(true);
-		expect(isEmptyDiff("abc123", null)).toBe(true);
+	test("missing HEAD on either side classifies as head-read-failed (distinct from empty)", () => {
+		expect(classifyFixImplementDiff(null, "def456")).toEqual({ kind: "head-read-failed" });
+		expect(classifyFixImplementDiff("abc123", null)).toEqual({ kind: "head-read-failed" });
 	});
 
 	test("empty-diff error message is the contract-specified string", () => {

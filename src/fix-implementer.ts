@@ -57,12 +57,3 @@ export function classifyFixImplementDiff(
 	if (preRunHead === postRunHead) return { kind: "empty" };
 	return { kind: "changes" };
 }
-
-/**
- * @deprecated Use {@link classifyFixImplementDiff} — this helper conflates
- * git-read failures with a legitimately empty diff. Retained so unit tests and
- * downstream callers can be migrated incrementally.
- */
-export function isEmptyDiff(preRunHead: string | null, postRunHead: string | null): boolean {
-	return classifyFixImplementDiff(preRunHead, postRunHead).kind !== "changes";
-}

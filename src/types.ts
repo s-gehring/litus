@@ -366,7 +366,10 @@ export interface ReviewCycle {
 	lastSeverity: ReviewSeverity | null;
 }
 
-// Step definitions: name → display name and prompt template
+// Step definitions: name → display name and prompt template.
+// Order here is NOT semantically meaningful — pipeline execution order is
+// driven by `SPEC_ORDER` / `QUICK_FIX_ORDER` below. Consumers (`STEP`,
+// `getStepDefinitionsForKind`) look up by name, not by position.
 export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	name: PipelineStepName;
 	displayName: string;

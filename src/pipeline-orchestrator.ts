@@ -1264,10 +1264,22 @@ export class PipelineOrchestrator {
 			this.handleStepOutput(workflow.id, "[quick-fix] Allocating fix branch name");
 
 			const branchList = await gitSpawn(["git", "branch", "-a"], { cwd });
+			// Pause/abort race: matches the pattern used by every sibling setup
+			// continuation — after each await, bail if the workflow is no longer
+			// running so we don't mutate featureBranch / worktree on disk behind a
+			// user who has already paused or aborted.
+			{
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf || wf.status !== "running") return;
+			}
 			const existing = branchList.code === 0 ? branchList.stdout.split(/\r?\n/) : [];
 			const branchName = nextFixBranchName(workflow.specification, existing);
 
 			const checkout = await gitSpawn(["git", "checkout", "-b", branchName], { cwd });
+			{
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf || wf.status !== "running") return;
+			}
 			if (checkout.code !== 0) {
 				this.handleStepError(
 					workflow.id,
@@ -1289,6 +1301,8 @@ export class PipelineOrchestrator {
 						newRelativePath,
 						targetRepo,
 					);
+					const wf = this.getActiveWorkflow(workflow.id);
+					if (!wf || wf.status !== "running") return;
 					workflow.worktreePath = newAbsPath;
 				} catch (err) {
 					logger.warn(
@@ -1466,10 +1480,13 @@ export class PipelineOrchestrator {
 	): void {
 		// Inject accumulated user feedback as authoritative context into every
 		// CLI-spawned step (FR-010). Skip for feedback-implementer, whose prompt
-		// template already interpolates ${feedbackContext} directly.
+		// template already interpolates ${feedbackContext} directly, and for
+		// fix-implement, whose prompt builder (`buildFixImplementPrompt`) already
+		// appends any in-flight retry-guidance inline — prepending here would
+		// duplicate the same text under a second header.
 		const step = workflow.steps[workflow.currentStepIndex];
 		let finalPrompt = prompt;
-		if (step?.name !== STEP.FEEDBACK_IMPLEMENTER) {
+		if (step?.name !== STEP.FEEDBACK_IMPLEMENTER && step?.name !== STEP.FIX_IMPLEMENT) {
 			const feedbackCtx = buildFeedbackContext(workflow);
 			if (feedbackCtx) {
 				finalPrompt = `${feedbackCtx}\n\n---\n\n${prompt}`;

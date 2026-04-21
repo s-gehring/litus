@@ -7,7 +7,13 @@ import { configStore, DEFAULT_CONFIG } from "../../src/config-store";
 import type { PipelineCallbacks } from "../../src/pipeline-orchestrator";
 import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import { routeAfterStep } from "../../src/step-router";
-import type { EffortLevel, PipelineStepStatus, Workflow, WorkflowStatus } from "../../src/types";
+import type {
+	AutoMode,
+	EffortLevel,
+	PipelineStepStatus,
+	Workflow,
+	WorkflowStatus,
+} from "../../src/types";
 import { getStepDefinitionsForKind, STEP, shouldPauseBeforeMerge } from "../../src/types";
 import { WorkflowEngine } from "../../src/workflow-engine";
 import { WorkflowStore } from "../../src/workflow-store";
@@ -165,7 +171,20 @@ describe("T021: quick-fix manual-mode merge-pr gate drives through feedback-impl
 	test("shouldPauseBeforeMerge gates on autoMode only (no workflowKind coupling)", () => {
 		// Pure function — if this ever grows a workflowKind parameter, the gate
 		// is no longer shared and T023's decoupling has been broken.
-		expect(shouldPauseBeforeMerge.length).toBe(1);
+		//
+		// Compile-time assertion: the signature must be exactly `(mode: AutoMode)`.
+		// `Function.length` was used here previously but silently passes when a
+		// second defaulted parameter is added (TS excludes defaults from `.length`),
+		// so we assert on the actual parameter tuple instead.
+		type Params = Parameters<typeof shouldPauseBeforeMerge>;
+		const _paramsCheck: Params extends [AutoMode] ? true : false = true;
+		// Also assert the static tuple length — this catches optional/defaulted
+		// parameters that wouldn't change `.length` at runtime but DO change the
+		// type signature.
+		const _lenCheck: Params["length"] extends 1 ? true : false = true;
+		void _paramsCheck;
+		void _lenCheck;
+
 		expect(shouldPauseBeforeMerge("manual")).toBe(true);
 		expect(shouldPauseBeforeMerge("normal")).toBe(false);
 		expect(shouldPauseBeforeMerge("full-auto")).toBe(false);
