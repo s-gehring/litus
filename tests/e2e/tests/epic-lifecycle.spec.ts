@@ -526,10 +526,16 @@ test.describe("Epic lifecycle", () => {
 					start: false,
 				});
 
-				// FR-013: analyzer error is surfaced. The epic-detail view
-				// renders the status badge in error state. Also no zombie
-				// epic in epics.json.
-				await expect(page.locator("#workflow-status")).toContainText(/error/i, {
+				// FR-013: analyzer error surfaced. Pivot from the page-object
+				// `analyzerErrorBanner` locator (which reads `#workflow-status`
+				// in error state): the product's `epic:error` handler
+				// (src/client/components/epic-detail-handler.ts) does NOT
+				// re-render the tree view after the error — it only appends the
+				// message to `#output-log` as `.output-line.error`. The badge
+				// stays at "analyzing" because `renderFull()` isn't re-invoked
+				// on `epic:error`. The observable error signal is therefore the
+				// `.output-line.error` entry carrying the analyzer message.
+				await expect(page.locator(".output-line.error")).toContainText(/parse|JSON/i, {
 					timeout: 30_000,
 				});
 				await expect(tree.allChildRows()).toHaveCount(0);

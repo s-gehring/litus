@@ -1,0 +1,49 @@
+{
+	"name": "epic-malformed-json",
+	"classifier": "nit\n",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "epic-malformed-initial" },
+				{
+					"type": "assistant",
+					"session_id": "epic-malformed-initial",
+					"message": {
+						"content": [{ "type": "text", "text": "{not valid json and missing brace" }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "epic-malformed-initial",
+					"result": "{not valid json and missing brace"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "epic-malformed-retry" },
+				{
+					"type": "assistant",
+					"session_id": "epic-malformed-retry",
+					"message": {
+						"content": [{ "type": "text", "text": "still {garbage" }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "epic-malformed-retry",
+					"result": "still {garbage"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": { "exitCode": 0, "stdout": "{}" },
+		"pr create": { "exitCode": 0, "stdout": "" }
+	}
+}
