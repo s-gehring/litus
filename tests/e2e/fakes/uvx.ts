@@ -35,5 +35,13 @@ for (const name of SPECKIT_INIT_NAMES) {
 		"utf8",
 	);
 }
+// Emulate the real `uvx specify init --here` which writes a top-level
+// CLAUDE.md. Written with a distinctive marker so tests can assert the
+// speckit prefix is preserved after the project-CLAUDE.md append step.
+writeFileSync(
+	join(process.cwd(), "CLAUDE.md"),
+	"# Speckit-generated CLAUDE.md (litus-e2e-fake)\n",
+	"utf8",
+);
 process.stdout.write("Initialized speckit skills (litus-e2e-fake)\n");
 process.exit(0);

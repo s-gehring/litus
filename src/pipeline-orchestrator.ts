@@ -6,6 +6,10 @@ import { AuditLogger } from "./audit-logger";
 import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
 import { CIMonitorCoordinator } from "./ci-monitor-coordinator";
+import {
+	type AppendResult,
+	appendProjectClaudeMd as defaultAppendProjectClaudeMd,
+} from "./claude-md-merger";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
 import { CLIStepRunner } from "./cli-step-runner";
@@ -110,6 +114,7 @@ export interface PipelineDeps {
 	syncRepo?: typeof defaultSyncRepo;
 	runSetupChecks?: (targetDir: string) => Promise<SetupResult>;
 	ensureSpeckitSkills?: typeof defaultEnsureSpeckitSkills;
+	appendProjectClaudeMd?: (specWorktree: string) => Promise<AppendResult>;
 	checkoutMaster?: (cwd: string) => Promise<{ code: number; stderr: string }>;
 	/** Returns the git HEAD SHA at the worktree, or null on failure. Overridable in tests. */
 	getGitHead?: (cwd: string) => Promise<string | null>;
@@ -202,6 +207,7 @@ export class PipelineOrchestrator {
 	private syncRepoFn: typeof defaultSyncRepo;
 	private runSetupChecksFn: (targetDir: string) => Promise<SetupResult>;
 	private ensureSpeckitSkillsFn: typeof defaultEnsureSpeckitSkills;
+	private appendProjectClaudeMdFn: (specWorktree: string) => Promise<AppendResult>;
 	private checkoutMasterFn: (cwd: string) => Promise<{ code: number; stderr: string }>;
 	private getGitHeadFn: (cwd: string) => Promise<string | null>;
 	private detectNewCommitsFn: (preRunHead: string, cwd: string) => Promise<string[]>;
@@ -225,6 +231,7 @@ export class PipelineOrchestrator {
 		this.syncRepoFn = deps?.syncRepo ?? defaultSyncRepo;
 		this.runSetupChecksFn = deps?.runSetupChecks ?? defaultRunSetupChecks;
 		this.ensureSpeckitSkillsFn = deps?.ensureSpeckitSkills ?? defaultEnsureSpeckitSkills;
+		this.appendProjectClaudeMdFn = deps?.appendProjectClaudeMd ?? defaultAppendProjectClaudeMd;
 		this.checkoutMasterFn =
 			deps?.checkoutMaster ??
 			(async (cwd: string) => {
@@ -1292,7 +1299,7 @@ export class PipelineOrchestrator {
 		this.handleStepOutput(workflow.id, "[speckit] Ensuring spec-kit skills in worktree");
 
 		this.ensureSpeckitSkillsFn(cwd)
-			.then(({ installed, initResult }) => {
+			.then(async ({ installed, initResult }) => {
 				const wf = this.getActiveWorkflow(workflow.id);
 				if (!wf) return;
 
@@ -1307,6 +1314,36 @@ export class PipelineOrchestrator {
 				} else {
 					this.handleStepOutput(wf.id, "✓ Spec-kit skills already present");
 				}
+
+				if (wf.workflowKind === "spec") {
+					const append = await this.appendProjectClaudeMdFn(cwd);
+					const stillActive = this.getActiveWorkflow(workflow.id);
+					if (!stillActive) return;
+					switch (append.outcome) {
+						case "appended":
+							this.handleStepOutput(stillActive.id, "✓ Appended project CLAUDE.md");
+							break;
+						case "skipped":
+							this.handleStepOutput(stillActive.id, "✓ Project CLAUDE.md already appended");
+							break;
+						case "no-project":
+							this.handleStepOutput(
+								stillActive.id,
+								"• No project CLAUDE.md in main worktree — skipping append",
+							);
+							break;
+						case "no-main":
+							logger.warn("[pipeline] Could not resolve main worktree; skipping CLAUDE.md append");
+							this.handleStepOutput(
+								stillActive.id,
+								"• Could not resolve main worktree — skipping project CLAUDE.md append",
+							);
+							break;
+					}
+					this.advanceAfterStep(stillActive.id);
+					return;
+				}
+
 				this.advanceAfterStep(wf.id);
 			})
 			.catch((err) => {
