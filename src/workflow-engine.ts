@@ -4,7 +4,41 @@ import { join, resolve } from "node:path";
 import { configStore } from "./config-store";
 import { gitSpawn } from "./git-logger";
 import type { EpicAnalysisResult, Question, Workflow, WorkflowKind, WorkflowStatus } from "./types";
-import { getStepDefinitionsForKind, VALID_TRANSITIONS as transitions } from "./types";
+import {
+	getStepDefinitionsForKind,
+	PIPELINE_STEP_DEFINITIONS,
+	VALID_TRANSITIONS as transitions,
+} from "./types";
+import { clearArtifacts } from "./workflow-artifacts";
+
+/**
+ * Outcome of a workflow reset attempt. Each target reports independently so a
+ * partial failure can name exactly which artifacts could not be cleaned up
+ * (FR-009). `partialFailure` is derived: true iff any target failed.
+ */
+export interface ResetOutcome {
+	branch: { ok: true } | { ok: false; error: string; name: string };
+	worktree: { ok: true } | { ok: false; error: string; path: string };
+	artifacts: { ok: true; removed: number } | { ok: false; removed: number; failed: string[] };
+	partialFailure: boolean;
+}
+
+function isWorktreeMissing(stderr: string): boolean {
+	// `git worktree remove` emits e.g. "fatal: '<path>' is not a working tree" or
+	// "fatal: <path> does not exist" when the target is already gone. Treat
+	// either phrasing as idempotent success.
+	return (
+		/is not a working tree/i.test(stderr) ||
+		/does not exist/i.test(stderr) ||
+		/No such file or directory/i.test(stderr)
+	);
+}
+
+function isBranchMissing(stderr: string): boolean {
+	// `git branch -D <name>` emits "error: branch '<name>' not found." when the
+	// branch has already been deleted. Treat as idempotent success.
+	return /not found/i.test(stderr) || /No such/i.test(stderr);
+}
 
 export class WorkflowEngine {
 	private workflow: Workflow | null = null;
@@ -90,6 +124,7 @@ export class WorkflowEngine {
 			feedbackPreRunHead: null,
 			activeInvocation: null,
 			managedRepo,
+			error: null,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -349,4 +384,161 @@ export async function createEpicWorkflows(
 	}
 
 	return { workflows, epicId };
+}
+
+/**
+ * Reset a workflow in `error` or `aborted` state back to Setup (step 0,
+ * `idle`). Deletes the managed worktree, branch, and artifact files in
+ * order; "already missing" at any target counts as success (FR-008). On
+ * partial failure the workflow transitions to `error` with a message
+ * naming exactly the targets that could not be removed (FR-009), so a
+ * subsequent retry can converge. Preserves `id` and `epicId` (FR-006).
+ *
+ * Module-level pure mutation on the provided workflow record; callers that
+ * loaded the workflow directly from `WorkflowStore` (e.g. a previously-
+ * aborted workflow with no live orchestrator) can use it directly.
+ */
+export async function resetWorkflow(workflow: Workflow): Promise<ResetOutcome> {
+	const outcome: ResetOutcome = {
+		branch: { ok: true },
+		worktree: { ok: true },
+		artifacts: { ok: true, removed: 0 },
+		partialFailure: false,
+	};
+
+	const worktreePath = workflow.worktreePath;
+	if (worktreePath) {
+		try {
+			const targetRepo = workflow.targetRepository;
+			if (!targetRepo) {
+				outcome.worktree = {
+					ok: false,
+					error: "no targetRepository",
+					path: worktreePath,
+				};
+			} else {
+				const result = await gitSpawn(["git", "worktree", "remove", worktreePath, "--force"], {
+					cwd: targetRepo,
+					extra: { worktree: worktreePath },
+				});
+				if (result.code !== 0 && !isWorktreeMissing(result.stderr)) {
+					outcome.worktree = {
+						ok: false,
+						error: result.stderr || `exit ${result.code}`,
+						path: worktreePath,
+					};
+				}
+			}
+		} catch (err) {
+			outcome.worktree = {
+				ok: false,
+				error: err instanceof Error ? err.message : String(err),
+				path: worktreePath,
+			};
+		}
+	}
+
+	const branchName = workflow.worktreeBranch;
+	if (branchName && workflow.targetRepository) {
+		try {
+			const result = await gitSpawn(["git", "branch", "-D", branchName], {
+				cwd: workflow.targetRepository,
+				extra: { branch: branchName },
+			});
+			if (result.code !== 0 && !isBranchMissing(result.stderr)) {
+				outcome.branch = {
+					ok: false,
+					error: result.stderr || `exit ${result.code}`,
+					name: branchName,
+				};
+			}
+		} catch (err) {
+			outcome.branch = {
+				ok: false,
+				error: err instanceof Error ? err.message : String(err),
+				name: branchName,
+			};
+		}
+	}
+
+	const artifactsResult = clearArtifacts(workflow.id);
+	if (artifactsResult.failed.length > 0) {
+		outcome.artifacts = {
+			ok: false,
+			removed: artifactsResult.removed,
+			failed: artifactsResult.failed,
+		};
+	} else {
+		outcome.artifacts = { ok: true, removed: artifactsResult.removed };
+	}
+
+	outcome.partialFailure = !outcome.branch.ok || !outcome.worktree.ok || !outcome.artifacts.ok;
+
+	const now = new Date().toISOString();
+	if (outcome.worktree.ok) workflow.worktreePath = null;
+	workflow.currentStepIndex = 0;
+	workflow.featureBranch = null;
+	workflow.pendingQuestion = null;
+	workflow.prUrl = null;
+	workflow.lastOutput = "";
+	workflow.activeInvocation = null;
+	workflow.activeWorkStartedAt = null;
+	workflow.feedbackPreRunHead = null;
+	workflow.summary = "";
+	workflow.stepSummary = "";
+	workflow.flavor = "";
+	workflow.feedbackEntries = [];
+	workflow.epicAnalysisMs = 0;
+	workflow.activeWorkMs = 0;
+	if (workflow.epicDependencyStatus === "overridden") {
+		workflow.epicDependencyStatus = workflow.epicDependencies.length > 0 ? "waiting" : "satisfied";
+	}
+	workflow.ciCycle.attempt = 0;
+	workflow.ciCycle.monitorStartedAt = null;
+	workflow.ciCycle.lastCheckResults = [];
+	workflow.ciCycle.failureLogs = [];
+	workflow.mergeCycle.attempt = 0;
+	workflow.reviewCycle.iteration = 1;
+	workflow.reviewCycle.lastSeverity = null;
+
+	for (let i = 0; i < workflow.steps.length; i++) {
+		const def = PIPELINE_STEP_DEFINITIONS[i];
+		const step = workflow.steps[i];
+		step.status = "pending";
+		step.output = "";
+		step.outputLog = [];
+		step.error = null;
+		step.startedAt = null;
+		step.completedAt = null;
+		step.pid = null;
+		step.sessionId = null;
+		step.history = [];
+		if (def) {
+			step.prompt = def.name === "specify" ? `${def.prompt} ${workflow.specification}` : def.prompt;
+		}
+	}
+
+	if (outcome.partialFailure) {
+		workflow.status = "error";
+		const parts: string[] = [];
+		if (!outcome.branch.ok) parts.push(`branch ${outcome.branch.name}`);
+		if (!outcome.worktree.ok) parts.push(`worktree ${outcome.worktree.path}`);
+		if (!outcome.artifacts.ok) {
+			const n = outcome.artifacts.failed.length;
+			parts.push(`${n} artifact file(s)`);
+		}
+		const message = `Reset failed: could not delete ${parts.join(", ")}`;
+		workflow.error = { message };
+	} else {
+		workflow.status = "idle";
+		workflow.error = null;
+		// Regenerate the managed branch name from the stable id.
+		// `createWorkflow` uses the exact same formula, so this is idempotent
+		// for any workflow created through the normal path: the branch name
+		// returns to its original value rather than being silently rewritten.
+		workflow.worktreeBranch = `tmp-${workflow.id.slice(0, 8)}`;
+	}
+
+	workflow.updatedAt = now;
+	return outcome;
 }

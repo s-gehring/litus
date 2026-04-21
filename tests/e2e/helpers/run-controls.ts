@@ -21,6 +21,29 @@ export async function retryStep(card: WorkflowCardPage): Promise<void> {
 	await btn.click();
 }
 
+/**
+ * Click the whole-workflow "Retry workflow" reset button. Wraps `confirm()`
+ * so the underlying `workflow:retry-workflow` actually dispatches — mirrors
+ * the pattern in `abortRun` for the same reason.
+ */
+export async function retryWorkflow(card: WorkflowCardPage): Promise<void> {
+	const onDialog = (dialog: import("@playwright/test").Dialog): void => {
+		void dialog.accept();
+	};
+	card.page.on("dialog", onDialog);
+	try {
+		const btn = card.retryWorkflowAction();
+		await expect(btn).toBeVisible({ timeout: 30_000 });
+		const dialogSettled = card.page
+			.waitForEvent("dialog", { timeout: 5_000 })
+			.catch(() => undefined);
+		await btn.click();
+		await dialogSettled;
+	} finally {
+		card.page.off("dialog", onDialog);
+	}
+}
+
 export async function abortRun(card: WorkflowCardPage): Promise<void> {
 	// The abort handler wraps the dispatch in a `confirm()` — auto-accept
 	// it so the underlying workflow:abort message actually fires. Register

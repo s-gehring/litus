@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { logger } from "./logger";
-import type { AuditConfig, AuditEvent, AuditEventType } from "./types";
+import type { AuditConfig, AuditEvent, AuditEventType, WorkflowResetAuditEvent } from "./types";
 
 const DEFAULT_AUDIT_DIR = join(homedir(), ".litus", "audit");
 
@@ -100,6 +100,40 @@ export class AuditLogger {
 			commitHash,
 			metadata: null,
 		});
+	}
+
+	/**
+	 * Append a `workflow.reset` audit line to the pipeline-scoped JSONL file.
+	 * Standalone event — not tied to an in-flight run (no runId/sequence), so it
+	 * bypasses `writeEvent`. Matches contracts/audit-workflow-reset.md.
+	 */
+	logWorkflowReset(params: {
+		pipelineName: string;
+		workflowId: string;
+		epicId: string | null;
+		branch: string;
+		worktreePath: string;
+		artifactCount: number;
+		partialFailure: boolean;
+	}): void {
+		try {
+			const safeFileName = params.pipelineName.replace(/[/\\:*?"<>|]+/g, "--");
+			const event: WorkflowResetAuditEvent = {
+				type: "workflow.reset",
+				timestamp: new Date().toISOString(),
+				actor: "local",
+				workflowId: params.workflowId,
+				epicId: params.epicId,
+				branch: params.branch,
+				worktreePath: params.worktreePath,
+				artifactCount: params.artifactCount,
+				partialFailure: params.partialFailure,
+			};
+			const filePath = join(this.auditDir, `${safeFileName}.jsonl`);
+			appendFileSync(filePath, `${JSON.stringify(event)}\n`);
+		} catch (err) {
+			logger.warn(`[audit] Failed to write workflow.reset event: ${err}`);
+		}
 	}
 
 	private writeEvent(

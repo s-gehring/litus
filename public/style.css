@@ -407,6 +407,16 @@ header h1 {
   padding: 6px 16px;
 }
 
+.workflow-error-banner {
+  margin: 8px 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: rgba(233, 69, 96, 0.1);
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+
 .output-area {
   position: relative;
   height: 400px;
@@ -1709,6 +1719,12 @@ body::-webkit-scrollbar-track {
 .modal-error {
   color: var(--accent);
   font-size: 0.8rem;
+}
+
+.modal-field-error {
+  color: var(--accent);
+  font-size: 0.8rem;
+  margin-top: 4px;
 }
 
 /* ── Folder Picker ─────────────────────────────────────── */

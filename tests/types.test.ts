@@ -428,7 +428,7 @@ describe("Workflow Lifecycle", () => {
 		expect(q.detectedAt).toBe("2026-04-06T12:00:00Z");
 	});
 
-	test("Workflow shape with all 31 fields", () => {
+	test("Workflow shape with all 33 fields", () => {
 		const w: Workflow = {
 			id: "w-1",
 			workflowKind: "spec",
@@ -467,10 +467,11 @@ describe("Workflow Lifecycle", () => {
 			feedbackPreRunHead: null,
 			activeInvocation: null,
 			managedRepo: null,
+			error: null,
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:00:00Z",
 		};
-		expect(Object.keys(w)).toHaveLength(32);
+		expect(Object.keys(w)).toHaveLength(33);
 		expect(w.status).toBe("idle");
 	});
 
@@ -659,6 +660,7 @@ describe("ServerMessage variants", () => {
 					feedbackEntries: [],
 					activeInvocation: null,
 					managedRepo: null,
+					error: null,
 					createdAt: "",
 					updatedAt: "",
 				},
@@ -1181,6 +1183,7 @@ describe("WorkflowClientState shape", () => {
 				feedbackEntries: [],
 				activeInvocation: null,
 				managedRepo: null,
+				error: null,
 				createdAt: "",
 				updatedAt: "",
 			},

@@ -108,6 +108,7 @@ function createFakeEngine() {
 				feedbackPreRunHead: null,
 				activeInvocation: null,
 				managedRepo: null,
+				error: null,
 				createdAt: now,
 				updatedAt: now,
 			};

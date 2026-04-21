@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	unlinkSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { logger } from "./logger";
@@ -317,6 +325,68 @@ function planStepAccept(name: string): boolean {
 	// etc) and any contract artifacts that were snapshotted under `contracts/`
 	// (which may include binary types like `.png`).
 	return name.endsWith(".md") || isContractArtifactFilename(name);
+}
+
+/**
+ * Recursively remove every file under the workflow's persistent artifact root
+ * and return a `{ removed, failed }` summary. Missing root → `{ removed: 0,
+ * failed: [] }` so callers can treat "already gone" as success (FR-008). Each
+ * unlink error is captured by absolute path in `failed[]` so the caller can
+ * name them in the partial-failure audit/UI message (FR-009). The root
+ * directory itself is removed on success (best effort — directory removal
+ * failures are ignored because `failed[]` already accurately describes any
+ * files still present).
+ */
+export function clearArtifacts(workflowId: string): { removed: number; failed: string[] } {
+	const root = getArtifactsRoot(workflowId);
+	if (!existsSync(root)) return { removed: 0, failed: [] };
+
+	const failed: string[] = [];
+	let removed = 0;
+
+	function walk(dir: string): void {
+		let entries: string[];
+		try {
+			entries = readdirSync(dir);
+		} catch (err) {
+			failed.push(dir);
+			logger.warn(`[artifacts] Failed to read dir during clear: ${dir}: ${String(err)}`);
+			return;
+		}
+		for (const name of entries) {
+			const abs = join(dir, name);
+			let st: ReturnType<typeof statSync>;
+			try {
+				st = statSync(abs);
+			} catch {
+				failed.push(abs);
+				continue;
+			}
+			if (st.isDirectory()) {
+				walk(abs);
+			} else {
+				try {
+					unlinkSync(abs);
+					removed++;
+				} catch (err) {
+					failed.push(abs);
+					logger.warn(`[artifacts] Failed to unlink ${abs}: ${String(err)}`);
+				}
+			}
+		}
+	}
+
+	walk(root);
+
+	if (failed.length === 0) {
+		try {
+			rmSync(root, { recursive: true, force: true });
+		} catch (err) {
+			logger.warn(`[artifacts] Failed to remove artifact root ${root}: ${String(err)}`);
+		}
+	}
+
+	return { removed, failed };
 }
 
 export function listArtifacts(workflow: Workflow): ArtifactListResponse {

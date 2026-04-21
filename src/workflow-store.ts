@@ -113,6 +113,8 @@ export class WorkflowStore {
 			if (data.workflowKind !== "spec" && data.workflowKind !== "quick-fix") {
 				data.workflowKind = "spec";
 			}
+			// Migration: backfill workflow-level error field for pre-reset workflows.
+			if (data.error === undefined) data.error = null;
 			// Migration: backfill per-step history for pre-history workflows
 			for (const step of data.steps) {
 				if (!Array.isArray(step.history)) step.history = [];
