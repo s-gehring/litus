@@ -53,7 +53,8 @@
 					"result": "Question 1: Should the feature support dark mode?"
 				}
 			]
-		}
+		},
+		{ "text": "yes\n" }
 	],
 	"gh": {
 		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
