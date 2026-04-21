@@ -105,8 +105,10 @@ export class CLIStepRunner {
 		callbacks: CLICallbacks,
 		extraEnv?: Record<string, string>,
 		prompt?: string,
+		model?: string,
+		effort?: EffortLevel,
 	): void {
-		this.cliRunner.resume(workflowId, sessionId, cwd, callbacks, extraEnv, prompt);
+		this.cliRunner.resume(workflowId, sessionId, cwd, callbacks, extraEnv, prompt, model, effort);
 	}
 
 	killProcess(workflowId: string): void {

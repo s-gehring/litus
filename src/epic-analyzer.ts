@@ -317,7 +317,12 @@ export async function analyzeEpic(
 				"--verbose",
 				"--dangerously-skip-permissions",
 				"--include-partial-messages",
+				"--effort",
+				effort,
 			];
+			if (model.trim() !== "") {
+				retryArgs.push("--model", model);
+			}
 
 			const retryResult = await runCLIStream(
 				retryArgs,

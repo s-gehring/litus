@@ -308,6 +308,26 @@ describe("resumeStep", () => {
 			callbacks,
 			env,
 			"my answer",
+			undefined,
+			undefined,
+		);
+	});
+
+	test("forwards model and effort to cliRunner.resume", () => {
+		const cliRunner = makeMockCLIRunner();
+		const runner = new CLIStepRunner(cliRunner as CLIRunner);
+		const callbacks = {} as CLICallbacks;
+
+		runner.resumeStep("wf-1", "sess-1", "/cwd", callbacks, undefined, undefined, "sonnet", "high");
+		expect(cliRunner.resume).toHaveBeenCalledWith(
+			"wf-1",
+			"sess-1",
+			"/cwd",
+			callbacks,
+			undefined,
+			undefined,
+			"sonnet",
+			"high",
 		);
 	});
 });
