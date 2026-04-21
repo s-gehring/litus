@@ -421,6 +421,197 @@ describe("CLIRunner", () => {
 			]);
 		});
 
+		test("does not duplicate text when both partial deltas and a final assistant message arrive", async () => {
+			// Regression: the frontend was seeing LLM output twice because deltas
+			// were flushed as they streamed in, and then the cumulative `assistant`
+			// event re-emitted the same text in full.
+			const outputs: string[] = [];
+			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
+
+			const streamContent = [
+				JSON.stringify({ type: "content_block_delta", delta: { text: "Hello " } }),
+				JSON.stringify({ type: "content_block_delta", delta: { text: "world" } }),
+				JSON.stringify({
+					type: "assistant",
+					message: { content: [{ type: "text", text: "Hello world" }] },
+				}),
+				"",
+			].join("\n");
+
+			BunGlobal.Bun.spawn = () => ({
+				stdout: new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode(streamContent));
+						controller.close();
+					},
+				}),
+				stderr: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				exited: Promise.resolve(0),
+				kill: () => {},
+				pid: 1,
+			});
+
+			runner.start(
+				makeWorkflow("w-dedup", { worktreePath: WORKTREE_DIR }),
+				makeCallbacks({
+					onOutput: (text) => outputs.push(text),
+					onComplete: () => resolveComplete(),
+				}),
+			);
+
+			await completePromise;
+			const combined = outputs.join("");
+			// The full message should appear exactly once across all outputs.
+			expect(combined).toBe("Hello world");
+		});
+
+		test("emits full assistant text when no deltas were streamed", async () => {
+			// The fix must not regress the non-partial path: if the CLI only
+			// emits a final `assistant` event, that text still needs to reach
+			// the frontend.
+			const outputs: string[] = [];
+			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
+
+			const streamContent = [
+				JSON.stringify({
+					type: "assistant",
+					message: { content: [{ type: "text", text: "One-shot reply" }] },
+				}),
+				"",
+			].join("\n");
+
+			BunGlobal.Bun.spawn = () => ({
+				stdout: new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode(streamContent));
+						controller.close();
+					},
+				}),
+				stderr: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				exited: Promise.resolve(0),
+				kill: () => {},
+				pid: 1,
+			});
+
+			runner.start(
+				makeWorkflow("w-no-delta", { worktreePath: WORKTREE_DIR }),
+				makeCallbacks({
+					onOutput: (text) => outputs.push(text),
+					onComplete: () => resolveComplete(),
+				}),
+			);
+
+			await completePromise;
+			expect(outputs.join("")).toBe("One-shot reply");
+		});
+
+		test("emits each assistant message separately across turns", async () => {
+			// After an `assistant` event completes, the sent-length counter must
+			// reset so a subsequent message (with its own deltas + finalization)
+			// is still delivered to the frontend.
+			const outputs: string[] = [];
+			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
+
+			const streamContent = [
+				JSON.stringify({ type: "content_block_delta", delta: { text: "First " } }),
+				JSON.stringify({ type: "content_block_delta", delta: { text: "reply" } }),
+				JSON.stringify({
+					type: "assistant",
+					message: { content: [{ type: "text", text: "First reply" }] },
+				}),
+				JSON.stringify({ type: "content_block_delta", delta: { text: "Second " } }),
+				JSON.stringify({ type: "content_block_delta", delta: { text: "reply" } }),
+				JSON.stringify({
+					type: "assistant",
+					message: { content: [{ type: "text", text: "Second reply" }] },
+				}),
+				"",
+			].join("\n");
+
+			BunGlobal.Bun.spawn = () => ({
+				stdout: new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode(streamContent));
+						controller.close();
+					},
+				}),
+				stderr: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				exited: Promise.resolve(0),
+				kill: () => {},
+				pid: 1,
+			});
+
+			runner.start(
+				makeWorkflow("w-multi-turn", { worktreePath: WORKTREE_DIR }),
+				makeCallbacks({
+					onOutput: (text) => outputs.push(text),
+					onComplete: () => resolveComplete(),
+				}),
+			);
+
+			await completePromise;
+			expect(outputs.join("")).toBe("First replySecond reply");
+		});
+
+		test("forwards the full finalized text to onAssistantMessage even when streamed as partials", async () => {
+			// Question detection relies on finalized messages. When deltas
+			// already emitted the text, the detector must still see the complete
+			// text via onAssistantMessage — otherwise a clarify question that
+			// streamed across partials would never be recognised.
+			const assistantMessages: string[] = [];
+			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
+
+			const streamContent = [
+				JSON.stringify({ type: "content_block_delta", delta: { text: "Which option " } }),
+				JSON.stringify({ type: "content_block_delta", delta: { text: "do you prefer?" } }),
+				JSON.stringify({
+					type: "assistant",
+					message: { content: [{ type: "text", text: "Which option do you prefer?" }] },
+				}),
+				"",
+			].join("\n");
+
+			BunGlobal.Bun.spawn = () => ({
+				stdout: new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode(streamContent));
+						controller.close();
+					},
+				}),
+				stderr: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				exited: Promise.resolve(0),
+				kill: () => {},
+				pid: 1,
+			});
+
+			runner.start(
+				makeWorkflow("w-finalized", { worktreePath: WORKTREE_DIR }),
+				makeCallbacks({
+					onAssistantMessage: (text) => assistantMessages.push(text),
+					onComplete: () => resolveComplete(),
+				}),
+			);
+
+			await completePromise;
+			expect(assistantMessages).toContain("Which option do you prefer?");
+		});
+
 		test("calls onComplete on successful exit", async () => {
 			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
 

@@ -170,6 +170,15 @@ interface RunningProcess {
 	deltaBuffer: string;
 	deltaFlushTimer: ReturnType<typeof setTimeout> | null;
 	idleTimer: ReturnType<typeof setTimeout> | null;
+	// Tracks how many characters of the current assistant message text have
+	// already been emitted via `onOutput` (either through flushed deltas or a
+	// prior `assistant` event). When the CLI emits both `content_block_delta`
+	// fragments AND a final cumulative `assistant` message, the frontend would
+	// otherwise receive the text twice — once as streaming partials, then again
+	// as the full finalized block. Only the unsent tail is forwarded.
+	// Mirrors the deduplication pattern already in place for the one-shot
+	// streaming helper (streamClaudeOneShot) and the question detector.
+	assistantSentLen: number;
 }
 
 const EVENTS_DIR = join(homedir(), ".litus", "audit");
@@ -268,6 +277,7 @@ export class CLIRunner {
 			deltaBuffer: "",
 			deltaFlushTimer: null,
 			idleTimer: null,
+			assistantSentLen: 0,
 		};
 
 		this.running.set(workflow.id, entry);
@@ -358,6 +368,7 @@ export class CLIRunner {
 			deltaBuffer: "",
 			deltaFlushTimer: null,
 			idleTimer: null,
+			assistantSentLen: 0,
 		};
 
 		this.running.set(workflowId, entry);
@@ -493,6 +504,7 @@ export class CLIRunner {
 		}
 		if (entry.deltaBuffer && !entry.stale) {
 			entry.callbacks.onOutput(entry.deltaBuffer);
+			entry.assistantSentLen += entry.deltaBuffer.length;
 			entry.deltaBuffer = "";
 		}
 	}
@@ -515,14 +527,35 @@ export class CLIRunner {
 		if (event.type === "assistant" && event.message?.content) {
 			this.flushDeltaBuffer(entry);
 			const toolUsages: ToolUsage[] = [];
+			// Concatenate text blocks so we can compare against what has already
+			// been streamed via `content_block_delta` fragments. Without this,
+			// the frontend would see every character twice: once as partials,
+			// then again as the final cumulative assistant message.
+			let currentText = "";
 			for (const block of event.message.content) {
 				if (block.type === "text" && block.text) {
-					entry.callbacks.onOutput(block.text);
-					entry.callbacks.onAssistantMessage?.(block.text);
+					currentText += block.text;
 				} else if (block.type === "tool_use" && block.name) {
 					toolUsages.push({ name: block.name, input: block.input });
 				}
 			}
+			if (currentText) {
+				// Only forward the tail that deltas have not already emitted.
+				// If assistantSentLen exceeds currentText.length (fresh/shorter
+				// message), slice() returns "" and we skip the emit, which is
+				// safe — we'd rather drop a rare duplicate than print twice.
+				const unsent = currentText.slice(entry.assistantSentLen);
+				if (unsent) {
+					entry.callbacks.onOutput(unsent);
+				}
+				// The finalized-message callback always fires with the full
+				// text — question detection depends on seeing the whole
+				// message regardless of what was already streamed as partials.
+				entry.callbacks.onAssistantMessage?.(currentText);
+			}
+			// An `assistant` event marks end-of-message: reset the counter so
+			// the next message's deltas / assistant events start fresh.
+			entry.assistantSentLen = 0;
 			if (toolUsages.length > 0) {
 				entry.callbacks.onTools(toolUsages);
 			}
