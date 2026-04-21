@@ -21,6 +21,7 @@ export interface ModelConfig {
 	implement: string;
 	review: string;
 	implementReview: string;
+	artifacts: string;
 	commitPushPr: string;
 }
 
@@ -43,6 +44,7 @@ export interface EffortConfig {
 	implement: EffortLevel;
 	review: EffortLevel;
 	implementReview: EffortLevel;
+	artifacts: EffortLevel;
 	commitPushPr: EffortLevel;
 }
 
@@ -62,6 +64,8 @@ export interface LimitConfig {
 	ciFixMaxAttempts: number;
 	mergeMaxAttempts: number;
 	maxJsonRetries: number;
+	artifactsPerFileMaxBytes: number;
+	artifactsPerStepMaxBytes: number;
 }
 
 export interface TimingConfig {
@@ -73,6 +77,7 @@ export interface TimingConfig {
 	maxClientOutputLines: number;
 	epicTimeoutMs: number;
 	cliIdleTimeoutMs: number;
+	artifactsTimeoutMs: number;
 }
 
 export type AutoMode = "manual" | "normal" | "full-auto";
@@ -99,6 +104,13 @@ export interface PromptVariableInfo {
 	description: string;
 }
 
+// Signals the config UI how to render a numeric setting. "scalar" (default) is
+// the existing numeric-only spinner. "size" means bytes canonical, rendered as
+// a numeric + MB/GB selector. "duration" means ms canonical, rendered as a
+// numeric + minutes/hours selector. Raw bytes/seconds MUST NOT be the sole
+// input variant for "size"/"duration" entries (FR-013a, FR-016).
+export type NumericSettingInputKind = "scalar" | "size" | "duration";
+
 export interface NumericSettingMeta {
 	key: string;
 	label: string;
@@ -106,6 +118,7 @@ export interface NumericSettingMeta {
 	min: number;
 	defaultValue: number;
 	unit?: string;
+	inputKind?: NumericSettingInputKind;
 }
 
 export interface ConfigValidationError {
@@ -129,7 +142,9 @@ export type AuditEventType =
 	| "query"
 	| "answer"
 	| "commit"
-	| "workflow.reset";
+	| "workflow.reset"
+	| "artifacts.step.start"
+	| "artifacts.step.end";
 
 // Payload persisted as a JSONL record when a workflow is reset via the retry-
 // workflow action. Matches contracts/audit-workflow-reset.md. Lives alongside
@@ -256,6 +271,7 @@ export type PipelineStepName =
 	| "implement"
 	| "review"
 	| "implement-review"
+	| "artifacts"
 	| "fix-implement"
 	| "commit-push-pr"
 	| "monitor-ci"
@@ -292,6 +308,13 @@ export interface PipelineStepRun {
 	completedAt: string | null;
 }
 
+// Terminal outcome refinement for the `artifacts` step only. Distinguishes
+// "LLM succeeded and at least one manifest-listed file was kept" from "LLM
+// succeeded and declared zero artifacts" so the UI can render the two paths
+// differently (FR-011). Null for all other steps and for artifacts runs that
+// haven't terminated yet.
+export type ArtifactsStepOutcome = "with-files" | "empty";
+
 // Pipeline step entity
 export interface PipelineStep {
 	name: PipelineStepName;
@@ -308,6 +331,7 @@ export interface PipelineStep {
 	completedAt: string | null;
 	pid: number | null;
 	history: PipelineStepRun[];
+	outcome?: ArtifactsStepOutcome | null;
 }
 
 // Lightweight metadata for fast workflow listing without loading full state
@@ -412,6 +436,11 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	{ name: "review", displayName: "Reviewing", prompt: "/speckit-review" },
 	{ name: "implement-review", displayName: "Fixing Review", prompt: "/speckit-implementreview" },
 	{
+		name: "artifacts",
+		displayName: "Generating Artifacts",
+		prompt: "",
+	},
+	{
 		name: "commit-push-pr",
 		displayName: "Creating PR",
 		prompt:
@@ -434,6 +463,7 @@ const SPEC_ORDER: ReadonlyArray<PipelineStepName> = [
 	"implement",
 	"review",
 	"implement-review",
+	"artifacts",
 	"commit-push-pr",
 	"monitor-ci",
 	"fix-ci",
@@ -475,6 +505,7 @@ export const STEP = {
 	IMPLEMENT: "implement",
 	REVIEW: "review",
 	IMPLEMENT_REVIEW: "implement-review",
+	ARTIFACTS: "artifacts",
 	FIX_IMPLEMENT: "fix-implement",
 	COMMIT_PUSH_PR: "commit-push-pr",
 	MONITOR_CI: "monitor-ci",
@@ -593,6 +624,11 @@ export interface ArtifactDescriptor {
 	lastModified: string;
 	exists: true;
 	runOrdinal: number | null;
+	// Present only for `step === "artifacts"` entries: LLM-provided short
+	// description from the manifest, shown next to the file name in the UI.
+	description?: string;
+	// Optional MIME hint; falls back to browser sniffing/extension when absent.
+	contentType?: string;
 }
 
 export interface ArtifactListResponse {

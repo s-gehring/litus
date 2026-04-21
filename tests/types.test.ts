@@ -71,6 +71,7 @@ function makeAppConfig(): AppConfig {
 			implement: "",
 			review: "",
 			implementReview: "",
+			artifacts: "",
 			commitPushPr: "",
 		},
 		efforts: {
@@ -88,6 +89,7 @@ function makeAppConfig(): AppConfig {
 			implement: "medium",
 			review: "medium",
 			implementReview: "medium",
+			artifacts: "medium",
 			commitPushPr: "medium",
 		},
 		prompts: {
@@ -105,6 +107,8 @@ function makeAppConfig(): AppConfig {
 			ciFixMaxAttempts: 3,
 			mergeMaxAttempts: 3,
 			maxJsonRetries: 3,
+			artifactsPerFileMaxBytes: 104_857_600,
+			artifactsPerStepMaxBytes: 1_073_741_824,
 		},
 		timing: {
 			ciGlobalTimeoutMs: 600000,
@@ -115,6 +119,7 @@ function makeAppConfig(): AppConfig {
 			maxClientOutputLines: 500,
 			epicTimeoutMs: 300000,
 			cliIdleTimeoutMs: 600000,
+			artifactsTimeoutMs: 1_800_000,
 		},
 		autoMode: "normal",
 	};
@@ -927,7 +932,7 @@ describe("Epic types", () => {
 // ── Phase 7: Application Configuration ──────────────────────
 
 describe("Config types", () => {
-	test("ModelConfig shape (15 fields)", () => {
+	test("ModelConfig shape (16 fields)", () => {
 		const config: ModelConfig = {
 			questionDetection: "haiku",
 			reviewClassification: "haiku",
@@ -943,12 +948,13 @@ describe("Config types", () => {
 			implement: "",
 			review: "",
 			implementReview: "",
+			artifacts: "",
 			commitPushPr: "",
 		};
-		expect(Object.keys(config)).toHaveLength(15);
+		expect(Object.keys(config)).toHaveLength(16);
 	});
 
-	test("EffortConfig shape (15 fields)", () => {
+	test("EffortConfig shape (16 fields)", () => {
 		const config: EffortConfig = {
 			questionDetection: "low",
 			reviewClassification: "low",
@@ -964,9 +970,10 @@ describe("Config types", () => {
 			implement: "medium",
 			review: "medium",
 			implementReview: "medium",
+			artifacts: "medium",
 			commitPushPr: "medium",
 		};
-		expect(Object.keys(config)).toHaveLength(15);
+		expect(Object.keys(config)).toHaveLength(16);
 	});
 
 	test("PromptConfig shape (7 fields)", () => {
@@ -983,17 +990,19 @@ describe("Config types", () => {
 		expect(Object.keys(config)).toHaveLength(8);
 	});
 
-	test("LimitConfig shape (4 fields)", () => {
+	test("LimitConfig shape (6 fields)", () => {
 		const config: LimitConfig = {
 			reviewCycleMaxIterations: 16,
 			ciFixMaxAttempts: 3,
 			mergeMaxAttempts: 3,
 			maxJsonRetries: 3,
+			artifactsPerFileMaxBytes: 104_857_600,
+			artifactsPerStepMaxBytes: 1_073_741_824,
 		};
-		expect(Object.keys(config)).toHaveLength(4);
+		expect(Object.keys(config)).toHaveLength(6);
 	});
 
-	test("TimingConfig shape (7 fields)", () => {
+	test("TimingConfig shape (9 fields)", () => {
 		const config: TimingConfig = {
 			ciGlobalTimeoutMs: 600000,
 			ciPollIntervalMs: 30000,
@@ -1003,14 +1012,15 @@ describe("Config types", () => {
 			maxClientOutputLines: 500,
 			epicTimeoutMs: 300000,
 			cliIdleTimeoutMs: 600000,
+			artifactsTimeoutMs: 1_800_000,
 		};
-		expect(Object.keys(config)).toHaveLength(8);
+		expect(Object.keys(config)).toHaveLength(9);
 	});
 
 	test("AppConfig shape (6 fields)", () => {
 		const config: AppConfig = makeAppConfig();
 		expect(Object.keys(config)).toHaveLength(6);
-		expect(Object.keys(config.models)).toHaveLength(15);
+		expect(Object.keys(config.models)).toHaveLength(16);
 	});
 
 	test("ConfigValidationError shape", () => {
