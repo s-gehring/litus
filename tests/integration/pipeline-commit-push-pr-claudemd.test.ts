@@ -85,6 +85,11 @@ async function makeRepo(opts: {
 		await mustRun(["git", "config", "receive.denyCurrentBranch", "updateInstead"], origin);
 
 		await mustRun(["git", "clone", origin, work], process.cwd());
+		// The guard runs `git commit` via gitSpawn which does NOT forward
+		// GIT_AUTHOR_* env vars, so local git identity must be configured on
+		// the worktree for CI (where no global user.name/email exists).
+		await mustRun(["git", "config", "user.email", "t@e.com"], work);
+		await mustRun(["git", "config", "user.name", "Test"], work);
 		const branch = "feat-guard";
 		await mustRun(["git", "switch", "-c", branch], work);
 		if (opts.branchCommitsExtra) {
@@ -440,6 +445,8 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 			// work is an independent repo; origin is added as a remote but shares
 			// no ancestry with work's HEAD.
 			await mustRun(["git", "init", "-b", "master"], work);
+			await mustRun(["git", "config", "user.email", "t@e.com"], work);
+			await mustRun(["git", "config", "user.name", "Test"], work);
 			writeFileSync(join(work, "other.txt"), "other");
 			await mustRun(["git", "add", "."], work);
 			await mustRun(["git", "commit", "-m", "independent"], work);
