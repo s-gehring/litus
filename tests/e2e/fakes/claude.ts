@@ -39,6 +39,33 @@ function nextIndex(counterFile: string): number {
 	return next;
 }
 
+function nextClassifierResponse(scenario: ScenarioScript): string {
+	const fallback = "nit\n";
+	const cfg = scenario.classifier;
+	if (cfg == null) return fallback;
+	if (typeof cfg === "string") return cfg;
+	if (!Array.isArray(cfg) || cfg.length === 0) return fallback;
+
+	const counterFile = process.env.LITUS_E2E_COUNTER;
+	if (!counterFile) return cfg[0] ?? fallback;
+	let counter: Record<string, number> = {};
+	if (existsSync(counterFile)) {
+		try {
+			counter = JSON.parse(readFileSync(counterFile, "utf8"));
+		} catch {
+			counter = {};
+		}
+	}
+	const idx = counter.classifier ?? 0;
+	counter.classifier = idx + 1;
+	try {
+		writeFileSync(counterFile, JSON.stringify(counter));
+	} catch {
+		// best-effort: a failed counter write degrades to repeating the final entry
+	}
+	return cfg[Math.min(idx, cfg.length - 1)] ?? fallback;
+}
+
 function readOutputFormat(argv: string[]): string {
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === "--output-format") return argv[i + 1] ?? "";
@@ -132,7 +159,7 @@ async function main() {
 	// sequence and must not consume a FIFO slot — concurrent workflows would
 	// otherwise interleave classifier calls into the FIFO non-deterministically.
 	if (outputFormat === "text" && promptArg.startsWith("Classify the highest severity")) {
-		process.stdout.write(scenario.classifier ?? "nit\n");
+		process.stdout.write(nextClassifierResponse(scenario));
 		process.exit(0);
 	}
 

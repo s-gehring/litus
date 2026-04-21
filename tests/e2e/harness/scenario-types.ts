@@ -73,6 +73,11 @@ export interface ScenarioScript {
 	 * a `claude[]` FIFO slot — this avoids order-coupling the scripted pipeline
 	 * sequence to the non-deterministic timing of classifier calls during
 	 * concurrent workflows. Defaults to `"nit\n"` if omitted.
+	 *
+	 * When an array is supplied, each classifier call consumes the next entry
+	 * (bounded FIFO, last entry repeats indefinitely). Scenarios that drive a
+	 * multi-iteration review loop use this to produce different severities on
+	 * successive calls (e.g. `["major\n", "nit\n"]` to loop once then advance).
 	 */
-	classifier?: string;
+	classifier?: string | string[];
 }
