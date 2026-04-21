@@ -2034,6 +2034,8 @@ body::-webkit-scrollbar-track {
 }
 .alert-list-row:last-child { border-bottom: none; }
 .alert-list-row:hover { background: rgba(74, 158, 255, 0.08); }
+.alert-list-row--seen { opacity: 0.55; }
+.alert-list-row--seen .alert-list-row-title { color: var(--text-muted, #8a8f9e); }
 
 .alert-list-row-body { flex: 1; min-width: 0; }
 .alert-list-row-title { font-weight: 600; font-size: 0.9rem; }

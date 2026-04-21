@@ -332,7 +332,7 @@ export class PipelineOrchestrator {
 			}
 
 			this.engine.clearQuestion(workflowId);
-			this.clearQuestionAlert(workflowId);
+			this.markQuestionAlertSeen(workflowId);
 			const step = workflow.steps[workflow.currentStepIndex];
 
 			// Append the user's answer to step output so it is visible and persisted
@@ -650,7 +650,7 @@ export class PipelineOrchestrator {
 			this.summarizer.cleanup(workflowId);
 			this.resetStepState();
 			this.engine.clearQuestion(workflowId);
-			this.clearQuestionAlert(workflowId);
+			this.markQuestionAlertSeen(workflowId);
 
 			const step = workflow.steps[workflow.currentStepIndex];
 
@@ -2281,7 +2281,7 @@ export class PipelineOrchestrator {
 		// and the question panel is hidden, so a lingering alert would navigate
 		// the user to a dead-end (FR-013 parity for the error path).
 		this.engine.clearQuestion(workflowId);
-		this.clearQuestionAlert(workflowId);
+		this.markQuestionAlertSeen(workflowId);
 
 		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);
@@ -2347,8 +2347,10 @@ export class PipelineOrchestrator {
 		});
 	}
 
-	private clearQuestionAlert(workflowId: string): void {
-		this.callbacks.onAlertDismissWhere?.({ type: "question-asked", workflowId });
+	private markQuestionAlertSeen(workflowId: string): void {
+		this.callbacks.onAlertMarkSeenWhere?.(
+			(a) => a.type === "question-asked" && a.workflowId === workflowId,
+		);
 	}
 
 	private persistWorkflow(workflow: Workflow): void {

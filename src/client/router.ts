@@ -69,6 +69,7 @@ export class Router {
 	private container: HTMLElement;
 	private fallbackPath: string;
 	private popstateHandler: (() => void) | null = null;
+	private navigateListener: ((path: string) => void) | null = null;
 
 	get currentPath(): string | null {
 		return this._currentPath;
@@ -151,6 +152,17 @@ export class Router {
 		this._currentMatch = match;
 		this.currentHandler = route.handler;
 		route.handler.mount(this.container, match);
+		this.navigateListener?.(targetPath);
+	}
+
+	/**
+	 * Register the single navigation listener. Fires after every successful
+	 * path transition (including the initial `start()` mount) once the new
+	 * handler is mounted. Only one listener is supported; calling this again
+	 * replaces the previous one.
+	 */
+	setNavigateListener(listener: (path: string) => void): void {
+		this.navigateListener = listener;
 	}
 
 	/**

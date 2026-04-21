@@ -20,7 +20,12 @@ import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
 import { createAlertBroadcasters } from "./server/alert-broadcast";
-import { handleAlertClearAll, handleAlertDismiss, handleAlertList } from "./server/alert-handlers";
+import {
+	handleAlertClearAll,
+	handleAlertDismiss,
+	handleAlertList,
+	handleAlertRouteChanged,
+} from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
 import { handleEpicAbort, handleEpicStart } from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
@@ -75,8 +80,13 @@ const orchestrators = new Map<string, PipelineOrchestrator>();
 // ── Epic analysis state ──────────────────────────────────
 const epicAnalysisRef: { current: EpicAnalysisProcess | null } = { current: null };
 
-const { emitAlert, dismissAlertsWhere } = createAlertBroadcasters(sharedAlertQueue, (msg) =>
-	broadcast(msg),
+// Per-WS-connection current path (for create-as-seen and route-triggered seen).
+const clientRoutes = new Map<ServerWebSocket<WsData>, string>();
+
+const { emitAlert, dismissAlertsWhere, markAlertsSeenWhere } = createAlertBroadcasters(
+	sharedAlertQueue,
+	(msg) => broadcast(msg),
+	() => clientRoutes.values(),
 );
 
 function createCallbacks() {
@@ -144,6 +154,7 @@ function createCallbacks() {
 		},
 		onAlertEmit: emitAlert,
 		onAlertDismissWhere: dismissAlertsWhere,
+		onAlertMarkSeenWhere: markAlertsSeenWhere,
 	};
 }
 
@@ -233,6 +244,8 @@ const deps: HandlerDeps = {
 	configStore,
 	managedRepoStore,
 	alertQueue: sharedAlertQueue,
+	clientRoutes,
+	markAlertsSeenWhere,
 	epicAnalysisRef,
 	createOrchestrator,
 	broadcastWorkflowState,
@@ -262,6 +275,7 @@ router.register("purge:all", handlePurgeAll);
 router.register("alert:list", handleAlertList);
 router.register("alert:dismiss", handleAlertDismiss);
 router.register("alert:clear-all", handleAlertClearAll);
+router.register("alert:route-changed", handleAlertRouteChanged);
 
 // ── HTTP/WS server ──────────────────────────────────────
 async function listSubdirectories(parentDir: string): Promise<string[]> {
@@ -446,6 +460,7 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 			},
 			close(ws: ServerWebSocket<WsData>) {
 				ws.unsubscribe(WS_TOPIC);
+				clientRoutes.delete(ws);
 			},
 		},
 	});

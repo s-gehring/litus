@@ -20,6 +20,7 @@ function makeAlert(overrides: Partial<Alert> = {}): Alert {
 		epicId: null,
 		targetRoute: "",
 		createdAt: Date.now() - 5_000,
+		seen: false,
 		...overrides,
 	};
 }
@@ -128,6 +129,79 @@ describe("alert-list row meta rendering", () => {
 		refreshAlertList();
 
 		expect(document.querySelector(".alert-list-clear-all")).toBeNull();
+	});
+
+	test("seen rows receive .alert-list-row--seen, unseen rows do not, click still dismisses", () => {
+		const mgr = new ClientStateManager();
+		const seen = makeAlert({ id: "alert_seen", title: "Seen row", seen: true });
+		const unseen = makeAlert({ id: "alert_unseen", title: "Unseen row", seen: false });
+		mgr.handleMessage({ type: "alert:list", alerts: [seen, unseen] });
+
+		const state: { dismissed: string | null; navigated: string | null } = {
+			dismissed: null,
+			navigated: null,
+		};
+		initAlertList({
+			getAlerts: () => mgr.getAlerts(),
+			getState: () => mgr,
+			onDismiss: (id) => {
+				state.dismissed = id;
+			},
+			onNavigate: (a) => {
+				state.navigated = a.id;
+			},
+		});
+
+		showAlertList();
+		refreshAlertList();
+
+		const rows = document.querySelectorAll<HTMLElement>(".alert-list-row");
+		expect(rows).toHaveLength(2);
+		const seenRow = [...rows].find((r) => r.dataset.alertId === "alert_seen");
+		const unseenRow = [...rows].find((r) => r.dataset.alertId === "alert_unseen");
+		expect(seenRow?.classList.contains("alert-list-row--seen")).toBe(true);
+		expect(unseenRow?.classList.contains("alert-list-row--seen")).toBe(false);
+
+		// The alert-list component fires onNavigate on every row click; the
+		// production wiring (app.ts) pairs `onNavigate` with a
+		// `send(alert:dismiss)` so FR-011 ("remove entirely") flows through the
+		// WebSocket. See `tests/integration/alert-list.test.ts` "row click wired
+		// to send(alert:dismiss) …" for the full path-level contract.
+		seenRow?.click();
+		expect(state.navigated).toBe("alert_seen");
+		// Dismiss button still works on seen rows.
+		seenRow?.querySelector<HTMLButtonElement>(".alert-list-dismiss")?.click();
+		expect(state.dismissed).toBe("alert_seen");
+	});
+
+	test("row click wired to send(alert:dismiss) removes error alerts from the list (US3 scenario 2, FR-011)", () => {
+		const mgr = new ClientStateManager();
+		const err = makeAlert({ id: "alert_err", type: "error", title: "Boom", seen: false });
+		mgr.handleMessage({ type: "alert:list", alerts: [err] });
+
+		const sent: Array<{ type: string; alertId: string }> = [];
+		initAlertList({
+			getAlerts: () => mgr.getAlerts(),
+			getState: () => mgr,
+			onDismiss: () => {},
+			// Production wiring (see app.ts): onNavigate → send(alert:dismiss)
+			// + navigateToAlertTarget. We emulate the first half here.
+			onNavigate: (a) => {
+				sent.push({ type: "alert:dismiss", alertId: a.id });
+				// Server-side: dismiss drops the alert from state and broadcasts.
+				mgr.handleMessage({ type: "alert:dismissed", alertIds: [a.id] });
+			},
+		});
+
+		showAlertList();
+		refreshAlertList();
+
+		const row = document.querySelector<HTMLElement>('[data-alert-id="alert_err"]');
+		expect(row).not.toBeNull();
+		row?.click();
+
+		expect(sent).toEqual([{ type: "alert:dismiss", alertId: "alert_err" }]);
+		expect(mgr.getAlerts().has("alert_err")).toBe(false);
 	});
 
 	test("does not show any hash hint when the workflow is missing from state", () => {

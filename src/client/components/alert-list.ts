@@ -59,7 +59,7 @@ function renderRows(): void {
 	}
 	for (const a of alerts) {
 		const row = document.createElement("div");
-		row.className = "alert-list-row";
+		row.className = a.seen ? "alert-list-row alert-list-row--seen" : "alert-list-row";
 		row.dataset.alertId = a.id;
 
 		const body = document.createElement("div");

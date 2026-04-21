@@ -196,6 +196,52 @@ describe("AlertQueue", () => {
 		});
 	});
 
+	test("markSeenWhere refuses to flip error alerts even when predicate matches (FR-006)", async () => {
+		await withTempDir(async (dir) => {
+			const clock = fakeClock();
+			const q = new AlertQueue(new AlertStore(dir), { now: clock.now, dedupWindowMs: 0 });
+			clock.advance(1);
+			const err = q.emit(makeInput({ type: "error", workflowId: "wf1" }));
+			if (!err) throw new Error("emit returned null");
+			const changed = q.markSeenWhere(() => true);
+			expect(changed).toEqual([]);
+			expect(q.list().find((x) => x.id === err.alert.id)?.seen).toBe(false);
+			await q.flush();
+		});
+	});
+
+	test("markSeenWhere flips matching unseen alerts, returns ids, persists, idempotent", async () => {
+		await withTempDir(async (dir) => {
+			const clock = fakeClock();
+			const store = new AlertStore(dir);
+			const q = new AlertQueue(store, { now: clock.now, dedupWindowMs: 0 });
+			clock.advance(1);
+			const a = q.emit(makeInput({ type: "question-asked", workflowId: "wf1" }));
+			clock.advance(1);
+			const b = q.emit(makeInput({ type: "question-asked", workflowId: "wf2" }));
+			clock.advance(1);
+			q.emit(makeInput({ type: "error", workflowId: "wf1" }));
+			if (!a || !b) throw new Error("emit returned null");
+
+			const changed = q.markSeenWhere((x) => x.type === "question-asked" && x.workflowId === "wf1");
+			expect(changed).toEqual([a.alert.id]);
+
+			// Idempotent — second call returns empty.
+			expect(q.markSeenWhere((x) => x.type === "question-asked" && x.workflowId === "wf1")).toEqual(
+				[],
+			);
+
+			// `list()` survives: seen persists through the snapshot copy.
+			const listed = q.list();
+			expect(listed.find((x) => x.id === a.alert.id)?.seen).toBe(true);
+			expect(listed.find((x) => x.id === b.alert.id)?.seen).toBe(false);
+
+			await q.flush();
+			const reloaded = await store.load();
+			expect(reloaded.find((x) => x.id === a.alert.id)?.seen).toBe(true);
+		});
+	});
+
 	test("clearAll on empty queue returns [] and still persists empty list", async () => {
 		await withTempDir(async (dir) => {
 			const clock = fakeClock();

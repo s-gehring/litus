@@ -5,6 +5,7 @@ import type { ServerWebSocket } from "bun";
 import { AlertQueue } from "../../src/alert-queue";
 import { AlertStore } from "../../src/alert-store";
 import type { ManagedRepoStore } from "../../src/managed-repo-store";
+import { createAlertBroadcasters } from "../../src/server/alert-broadcast";
 import type { HandlerDeps, WsData } from "../../src/server/handler-types";
 import type { ServerMessage, Workflow, WorkflowState } from "../../src/types";
 import { type CallTracker, createCallTracker } from "./call-tracker";
@@ -41,12 +42,22 @@ export function createMockHandlerDeps(overrides?: Partial<HandlerDeps>): MockHan
 	const mockEpicStore = createMockEpicStore();
 	const mockConfigStore = createMockConfigStore();
 
+	const broadcast = (msg: ServerMessage) => {
+		tracker.calls.push({ method: "broadcast", args: [msg] });
+		broadcastedMessages.push(msg);
+	};
+	const alertQueue =
+		overrides?.alertQueue ??
+		new AlertQueue(new AlertStore(join(tmpdir(), `litus-test-alerts-${randomUUID()}`)));
+	const clientRoutes: Map<ServerWebSocket<WsData>, string> = overrides?.clientRoutes ??
+	new Map<ServerWebSocket<WsData>, string>();
+	const defaultBroadcasters = createAlertBroadcasters(alertQueue, broadcast, () =>
+		clientRoutes.values(),
+	);
+
 	const deps: HandlerDeps = {
 		orchestrators,
-		broadcast(msg: ServerMessage) {
-			tracker.calls.push({ method: "broadcast", args: [msg] });
-			broadcastedMessages.push(msg);
-		},
+		broadcast,
 		sendTo(ws: ServerWebSocket<WsData>, msg: ServerMessage) {
 			tracker.calls.push({ method: "sendTo", args: [ws, msg] });
 			const existing = sentMessages.get(ws) ?? [];
@@ -62,9 +73,9 @@ export function createMockHandlerDeps(overrides?: Partial<HandlerDeps>): MockHan
 		sharedSummarizer: {} as unknown as HandlerDeps["sharedSummarizer"],
 		configStore: mockConfigStore.mock as unknown as HandlerDeps["configStore"],
 		managedRepoStore: createMockManagedRepoStore(),
-		alertQueue:
-			overrides?.alertQueue ??
-			new AlertQueue(new AlertStore(join(tmpdir(), `litus-test-alerts-${randomUUID()}`))),
+		alertQueue,
+		clientRoutes,
+		markAlertsSeenWhere: overrides?.markAlertsSeenWhere ?? defaultBroadcasters.markAlertsSeenWhere,
 		epicAnalysisRef: { current: null },
 		createOrchestrator: (() => {
 			throw new Error("createOrchestrator not mocked");

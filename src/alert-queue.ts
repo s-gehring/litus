@@ -61,7 +61,9 @@ export class AlertQueue {
 	 * 100-alert cap forced oldest-eviction. Returns null when suppressed by the
 	 * 5 s `(type, workflowId|epicId)` dedup window.
 	 */
-	emit(input: Omit<Alert, "id" | "createdAt">): { alert: Alert; evictedId: string | null } | null {
+	emit(
+		input: Omit<Alert, "id" | "createdAt" | "seen"> & { seen?: boolean },
+	): { alert: Alert; evictedId: string | null } | null {
 		const now = this.now();
 		const key = dedupKey(input.type, input.workflowId, input.epicId);
 		const last = this.dedupKeys.get(key);
@@ -75,6 +77,7 @@ export class AlertQueue {
 			description: truncate(input.description, MAX_DESCRIPTION_LEN),
 			id: makeAlertId(),
 			createdAt: now,
+			seen: input.seen ?? false,
 		};
 
 		let evictedId: string | null = null;
@@ -95,6 +98,25 @@ export class AlertQueue {
 		this.alerts.splice(idx, 1);
 		this.persist();
 		return true;
+	}
+
+	/**
+	 * Flip `seen = true` on every alert matching the predicate that is not
+	 * already seen and is not an error. Returns the ids of alerts that changed
+	 * state. Error alerts are filtered at this layer as defense-in-depth for
+	 * FR-006; the broadcaster (`createAlertBroadcasters`) also filters them so
+	 * the invariant holds even if a new caller wires directly into the queue.
+	 */
+	markSeenWhere(predicate: (a: Alert) => boolean): string[] {
+		const changed: string[] = [];
+		for (const a of this.alerts) {
+			if (!a.seen && a.type !== "error" && predicate(a)) {
+				a.seen = true;
+				changed.push(a.id);
+			}
+		}
+		if (changed.length > 0) this.persist();
+		return changed;
 	}
 
 	dismissWhere(filter: { type: AlertType; workflowId?: string; epicId?: string }): string[] {

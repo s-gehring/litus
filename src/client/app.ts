@@ -130,6 +130,8 @@ function connect(): void {
 		}
 
 		send({ type: "config:get" });
+		const path = appRouter?.currentPath;
+		if (path) send({ type: "alert:route-changed", path });
 	};
 
 	ws.onclose = () => {
@@ -364,6 +366,15 @@ function handleMessage(msg: ServerMessage): void {
 			refreshAlertList();
 			break;
 		}
+
+		case "alert:seen": {
+			// Keep live toasts visible on `alert:seen` so a user in tab A isn't
+			// surprised when tab B's navigation auto-sees the alert. Toasts only
+			// disappear on explicit dismissal (`alert:dismissed`).
+			renderAlertBell();
+			refreshAlertList();
+			break;
+		}
 	}
 
 	// Forward every message to the currently mounted route handler so detail
@@ -382,6 +393,7 @@ function showMissingTargetToast(message: string): void {
 		epicId: null,
 		targetRoute: "",
 		createdAt: Date.now(),
+		seen: false,
 	});
 }
 
@@ -414,7 +426,10 @@ function navigateToAlertTarget(alert: Alert): void {
 }
 
 function renderAlertBell(): void {
-	const count = stateManager.getAlerts().size;
+	let count = 0;
+	for (const a of stateManager.getAlerts().values()) {
+		if (!a.seen) count++;
+	}
 	updateFavicon(count > 0);
 	const btn = document.getElementById("btn-alert-bell");
 	if (!btn) return;
@@ -948,6 +963,9 @@ document.addEventListener("DOMContentLoaded", () => {
 				() => latestConfig,
 			),
 		);
+		appRouter.setNavigateListener((path) => {
+			send({ type: "alert:route-changed", path });
+		});
 		appRouter.start();
 		// Render cards once the router is ready so highlights pick up the current path.
 		renderCards();
@@ -978,6 +996,10 @@ document.addEventListener("DOMContentLoaded", () => {
 			send({ type: "alert:dismiss", alertId: id });
 		},
 		onNavigate: (alert) => {
+			// FR-011: clicking an alert row removes it entirely (stronger than
+			// auto-dismiss). Covers errors too, which navigation alone never
+			// marks seen.
+			send({ type: "alert:dismiss", alertId: alert.id });
 			navigateToAlertTarget(alert);
 		},
 		onClearAll: () => {

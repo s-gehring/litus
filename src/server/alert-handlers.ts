@@ -20,3 +20,17 @@ export const handleAlertClearAll: MessageHandler = (_ws, data, deps) => {
 	if (ids.length === 0) return;
 	deps.broadcast({ type: "alert:dismissed", alertIds: ids });
 };
+
+/**
+ * Track the client's current path and auto-seen any non-error alerts whose
+ * `targetRoute` matches. Error-exclusion is enforced by `markAlertsSeenWhere`
+ * and, as defense-in-depth, by `AlertQueue.markSeenWhere` — no need to repeat
+ * it in the predicate here.
+ */
+export const handleAlertRouteChanged: MessageHandler = (ws, data, deps) => {
+	if (data.type !== "alert:route-changed") return;
+	const path = typeof data.path === "string" ? data.path : "";
+	if (!path) return;
+	deps.clientRoutes.set(ws, path);
+	deps.markAlertsSeenWhere((a) => a.targetRoute === path);
+};
