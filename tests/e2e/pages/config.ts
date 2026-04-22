@@ -45,4 +45,12 @@ export class ConfigPage {
 	purgeAllButton(): Locator {
 		return this.page.locator(".cfg-purge-btn");
 	}
+
+	/** Error-class lines in the global `#output-log`. `appendOutput` uses the
+	 * class `output-line error` for both the purge-error and the
+	 * partial-warnings-before-abort lines — scoped here for
+	 * purge-all-spec assertions. */
+	outputLogErrorLines(): Locator {
+		return this.page.locator("#output-log .output-line.error");
+	}
 }

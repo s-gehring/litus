@@ -61,19 +61,40 @@ export async function resetToDefaults(
 	await broadcast;
 }
 
+export interface PurgeAllOptions {
+	/** Expected terminal state. Default: `"complete"`. */
+	expect?: "complete" | "error";
+	/** Max wait (ms) for the terminal purge event. Default: 30_000. */
+	timeoutMs?: number;
+}
+
 /**
  * Click "Purge All Data" and accept the `window.confirm(...)` dialog. Waits
- * for the `purge:complete` broadcast rather than for the overlay's DOM state,
- * so a purge that stalls without ever rendering the overlay still surfaces
- * as a timeout.
+ * for the `purge:complete` broadcast (or `purge:error` when
+ * `options.expect === "error"`) rather than for the overlay's DOM state, so
+ * a purge that stalls without ever rendering the overlay still surfaces as a
+ * timeout.
+ *
+ * `purge:error` does NOT navigate the client back to `/` (only `purge:complete`
+ * does — see `src/client/app.ts:273-290`). When asserting against the global
+ * `#output-log` after a scripted purge failure, the caller is responsible for
+ * navigating to `/` first.
  */
-export async function purgeAll(cfg: ConfigPage, observer: ServerMessageObserver): Promise<void> {
+export async function purgeAll(
+	cfg: ConfigPage,
+	observer: ServerMessageObserver,
+	options?: PurgeAllOptions,
+): Promise<void> {
+	const expectState = options?.expect ?? "complete";
+	const timeoutMs = options?.timeoutMs ?? 30_000;
+	const terminalType = expectState === "complete" ? "purge:complete" : "purge:error";
+
 	cfg.page.once("dialog", async (dialog) => {
 		await dialog.accept();
 	});
-	const complete = observer.waitFor((m) => m.type === "purge:complete", 30_000);
+	const terminal = observer.waitFor((m) => m.type === terminalType, timeoutMs);
 	await cfg.purgeAllButton().click();
-	await complete;
+	await terminal;
 }
 
 export async function readConfigJson(homeDir: string): Promise<Record<string, unknown>> {

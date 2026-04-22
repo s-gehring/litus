@@ -1,10 +1,60 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { toErrorMessage } from "../errors";
 import { gitSpawn } from "../git-logger";
 import { logger } from "../logger";
 import type { MessageHandler } from "./handler-types";
 
+interface PurgeErrorInjectionPayload {
+	message: string;
+	warnings: string[];
+}
+
+/**
+ * Read the optional `purgeError` field from the e2e scenario at
+ * `LITUS_E2E_SCENARIO`. Resilient to parse failures — returns `null` on any
+ * problem so that a malformed scenario falls through to the real purge path
+ * rather than silently hanging the spec.
+ */
+function loadPurgeErrorInjection(): PurgeErrorInjectionPayload | null {
+	const path = process.env.LITUS_E2E_SCENARIO;
+	if (!path) return null;
+	try {
+		const raw = JSON.parse(readFileSync(path, "utf8")) as {
+			purgeError?: PurgeErrorInjectionPayload;
+		};
+		const injection = raw.purgeError;
+		if (!injection) return null;
+		if (typeof injection.message !== "string" || injection.message.length === 0) {
+			logger.warn("[purge] scenario.purgeError.message missing or empty; ignoring injection");
+			return null;
+		}
+		const warnings = Array.isArray(injection.warnings) ? injection.warnings : [];
+		return { message: injection.message, warnings };
+	} catch {
+		return null;
+	}
+}
+
 export const handlePurgeAll: MessageHandler = async (_ws, _data, deps) => {
+	// E2E-only: when a scripted `purgeError` is present, broadcast it and
+	// return before touching the store / git. Guarded by LITUS_E2E_SCENARIO
+	// so this hook is inert in production.
+	const injected = loadPurgeErrorInjection();
+	if (injected) {
+		deps.broadcast({
+			type: "purge:progress",
+			step: "Injected purge error",
+			current: 0,
+			total: 0,
+		});
+		deps.broadcast({
+			type: "purge:error",
+			message: injected.message,
+			warnings: injected.warnings,
+		});
+		return;
+	}
+
 	const warnings: string[] = [];
 
 	try {

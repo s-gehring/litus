@@ -1,5 +1,10 @@
 export { answerClarifyingQuestion } from "./answer-question";
 export {
+	type ClonedRepoInput,
+	type ClonedRepoResult,
+	clonedRepo,
+} from "./cloned-repo";
+export {
 	expectConfigFieldValue,
 	purgeAll,
 	readConfigJson,

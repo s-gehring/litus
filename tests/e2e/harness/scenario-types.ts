@@ -62,6 +62,40 @@ export interface GhResponse {
 	delayMs?: number;
 }
 
+/**
+ * A scripted `git` invocation response. `matchArg` keys are 0-based indices
+ * over the positional args AFTER the subcommand (e.g. for `git clone <url>
+ * <dest>`, index 0 is the URL and 1 is the destination). Selection semantics
+ * mirror `GhResponse` — match-first by `matchArg`, then FIFO across
+ * unconstrained entries with last-entry-repeats.
+ *
+ * `clone.useTemplate`: when set AND the subcommand is `clone` AND
+ * `exitCode === 0`, the fake copies `$LITUS_E2E_CLONE_TEMPLATE` to the
+ * destination (argv[1] after subcommand) and rewrites `origin` to the scripted
+ * URL (argv[0]) via `$LITUS_E2E_REAL_GIT remote set-url origin <url>`. The
+ * fake rejects combinations where `clone.useTemplate === true` with a
+ * non-zero `exitCode`.
+ */
+export interface GitResponse {
+	exitCode: number;
+	stdout?: string;
+	stderr?: string;
+	matchArg?: Record<number, string>;
+	delayMs?: number;
+	clone?: { useTemplate: true };
+}
+
+/**
+ * Scripted short-circuit for `handlePurgeAll` used only when
+ * `LITUS_E2E_SCENARIO` is set. The server broadcasts `purge:progress`
+ * ("Injected purge error") then `purge:error` with this payload and returns
+ * before any store/git work.
+ */
+export interface PurgeErrorInjection {
+	message: string;
+	warnings: string[];
+}
+
 export interface ScenarioScript {
 	name: string;
 	claude: ClaudeInvocationScript[];
@@ -80,4 +114,18 @@ export interface ScenarioScript {
 	 * successive calls (e.g. `["major\n", "nit\n"]` to loop once then advance).
 	 */
 	classifier?: string | string[];
+	/**
+	 * Scripted `git` responses keyed by normalised subcommand (lowercased,
+	 * space-joined positionals). Absent keys fall through to the real git
+	 * binary at `$LITUS_E2E_REAL_GIT`. Only the `"clone"` key is interpreted
+	 * by the first consumer; nested keys (e.g. `"worktree add"`) are
+	 * recognised by the fake via key-prefix lookup for future use.
+	 */
+	git?: Record<string, GitResponse | GitResponse[]>;
+	/**
+	 * When set and `LITUS_E2E_SCENARIO` is live, `handlePurgeAll`
+	 * short-circuits to broadcast a scripted `purge:error` instead of running
+	 * the real purge. No-op in production (env var unset).
+	 */
+	purgeError?: PurgeErrorInjection;
 }
