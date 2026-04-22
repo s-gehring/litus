@@ -41,6 +41,8 @@ import { getAnswer } from "./components/question-panel";
 import { projectTaskCards } from "./components/run-screen/task-card-model";
 import { createTaskRail, type TaskRailController } from "./components/run-screen/task-rail";
 import { EPIC_CARD_PREFIX } from "./components/status-maps";
+import { createTopBar, type TopBarController } from "./components/top-bar";
+import { serverAutoModeFor, type TopBarModel, topBarAutoMode } from "./components/top-bar-model";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
 import { workflowCreatedTarget } from "./components/workflow-created-route";
 import { createWorkflowDetailHandler } from "./components/workflow-detail-handler";
@@ -73,6 +75,63 @@ function bootLitusDesignSystem(): void {
 
 bootLitusDesignSystem();
 mountAmbientBackground();
+
+let topBar: TopBarController | null = null;
+
+function currentTopBarModel(connected: boolean): TopBarModel {
+	const workflows = stateManager.getWorkflows();
+	let repoSlug: string | null = null;
+	for (const wf of workflows.values()) {
+		const r = wf.state.managedRepo;
+		if (r) {
+			repoSlug = `${r.owner}/${r.repo}`;
+			break;
+		}
+	}
+	let alertsUnseen = false;
+	for (const a of stateManager.getAlerts().values()) {
+		if (!a.seen) {
+			alertsUnseen = true;
+			break;
+		}
+	}
+	return {
+		version: LITUS_APP_VERSION,
+		connected,
+		repoSlug,
+		autoMode: topBarAutoMode(currentAutoMode),
+		alertsUnseen,
+	};
+}
+
+function ensureTopBar(): void {
+	if (topBar) return;
+	const header = document.querySelector("header");
+	if (!header) return;
+	header.classList.add("hidden");
+	topBar = createTopBar(currentTopBarModel(false), {
+		onAutoModeToggle: (next) => {
+			const mode = serverAutoModeFor(next);
+			send({ type: "config:save", config: { autoMode: mode } });
+		},
+		onNewQuickFix: () => openQuickFixModal(),
+		onNewSpec: () => openSpecModal(),
+		onNewEpic: () => openEpicModal(),
+		onBellClick: () => showAlertList(),
+		onGearClick: () => {
+			if (!appRouter) return;
+			if (appRouter.currentPath === "/config") appRouter.navigate("/");
+			else appRouter.navigate("/config");
+		},
+	});
+	header.parentElement?.insertBefore(topBar.element, header);
+}
+
+function refreshTopBar(): void {
+	if (!topBar) return;
+	const connected = ws !== null && ws.readyState === WebSocket.OPEN;
+	topBar.update(currentTopBarModel(connected));
+}
 
 const stateManager = new ClientStateManager();
 
@@ -151,6 +210,7 @@ function connect(): void {
 		const dot = $("#connection-status");
 		dot.className = "status-dot connected";
 		dot.title = "Connected";
+		refreshTopBar();
 
 		if (reconnectTimer) {
 			clearTimeout(reconnectTimer);
@@ -166,6 +226,7 @@ function connect(): void {
 		const dot = $("#connection-status");
 		dot.className = "status-dot disconnected";
 		dot.title = "Disconnected";
+		refreshTopBar();
 
 		for (const [, handlers] of pendingCloneSubmissions) {
 			handlers.onError(
@@ -326,6 +387,7 @@ function handleMessage(msg: ServerMessage): void {
 			updateConfigPage(msg.config, msg.warnings);
 			syncAutoModeToggle(msg.config.autoMode);
 			currentAutoMode = msg.config.autoMode;
+			refreshTopBar();
 			latestConfig = msg.config;
 			break;
 		}
@@ -378,6 +440,7 @@ function handleMessage(msg: ServerMessage): void {
 		case "alert:list": {
 			renderAlertBell();
 			refreshAlertList();
+			refreshTopBar();
 			break;
 		}
 
@@ -385,6 +448,7 @@ function handleMessage(msg: ServerMessage): void {
 			showAlertToast(msg.alert);
 			renderAlertBell();
 			refreshAlertList();
+			refreshTopBar();
 			break;
 		}
 
@@ -392,6 +456,7 @@ function handleMessage(msg: ServerMessage): void {
 			for (const id of msg.alertIds) removeAlertToast(id);
 			renderAlertBell();
 			refreshAlertList();
+			refreshTopBar();
 			break;
 		}
 
@@ -401,6 +466,7 @@ function handleMessage(msg: ServerMessage): void {
 			// disappear on explicit dismissal (`alert:dismissed`).
 			renderAlertBell();
 			refreshAlertList();
+			refreshTopBar();
 			break;
 		}
 	}
@@ -919,6 +985,8 @@ function openEpicModal(): void {
 
 // Wire up UI events
 document.addEventListener("DOMContentLoaded", () => {
+	ensureTopBar();
+
 	const btnSubmitAnswer = $("#btn-submit-answer") as HTMLButtonElement;
 	const btnSkip = $("#btn-skip-question") as HTMLButtonElement;
 
