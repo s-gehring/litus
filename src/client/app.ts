@@ -967,6 +967,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				send,
 				navigate: (path) => appRouter?.navigate(path),
 				openFeedbackPanel,
+				getConfig: () => latestConfig,
 				setSelectStep: (cb) => {
 					workflowDetailSelectStep = cb;
 				},

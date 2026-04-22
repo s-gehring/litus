@@ -1,4 +1,5 @@
 import type {
+	AppConfig,
 	AutoMode,
 	ClientMessage,
 	ServerMessage,
@@ -20,6 +21,11 @@ import { hideNotFoundPanel, showNotFoundPanel } from "./not-found-panel";
 import type { PipelineStepsArtifactContext } from "./pipeline-steps";
 import { renderPipelineSteps } from "./pipeline-steps";
 import { hideQuestion, showQuestion } from "./question-panel";
+import { projectRunScreenModel } from "./run-screen/project-run-screen";
+import {
+	createRunScreenLayout,
+	type RunScreenLayoutController,
+} from "./run-screen/run-screen-layout";
 import {
 	appendOutput,
 	appendToolIcons,
@@ -48,6 +54,8 @@ export interface WorkflowDetailDeps {
 	send: (msg: ClientMessage) => void;
 	navigate: (path: string) => void;
 	openFeedbackPanel: (wf: WorkflowState) => void;
+	/** Accessor for current AppConfig (needed by the redesigned config row). */
+	getConfig?: () => AppConfig | null;
 	/**
 	 * Optional bridge so out-of-band re-renders of the pipeline-steps strip
 	 * (today: the async `fetchWorkflowArtifacts` resolution in app.ts) can
@@ -58,8 +66,81 @@ export interface WorkflowDetailDeps {
 	setSelectStep?: (selectStep: ((index: number) => void) | null) => void;
 }
 
+const LEGACY_IDS_TO_HIDE = [
+	"status-area",
+	"branch-info",
+	"spec-details",
+	"pipeline-steps",
+	"active-model-panel",
+	"output-area",
+];
+
 export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHandler {
 	let currentWorkflowId: string | null = null;
+	let runScreen: RunScreenLayoutController | null = null;
+	let tickInterval: ReturnType<typeof setInterval> | null = null;
+
+	function hideLegacyInterior(): void {
+		for (const id of LEGACY_IDS_TO_HIDE) {
+			const el = document.getElementById(id);
+			if (el) el.classList.add("hidden");
+		}
+	}
+
+	function mountRunScreen(entry: WorkflowClientState): void {
+		const detailArea = document.getElementById("detail-area");
+		if (!detailArea) return;
+		const model = projectRunScreenModel(entry, { config: deps.getConfig?.() ?? null });
+		if (runScreen) {
+			runScreen.update(model);
+			return;
+		}
+		runScreen = createRunScreenLayout(model, {
+			onPauseToggle: () => {
+				const wf = entry.state;
+				if (wf.status === "paused") {
+					deps.send({ type: "workflow:resume", workflowId: wf.id });
+				} else if (wf.status === "running") {
+					deps.send({ type: "workflow:pause", workflowId: wf.id });
+				}
+			},
+			onModelChange: (newModel) => {
+				const wf = entry.state;
+				const path =
+					wf.workflowKind === "quick-fix"
+						? { models: { implement: newModel } }
+						: { models: { specify: newModel } };
+				deps.send({ type: "config:save", config: path });
+			},
+			onEffortChange: (newEffort) => {
+				const wf = entry.state;
+				const path =
+					wf.workflowKind === "quick-fix"
+						? { efforts: { implement: newEffort } }
+						: { efforts: { specify: newEffort } };
+				deps.send({ type: "config:save", config: path });
+			},
+			onStepClick: (stepName) => {
+				const idx = entry.state.steps.findIndex((s) => s.displayName === stepName);
+				if (idx >= 0) doSelectStep(idx);
+			},
+		});
+		detailArea.insertBefore(runScreen.element, detailArea.firstChild);
+		if (!tickInterval) {
+			tickInterval = setInterval(() => runScreen?.tick(), 1000);
+		}
+	}
+
+	function unmountRunScreen(): void {
+		if (tickInterval) {
+			clearInterval(tickInterval);
+			tickInterval = null;
+		}
+		if (runScreen) {
+			runScreen.destroy();
+			runScreen = null;
+		}
+	}
 
 	function renderFull(): void {
 		if (!currentWorkflowId) return;
@@ -76,6 +157,9 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		const wf = entry.state;
 		const state = deps.getState();
 		const selectedStepIndex = state.getSelectedStepIndex();
+
+		mountRunScreen(entry);
+		hideLegacyInterior();
 
 		updateWorkflowStatus(wf);
 		updateWorkflowErrorBanner(wf);
@@ -386,6 +470,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		const existingBreadcrumb = document.getElementById("epic-breadcrumb");
 		if (existingBreadcrumb) existingBreadcrumb.remove();
 		hideNotFoundPanel();
+		unmountRunScreen();
 		hideDetailLayout();
 	}
 
