@@ -32,4 +32,8 @@ export class SpecFormPage {
 	fieldSuccess(): Locator {
 		return this.modal().locator(".modal-field-success");
 	}
+
+	cloneStatus(): Locator {
+		return this.modal().locator(".modal-clone-status");
+	}
 }
