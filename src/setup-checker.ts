@@ -1,6 +1,8 @@
 import { cpSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { spawnClaude } from "./claude-spawn";
 import { gitSpawn } from "./git-logger";
+import { readStream } from "./spawn-utils";
 import type { SetupCheckResult, SetupResult } from "./types";
 
 const SPECKIT_VERSION = "v0.6.0";
@@ -198,12 +200,21 @@ export async function ensureSpeckitSkills(targetDir: string): Promise<{
 }
 
 export async function checkClaudeCli(): Promise<SetupCheckResult> {
-	const result = await runCommand(["claude", "--version"]);
+	let code = 1;
+	try {
+		const proc = spawnClaude(["--version"]);
+		code = await proc.exited;
+		// Drain the pipes so Bun doesn't leak the process handle.
+		await readStream(proc.stdout);
+		await readStream(proc.stderr);
+	} catch {
+		code = 1;
+	}
 	return {
 		name: "Claude CLI installed",
-		passed: result.code === 0,
+		passed: code === 0,
 		error:
-			result.code !== 0
+			code !== 0
 				? "claude CLI is not installed or not on PATH. Install it from https://docs.anthropic.com/en/docs/claude-code"
 				: undefined,
 		required: true,

@@ -1,11 +1,12 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { spawnClaude } from "./claude-spawn";
 import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
 import { logger } from "./logger";
 import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
-import { cleanEnv, defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
+import { readStream, type SpawnLike } from "./spawn-utils";
 import { DELTA_FLUSH_TIMEOUT_MS, type EffortLevel, type ToolUsage, type Workflow } from "./types";
 
 export interface OneShotStreamResult {
@@ -30,15 +31,9 @@ export async function streamClaudeOneShot(
 	args: string[],
 	cwd: string,
 	onOutput: (msg: string) => void,
-	spawn: SpawnLike["spawn"] = defaultSpawn(),
+	spawn?: SpawnLike["spawn"],
 ): Promise<OneShotStreamResult> {
-	const proc = spawn(args, {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-		env: cleanEnv(),
-		windowsHide: true,
-	});
+	const proc = spawnClaude(args, { cwd, spawn });
 
 	const stdout = proc.stdout;
 	if (stdout && typeof stdout !== "number") {
@@ -220,7 +215,6 @@ export class CLIRunner {
 
 		const cwd = workflow.worktreePath;
 		const args = [
-			"claude",
 			"-p",
 			workflow.specification,
 			"--output-format",
@@ -238,8 +232,6 @@ export class CLIRunner {
 			args.push("--effort", effort);
 		}
 
-		const env = cleanEnv(extraEnv);
-
 		// Bun/libuv surface a missing cwd as `ENOENT: no such file or directory,
 		// uv_spawn 'claude'` — the message names the binary, not the directory,
 		// which sent at least one user down a rabbit hole chasing a PATH issue
@@ -255,13 +247,7 @@ export class CLIRunner {
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
 			logger.info(`[cli-runner] Starting CLI for workflow ${workflow.id} | cwd=${cwd}`);
-			proc = Bun.spawn(args, {
-				cwd,
-				stdout: "pipe",
-				stderr: "pipe",
-				env,
-				windowsHide: true,
-			});
+			proc = spawnClaude(args, { cwd, extraEnv });
 		} catch (err) {
 			const msg = toErrorMessage(err);
 			logger.error(`[cli-runner] Failed to spawn process: ${msg}`);
@@ -316,7 +302,6 @@ export class CLIRunner {
 			"You were paused and are now being resumed. Before continuing, verify that any files you created or modified in this session actually exist on disk — if a file is missing or incomplete, recreate it. Then continue where you left off.";
 		const usedPrompt = prompt ?? defaultPrompt;
 		const args = [
-			"claude",
 			"-p",
 			usedPrompt,
 			"--output-format",
@@ -336,8 +321,6 @@ export class CLIRunner {
 			args.push("--effort", effort);
 		}
 
-		const env = cleanEnv(extraEnv);
-
 		if (!existsSync(cwd)) {
 			const msg = `Worktree directory missing: ${cwd}`;
 			logger.error(`[cli-runner] ${msg}`);
@@ -348,13 +331,7 @@ export class CLIRunner {
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
 			logger.info(`[cli-runner] Resuming ${sessionId} for workflow ${workflowId}`);
-			proc = Bun.spawn(args, {
-				cwd,
-				stdout: "pipe",
-				stderr: "pipe",
-				env,
-				windowsHide: true,
-			});
+			proc = spawnClaude(args, { cwd, extraEnv });
 		} catch (err) {
 			const msg = toErrorMessage(err);
 			logger.error(`[cli-runner] Failed to spawn resume process: ${msg}`);

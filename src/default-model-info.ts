@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { runClaude } from "./claude-spawn";
 import { logger } from "./logger";
-import { runClaude } from "./spawn-utils";
 
 export interface DefaultModelInfo {
 	modelId: string;
