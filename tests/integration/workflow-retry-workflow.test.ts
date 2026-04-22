@@ -178,6 +178,35 @@ describe("handleRetryWorkflow", () => {
 		expect(orchestrators.get("wf-reg")).toBe(createdOrchestrators[0]);
 	});
 
+	test("partial cleanup failure still re-registers orchestrator", async () => {
+		// Even when branch/worktree/artifact cleanup reports a failure and the
+		// workflow transitions to `error` rather than `idle`, the orchestrator
+		// must be present in the map so the operator can issue another retry —
+		// otherwise `withOrchestrator` reports a misleading "Workflow not
+		// found" for subsequent actions against a workflow that very much
+		// exists on disk.
+		mockGitSpawn(1, "fatal: could not remove worktree");
+		const wf = makeWorkflow({
+			id: "wf-partial",
+			status: "aborted",
+			worktreePath: "/tmp/p",
+			worktreeBranch: "tmp-partial",
+			targetRepository: "/tmp/repo",
+		});
+		const { deps, orchestrators, createdOrchestrators, auditEvents } = makeDeps(wf);
+
+		await handleRetryWorkflow(
+			{} as never,
+			{ type: "workflow:retry-workflow", workflowId: "wf-partial" },
+			deps,
+		);
+
+		expect(auditEvents).toHaveLength(1);
+		expect(auditEvents[0].partialFailure).toBe(true);
+		expect(createdOrchestrators).toHaveLength(1);
+		expect(orchestrators.get("wf-partial")).toBe(createdOrchestrators[0]);
+	});
+
 	test("dedupe: second call while first in flight is a no-op", async () => {
 		const wf = makeWorkflow({
 			id: "wf-dup",
