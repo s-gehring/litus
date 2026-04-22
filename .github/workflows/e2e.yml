@@ -14,7 +14,9 @@ permissions:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Hard cap below GitHub's job timeout so a runaway suite self-terminates
+    # with enough slack for the upload-artifact step to run.
+    timeout-minutes: 14
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2

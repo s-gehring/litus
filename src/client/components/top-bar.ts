@@ -64,10 +64,20 @@ function litusMark(): SVGElement {
 	return svg;
 }
 
+const CREATION_BUTTON_ID: Record<"quickfix" | "spec" | "epic", string> = {
+	quickfix: "btn-quick-fix",
+	spec: "btn-new-spec",
+	epic: "btn-new-epic",
+};
+
 function makeNewButton(type: "quickfix" | "spec" | "epic", onClick: () => void): HTMLButtonElement {
 	const a = typeAccent(type);
 	const btn = document.createElement("button");
 	btn.type = "button";
+	// Keep the legacy ID so E2E page objects (and anything wired to the
+	// pre-redesign header) continue to find the button after the old
+	// <header> is `.hidden`-ed out.
+	btn.id = CREATION_BUTTON_ID[type];
 	btn.className = "btn";
 	Object.assign(btn.style, {
 		color: a.c,
@@ -176,6 +186,11 @@ export function createTopBar(initial: TopBarModel, handlers: TopBarHandlers): To
 	host.appendChild(rightGroup);
 
 	const toggleWrap = document.createElement("div");
+	// Legacy ID so E2E selectors still match after the old <header> is
+	// `.hidden`-ed out. The wrap reflects mode via `mode-*` classes (see
+	// paintMode below) which keeps `toHaveClass(/mode-normal/)`-style
+	// assertions meaningful for the binary toggle the redesign ships.
+	toggleWrap.id = "btn-auto-mode";
 	Object.assign(toggleWrap.style, {
 		display: "inline-flex",
 		background: "rgba(255,255,255,.035)",
@@ -275,6 +290,14 @@ export function createTopBar(initial: TopBarModel, handlers: TopBarHandlers): To
 			b.style.color = on ? LITUS.text : LITUS.textDim;
 			b.style.boxShadow = on ? `inset 0 0 0 1px ${LITUS.border}` : "none";
 		}
+		// Reflect binary mode as a legacy-compatible class on the wrap so
+		// `toHaveClass(/mode-manual/)` / `mode-normal` selectors from pre-
+		// redesign E2E specs still resolve. `full-auto` is no longer a
+		// toggle state (FR-010 / research.md §2.2) so the `mode-full-auto`
+		// class is never applied — tests asserting it will fail fast under
+		// the config's 10s expect timeout instead of hanging.
+		toggleWrap.classList.remove("mode-manual", "mode-normal", "mode-full-auto");
+		toggleWrap.classList.add(mode === "manual" ? "mode-manual" : "mode-normal");
 		lastPaintedMode = mode;
 	}
 
