@@ -108,6 +108,7 @@ export class WorkflowEngine {
 				globalTimeoutMs: configStore.get().timing.ciGlobalTimeoutMs,
 				lastCheckResults: [],
 				failureLogs: [],
+				userFixGuidance: null,
 			},
 			mergeCycle: {
 				attempt: 0,
@@ -497,6 +498,7 @@ export async function resetWorkflow(workflow: Workflow): Promise<ResetOutcome> {
 	workflow.ciCycle.monitorStartedAt = null;
 	workflow.ciCycle.lastCheckResults = [];
 	workflow.ciCycle.failureLogs = [];
+	workflow.ciCycle.userFixGuidance = null;
 	workflow.mergeCycle.attempt = 0;
 	workflow.reviewCycle.iteration = 1;
 	workflow.reviewCycle.lastSeverity = null;
