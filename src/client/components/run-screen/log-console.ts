@@ -275,7 +275,7 @@ export function createLogConsole(initial: LogConsoleModel): LogConsoleController
 	function update(model: LogConsoleModel): void {
 		const step = model.currentStep ?? "idle";
 		title.textContent = `Stream · ${step}`;
-		const writingDot = '<span style="color:' + GREEN + '">●</span>';
+		const writingDot = `<span style="color:${GREEN}">●</span>`;
 		counters.innerHTML = `${writingDot} tool calls: ${model.counters.toolCalls} · reads: ${model.counters.reads} · edits: ${model.counters.edits}`;
 
 		body.innerHTML = "";
