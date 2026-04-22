@@ -483,6 +483,188 @@ export async function handleArtifactDownload(
 	});
 }
 
+async function loadWorkflowForArchive(
+	workflowId: string,
+	deps: HandlerDeps,
+): Promise<Workflow | null> {
+	const orch = deps.orchestrators.get(workflowId);
+	const live = orch?.getEngine().getWorkflow();
+	if (live) return live;
+	return deps.sharedStore.load(workflowId);
+}
+
+/**
+ * Persist an archive flip described by `next` and, only on save success, apply
+ * the mutation to the in-memory workflow object (and any live orchestrator
+ * copy). If the save throws, the in-memory state is untouched so a subsequent
+ * broadcast cannot advertise a ghost-archived workflow.
+ */
+async function persistArchiveFlip(
+	workflow: Workflow,
+	next: { archived: boolean; archivedAt: string | null; updatedAt: string },
+	deps: HandlerDeps,
+): Promise<void> {
+	const orch = deps.orchestrators.get(workflow.id);
+	const live = orch?.getEngine().getWorkflow();
+	const target = live && live !== workflow ? live : workflow;
+	const snapshot = {
+		archived: target.archived,
+		archivedAt: target.archivedAt,
+		updatedAt: target.updatedAt,
+	};
+	target.archived = next.archived;
+	target.archivedAt = next.archivedAt;
+	target.updatedAt = next.updatedAt;
+	try {
+		await deps.sharedStore.save(target);
+	} catch (err) {
+		target.archived = snapshot.archived;
+		target.archivedAt = snapshot.archivedAt;
+		target.updatedAt = snapshot.updatedAt;
+		throw err;
+	}
+	if (target !== workflow) {
+		workflow.archived = next.archived;
+		workflow.archivedAt = next.archivedAt;
+		workflow.updatedAt = next.updatedAt;
+	}
+}
+
+export const handleArchiveWorkflow: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "workflow:archive" };
+	const { workflowId } = msg;
+	if (!workflowId) {
+		deps.sendTo(ws, { type: "error", message: "Missing workflowId" });
+		return;
+	}
+	const workflow = await loadWorkflowForArchive(workflowId, deps);
+	if (!workflow) {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId,
+			epicId: null,
+			reason: "not-found",
+			message: "Workflow not found.",
+		});
+		return;
+	}
+	if (workflow.epicId !== null) {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId,
+			epicId: workflow.epicId,
+			reason: "child-spec-independent-archive",
+			message: "Child specs of an epic can only be archived by archiving the epic.",
+		});
+		return;
+	}
+	if (workflow.archived) {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId,
+			epicId: null,
+			reason: "already-archived",
+			message: "Workflow is already archived.",
+		});
+		return;
+	}
+	if (workflow.status === "running") {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId,
+			epicId: null,
+			reason: "not-archivable-state",
+			message: "Cannot archive a workflow while it is running.",
+		});
+		return;
+	}
+	const archivedAt = new Date().toISOString();
+	try {
+		await persistArchiveFlip(workflow, { archived: true, archivedAt, updatedAt: archivedAt }, deps);
+	} catch (err) {
+		logger.error(`[ws] workflow:archive persist failed: ${err}`);
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId,
+			epicId: null,
+			reason: "persist-failed",
+			message: "Could not persist archive — please retry.",
+		});
+		return;
+	}
+	deps.sharedAuditLogger.logArchiveEvent({
+		eventType: "workflow.archive",
+		pipelineName: workflow.featureBranch ?? workflow.worktreeBranch ?? workflow.id,
+		workflowId: workflow.id,
+		epicId: workflow.epicId,
+	});
+	deps.broadcast({ type: "workflow:state", workflow: deps.stripInternalFields(workflow) });
+};
+
+export const handleUnarchiveWorkflow: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "workflow:unarchive" };
+	const { workflowId } = msg;
+	if (!workflowId) {
+		deps.sendTo(ws, { type: "error", message: "Missing workflowId" });
+		return;
+	}
+	const workflow = await loadWorkflowForArchive(workflowId, deps);
+	if (!workflow) {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId,
+			epicId: null,
+			reason: "not-found",
+			message: "Workflow not found.",
+		});
+		return;
+	}
+	if (workflow.epicId !== null) {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId,
+			epicId: workflow.epicId,
+			reason: "child-spec-independent-archive",
+			message: "Child specs of an epic can only be unarchived by unarchiving the epic.",
+		});
+		return;
+	}
+	if (!workflow.archived) {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId,
+			epicId: null,
+			reason: "already-active",
+			message: "Workflow is not archived.",
+		});
+		return;
+	}
+	try {
+		await persistArchiveFlip(
+			workflow,
+			{ archived: false, archivedAt: null, updatedAt: new Date().toISOString() },
+			deps,
+		);
+	} catch (err) {
+		logger.error(`[ws] workflow:unarchive persist failed: ${err}`);
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId,
+			epicId: null,
+			reason: "persist-failed",
+			message: "Could not persist unarchive — please retry.",
+		});
+		return;
+	}
+	deps.sharedAuditLogger.logArchiveEvent({
+		eventType: "workflow.unarchive",
+		pipelineName: workflow.featureBranch ?? workflow.worktreeBranch ?? workflow.id,
+		workflowId: workflow.id,
+		epicId: workflow.epicId,
+	});
+	deps.broadcast({ type: "workflow:state", workflow: deps.stripInternalFields(workflow) });
+};
+
 export const handleForceStart: MessageHandler = withOrchestrator((ws, data, deps, orch) => {
 	const msg = data as ClientMessage & { type: "workflow:force-start" };
 	const { workflowId } = msg;

@@ -31,6 +31,12 @@ export interface MockHandlerDeps {
 	broadcastedMessages: ServerMessage[];
 	sentMessages: Map<ServerWebSocket<WsData>, ServerMessage[]>;
 	orchestrators: HandlerDeps["orchestrators"];
+	archiveEvents: Array<{
+		eventType: "workflow.archive" | "workflow.unarchive" | "epic.archive" | "epic.unarchive";
+		pipelineName: string;
+		workflowId: string | null;
+		epicId: string | null;
+	}>;
 }
 
 export function createMockHandlerDeps(overrides?: Partial<HandlerDeps>): MockHandlerDeps {
@@ -41,6 +47,7 @@ export function createMockHandlerDeps(overrides?: Partial<HandlerDeps>): MockHan
 	const mockStore = createMockWorkflowStore();
 	const mockEpicStore = createMockEpicStore();
 	const mockConfigStore = createMockConfigStore();
+	const archiveEvents: MockHandlerDeps["archiveEvents"] = [];
 
 	const broadcast = (msg: ServerMessage) => {
 		tracker.calls.push({ method: "broadcast", args: [msg] });
@@ -68,6 +75,10 @@ export function createMockHandlerDeps(overrides?: Partial<HandlerDeps>): MockHan
 		sharedEpicStore: mockEpicStore.mock as unknown as HandlerDeps["sharedEpicStore"],
 		sharedAuditLogger: {
 			removeAll() {},
+			logWorkflowReset() {},
+			logArchiveEvent(event: MockHandlerDeps["archiveEvents"][number]) {
+				archiveEvents.push(event);
+			},
 		} as unknown as HandlerDeps["sharedAuditLogger"],
 		sharedCliRunner: {} as unknown as HandlerDeps["sharedCliRunner"],
 		sharedSummarizer: {} as unknown as HandlerDeps["sharedSummarizer"],
@@ -96,5 +107,5 @@ export function createMockHandlerDeps(overrides?: Partial<HandlerDeps>): MockHan
 		...overrides,
 	};
 
-	return { deps, tracker, broadcastedMessages, sentMessages, orchestrators };
+	return { deps, tracker, broadcastedMessages, sentMessages, orchestrators, archiveEvents };
 }
