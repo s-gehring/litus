@@ -240,10 +240,15 @@ export const handleRetryWorkflow: MessageHandler = async (ws, data, deps) => {
 		// reset state. Aborted workflows were removed from the orchestrators map
 		// by `handleAbort`; without re-registering here a follow-up `Start`
 		// action would fail in `withOrchestrator` with "Workflow not found",
-		// leaving the operator with an idle workflow they cannot launch.
+		// leaving the operator with an idle workflow they cannot launch. Do
+		// this unconditionally — a partial cleanup failure leaves the workflow
+		// in `error` state, and the operator still needs the orch present to
+		// issue the next retry (otherwise the retry itself would then create
+		// one, but any UI path that reaches `withOrchestrator` in between —
+		// e.g. state reads — would misleadingly report "not found").
 		if (orch) {
 			orch.getEngine().setWorkflow(workflow);
-		} else if (outcome.partialFailure === false) {
+		} else {
 			const newOrch = deps.createOrchestrator();
 			newOrch.getEngine().setWorkflow(workflow);
 			deps.orchestrators.set(workflow.id, newOrch);
