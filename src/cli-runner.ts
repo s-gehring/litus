@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
 import { logger } from "./logger";
+import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
 import { cleanEnv, defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
 import { DELTA_FLUSH_TIMEOUT_MS, type EffortLevel, type ToolUsage, type Workflow } from "./types";
 
@@ -227,6 +228,8 @@ export class CLIRunner {
 			"--verbose",
 			"--dangerously-skip-permissions",
 			"--include-partial-messages",
+			"--append-system-prompt",
+			CLAUDE_MD_CONTRACT_HEADER,
 		];
 		if (model && model.trim() !== "") {
 			args.push("--model", model);
@@ -323,6 +326,8 @@ export class CLIRunner {
 			"--dangerously-skip-permissions",
 			"--resume",
 			sessionId,
+			"--append-system-prompt",
+			CLAUDE_MD_CONTRACT_HEADER,
 		];
 		if (model && model.trim() !== "") {
 			args.push("--model", model);

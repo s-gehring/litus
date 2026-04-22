@@ -471,7 +471,11 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 		}
 	}, 60_000);
 
-	test("assertion 6: agent prompt payload includes the CLAUDE.md contract header", async () => {
+	test("assertion 6: agent prompt payload does not embed the CLAUDE.md contract header", async () => {
+		// The contract header moved from the user prompt to CLIRunner's
+		// --append-system-prompt flag (see tests/cli-runner.test.ts). Embedding it
+		// in the user prompt pushed slash-command step prompts off the first
+		// character and broke Claude Code's `-p` slash-command interception.
 		const fx = await makeRepo({ baseContent: "x\n", branchCommitsExtra: true });
 		try {
 			const wf = makeWorkflow(fx.work, fx.branch);
@@ -480,11 +484,7 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 			await until(() => h.fakeCli.invocations.length > 0);
 
 			const prompt = h.fakeCli.invocations[0].prompt;
-			const phrase = "CLAUDE.md is Litus-managed local context";
-			expect(prompt).toContain(phrase);
-			// Must appear exactly once.
-			const count = prompt.split(phrase).length - 1;
-			expect(count).toBe(1);
+			expect(prompt).not.toContain("CLAUDE.md is Litus-managed local context");
 		} finally {
 			await fx.cleanup();
 		}
