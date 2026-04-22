@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { Page } from "@playwright/test";
 import { expect, test } from "../harness/fixtures";
 import { ServerMessageObserver } from "../helpers";
 import { AppPage, SpecFormPage } from "../pages";
@@ -9,18 +10,22 @@ import { AppPage, SpecFormPage } from "../pages";
 // changes), so those tests are not included.
 test.use({ scenarioName: "happy-path", autoMode: "manual" });
 
+async function openCreationModal(page: Page, baseUrl: string) {
+	const observer = new ServerMessageObserver(page);
+	const app = new AppPage(page);
+	await app.goto(baseUrl);
+	await app.waitConnected();
+	const form = new SpecFormPage(page);
+	await app.newSpecButton().click();
+	await expect(form.modal()).toBeVisible();
+	return { observer, app, form };
+}
+
 test.describe("creation modal", () => {
 	test("empty specification submit is rejected with visible message", async ({ page, server }) => {
 		test.setTimeout(30_000);
 
-		const observer = new ServerMessageObserver(page);
-		const app = new AppPage(page);
-		await app.goto(server.baseUrl);
-		await app.waitConnected();
-
-		const form = new SpecFormPage(page);
-		await app.newSpecButton().click();
-		await expect(form.modal()).toBeVisible();
+		const { observer, form } = await openCreationModal(page, server.baseUrl);
 
 		// Click Submit with an empty spec. The modal must stay open, the inline
 		// error must surface, and no `workflow:created` broadcast must fire.
@@ -42,14 +47,7 @@ test.describe("creation modal", () => {
 	}) => {
 		test.setTimeout(60_000);
 
-		const observer = new ServerMessageObserver(page);
-		const app = new AppPage(page);
-		await app.goto(server.baseUrl);
-		await app.waitConnected();
-
-		const form = new SpecFormPage(page);
-		await app.newSpecButton().click();
-		await expect(form.modal()).toBeVisible();
+		const { observer, form } = await openCreationModal(page, server.baseUrl);
 
 		await form.repoInput().fill(sandbox.targetRepo);
 		await form.repoInput().blur();
@@ -75,14 +73,7 @@ test.describe("creation modal", () => {
 	}) => {
 		test.setTimeout(30_000);
 
-		const observer = new ServerMessageObserver(page);
-		const app = new AppPage(page);
-		await app.goto(server.baseUrl);
-		await app.waitConnected();
-
-		const form = new SpecFormPage(page);
-		await app.newSpecButton().click();
-		await expect(form.modal()).toBeVisible();
+		const { observer, form } = await openCreationModal(page, server.baseUrl);
 
 		const missing = join(sandbox.homeDir, "definitely-not-a-real-folder-xyz");
 		await form.repoInput().fill(missing);
@@ -100,14 +91,7 @@ test.describe("creation modal", () => {
 	test("Escape closes modal without creating a workflow", async ({ page, server }) => {
 		test.setTimeout(30_000);
 
-		const observer = new ServerMessageObserver(page);
-		const app = new AppPage(page);
-		await app.goto(server.baseUrl);
-		await app.waitConnected();
-
-		const form = new SpecFormPage(page);
-		await app.newSpecButton().click();
-		await expect(form.modal()).toBeVisible();
+		const { observer, form } = await openCreationModal(page, server.baseUrl);
 
 		await page.keyboard.press("Escape");
 		await expect(form.modal()).toBeHidden({ timeout: 5_000 });
@@ -119,18 +103,16 @@ test.describe("creation modal", () => {
 	test("Tab/Shift+Tab wraps focus inside modal (focus trap)", async ({ page, server }) => {
 		test.setTimeout(30_000);
 
-		const app = new AppPage(page);
-		await app.goto(server.baseUrl);
-		await app.waitConnected();
-
-		const form = new SpecFormPage(page);
-		await app.newSpecButton().click();
-		await expect(form.modal()).toBeVisible();
+		const { form } = await openCreationModal(page, server.baseUrl);
 
 		// Count-based traversal mirrors `peripheral-coverage.spec.ts:133-175`.
 		// Asserting by identity alone would pass a buggy trap that still hits
 		// the same element after one extra cycle; counting the tabbable set and
 		// pressing Tab that many times proves the loop truly cycles.
+		// Selector is intentionally narrower than peripheral-coverage's:
+		// it mirrors the exact list walked by `createModal`'s Tab handler in
+		// `src/client/components/creation-modal.ts`, so the test pins to the
+		// production focus-trap set (not the broader a11y superset).
 		const tabbableSelector =
 			'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 		const tabbableCount = await form
