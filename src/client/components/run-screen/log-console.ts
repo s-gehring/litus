@@ -369,5 +369,11 @@ export function createLogConsole(initial: LogConsoleModel): LogConsoleController
 }
 
 function cssEscape(s: string): string {
+	// Prefer the standard `CSS.escape` where available — happy-dom (used in
+	// tests) does not expose it, so fall back to a conservative escape
+	// over non-word characters (§4.3).
+	if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+		return CSS.escape(s);
+	}
 	return s.replace(/[^a-zA-Z0-9_-]/g, (c) => `\\${c}`);
 }

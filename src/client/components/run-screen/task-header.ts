@@ -14,7 +14,12 @@ function formatElapsed(ms: number): string {
 	return `${hh}:${mm}:${ss}`;
 }
 
-function metaField(label: string, value: string | null): HTMLSpanElement {
+interface MetaFieldController {
+	element: HTMLSpanElement;
+	setValue(value: string | null): void;
+}
+
+function createMetaField(label: string): MetaFieldController {
 	const wrap = document.createElement("span");
 	Object.assign(wrap.style, {
 		display: "inline-flex",
@@ -31,15 +36,17 @@ function metaField(label: string, value: string | null): HTMLSpanElement {
 	} satisfies Partial<CSSStyleDeclaration>);
 	wrap.appendChild(lbl);
 	const val = document.createElement("span");
-	if (value == null || value === "") {
-		val.textContent = "·";
-		val.style.color = LITUS.textMute;
-	} else {
-		val.textContent = value;
-		val.style.color = LITUS.text;
-	}
 	wrap.appendChild(val);
-	return wrap;
+	function setValue(value: string | null): void {
+		if (value == null || value === "") {
+			val.textContent = "·";
+			val.style.color = LITUS.textMute;
+		} else {
+			val.textContent = value;
+			val.style.color = LITUS.text;
+		}
+	}
+	return { element: wrap, setValue };
 }
 
 export interface TaskHeaderController {
@@ -153,6 +160,14 @@ export function createTaskHeader(
 		color: LITUS.textDim,
 		fontFamily: "'JetBrains Mono', ui-monospace, monospace",
 	} satisfies Partial<CSSStyleDeclaration>);
+	// Build once; `update()` mutates values in place rather than wiping the
+	// row every second (§2.7 — the 1s `tickInterval` re-enters `update()`).
+	const branchField = createMetaField("branch");
+	const worktreeField = createMetaField("worktree");
+	const baseField = createMetaField("base");
+	metaRow.appendChild(branchField.element);
+	metaRow.appendChild(worktreeField.element);
+	metaRow.appendChild(baseField.element);
 	leftCol.appendChild(metaRow);
 
 	const descEl = document.createElement("p");
@@ -182,7 +197,15 @@ export function createTaskHeader(
 		padding: "8px 14px",
 		fontSize: "12px",
 	} satisfies Partial<CSSStyleDeclaration>);
-	pauseBtn.addEventListener("click", () => handlers.onPauseToggle());
+	// Optimistic paint (contract §3.5): flip `paused` locally as soon as the
+	// user clicks, then let the server's next `workflow:state` rebroadcast
+	// reconcile. If the server rejects the transition the next model update
+	// will simply paint the original value back.
+	pauseBtn.addEventListener("click", () => {
+		currentModel = { ...currentModel, paused: !currentModel.paused };
+		paintPauseButton();
+		handlers.onPauseToggle();
+	});
 	rightCol.appendChild(pauseBtn);
 
 	const timelineBtn = document.createElement("button");
@@ -234,14 +257,16 @@ export function createTaskHeader(
 		pulseDot.style.display = model.state === "running" ? "inline-block" : "none";
 		typeChipLabel.textContent = ` ${accent.label} · ${stateLabel(model.state)}`;
 
-		idSpan.textContent = `#${model.id}`;
+		// Match the task-card id truncation (first 8 chars) for consistency
+		// with the rail; full id remains in the tooltip for copy-paste (§4.12).
+		idSpan.textContent = `#${model.id.slice(0, 8)}`;
+		idSpan.title = model.id;
 		renderElapsed();
 		titleEl.textContent = model.title;
 
-		metaRow.innerHTML = "";
-		metaRow.appendChild(metaField("branch", model.header.branch));
-		metaRow.appendChild(metaField("worktree", model.header.worktree));
-		metaRow.appendChild(metaField("base", model.header.base));
+		branchField.setValue(model.header.branch);
+		worktreeField.setValue(model.header.worktree);
+		baseField.setValue(model.header.base);
 
 		if (model.header.description) {
 			descEl.textContent = model.header.description;

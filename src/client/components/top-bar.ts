@@ -187,7 +187,19 @@ export function createTopBar(initial: TopBarModel, handlers: TopBarHandlers): To
 		auto: document.createElement("button"),
 		manual: document.createElement("button"),
 	};
-	for (const m of ["auto", "manual"] as const) {
+	const modeOrder: readonly TopBarAutoMode[] = ["auto", "manual"];
+	// Last painted mode — used to suppress redundant `onAutoModeToggle`
+	// dispatches so a click on the already-active segment does not silently
+	// downgrade a tri-state `full-auto` server value to `normal` (§2.2).
+	let lastPaintedMode: TopBarAutoMode | null = null;
+	function emitModeChange(m: TopBarAutoMode): void {
+		if (lastPaintedMode === m) return;
+		handlers.onAutoModeToggle(m);
+	}
+	function focusMode(m: TopBarAutoMode): void {
+		modeButtons[m].focus();
+	}
+	for (const m of modeOrder) {
 		const b = modeButtons[m];
 		b.type = "button";
 		b.dataset.mode = m;
@@ -202,7 +214,22 @@ export function createTopBar(initial: TopBarModel, handlers: TopBarHandlers): To
 			color: LITUS.textDim,
 		} satisfies Partial<CSSStyleDeclaration>);
 		b.textContent = m === "auto" ? "Auto" : "Manual";
-		b.addEventListener("click", () => handlers.onAutoModeToggle(m));
+		b.addEventListener("click", () => emitModeChange(m));
+		// Keyboard: Left/Right arrows roam between segments; Enter/Space selects
+		// (native <button> already fires click on Enter/Space, so the focused
+		// segment is already actuable — arrow-key roving is what's missing per
+		// contract §1.3 / §2.3).
+		b.addEventListener("keydown", (e) => {
+			if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+				e.preventDefault();
+				const next = modeOrder[(modeOrder.indexOf(m) + 1) % modeOrder.length];
+				focusMode(next);
+			} else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+				e.preventDefault();
+				const prev = modeOrder[(modeOrder.indexOf(m) - 1 + modeOrder.length) % modeOrder.length];
+				focusMode(prev);
+			}
+		});
 		toggleWrap.appendChild(b);
 	}
 	rightGroup.appendChild(toggleWrap);
@@ -241,25 +268,31 @@ export function createTopBar(initial: TopBarModel, handlers: TopBarHandlers): To
 	rightGroup.appendChild(gear);
 
 	function paintMode(mode: TopBarAutoMode): void {
-		for (const m of ["auto", "manual"] as const) {
+		for (const m of modeOrder) {
 			const b = modeButtons[m];
 			const on = m === mode;
 			b.style.background = on ? "rgba(255,255,255,.08)" : "transparent";
 			b.style.color = on ? LITUS.text : LITUS.textDim;
 			b.style.boxShadow = on ? `inset 0 0 0 1px ${LITUS.border}` : "none";
 		}
+		lastPaintedMode = mode;
 	}
 
 	function update(model: TopBarModel): void {
 		versionEl.textContent = `v${model.version}`;
 		connDot.style.background = model.connected ? LITUS.green : LITUS.red;
 		connDot.style.boxShadow = model.connected ? `0 0 8px ${LITUS.green}` : "none";
-		if (model.connected && model.repoSlug) {
-			connLabel.textContent = `connected · ${model.repoSlug}`;
-		} else if (!model.connected) {
+		// Contract §1.2: the connection label hides when connected without a
+		// repo slug (only the green dot is shown). Disconnected always labels.
+		if (!model.connected) {
 			connLabel.textContent = "disconnected";
+			connLabel.style.display = "";
+		} else if (model.repoSlug) {
+			connLabel.textContent = `connected · ${model.repoSlug}`;
+			connLabel.style.display = "";
 		} else {
-			connLabel.textContent = "connected";
+			connLabel.textContent = "";
+			connLabel.style.display = "none";
 		}
 		paintMode(model.autoMode);
 		bellPulse.style.display = model.alertsUnseen ? "inline-block" : "none";

@@ -118,9 +118,9 @@ export function createConfigRow(
 	const spendValue = document.createElement("span");
 	row.appendChild(spendValue);
 
-	function paintPickers(modelId: string, effort: string): void {
+	function paintPickers(modelId: ConfigRowModel["model"], effort: string): void {
 		for (const [id, btn] of modelButtons) {
-			const on = id === modelId;
+			const on = modelId !== null && id === modelId;
 			btn.style.background = on ? "rgba(255,255,255,.08)" : "transparent";
 			btn.style.color = on ? LITUS.text : LITUS.textMute;
 		}

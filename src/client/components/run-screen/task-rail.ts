@@ -13,9 +13,13 @@ export interface TaskRailController {
 }
 
 function rightCounter(cards: TaskCardModel[]): HTMLElement {
+	// FR-018 / spec §5: rail counters are a three-bucket split that must sum
+	// to `cards.length`. Paused collapses into active (still "in flight" from
+	// the user's perspective); `error` / `blocked` join `queued` so the error
+	// card does not vanish from the tally.
 	const active = cards.filter((c) => c.state === "running" || c.state === "paused").length;
-	const queued = cards.filter((c) => c.state === "queued" || c.state === "blocked").length;
 	const done = cards.filter((c) => c.state === "done").length;
+	const queued = cards.length - active - done;
 	const span = document.createElement("span");
 	span.className = "mono";
 	Object.assign(span.style, {

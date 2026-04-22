@@ -78,6 +78,11 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		}
 	}
 
+	function updateRunScreenFromEntry(entry: WorkflowClientState): void {
+		if (!runScreen) return;
+		runScreen.update(projectRunScreenModel(entry, { config: deps.getConfig?.() ?? null }));
+	}
+
 	function mountRunScreen(entry: WorkflowClientState): void {
 		const detailArea = document.getElementById("detail-area");
 		if (!detailArea) return;
@@ -119,7 +124,14 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		});
 		detailArea.insertBefore(runScreen.element, detailArea.firstChild);
 		if (!tickInterval) {
-			tickInterval = setInterval(() => runScreen?.tick(), 1000);
+			tickInterval = setInterval(() => {
+				runScreen?.tick();
+				// Re-project so the running step's `durationMs` (computed from
+				// `startedAt` in the projection) advances every second (FR-024).
+				if (!currentWorkflowId) return;
+				const current = deps.getState().getWorkflows().get(currentWorkflowId);
+				if (current) updateRunScreenFromEntry(current);
+			}, 1000);
 		}
 	}
 
@@ -393,6 +405,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 					if (state.getSelectedStepIndex() === entry.state.currentStepIndex) {
 						appendOutput(msg.text);
 					}
+					updateRunScreenFromEntry(entry);
 					break;
 				}
 				case "log": {
@@ -413,6 +426,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 					if (state.getSelectedStepIndex() === entry.state.currentStepIndex) {
 						appendToolIcons(msg.tools);
 					}
+					updateRunScreenFromEntry(entry);
 					break;
 				}
 				case "workflow:question": {

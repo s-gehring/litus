@@ -20,7 +20,14 @@ export interface PipelineStepperModel {
 }
 
 export interface ConfigRowModel {
-	model: string;
+	/**
+	 * Currently-active display model id, or `null` when the persisted server
+	 * id does not map onto any of the segmented picker's three buckets (§2.4).
+	 * A `null` model paints no button highlighted; any click still dispatches
+	 * a fresh value, so unrelated custom ids are never silently coerced onto
+	 * Sonnet 4.5 on the next round-trip.
+	 */
+	model: "haiku-4" | "sonnet-4.5" | "opus-4.7" | null;
 	effort: "low" | "medium" | "high" | "xhigh" | "max";
 	metrics: { tokens: number | null; spendUsd: number | null };
 }

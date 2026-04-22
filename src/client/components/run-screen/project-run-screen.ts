@@ -2,7 +2,13 @@
 // RunScreenModel. Kept separate from run-screen-model.ts so the model file
 // stays a pure type-declaration + state-mapping helper.
 
-import type { AppConfig, ToolUsage, WorkflowClientState, WorkflowState } from "../../../types";
+import type {
+	AppConfig,
+	OutputEntry,
+	ToolUsage,
+	WorkflowClientState,
+	WorkflowState,
+} from "../../../types";
 import type { LogEvent } from "./log-kind-classifier";
 import { classifyLine } from "./log-kind-classifier";
 import {
@@ -32,10 +38,17 @@ export function displayToFullModelId(display: string): string {
 	return FULL_MODEL_IDS[key] ?? display;
 }
 
-export function fullToDisplayModelId(full: string): "haiku-4" | "sonnet-4.5" | "opus-4.7" {
-	if (/haiku/i.test(full)) return "haiku-4";
-	if (/opus/i.test(full)) return "opus-4.7";
-	return "sonnet-4.5";
+/**
+ * Map a full Anthropic model id to the segmented picker's display id. Returns
+ * `null` when the id does not match any known display bucket, so the picker
+ * can paint no selection and avoid silently coercing a custom id onto Sonnet
+ * 4.5 on the next click (§2.4, FR-027 edge case).
+ */
+export function fullToDisplayModelId(full: string): "haiku-4" | "sonnet-4.5" | "opus-4.7" | null {
+	if (/haiku-4/i.test(full)) return "haiku-4";
+	if (/opus-4/i.test(full)) return "opus-4.7";
+	if (/sonnet-4/i.test(full)) return "sonnet-4.5";
+	return null;
 }
 
 export interface ProjectOptions {
@@ -43,13 +56,16 @@ export interface ProjectOptions {
 	config: AppConfig | null;
 }
 
-function configModelFor(wf: WorkflowState, config: AppConfig | null): string {
-	if (!config) return "sonnet-4.5";
+function configModelFor(
+	wf: WorkflowState,
+	config: AppConfig | null,
+): "haiku-4" | "sonnet-4.5" | "opus-4.7" | null {
+	if (!config) return null;
 	// Use the "implement" slot for quickfix / "specify" for spec as the current
 	// representative per-type config (FR-027 allows reusing existing endpoints;
 	// AppConfig is keyed by step rather than type).
 	const m = wf.workflowKind === "quick-fix" ? config.models.implement : config.models.specify;
-	if (!m || m.length === 0) return "sonnet-4.5";
+	if (!m || m.length === 0) return null;
 	return fullToDisplayModelId(m);
 }
 
@@ -63,16 +79,49 @@ function configEffortFor(
 	return "medium";
 }
 
+function outputEntriesToLogEvents(entries: readonly OutputEntry[]): LogEvent[] {
+	const events: LogEvent[] = [];
+	for (const row of entries) {
+		if (row.kind === "text") {
+			events.push(classifyLine(row.text));
+		} else if (row.kind === "tools") {
+			events.push({ kind: "toolstrip", items: toolUsagesToLogItems(row.tools) });
+		}
+	}
+	return events;
+}
+
+/**
+ * The current-step buffer is the live, streaming-message source
+ * (`entry.outputLines` — pushed to by the client on every `workflow:output` /
+ * `workflow:tools` message). For past steps, `step.outputLog` is the
+ * server's persisted record. Using `outputLines` for the current step
+ * closes the gap documented in the code-review §1.1 (the log console
+ * previously only refreshed on the lower-frequency `workflow:state`
+ * rebroadcasts).
+ */
+function currentStepSource(
+	step: WorkflowState["steps"][number],
+	outputLines: readonly OutputEntry[],
+): readonly OutputEntry[] {
+	// Streaming path: client appends to `entry.outputLines` on each
+	// `workflow:output` / `workflow:tools` message and resets it on
+	// `workflow:step-change`. Prefer it when non-empty; fall back to the
+	// server-side `step.outputLog` snapshot otherwise (useful for projection
+	// tests, and for the brief window between mount and the first stream
+	// event when only a historical snapshot is available).
+	if (outputLines.length > 0) return outputLines;
+	return step.outputLog ?? [];
+}
+
 function projectLogEvents(entry: WorkflowClientState): LogEvent[] {
 	const events: LogEvent[] = [];
-	for (const out of entry.state.steps) {
-		for (const row of out.outputLog ?? []) {
-			if (row.kind === "text") {
-				events.push(classifyLine(row.text));
-			} else if (row.kind === "tools") {
-				events.push({ kind: "toolstrip", items: toolUsagesToLogItems(row.tools) });
-			}
-		}
+	const currentIdx = entry.state.currentStepIndex;
+	for (let i = 0; i < entry.state.steps.length; i++) {
+		const step = entry.state.steps[i];
+		const source =
+			i === currentIdx ? currentStepSource(step, entry.outputLines) : (step.outputLog ?? []);
+		events.push(...outputEntriesToLogEvents(source));
 	}
 	return events;
 }
@@ -88,10 +137,43 @@ function upcomingStepNames(wf: WorkflowState): string[] {
 	return wf.steps.slice(idx + 1).map((s) => s.displayName);
 }
 
+function lastWritableIndex(events: readonly LogEvent[]): number | null {
+	for (let i = events.length - 1; i >= 0; i--) {
+		const kind = events[i].kind;
+		if (kind === "out" || kind === "assistant" || kind === "cmd") return i;
+	}
+	return null;
+}
+
+/**
+ * Running step: elapsed since `startedAt` (per data-model §5, "computed
+ * from `history[]` for the running step"). Completed step: span between
+ * `startedAt` and `completedAt`. Otherwise undefined — the stepper reads
+ * `durationMs != null` to decide whether to render the duration row.
+ */
+function computeStepDurationMs(
+	step: WorkflowState["steps"][number],
+	now: number,
+): number | undefined {
+	if (!step.startedAt) return undefined;
+	const start = new Date(step.startedAt).getTime();
+	if (Number.isNaN(start)) return undefined;
+	if (step.status === "running") return Math.max(0, now - start);
+	if (step.completedAt) {
+		const end = new Date(step.completedAt).getTime();
+		if (!Number.isNaN(end)) return Math.max(0, end - start);
+	}
+	return undefined;
+}
+
 function aggregateTools(entry: WorkflowClientState): ToolUsage[] {
 	const all: ToolUsage[] = [];
-	for (const step of entry.state.steps) {
-		for (const row of step.outputLog ?? []) {
+	const currentIdx = entry.state.currentStepIndex;
+	for (let i = 0; i < entry.state.steps.length; i++) {
+		const step = entry.state.steps[i];
+		const source =
+			i === currentIdx ? currentStepSource(step, entry.outputLines) : (step.outputLog ?? []);
+		for (const row of source) {
 			if (row.kind === "tools") all.push(...row.tools);
 		}
 	}
@@ -113,13 +195,19 @@ export function projectRunScreenModel(
 		reads: allTools.filter((t) => READ_TOOLS.has(t.name)).length,
 		edits: allTools.filter((t) => EDIT_TOOLS.has(t.name)).length,
 	};
-	const writingLineIndex = state === "running" && events.length > 0 ? events.length - 1 : null;
+	// Anchor the caret on the last *text* event (§2.8). A trailing toolstrip
+	// is not something the model is "currently writing into", so the caret
+	// would otherwise park itself after an icon strip rather than on an open
+	// assistant/out/cmd line.
+	const writingLineIndex = state === "running" ? lastWritableIndex(events) : null;
 
+	const now = Date.now();
 	const pipeline = {
 		type,
 		steps: wf.steps.map((s) => ({
 			name: s.displayName,
 			state: stepStateFromStatus(s.status),
+			durationMs: computeStepDurationMs(s, now),
 		})),
 		currentIndex: wf.currentStepIndex,
 	};

@@ -19,10 +19,19 @@ describe("displayToFullModelId / fullToDisplayModelId", () => {
 		expect(fullToDisplayModelId(displayToFullModelId("opus-4.7"))).toBe("opus-4.7");
 	});
 
-	it("fullToDisplayModelId matches by substring so AppConfig full ids resolve", () => {
+	it("fullToDisplayModelId matches the three supported families through full-id patterns", () => {
 		expect(fullToDisplayModelId("claude-sonnet-4-5-20250929")).toBe("sonnet-4.5");
 		expect(fullToDisplayModelId("claude-haiku-4-5-20251001")).toBe("haiku-4");
 		expect(fullToDisplayModelId("claude-opus-4-7")).toBe("opus-4.7");
+	});
+
+	it("fullToDisplayModelId returns null for unrecognised ids (§2.4)", () => {
+		// Older sonnet stamp that the new segmented picker does not represent.
+		expect(fullToDisplayModelId("claude-3-5-sonnet-20241022")).toBeNull();
+		// Wholly unrelated custom id.
+		expect(fullToDisplayModelId("my-internal-model")).toBeNull();
+		// Empty string.
+		expect(fullToDisplayModelId("")).toBeNull();
 	});
 
 	it("displayToFullModelId returns the input when given an unknown id", () => {
@@ -46,12 +55,20 @@ describe("projectRunScreenModel", () => {
 		expect(sp.config.model).toBe("haiku-4");
 	});
 
-	it("empty model slot falls back to sonnet-4.5", () => {
+	it("empty model slot paints no selection (null) rather than silently defaulting", () => {
 		const config: AppConfig = makeAppConfig({
 			models: { ...makeAppConfig().models, implement: "" },
 		});
 		const projected = projectRunScreenModel(entryFor({ workflowKind: "quick-fix" }), { config });
-		expect(projected.config.model).toBe("sonnet-4.5");
+		expect(projected.config.model).toBeNull();
+	});
+
+	it("unknown full-id maps to null, not sonnet-4.5 (§2.4 — no silent coercion)", () => {
+		const config: AppConfig = makeAppConfig({
+			models: { ...makeAppConfig().models, implement: "claude-3-5-sonnet-20241022" },
+		});
+		const projected = projectRunScreenModel(entryFor({ workflowKind: "quick-fix" }), { config });
+		expect(projected.config.model).toBeNull();
 	});
 
 	it("honours xhigh/max effort values from config (no silent collapse)", () => {
@@ -95,9 +112,9 @@ describe("projectRunScreenModel", () => {
 		expect(projected.log.counters.toolCalls).toBe(3);
 	});
 
-	it("null config → picker defaults (sonnet-4.5 / medium)", () => {
+	it("null config → no model painted, effort defaults to medium (§2.4)", () => {
 		const projected = projectRunScreenModel(entryFor(), { config: null });
-		expect(projected.config.model).toBe("sonnet-4.5");
+		expect(projected.config.model).toBeNull();
 		expect(projected.config.effort).toBe("medium");
 	});
 

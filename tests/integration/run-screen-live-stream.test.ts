@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { ClientStateManager } from "../../src/client/client-state-manager";
 import { projectRunScreenModel } from "../../src/client/components/run-screen/project-run-screen";
 import { createRunScreenLayout } from "../../src/client/components/run-screen/run-screen-layout";
 import type { ToolUsage, WorkflowClientState, WorkflowState } from "../../src/types";
@@ -137,6 +138,87 @@ describe("run-screen live stream integration", () => {
 
 		const toolstrip = layout.element.querySelector('[data-log-kind="toolstrip"]');
 		expect(toolstrip).not.toBeNull();
+	});
+
+	it("streaming workflow:output / workflow:tools through ClientStateManager reflects in the projected log (§1.1)", () => {
+		// Code review §1.1: the prior test hand-rolled `outputLog` on the step
+		// and bypassed the dispatch surface. This drives real messages through
+		// ClientStateManager and asserts the projection picks up each message.
+		const mgr = new ClientStateManager();
+		const state = makeWorkflowState({
+			id: "wf-live",
+			workflowKind: "spec",
+			status: "running",
+			currentStepIndex: 0,
+			steps: [step({ name: "implement", displayName: "Implementing", status: "running" })],
+		});
+		mgr.handleMessage({ type: "workflow:state", workflow: state });
+		mgr.handleMessage({
+			type: "workflow:output",
+			workflowId: "wf-live",
+			text: "hello from the model",
+		});
+		mgr.handleMessage({
+			type: "workflow:tools",
+			workflowId: "wf-live",
+			tools: [{ name: "Edit", input: { file_path: "src/foo.ts" } }],
+		});
+		const entry = mgr.getWorkflows().get("wf-live");
+		if (!entry) throw new Error("entry should be present");
+		const projected = projectRunScreenModel(entry, { config: null });
+		// The streamed text line is classified as `out` and reaches the model.
+		const kinds = projected.log.events.map((e) => e.kind);
+		expect(kinds).toContain("out");
+		expect(kinds).toContain("toolstrip");
+		// Tool counters reflect the streamed Edit tool.
+		expect(projected.log.counters.toolCalls).toBe(1);
+		expect(projected.log.counters.edits).toBe(1);
+		// Touched files + caret anchor on the text event (not the trailing toolstrip).
+		expect(projected.touched.some((f) => f.path.endsWith("foo.ts"))).toBe(true);
+		if (projected.log.writingLineIndex == null) throw new Error("caret missing");
+		expect(projected.log.events[projected.log.writingLineIndex].kind).toBe("out");
+	});
+
+	it("running step's durationMs advances from startedAt (§1.2 / FR-024)", () => {
+		const startedAt = new Date(Date.now() - 65_000).toISOString();
+		const entry = entryFrom({
+			steps: [
+				step({
+					name: "implement",
+					displayName: "Implementing",
+					status: "running",
+					startedAt,
+				}),
+			],
+			currentStepIndex: 0,
+		});
+		const projected = projectRunScreenModel(entry, { config: null });
+		const running = projected.pipeline.steps[0];
+		expect(running.state).toBe("running");
+		if (running.durationMs == null) throw new Error("durationMs missing on running step");
+		// 65s elapsed ± tick jitter — allow ±2s.
+		expect(running.durationMs).toBeGreaterThanOrEqual(63_000);
+		expect(running.durationMs).toBeLessThanOrEqual(67_000);
+	});
+
+	it("completed step durationMs is the span between startedAt and completedAt", () => {
+		const startedAt = new Date(Date.now() - 120_000).toISOString();
+		const completedAt = new Date(Date.now() - 60_000).toISOString();
+		const entry = entryFrom({
+			steps: [
+				step({
+					name: "implement",
+					displayName: "Implementing",
+					status: "completed",
+					startedAt,
+					completedAt,
+				}),
+			],
+			currentStepIndex: 0,
+		});
+		const projected = projectRunScreenModel(entry, { config: null });
+		expect(projected.pipeline.steps[0].durationMs).toBeGreaterThanOrEqual(59_000);
+		expect(projected.pipeline.steps[0].durationMs).toBeLessThanOrEqual(61_000);
 	});
 
 	it("workflow:step-change re-renders stepper + upcoming with the new currentStepIndex", () => {
