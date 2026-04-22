@@ -22,6 +22,12 @@ export interface ServerHandle extends ServerProcess {
 	 * destructure `baseUrl`; use property access so they see the new value.
 	 */
 	restart: () => Promise<void>;
+	/**
+	 * Send a "drop-ws" control line to the spawned server's stdin. The server,
+	 * when LITUS_E2E_SCENARIO is set, closes every open client WebSocket in
+	 * response. Tolerant of no-active-socket and double-invocation.
+	 */
+	dropActiveWebSockets: () => Promise<void>;
 }
 
 export interface SpawnServerOptions {
@@ -44,6 +50,7 @@ const READY_TIMEOUT_MS = Number(process.env.LITUS_E2E_SERVER_READY_MS ?? 30_000)
 interface RawSpawn {
 	baseUrl: string;
 	stop: () => Promise<void>;
+	dropActiveWebSockets: () => Promise<void>;
 }
 
 async function spawnOnce(opts: SpawnServerOptions): Promise<RawSpawn> {
@@ -78,7 +85,7 @@ async function spawnOnce(opts: SpawnServerOptions): Promise<RawSpawn> {
 	const proc = spawn("bun", ["run", resolve(opts.repoRoot, "src/server.ts")], {
 		cwd: opts.repoRoot,
 		env,
-		stdio: ["ignore", "pipe", "pipe"],
+		stdio: ["pipe", "pipe", "pipe"],
 		shell: false,
 	});
 	const exitedPromise = new Promise<number>((resolveExit) => {
@@ -164,7 +171,25 @@ async function spawnOnce(opts: SpawnServerOptions): Promise<RawSpawn> {
 		}
 	};
 
-	return { baseUrl: url, stop };
+	const dropActiveWebSockets = (): Promise<void> =>
+		new Promise<void>((resolvePromise, rejectPromise) => {
+			const stream = proc.stdin;
+			if (!stream) {
+				rejectPromise(new Error("dropWebSocket: server subprocess has no stdin"));
+				return;
+			}
+			// `write` on a destroyed/ended stream surfaces through the callback's
+			// `err` argument, so we don't need an explicit pre-check.
+			stream.write('{"type":"drop-ws"}\n', (err) => {
+				if (err) {
+					rejectPromise(new Error("dropWebSocket: server subprocess has exited"));
+					return;
+				}
+				resolvePromise();
+			});
+		});
+
+	return { baseUrl: url, stop, dropActiveWebSockets };
 }
 
 export async function spawnServer(opts: SpawnServerOptions): Promise<ServerHandle> {
@@ -180,6 +205,11 @@ export async function spawnServer(opts: SpawnServerOptions): Promise<ServerHandl
 			await current.stop();
 			current = await spawnOnce(opts);
 			handle.baseUrl = current.baseUrl;
+		},
+		dropActiveWebSockets: async () => {
+			// Resolve the subprocess lazily at call time so this method keeps
+			// working across `restart()` (which replaces `current`).
+			await current.dropActiveWebSockets();
 		},
 	};
 

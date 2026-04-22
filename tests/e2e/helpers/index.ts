@@ -16,6 +16,7 @@ export {
 export { createEpic } from "./create-epic";
 export { createSpecification } from "./create-specification";
 export { deepLink } from "./deep-link";
+export { dropWebSocket } from "./drop-ws";
 export { mergePullRequest } from "./merge-pr";
 export { openArtifact } from "./open-artifact";
 export { restartServer } from "./restart-server";

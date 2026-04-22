@@ -208,6 +208,13 @@ function handleMessage(msg: ServerMessage): void {
 
 	switch (msg.type) {
 		case "workflow:list": {
+			// Production-safe test observability: one dataset write per workflow:list
+			// broadcast, no reader outside E2E. Lets tests distinguish a fresh
+			// broadcast from cached state (e.g., after a reconnect). Gating this
+			// client-side would require threading an env/query flag through the
+			// bundle; the cost is negligible and it is not read in production.
+			const prev = Number(document.body.dataset.workflowListRevision ?? "0");
+			document.body.dataset.workflowListRevision = String(prev + 1);
 			renderCards();
 			// Pre-existing behaviour: on the dashboard, when exactly one top-level
 			// item exists, jump into its detail view. The `currentPath === "/"`
@@ -964,6 +971,12 @@ document.addEventListener("DOMContentLoaded", () => {
 			),
 		);
 		appRouter.setNavigateListener((path) => {
+			// Re-render the card strip so the `card-expanded` affordance tracks the
+			// URL on every navigation. Without this, back-navigating from a
+			// `/workflow/<id>` view to `/` (or any route change where no server
+			// message fires) leaves the stale selection class on the previously
+			// active card.
+			renderCards();
 			send({ type: "alert:route-changed", path });
 		});
 		appRouter.start();

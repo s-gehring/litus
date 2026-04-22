@@ -7,7 +7,7 @@ import { guardClaudeMd } from "../../src/claude-md-guard";
 
 // Each test spawns multiple real git processes (init/clone/fetch/commit). On
 // Windows under parallel `bun test` load, the default 5s timeout is flaky.
-const TEST_TIMEOUT_MS = 20_000;
+const TEST_TIMEOUT_MS = 60_000;
 const test = (name: string, fn: () => Promise<void>) => baseTest(name, fn, TEST_TIMEOUT_MS);
 
 const GIT_ENV = {

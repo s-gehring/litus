@@ -315,11 +315,18 @@ FEEDBACK_IMPLEMENTER_RESULT>>>`;
 			`<<<FEEDBACK_IMPLEMENTER_RESULT\n{"outcome":"success","summary":"renamed","materiallyRelevant":true}\nFEEDBACK_IMPLEMENTER_RESULT>>>`,
 		);
 		cli1.lastCallbacks?.onComplete();
-		await new Promise((r) => setTimeout(r, 30));
 
 		// Phase 2: simulate server restart — fresh orchestrator + fresh engine,
-		// reload workflow from persistence and set it on the new engine
-		const loaded = await store.load(wf1.id);
+		// reload workflow from persistence and set it on the new engine.
+		// Poll for the persisted outcome rather than relying on a fixed delay,
+		// since onComplete → persist is async and flaky under parallel test load.
+		let loaded: Awaited<ReturnType<typeof store.load>> = null;
+		const deadline = Date.now() + 5000;
+		while (Date.now() < deadline) {
+			loaded = await store.load(wf1.id);
+			if (loaded?.feedbackEntries?.[0]?.outcome?.value === "success") break;
+			await new Promise((r) => setTimeout(r, 20));
+		}
 		expect(loaded).not.toBeNull();
 		if (!loaded) return;
 		expect(loaded.feedbackEntries).toHaveLength(1);

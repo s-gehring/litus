@@ -17,23 +17,35 @@ describe("spec-from-url integration", () => {
 	let tmpBase: string;
 	let bareRepoPath: string;
 
+	function rmWithRetry(p: string): void {
+		for (let i = 0; i < 20; i++) {
+			try {
+				rmSync(p, { recursive: true, force: true });
+				return;
+			} catch {
+				// Windows can hold file handles briefly after git ops; retry.
+				Bun.sleepSync(100);
+			}
+		}
+		rmSync(p, { recursive: true, force: true });
+	}
+
 	beforeEach(() => {
 		tmpBase = mkdtempSync(join(tmpdir(), "sfu-"));
 		const workDir = join(tmpBase, "work");
 		bareRepoPath = join(tmpBase, "remote.git");
-		execSync(`git init --bare "${bareRepoPath}"`, { stdio: "ignore" });
-		execSync(`git init "${workDir}"`, { stdio: "ignore" });
+		execSync(`git init --bare -b main "${bareRepoPath}"`, { stdio: "ignore" });
+		execSync(`git init -b main "${workDir}"`, { stdio: "ignore" });
 		execSync(`git -C "${workDir}" -c user.email=a@b -c user.name=a commit --allow-empty -m init`, {
 			stdio: "ignore",
 		});
-		execSync(`git -C "${workDir}" branch -M main`, { stdio: "ignore" });
 		execSync(`git -C "${workDir}" remote add origin "${bareRepoPath}"`, { stdio: "ignore" });
 		execSync(`git -C "${workDir}" push origin main`, { stdio: "ignore" });
-	});
+	}, 30_000);
 
 	afterEach(() => {
-		rmSync(tmpBase, { recursive: true, force: true });
-	});
+		rmWithRetry(tmpBase);
+	}, 30_000);
 
 	test("URL submission clones to baseDir, sets managedRepo, and emits clone events", async () => {
 		const baseDir = join(tmpBase, "repos");
@@ -111,7 +123,7 @@ describe("spec-from-url integration", () => {
 			expect(created.workflow.targetRepository).toBe(clonedRepoDir);
 			expect(created.workflow.managedRepo).toEqual({ owner: "testuser", repo: "testrepo" });
 		}
-	});
+	}, 60_000);
 
 	test("second submission via SSH form does not clone again (integration-level dedupe)", async () => {
 		const baseDir = join(tmpBase, "repos");
@@ -181,7 +193,7 @@ describe("spec-from-url integration", () => {
 
 		// Only one git clone invocation; the second submission hit the ready-reuse branch.
 		expect(cloneInvocationCount).toBe(1);
-	});
+	}, 60_000);
 
 	test("non-GitHub URL produces clone-error and no workflow is created", async () => {
 		const baseDir = join(tmpBase, "repos");
