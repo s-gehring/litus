@@ -1,0 +1,86 @@
+{
+	"name": "quick-fix-retry",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-fix-implement-fail" },
+				{
+					"type": "result",
+					"subtype": "error",
+					"session_id": "sess-fix-implement-fail",
+					"result": "fix-implement failed"
+				}
+			],
+			"exitCode": 1
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-fix-implement-retry" },
+				{
+					"type": "assistant",
+					"session_id": "sess-fix-implement-retry",
+					"message": {
+						"content": [{ "type": "text", "text": "Fix applied on retry." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-fix-implement-retry",
+					"result": "Fix applied on retry."
+				}
+			],
+			"files": [
+				{
+					"path": "fix-me.txt",
+					"encoding": "utf8",
+					"content": "Fix applied by quick-fix retry e2e scenario.\n"
+				}
+			],
+			"commit": { "message": "fix: scripted quick-fix retry change" }
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-cpp" },
+				{
+					"type": "assistant",
+					"session_id": "sess-cpp",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "PR created: https://github.com/example/repo/pull/77"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-cpp",
+					"result": "PR created: https://github.com/example/repo/pull/77"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": {
+			"exitCode": 0,
+			"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/77\",\"number\":77}"
+		},
+		"pr checks": {
+			"exitCode": 0,
+			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"
+		},
+		"pr merge --auto": { "exitCode": 0, "stdout": "Merged pull request #77 (Squash and merge)\n" },
+		"pr merge": { "exitCode": 0, "stdout": "Merged pull request #77 (Squash and merge)\n" },
+		"pr create": {
+			"exitCode": 0,
+			"stdout": "https://github.com/example/repo/pull/77\n"
+		},
+		"run view": { "exitCode": 0, "stdout": "" }
+	}
+}

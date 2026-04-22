@@ -52,6 +52,7 @@ import {
 	type EffortLevel,
 	type FeedbackEntry,
 	type ModelConfig,
+	type OutputEntry,
 	type PipelineCallbacks,
 	type PipelineStep,
 	type PipelineStepName,
@@ -193,6 +194,19 @@ function requireTargetRepository(workflow: Workflow): string {
 export function extractPrUrl(output: string): string | null {
 	const matches = output.match(PR_URL_PATTERN);
 	return matches ? matches[matches.length - 1] : null;
+}
+
+function findAskUserQuestion(outputLog: OutputEntry[]): string | null {
+	for (let i = outputLog.length - 1; i >= 0; i--) {
+		const entry = outputLog[i];
+		if (entry.kind !== "tools") continue;
+		for (const tool of entry.tools) {
+			if (tool.name !== "AskUserQuestion") continue;
+			const raw = tool.input?.question;
+			if (typeof raw === "string" && raw.trim()) return raw;
+		}
+	}
+	return null;
 }
 
 export class PipelineOrchestrator {
@@ -921,6 +935,21 @@ export class PipelineOrchestrator {
 	}
 
 	private async completeFixImplement(workflow: Workflow): Promise<void> {
+		// If the CLI emitted an AskUserQuestion tool_use, pause for that
+		// question instead of running the diff classifier. Without this
+		// the step would be routed through the empty-diff error path even
+		// though the agent is actively waiting on operator input.
+		const step = workflow.steps[workflow.currentStepIndex];
+		const askedQuestion = findAskUserQuestion(step.outputLog);
+		if (askedQuestion) {
+			this.pauseForQuestion(workflow.id, {
+				id: randomUUID(),
+				content: askedQuestion,
+				detectedAt: new Date().toISOString(),
+			});
+			return;
+		}
+
 		const cwd = workflow.worktreePath;
 		const preRunHead = workflow.feedbackPreRunHead;
 		const postRunHead = cwd ? await this.getGitHeadFn(cwd) : null;
