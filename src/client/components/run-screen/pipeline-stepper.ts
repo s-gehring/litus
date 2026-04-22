@@ -61,6 +61,7 @@ export function createPipelineStepper(
 	grid.appendChild(railBase);
 
 	const railFill = document.createElement("div");
+	railFill.dataset.railFill = "";
 	Object.assign(railFill.style, {
 		position: "absolute",
 		left: "20px",
@@ -191,7 +192,7 @@ export function createPipelineStepper(
 			model.steps.length > 0
 				? Math.max(0, Math.min(1, (model.currentIndex + 0.5) / model.steps.length))
 				: 0;
-		railFill.style.width = `calc(${pct * 100}% )`;
+		railFill.style.width = `${pct * 100}%`;
 		railFill.style.background = accent.c;
 		railFill.style.boxShadow = `0 0 10px ${accent.glow}`;
 

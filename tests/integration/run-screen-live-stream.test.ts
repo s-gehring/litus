@@ -76,7 +76,12 @@ describe("run-screen live stream integration", () => {
 		expect(logConsole?.textContent ?? "").toContain("Implementing");
 	});
 
-	it("workflow:output kinds drive log-console line rendering", () => {
+	// §3.2: renamed from "workflow:output kinds drive log-console line rendering"
+	// — the test hand-rolls `outputLog` and does NOT actually cross the
+	// workflow:output dispatch boundary. It's a projection-classifier
+	// smoke test. The cross-boundary coverage lives below under the
+	// §1.1 ClientStateManager dispatch tests.
+	it("projection classifies outputLog text rows as section / out", () => {
 		const entry = entryFrom({
 			steps: [
 				step({
@@ -177,6 +182,96 @@ describe("run-screen live stream integration", () => {
 		expect(projected.touched.some((f) => f.path.endsWith("foo.ts"))).toBe(true);
 		if (projected.log.writingLineIndex == null) throw new Error("caret missing");
 		expect(projected.log.events[projected.log.writingLineIndex].kind).toBe("out");
+	});
+
+	it("workflow:output with kind='assistant' projects as an assistant LogEvent (§1.1 / FR-032)", () => {
+		const mgr = new ClientStateManager();
+		const state = makeWorkflowState({
+			id: "wf-kinds",
+			workflowKind: "spec",
+			status: "running",
+			currentStepIndex: 0,
+			steps: [step({ name: "implement", displayName: "Implementing", status: "running" })],
+		});
+		mgr.handleMessage({ type: "workflow:state", workflow: state });
+		mgr.handleMessage({
+			type: "workflow:output",
+			workflowId: "wf-kinds",
+			text: "Hello **world**",
+			kind: "assistant",
+		});
+		const entry = mgr.getWorkflows().get("wf-kinds");
+		if (!entry) throw new Error("entry missing");
+		const projected = projectRunScreenModel(entry, { config: null });
+		const kinds = projected.log.events.map((e) => e.kind);
+		// The assistant tag must survive: seam was ClientStateManager → OutputEntry → projection.
+		expect(kinds).toContain("assistant");
+	});
+
+	it("workflow:output with kind='diff' projects as a structured diff LogEvent (§1.1 / §2.5)", () => {
+		const mgr = new ClientStateManager();
+		const state = makeWorkflowState({
+			id: "wf-diff",
+			workflowKind: "spec",
+			status: "running",
+			currentStepIndex: 0,
+			steps: [step({ name: "implement", displayName: "Implementing", status: "running" })],
+		});
+		mgr.handleMessage({ type: "workflow:state", workflow: state });
+		const body = ["◇ src/foo.ts", "@@ -1,2 +1,2 @@", " keep", "-drop", "+add"].join("\n");
+		mgr.handleMessage({
+			type: "workflow:output",
+			workflowId: "wf-diff",
+			text: body,
+			kind: "diff",
+		});
+		const entry = mgr.getWorkflows().get("wf-diff");
+		if (!entry) throw new Error("entry missing");
+		const projected = projectRunScreenModel(entry, { config: null });
+		const diffEv = projected.log.events.find((e) => e.kind === "diff");
+		if (!diffEv || diffEv.kind !== "diff") throw new Error("diff event missing");
+		expect(diffEv.path).toBe("src/foo.ts");
+		expect(diffEv.hunks).toHaveLength(1);
+		expect(diffEv.hunks[0].lines.map((l) => l.op)).toEqual([" ", "-", "+"]);
+	});
+
+	it("workflow:step-change dispatched through ClientStateManager resets outputLines (§3.9)", () => {
+		const mgr = new ClientStateManager();
+		const state = makeWorkflowState({
+			id: "wf-step",
+			workflowKind: "spec",
+			status: "running",
+			currentStepIndex: 0,
+			steps: [
+				step({ name: "setup", displayName: "Setup", status: "running" }),
+				step({ name: "implement", displayName: "Implementing", status: "pending" }),
+			],
+		});
+		mgr.handleMessage({ type: "workflow:state", workflow: state });
+		mgr.handleMessage({
+			type: "workflow:output",
+			workflowId: "wf-step",
+			text: "setup-line",
+		});
+		let entry = mgr.getWorkflows().get("wf-step");
+		if (!entry) throw new Error("entry missing");
+		expect(entry.outputLines.length).toBe(1);
+
+		mgr.handleMessage({
+			type: "workflow:step-change",
+			workflowId: "wf-step",
+			previousStep: "setup",
+			currentStep: "implement",
+			currentStepIndex: 1,
+			reviewIteration: 0,
+		});
+		entry = mgr.getWorkflows().get("wf-step");
+		if (!entry) throw new Error("entry missing after step-change");
+		// Contract: outputLines is reset so the new step starts fresh — the
+		// "setup-line" from the prior step must be gone, and the projection
+		// currentStepIndex has advanced.
+		expect(entry.outputLines.some((l) => l.kind === "text" && l.text === "setup-line")).toBe(false);
+		expect(entry.state.currentStepIndex).toBe(1);
 	});
 
 	it("running step's durationMs advances from startedAt (§1.2 / FR-024)", () => {

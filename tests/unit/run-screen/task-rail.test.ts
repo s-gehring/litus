@@ -54,4 +54,34 @@ describe("task-rail rightCounter (§2.6 / FR-018)", () => {
 		expect(ctrl.element.textContent ?? "").toContain("C");
 		expect(ctrl.element.textContent ?? "").not.toContain("B");
 	});
+
+	it("preserves card element identity across updates when data is unchanged (§3.1)", () => {
+		const ctrl = createTaskRail([card({ id: "a", title: "A" }), card({ id: "b", title: "B" })], {
+			onCardClick: () => {},
+		});
+		document.body.appendChild(ctrl.element);
+		const scroll = ctrl.element.querySelector(".scroll") as HTMLElement;
+		const aBefore = scroll.querySelector('[data-task-card-id="a"]');
+		expect(aBefore).not.toBeNull();
+
+		// Re-render with identical `a` and a mutated/removed `b → c`.
+		ctrl.update([card({ id: "a", title: "A" }), card({ id: "c", title: "C" })]);
+		const aAfter = scroll.querySelector('[data-task-card-id="a"]');
+		// Identity contract: the unchanged card must be the SAME DOM node.
+		expect(aAfter).toBe(aBefore);
+	});
+
+	it("rebuilds a card when its data signature changes (§3.1)", () => {
+		const ctrl = createTaskRail([card({ id: "a", title: "A", state: "queued" })], {
+			onCardClick: () => {},
+		});
+		document.body.appendChild(ctrl.element);
+		const scroll = ctrl.element.querySelector(".scroll") as HTMLElement;
+		const aBefore = scroll.querySelector('[data-task-card-id="a"]');
+		ctrl.update([card({ id: "a", title: "A", state: "running" })]);
+		const aAfter = scroll.querySelector('[data-task-card-id="a"]');
+		// State changed → the node was replaced.
+		expect(aAfter).not.toBe(aBefore);
+		expect((aAfter as HTMLElement).dataset.taskState).toBe("running");
+	});
 });

@@ -53,9 +53,27 @@ export function createTaskRail(
 	} satisfies Partial<CSSStyleDeclaration>);
 	host.appendChild(scroll);
 
-	// Reconcile cards by id — preserve horizontal scroll position and only
-	// re-render the changed cards instead of nuking every update.
-	const mounted = new Map<string, HTMLElement>();
+	// Reconcile cards by id — preserve horizontal scroll position and preserve
+	// element identity when the card data is unchanged, so hover/focus state on
+	// a card survives the 1-second `tickInterval` fire (§3.1 / carryover §2.1).
+	const mounted = new Map<string, { el: HTMLElement; signature: string }>();
+
+	function cardSignature(card: TaskCardModel): string {
+		// Shallow content hash keyed on everything `createTaskCard` renders.
+		// When the signature is unchanged we skip the rebuild entirely and
+		// keep the existing DOM node (identity preservation).
+		return JSON.stringify([
+			card.type,
+			card.state,
+			card.title,
+			card.currentStep,
+			card.elapsedMs,
+			card.selected,
+			card.branchProgress?.done ?? null,
+			card.branchProgress?.total ?? null,
+			card.pipeline.map((p) => [p.name, p.state]),
+		]);
+	}
 
 	function update(cards: TaskCardModel[]): void {
 		labelRow.lastChild?.remove();
@@ -65,22 +83,29 @@ export function createTaskRail(
 		for (let i = 0; i < cards.length; i++) {
 			const card = cards[i];
 			seen.add(card.id);
-			const fresh = createTaskCard(card, handlers.onCardClick);
+			const signature = cardSignature(card);
 			const existing = mounted.get(card.id);
-			if (existing && existing.parentElement === scroll) {
-				existing.replaceWith(fresh);
+			let node: HTMLElement;
+			if (existing && existing.signature === signature && existing.el.parentElement === scroll) {
+				// Data unchanged — reuse the existing node (preserves focus/hover).
+				node = existing.el;
+			} else if (existing && existing.el.parentElement === scroll) {
+				const fresh = createTaskCard(card, handlers.onCardClick);
+				existing.el.replaceWith(fresh);
+				node = fresh;
 			} else {
-				scroll.appendChild(fresh);
+				node = createTaskCard(card, handlers.onCardClick);
+				scroll.appendChild(node);
 			}
-			mounted.set(card.id, fresh);
+			mounted.set(card.id, { el: node, signature });
 			// Keep mounted order aligned with the model.
-			if (scroll.children[i] !== fresh) {
-				scroll.insertBefore(fresh, scroll.children[i] ?? null);
+			if (scroll.children[i] !== node) {
+				scroll.insertBefore(node, scroll.children[i] ?? null);
 			}
 		}
-		for (const [id, el] of mounted) {
+		for (const [id, entry] of mounted) {
 			if (!seen.has(id)) {
-				el.remove();
+				entry.el.remove();
 				mounted.delete(id);
 			}
 		}

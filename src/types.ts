@@ -785,7 +785,18 @@ export interface ToolUsage {
 
 // Output entry union for client-side output log (text lines + tool icon data)
 export type OutputEntry =
-	| { kind: "text"; text: string; type?: "normal" | "error" | "system" }
+	| {
+			kind: "text";
+			text: string;
+			type?: "normal" | "error" | "system";
+			/**
+			 * Server-authoritative classification propagated from `workflow:output.kind`
+			 * (FR-032). Honoured by the client projection layer so `assistant` / `diff`
+			 * deltas render with their structured treatment instead of falling through
+			 * the heuristic as plain `out` lines.
+			 */
+			logKind?: "cmd" | "assistant" | "diff";
+	  }
 	| { kind: "tools"; tools: ToolUsage[] };
 
 // Client-side per-workflow state (not persisted, not sent over WebSocket)

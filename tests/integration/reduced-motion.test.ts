@@ -62,22 +62,8 @@ describe("prefers-reduced-motion", () => {
 		}
 	});
 
-	it("injecting the primitives <style> and mounting a .pulse-dot is non-fatal", () => {
-		const style = document.createElement("style");
-		style.dataset.test = "reduced-motion";
-		style.textContent = buildLitusPrimitivesCss();
-		document.head.appendChild(style);
-
-		const host = document.createElement("div");
-		host.className = "litus";
-		const dot = document.createElement("span");
-		dot.className = "pulse-dot";
-		host.appendChild(dot);
-		document.body.appendChild(host);
-
-		// Under happy-dom, getComputedStyle can't resolve the outer rule either;
-		// the sheet just has to load without throwing. The authoritative
-		// assertion is in the previous test.
-		expect(host.querySelector(".pulse-dot")).toBe(dot);
-	});
+	// §3.7: dropped the "non-fatal sheet load" smoke — the assertion
+	// `host.querySelector(".pulse-dot") === dot` was tautological under
+	// happy-dom's querySelector. CSS-text parsing is already covered by the
+	// previous test; genuine media-query evaluation needs Playwright e2e.
 });

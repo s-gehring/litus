@@ -159,6 +159,8 @@ export type CLIOutputKind = "cmd" | "assistant" | "diff";
 const RAW_CMD_PATTERN = /^\s*(?:\[[^\]]+\]\s*)?\$\s+\S/;
 const RAW_DIFF_PATTERN = /^(?:◇\s+\S|@@ .* @@|\+\+\+ |--- )/;
 
+// Exported only so the unit test suite can exercise the pure classification
+// rules in isolation — no production caller outside this module (§4.6).
 export function classifyRawOutputKind(text: string): CLIOutputKind | undefined {
 	if (RAW_CMD_PATTERN.test(text)) return "cmd";
 	if (RAW_DIFF_PATTERN.test(text)) return "diff";

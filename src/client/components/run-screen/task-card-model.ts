@@ -25,12 +25,7 @@ export interface TaskCardModel {
 function workflowPipeline(wf: WorkflowClientState): TaskPipelineSegment[] {
 	return wf.state.steps.map((s) => ({
 		name: s.displayName,
-		state:
-			s.status === "completed"
-				? "done"
-				: s.status === "running"
-					? "running"
-					: ("queued" as TaskPipelineSegment["state"]),
+		state: s.status === "completed" ? "done" : s.status === "running" ? "running" : "queued",
 	}));
 }
 

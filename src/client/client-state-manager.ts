@@ -260,7 +260,9 @@ export class ClientStateManager {
 	): StateChange {
 		const entry = this.workflows.get(msg.workflowId);
 		if (!entry) return { scope: { entity: "none" }, action: "updated" };
-		const outputEntry: OutputEntry = { kind: "text", text: msg.text };
+		const outputEntry: OutputEntry = msg.kind
+			? { kind: "text", text: msg.text, logKind: msg.kind }
+			: { kind: "text", text: msg.text };
 		entry.outputLines.push(outputEntry);
 		this.trimOutput(entry.outputLines);
 		return { scope: { entity: "output", id: msg.workflowId }, action: "appended" };

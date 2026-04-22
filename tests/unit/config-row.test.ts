@@ -81,6 +81,9 @@ describe("config-row", () => {
 		expect(maxBtn.style.background).not.toBe("transparent");
 		(element.querySelector('[data-value="xhigh"]') as HTMLButtonElement).click();
 		expect(capture.effort).toBe("xhigh");
+		// §3.6: also lock the `max` click — prior test only exercised xhigh.
+		maxBtn.click();
+		expect(capture.effort).toBe("max");
 	});
 
 	it("round-trip: full model id → display id → highlighted button → click emits display id → full id restored", () => {

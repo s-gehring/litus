@@ -7,8 +7,6 @@ export interface EnvironmentCardController {
 	update(env: RunScreenEnvironment): void;
 }
 
-const GREEN = "oklch(0.80 0.14 155)";
-
 function envRow(label: string, value: string | null, accent?: string): HTMLElement {
 	const d = document.createElement("div");
 	Object.assign(d.style, {
@@ -54,7 +52,7 @@ export function createEnvironmentCard(initial: RunScreenEnvironment): Environmen
 		rows.appendChild(envRow("Python", env.python));
 		rows.appendChild(envRow("Node", env.node));
 		rows.appendChild(envRow("pnpm", env.pnpm));
-		rows.appendChild(envRow("CLAUDE.md", env.claudeMdLoaded ? "✓ loaded" : null, GREEN));
+		rows.appendChild(envRow("CLAUDE.md", env.claudeMdLoaded ? "✓ loaded" : null, LITUS.green));
 		const skillsValue =
 			env.skills.length === 0 ? null : env.skills.map((s) => `${s.name} · ${s.count}`).join(", ");
 		rows.appendChild(envRow("Skills", skillsValue));

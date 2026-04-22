@@ -5,8 +5,11 @@ import type { LogConsoleModel } from "./run-screen-model";
 
 type AutoScrollState = "on" | "off-by-user" | "off-by-toggle";
 
-const GREEN = "oklch(0.80 0.14 155)";
-const VIOLET = "oklch(0.76 0.14 298)";
+// Diff red is visually distinct from `LITUS.red` (error red): the diff removal
+// line uses a slightly brighter hue so it reads against the bordered block
+// without competing with the chrome-level error colour used for toasts /
+// failures. Kept local and commented per code-review-3 §2.8.
+const DIFF_RED = "oklch(0.68 0.18 25)";
 
 export interface LogConsoleController {
 	element: HTMLElement;
@@ -37,7 +40,7 @@ function renderCmd(ev: Extract<LogEvent, { kind: "cmd" }>): HTMLElement {
 	} satisfies Partial<CSSStyleDeclaration>);
 	if (ev.cwd) {
 		const cwd = document.createElement("span");
-		cwd.style.color = VIOLET;
+		cwd.style.color = LITUS.violet;
 		cwd.textContent = `[${ev.cwd}]`;
 		d.appendChild(cwd);
 	}
@@ -103,8 +106,6 @@ function renderAssistant(ev: Extract<LogEvent, { kind: "assistant" }>): HTMLElem
 	return d;
 }
 
-const DIFF_RED = "oklch(0.68 0.18 25)";
-
 function renderDiff(ev: Extract<LogEvent, { kind: "diff" }>): HTMLElement {
 	const d = document.createElement("div");
 	d.dataset.logKind = "diff";
@@ -134,7 +135,7 @@ function renderDiff(ev: Extract<LogEvent, { kind: "diff" }>): HTMLElement {
 		for (const line of hunk.lines) {
 			const lineEl = document.createElement("div");
 			if (line.op === "+") {
-				lineEl.style.color = GREEN;
+				lineEl.style.color = LITUS.green;
 				lineEl.textContent = `+${line.text}`;
 			} else if (line.op === "-") {
 				lineEl.style.color = DIFF_RED;
@@ -154,7 +155,7 @@ function toolIcon(item: LogToolItem): HTMLElement {
 		item.kind === "edit"
 			? LITUS.amber
 			: item.kind === "cmd"
-				? GREEN
+				? LITUS.green
 				: item.kind === "grep"
 					? LITUS.cyan
 					: LITUS.textMute;
@@ -305,7 +306,7 @@ export function createLogConsole(initial: LogConsoleModel): LogConsoleController
 
 	// Counter DOM built once; update text content on each tick (§4.9).
 	const writingDot = document.createElement("span");
-	writingDot.style.color = GREEN;
+	writingDot.style.color = LITUS.green;
 	writingDot.textContent = "●";
 	counters.appendChild(writingDot);
 	const countersText = document.createElement("span");
@@ -371,7 +372,10 @@ export function createLogConsole(initial: LogConsoleModel): LogConsoleController
 function cssEscape(s: string): string {
 	// Prefer the standard `CSS.escape` where available — happy-dom (used in
 	// tests) does not expose it, so fall back to a conservative escape
-	// over non-word characters (§4.3).
+	// over non-word characters (§4.3). The fallback is only consumed by the
+	// `[data-section-key*="..."]` substring selector in `scrollToSection`,
+	// where over-escaping spaces/quotes is harmless — the match is a
+	// substring compare, not a syntactic parse of the key.
 	if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
 		return CSS.escape(s);
 	}

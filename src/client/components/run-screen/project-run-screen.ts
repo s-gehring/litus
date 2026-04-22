@@ -83,7 +83,7 @@ function outputEntriesToLogEvents(entries: readonly OutputEntry[]): LogEvent[] {
 	const events: LogEvent[] = [];
 	for (const row of entries) {
 		if (row.kind === "text") {
-			events.push(classifyLine(row.text));
+			events.push(classifyLine(row.text, row.logKind));
 		} else if (row.kind === "tools") {
 			events.push({ kind: "toolstrip", items: toolUsagesToLogItems(row.tools) });
 		}

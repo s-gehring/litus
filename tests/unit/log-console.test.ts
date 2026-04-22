@@ -198,6 +198,77 @@ describe("log-console", () => {
 		expect(body.scrollTop).toBe(1000);
 	});
 
+	it("off-by-toggle is sticky: scroll-to-bottom does NOT promote back to on (§2.6)", () => {
+		// Regression guard for research.md §3 — toggle button overrides the
+		// "off-by-user → on" rule until the user toggles back on explicitly.
+		const { element, update } = createLogConsole(baseModel());
+		document.body.appendChild(element);
+		const body = element.querySelector(".scroll") as HTMLElement;
+		const toggle = element.querySelector("button") as HTMLButtonElement;
+
+		Object.defineProperty(body, "scrollHeight", { value: 1000, configurable: true });
+		Object.defineProperty(body, "clientHeight", { value: 200, configurable: true });
+
+		// Click toggle → off-by-toggle.
+		toggle.click();
+
+		// User scrolls all the way back to the bottom.
+		body.scrollTop = 800; // scrollHeight - clientHeight.
+		body.dispatchEvent(new Event("scroll"));
+
+		// A subsequent update must NOT re-pin to bottom — the toggle override holds.
+		body.scrollTop = 123;
+		update(baseModel({ events: [{ kind: "out", text: "new" }] }));
+		expect(body.scrollTop).toBe(123);
+	});
+
+	it("toolstrip glyph colours diverge by tool kind (§3.8)", () => {
+		const { element } = createLogConsole(
+			baseModel({
+				events: [
+					{
+						kind: "toolstrip",
+						items: [{ kind: "read" }, { kind: "edit" }, { kind: "grep" }, { kind: "cmd" }],
+					},
+				],
+			}),
+		);
+		document.body.appendChild(element);
+		const strip = element.querySelector('[data-log-kind="toolstrip"]') as HTMLElement;
+		const colours = Array.from(strip.children).map((c) => (c as HTMLElement).style.color);
+		// FR-030 mapping: read muted / edit amber / grep cyan / cmd green.
+		// happy-dom's CSSOM drops oklch() from inline styles (the amber/cyan/
+		// green branches all serialise to ""), but textMute is a hex literal
+		// and survives — so the minimum-viable guard is that the `read` icon
+		// does NOT end up with the same colour string as the three accented
+		// icons. This catches the regression where all four icons accidentally
+		// collapse to the same colour.
+		const readCol = colours[0];
+		const nonReadCols = colours.slice(1);
+		expect(nonReadCols.some((c) => c !== readCol)).toBe(true);
+	});
+
+	it("scrollToSection finds a rendered section node by step display name (§2.4)", () => {
+		const { element, update, scrollToSection } = createLogConsole(baseModel());
+		document.body.appendChild(element);
+		update(
+			baseModel({
+				events: [
+					{ kind: "section", text: "──────── Implementing ────────" },
+					{ kind: "out", text: "body" },
+				],
+			}),
+		);
+		const body = element.querySelector(".scroll") as HTMLElement;
+		const section = body.querySelector('[data-log-kind="section"]') as HTMLElement;
+		let called = false;
+		section.scrollIntoView = () => {
+			called = true;
+		};
+		scrollToSection("Implementing");
+		expect(called).toBe(true);
+	});
+
 	it("auto-scroll toggle button flips the state on click", () => {
 		const { element, update } = createLogConsole(baseModel());
 		document.body.appendChild(element);

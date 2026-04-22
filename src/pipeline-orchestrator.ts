@@ -1712,7 +1712,7 @@ export class PipelineOrchestrator {
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.output += `${text}\n`;
-		step.outputLog.push({ kind: "text", text });
+		step.outputLog.push(kind ? { kind: "text", text, logKind: kind } : { kind: "text", text });
 		enforceStepOutputCap(step, this.maxStepOutputChars);
 		workflow.updatedAt = new Date().toISOString();
 

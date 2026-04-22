@@ -191,18 +191,12 @@ describe("pipeline-stepper", () => {
 				onStepClick: () => {},
 			});
 			document.body.appendChild(element);
-			// railFill is the second absolutely-positioned child of the grid.
-			const fill = element.querySelector(
-				'[data-run-screen="pipeline-stepper"] > div > div',
-			) as HTMLElement | null;
-			// Walk to the railFill: grid has railBase (idx 0), railFill (idx 1), stepsGrid (idx 2).
-			const grid = element.querySelector(
-				'[data-run-screen="pipeline-stepper"] > div:nth-child(2)',
-			) as HTMLElement;
-			const railFill = grid.children[1] as HTMLElement;
-			void fill;
+			// §3.3: target via `data-rail-fill` rather than positional nth-child
+			// so future wrapper changes don't silently break this test.
+			const railFill = element.querySelector("[data-rail-fill]") as HTMLElement | null;
+			if (!railFill) return -1;
 			const width = railFill.style.width;
-			const m = width.match(/calc\(([\d.]+)%\s*\)/);
+			const m = width.match(/([\d.]+)%/);
 			return m ? Number.parseFloat(m[1]) : -1;
 		}
 

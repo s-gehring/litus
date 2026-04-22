@@ -174,7 +174,7 @@ export function createTaskCard(
 		overflow: "hidden",
 		minHeight: "34px",
 	} satisfies Partial<CSSStyleDeclaration>);
-	(title.style as CSSStyleDeclaration & Record<string, string>)["-webkit-line-clamp"] = "2";
+	title.style.setProperty("-webkit-line-clamp", "2");
 	title.textContent = model.title;
 	btn.appendChild(title);
 

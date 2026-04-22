@@ -2,15 +2,14 @@ import { LITUS } from "../../design-system/tokens";
 import { sectionLabel } from "./primitives";
 import type { TouchedFile } from "./run-screen-model";
 
-const GREEN = "oklch(0.80 0.14 155)";
-
 export interface TouchedFilesCardController {
 	element: HTMLElement;
 	update(files: TouchedFile[]): void;
 }
 
 function fileRow(file: TouchedFile): HTMLElement {
-	const col = file.kind === "edit" ? LITUS.amber : file.kind === "new" ? GREEN : LITUS.textMute;
+	const col =
+		file.kind === "edit" ? LITUS.amber : file.kind === "new" ? LITUS.green : LITUS.textMute;
 	const d = document.createElement("div");
 	Object.assign(d.style, {
 		display: "flex",
