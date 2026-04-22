@@ -153,6 +153,18 @@ interface CLIStreamEvent {
  */
 export type CLIOutputKind = "cmd" | "assistant" | "diff";
 
+// Heuristic tagging for raw non-JSON lines coming off the CLI stdout path.
+// The server authoritatively tags `assistant` at the stream-event sites; this
+// covers `cmd` and `diff` lines so the client doesn't have to re-classify.
+const RAW_CMD_PATTERN = /^\s*(?:\[[^\]]+\]\s*)?\$\s+\S/;
+const RAW_DIFF_PATTERN = /^(?:◇\s+\S|@@ .* @@|\+\+\+ |--- )/;
+
+export function classifyRawOutputKind(text: string): CLIOutputKind | undefined {
+	if (RAW_CMD_PATTERN.test(text)) return "cmd";
+	if (RAW_DIFF_PATTERN.test(text)) return "diff";
+	return undefined;
+}
+
 export interface CLICallbacks {
 	onOutput: (text: string, kind?: CLIOutputKind) => void;
 	onTools: (tools: ToolUsage[]) => void;
@@ -455,7 +467,7 @@ export class CLIRunner {
 						this.handleStreamEvent(entry, event);
 					} catch {
 						// Non-JSON line, treat as raw output
-						if (!entry.stale) callbacks.onOutput(line);
+						if (!entry.stale) callbacks.onOutput(line, classifyRawOutputKind(line));
 					}
 				}
 			}
@@ -466,7 +478,7 @@ export class CLIRunner {
 					const event = JSON.parse(buffer);
 					this.handleStreamEvent(entry, event);
 				} catch {
-					callbacks.onOutput(buffer);
+					callbacks.onOutput(buffer, classifyRawOutputKind(buffer));
 				}
 			}
 		} catch (err) {

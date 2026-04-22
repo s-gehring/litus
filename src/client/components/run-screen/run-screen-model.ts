@@ -21,7 +21,7 @@ export interface PipelineStepperModel {
 
 export interface ConfigRowModel {
 	model: string;
-	effort: "low" | "medium" | "high";
+	effort: "low" | "medium" | "high" | "xhigh" | "max";
 	metrics: { tokens: number | null; spendUsd: number | null };
 }
 
@@ -44,8 +44,6 @@ export interface RunScreenEnvironment {
 export interface TouchedFile {
 	path: string;
 	kind: "edit" | "new" | "read";
-	added: number;
-	removed: number;
 }
 
 export interface RunScreenModel {
@@ -95,8 +93,10 @@ export function taskStateFromStatus(status: WorkflowStatus): TaskState {
 
 /**
  * Map a server-side PipelineStep status into the stepper's state enum.
- * `aborted` / `error` render as queued; the stepper surfaces the error row
- * through the parent model rather than leaking colour into this enum.
+ * `error` / `aborted` / `paused` / `waiting_for_input` / `pending` collapse
+ * into `queued`. The stepper currently renders no dedicated error row — a
+ * future spec will add that affordance; until then the UI hides error state
+ * entirely rather than lying with queued-colour styling (§2.10).
  */
 export function stepStateFromStatus(
 	status: WorkflowState["steps"][number]["status"],

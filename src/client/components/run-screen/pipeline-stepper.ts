@@ -92,6 +92,12 @@ export function createPipelineStepper(
 		wrap.setAttribute("role", "button");
 		wrap.dataset.stepName = step.name;
 		wrap.addEventListener("click", () => handlers.onStepClick(step.name));
+		wrap.addEventListener("keydown", (e) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				handlers.onStepClick(step.name);
+			}
+		});
 
 		const isDone = step.state === "done";
 		const isRunning = step.state === "running";
@@ -175,7 +181,11 @@ export function createPipelineStepper(
 	}
 
 	function update(model: PipelineStepperModel, accent: TaskAccent): void {
-		counter.textContent = `step ${Math.max(0, model.currentIndex) + 1} / ${model.steps.length} · ${model.type} pipeline`;
+		if (model.currentIndex < 0) {
+			counter.textContent = `queued · ${model.type} pipeline`;
+		} else {
+			counter.textContent = `step ${model.currentIndex + 1} / ${model.steps.length} · ${model.type} pipeline`;
+		}
 
 		const pct =
 			model.steps.length > 0
@@ -186,9 +196,21 @@ export function createPipelineStepper(
 		railFill.style.boxShadow = `0 0 10px ${accent.glow}`;
 
 		stepsGrid.style.gridTemplateColumns = `repeat(${Math.max(1, model.steps.length)}, 1fr)`;
-		stepsGrid.innerHTML = "";
-		for (const step of model.steps) {
-			stepsGrid.appendChild(buildStep(step, accent));
+
+		// Reconcile existing nodes: replace each indexed slot rather than wiping
+		// the grid, so focus on a step node and the running-step animation
+		// survive between updates.
+		const children = stepsGrid.children;
+		for (let i = 0; i < model.steps.length; i++) {
+			const fresh = buildStep(model.steps[i], accent);
+			if (i < children.length) {
+				children[i].replaceWith(fresh);
+			} else {
+				stepsGrid.appendChild(fresh);
+			}
+		}
+		while (stepsGrid.children.length > model.steps.length) {
+			stepsGrid.lastElementChild?.remove();
 		}
 	}
 

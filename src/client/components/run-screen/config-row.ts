@@ -17,7 +17,7 @@ const MODEL_OPTIONS = [
 	{ id: "opus-4.7", label: "Opus 4.7" },
 ];
 
-const EFFORT_OPTIONS: Array<ConfigRowModel["effort"]> = ["low", "medium", "high"];
+const EFFORT_OPTIONS: Array<ConfigRowModel["effort"]> = ["low", "medium", "high", "xhigh", "max"];
 
 export function createConfigRow(
 	initial: ConfigRowModel,

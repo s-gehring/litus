@@ -78,14 +78,15 @@ describe("modal creation flow — epic modal", () => {
 });
 
 describe("header button wiring", () => {
-	test("btn-new-spec wired to openSpecModal", () => {
-		expect(appSource).toContain('"btn-new-spec"');
-		expect(appSource).toContain("openSpecModal");
+	// Legacy `#btn-*` click listeners were retired in §4.6; the new creation
+	// buttons live in the redesigned top bar and are wired via `onNewSpec` /
+	// `onNewEpic` handlers.
+	test("top-bar onNewSpec wired to openSpecModal", () => {
+		expect(appSource).toContain("onNewSpec: () => openSpecModal()");
 	});
 
-	test("btn-new-epic wired to openEpicModal", () => {
-		expect(appSource).toContain('"btn-new-epic"');
-		expect(appSource).toContain("openEpicModal");
+	test("top-bar onNewEpic wired to openEpicModal", () => {
+		expect(appSource).toContain("onNewEpic: () => openEpicModal()");
 	});
 });
 

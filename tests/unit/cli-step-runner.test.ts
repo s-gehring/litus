@@ -46,7 +46,7 @@ describe("buildCallbacks", () => {
 		const cb = runner.buildCallbacks("wf-1", handlers);
 
 		cb.onOutput("hello");
-		expect(handlers.onOutput).toHaveBeenCalledWith("wf-1", "hello");
+		expect(handlers.onOutput).toHaveBeenCalledWith("wf-1", "hello", undefined);
 	});
 
 	test("delegates onComplete to handler with workflowId", () => {

@@ -49,14 +49,36 @@ export function createTaskRail(
 	} satisfies Partial<CSSStyleDeclaration>);
 	host.appendChild(scroll);
 
+	// Reconcile cards by id — preserve horizontal scroll position and only
+	// re-render the changed cards instead of nuking every update.
+	const mounted = new Map<string, HTMLElement>();
+
 	function update(cards: TaskCardModel[]): void {
-		// Replace right-side counter
 		labelRow.lastChild?.remove();
 		labelRow.appendChild(rightCounter(cards));
 
-		scroll.innerHTML = "";
-		for (const card of cards) {
-			scroll.appendChild(createTaskCard(card, handlers.onCardClick));
+		const seen = new Set<string>();
+		for (let i = 0; i < cards.length; i++) {
+			const card = cards[i];
+			seen.add(card.id);
+			const fresh = createTaskCard(card, handlers.onCardClick);
+			const existing = mounted.get(card.id);
+			if (existing && existing.parentElement === scroll) {
+				existing.replaceWith(fresh);
+			} else {
+				scroll.appendChild(fresh);
+			}
+			mounted.set(card.id, fresh);
+			// Keep mounted order aligned with the model.
+			if (scroll.children[i] !== fresh) {
+				scroll.insertBefore(fresh, scroll.children[i] ?? null);
+			}
+		}
+		for (const [id, el] of mounted) {
+			if (!seen.has(id)) {
+				el.remove();
+				mounted.delete(id);
+			}
 		}
 	}
 

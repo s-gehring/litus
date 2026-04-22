@@ -1,4 +1,5 @@
 import { LITUS } from "../../design-system/tokens";
+import { renderMarkdown } from "../../render-markdown";
 import type { LogEvent, LogEventKind, LogToolItem } from "./log-kind-classifier";
 import type { LogConsoleModel } from "./run-screen-model";
 
@@ -97,10 +98,12 @@ function renderAssistant(ev: Extract<LogEvent, { kind: "assistant" }>): HTMLElem
 	d.appendChild(eyebrow);
 
 	const body = document.createElement("div");
-	body.textContent = ev.body;
+	body.innerHTML = renderMarkdown(ev.body);
 	d.appendChild(body);
 	return d;
 }
+
+const DIFF_RED = "oklch(0.68 0.18 25)";
 
 function renderDiff(ev: Extract<LogEvent, { kind: "diff" }>): HTMLElement {
 	const d = document.createElement("div");
@@ -109,12 +112,40 @@ function renderDiff(ev: Extract<LogEvent, { kind: "diff" }>): HTMLElement {
 		color: LITUS.textDim,
 		marginTop: "8px",
 		fontSize: "11.5px",
+		borderLeft: `2px solid ${LITUS.borderStrong}`,
+		paddingLeft: "10px",
 	} satisfies Partial<CSSStyleDeclaration>);
-	d.innerHTML = "◇ ";
+	const header = document.createElement("div");
+	const diamond = document.createElement("span");
+	diamond.textContent = "◇ ";
+	header.appendChild(diamond);
 	const path = document.createElement("span");
 	path.style.color = LITUS.text;
 	path.textContent = ev.path;
-	d.appendChild(path);
+	header.appendChild(path);
+	d.appendChild(header);
+	for (const hunk of ev.hunks) {
+		if (hunk.context) {
+			const ctx = document.createElement("div");
+			ctx.style.color = LITUS.textMute;
+			ctx.textContent = hunk.context;
+			d.appendChild(ctx);
+		}
+		for (const line of hunk.lines) {
+			const lineEl = document.createElement("div");
+			if (line.op === "+") {
+				lineEl.style.color = GREEN;
+				lineEl.textContent = `+${line.text}`;
+			} else if (line.op === "-") {
+				lineEl.style.color = DIFF_RED;
+				lineEl.textContent = `-${line.text}`;
+			} else {
+				lineEl.style.color = LITUS.textDim;
+				lineEl.textContent = line.text;
+			}
+			d.appendChild(lineEl);
+		}
+	}
 	return d;
 }
 
@@ -272,23 +303,53 @@ export function createLogConsole(initial: LogConsoleModel): LogConsoleController
 		}
 	});
 
+	// Counter DOM built once; update text content on each tick (§4.9).
+	const writingDot = document.createElement("span");
+	writingDot.style.color = GREEN;
+	writingDot.textContent = "●";
+	counters.appendChild(writingDot);
+	const countersText = document.createElement("span");
+	counters.appendChild(countersText);
+
+	// Append-only rendering: track how many events have been mounted and only
+	// append the new tail. Caret lives on exactly one line — the writingLine —
+	// and is moved in place instead of triggering a full re-render.
+	let mountedCount = 0;
+	let caretLine: HTMLElement | null = null;
+
 	function update(model: LogConsoleModel): void {
 		const step = model.currentStep ?? "idle";
 		title.textContent = `Stream · ${step}`;
-		const writingDot = `<span style="color:${GREEN}">●</span>`;
-		counters.innerHTML = `${writingDot} tool calls: ${model.counters.toolCalls} · reads: ${model.counters.reads} · edits: ${model.counters.edits}`;
+		countersText.textContent = ` tool calls: ${model.counters.toolCalls} · reads: ${model.counters.reads} · edits: ${model.counters.edits}`;
 
-		body.innerHTML = "";
-		model.events.forEach((ev, idx) => {
-			const el = renderLine(ev);
-			if (idx === model.writingLineIndex) {
-				const caret = document.createElement("span");
-				caret.className = "caret";
-				caret.setAttribute("aria-hidden", "true");
-				el.appendChild(caret);
-			}
+		// If the event array was truncated or replaced entirely (step switch,
+		// workflow reload), rebuild.
+		if (model.events.length < mountedCount) {
+			body.innerHTML = "";
+			mountedCount = 0;
+			caretLine = null;
+		}
+
+		for (let i = mountedCount; i < model.events.length; i++) {
+			const el = renderLine(model.events[i]);
 			body.appendChild(el);
-		});
+		}
+		mountedCount = model.events.length;
+
+		// Re-seat the caret on the current writingLineIndex.
+		if (caretLine) {
+			const existing = caretLine.querySelector(".caret");
+			if (existing) existing.remove();
+			caretLine = null;
+		}
+		if (model.writingLineIndex != null && model.writingLineIndex < body.children.length) {
+			const target = body.children[model.writingLineIndex] as HTMLElement;
+			const caret = document.createElement("span");
+			caret.className = "caret";
+			caret.setAttribute("aria-hidden", "true");
+			target.appendChild(caret);
+			caretLine = target;
+		}
 
 		if (autoScroll === "on") {
 			body.scrollTop = body.scrollHeight;

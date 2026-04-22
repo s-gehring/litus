@@ -51,24 +51,6 @@ body {
   min-height: 100vh;
 }
 
-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-header h1 {
-  font-size: 1.4rem;
-  color: var(--accent);
-}
-
-.header-logo {
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-}
-
 .status-dot {
   width: 10px;
   height: 10px;
@@ -85,326 +67,17 @@ header h1 {
   background: var(--accent);
 }
 
-/* ── Card Strip ─────────────────────────────────────────── */
-
-.card-strip {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  padding: 8px 0;
-  overflow-x: auto;
-  min-height: 0;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-
-.card-strip:empty {
-  display: none;
-}
-
-.card-strip::-webkit-scrollbar {
-  height: 4px;
-}
-
-.card-strip::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 2px;
-}
-
-.workflow-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: calc(var(--card-base-width-min) * var(--card-scale, 1));
-  max-width: calc(var(--card-base-width-max) * var(--card-scale, 1));
-  padding: calc(var(--card-base-padding-y) * var(--card-scale, 1))
-           calc(var(--card-base-padding-x) * var(--card-scale, 1));
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.workflow-card:hover {
-  border-color: var(--accent-blue);
-}
-
-.workflow-card.card-expanded {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
-}
-
-/* Per-kind size envelopes — scale is the only size channel (FR-013) */
-.workflow-card--spec {
-  --card-scale: var(--card-scale-spec);
-}
-
-.workflow-card--quick-fix {
-  --card-scale: var(--card-scale-quick-fix);
-  border-color: var(--accent-orange);
-  background: linear-gradient(135deg, var(--surface) 0%, var(--quick-fix-surface-tint) 100%);
-}
-
-/* Preserve Quick Fix warm-accent identity on hover (FR-005/R3) */
-.workflow-card--quick-fix:hover {
-  border-color: var(--accent-orange);
-}
-
-.card-type-badge--quick-fix {
-  background: var(--accent-orange);
-  color: #1a1a2e;
-}
-
-.card-type-badge--epic {
-  background: rgba(74, 158, 255, 0.2);
-  color: var(--accent-blue);
-}
-
-.card-type-badge--spec {
-  color: var(--text);
-}
-
-.workflow-card--epic {
-  --card-scale: var(--card-scale-epic);
-  border: var(--epic-outline-width) solid var(--accent-blue);
-  outline: var(--epic-outline-width) solid var(--accent-blue);
-  outline-offset: var(--epic-outline-offset);
-  background: linear-gradient(135deg, var(--surface) 0%, rgba(74, 158, 255, 0.08) 100%);
-  box-shadow: 0 0 var(--epic-glow-radius) var(--epic-glow-color);
-}
-
-.workflow-card--epic.card-expanded {
-  border-color: var(--accent-blue);
-  box-shadow: 0 0 calc(var(--epic-glow-radius) + var(--epic-glow-expanded-delta)) var(--epic-glow-color);
-}
-
-.workflow-card--epic.card-error-glow {
-  border-color: var(--accent);
-  outline-color: var(--accent);
-  box-shadow: 0 0 var(--epic-glow-radius) rgba(233, 69, 96, 0.35);
-}
-
-/* Epic hover/focus pulse — glow only, no layout-affecting properties (FR-010) */
-@keyframes epic-pulse {
-  0%, 100% { box-shadow: 0 0 var(--epic-glow-radius) var(--epic-glow-color); }
-  50% { box-shadow: 0 0 calc(var(--epic-glow-radius) + var(--epic-glow-pulse-delta)) var(--epic-glow-color); }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .workflow-card--epic:hover,
-  .workflow-card--epic:focus-visible {
-    animation: epic-pulse 2s ease-in-out infinite;
-  }
-}
-
-/* Pulse animation for waiting_for_input */
-@keyframes card-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(240, 192, 64, 0); }
-  50% { box-shadow: 0 0 12px 2px rgba(240, 192, 64, 0.4); }
-}
-
-.workflow-card.card-pulse {
-  animation: card-pulse 2s ease-in-out infinite;
-  border-color: var(--accent-yellow);
-}
-
-/* Error glow for minimized error cards */
-.workflow-card.card-error-glow {
-  border-color: var(--accent);
-  box-shadow: 0 0 6px rgba(233, 69, 96, 0.3);
-}
-
-.card-status {
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 1px 8px;
-  border-radius: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  align-self: flex-start;
-}
-
-.card-status-idle { background: var(--border); color: var(--text-dim); }
-.card-status-running { background: rgba(74,158,255,0.2); color: var(--accent-blue); }
-.card-status-waiting { background: rgba(240,192,64,0.2); color: var(--accent-yellow); }
-.card-status-completed { background: rgba(78,204,163,0.2); color: var(--accent-green); }
-.card-status-paused { background: rgba(180,130,255,0.2); color: var(--accent-purple, #b482ff); }
-.card-status-aborted { background: rgba(136,136,170,0.2); color: var(--text-dim); }
-.card-status-error { background: rgba(233,69,96,0.2); color: var(--accent); }
-
-.card-summary {
-  font-size: 0.72rem;
-  color: var(--text);
-  word-break: break-word;
-  max-width: 80ch;
-  /* Truncate long titles so card height stays within the size envelope (FR-011) */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.card-step {
-  font-size: 0.7rem;
-  color: var(--accent-blue);
-  font-weight: 500;
-}
-
+/* Timer helper used by epic-tree (legacy card strip retired per FR-044). */
 .card-timer {
   font-size: 0.7rem;
   color: var(--text-dim);
   font-family: "Cascadia Code", "Fira Code", monospace;
 }
 
-/* Card type badge — shared slot across all card kinds */
-.card-type-badge {
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 1px 8px;
-  border-radius: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  align-self: flex-start;
-  background: var(--border);
-  color: var(--text-dim);
-}
-
-/* ── Welcome area ───────────────────────────────────────── */
-
-.welcome-area {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-}
-
-.welcome-text {
-  color: var(--text-dim);
-  font-size: 0.9rem;
-  font-style: italic;
-  max-width: 80ch;
-}
-
-/* ── Workflow window (detail view) ──────────────────────── */
-
-.workflow-window {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.status-area {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-2);
-}
-
-.status-label {
-  color: var(--text-dim);
-  font-size: 0.85rem;
-}
-
-.status-badge {
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 2px 10px;
-  border-radius: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.status-badge.idle { background: var(--border); color: var(--text-dim); }
-.status-badge.running { background: rgba(74,158,255,0.2); color: var(--accent-blue); }
-.status-badge.waiting_for_input { background: rgba(240,192,64,0.2); color: var(--accent-yellow); }
-.status-badge.waiting_for_dependencies { background: rgba(240,192,64,0.15); color: var(--accent-yellow); }
-.status-badge.completed { background: rgba(78,204,163,0.2); color: var(--accent-green); }
-.status-badge.paused { background: rgba(180,130,255,0.2); color: var(--accent-purple, #b482ff); }
-.status-badge.aborted { background: rgba(136,136,170,0.2); color: var(--text-dim); }
-.status-badge.error { background: rgba(233,69,96,0.2); color: var(--accent); }
-
-.summary-group {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  margin-left: auto;
-  gap: 2px;
-}
-
-.summary-text {
-  font-size: 1.1rem;
-  color: var(--text);
-  font-weight: 600;
-}
-
-.step-summary-text {
-  font-size: 0.78rem;
-  color: var(--text-dim);
-  font-style: italic;
-}
-
-.step-summary-text:empty {
-  display: none;
-}
-
-.flavor-text {
-  font-size: 0.75rem;
-  color: #b8941f;
-  font-style: italic;
-  opacity: 0.8;
-}
-
-.flavor-text::before {
-  content: "** ";
-}
-
-.flavor-text::after {
-  content: " **";
-}
-
-.flavor-text:empty {
-  display: none;
-}
-
-/* ── Branch Info ─────────────────────────────────────── */
-
-.branch-info {
-  display: flex;
-  gap: 16px;
-  padding: 6px 16px;
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.branch-info-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.branch-info-label {
-  opacity: 0.6;
-}
-
-.branch-info-value {
-  color: var(--text);
-  font-family: "Cascadia Code", "Fira Code", monospace;
-  font-size: 0.75rem;
-}
-
-/* ── User Input Display ──────────────────────────────── */
+/* Legacy status / workflow / branch / spec-details / detail-actions
+ * styles retired per FR-044 — those elements are hidden by
+ * workflow-detail-handler.LEGACY_IDS_TO_HIDE. .user-input kept because
+ * epic-detail-handler reuses the class for analysis notes. */
 
 .user-input {
   padding: 8px 16px;
@@ -444,6 +117,31 @@ header h1 {
 .user-input pre code, .question-content pre code { background: none; padding: 0; }
 .user-input a, .question-content a { color: var(--accent-blue); }
 
+.question-content p { margin: 0 0 0.5em; }
+.question-content p:last-child { margin-bottom: 0; }
+.question-content h1, .question-content h2, .question-content h3 {
+  font-size: 0.9rem;
+  margin: 0.5em 0 0.3em;
+  color: var(--text);
+}
+.question-content ul, .question-content ol { margin: 0.3em 0; padding-left: 1.5em; }
+.question-content code {
+  font-family: "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.question-content pre {
+  background: var(--bg);
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  margin: 0.4em 0;
+}
+.question-content pre code { background: none; padding: 0; }
+.question-content a { color: var(--accent-blue); }
+
 .epic-analysis-notes {
   border-left: 3px solid var(--accent-yellow);
   background: rgba(240, 192, 64, 0.03);
@@ -452,47 +150,6 @@ header h1 {
 .infeasible-notes-fullheight {
   min-height: 100%;
   border-bottom: none;
-}
-
-/* ── Specification Details ────────────────────────────── */
-
-.spec-details {
-  padding: 0 16px;
-}
-
-.spec-details-summary {
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  cursor: pointer;
-  user-select: none;
-}
-
-.spec-details-text {
-  font-size: 0.78rem;
-  color: var(--text-dim);
-  line-height: 1.4;
-  padding: 6px 0;
-  white-space: pre-wrap;
-  max-height: 120px;
-  overflow-y: auto;
-}
-
-/* ── Detail Actions ───────────────────────────────────── */
-
-.detail-actions {
-  display: flex;
-  gap: 8px;
-  padding: 6px 16px;
-}
-
-.workflow-error-banner {
-  margin: 8px 16px;
-  padding: 8px 12px;
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  background: rgba(233, 69, 96, 0.1);
-  color: var(--accent);
-  font-size: 0.85rem;
 }
 
 .output-area {
@@ -1046,25 +703,6 @@ body::-webkit-scrollbar-track {
     margin-top: -300px;
     padding: 12px;
   }
-}
-
-/* ── Config Panel ──────────────────────────────────────── */
-
-.btn-config {
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-dim);
-  cursor: pointer;
-  padding: 4px 8px;
-  display: flex;
-  align-items: center;
-  transition: color 0.15s, border-color 0.15s;
-}
-
-.btn-config:hover {
-  color: var(--accent-blue);
-  border-color: var(--accent-blue);
 }
 
 /* ── Config Page ──────────────────────────────────────── */
@@ -1869,48 +1507,8 @@ body::-webkit-scrollbar-track {
   color: var(--bg);
 }
 
-/* ── Header Action Buttons ─────────────────────────────── */
-
-.header-actions {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.btn-header {
-  padding: 5px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  color: var(--text);
-  font-size: 0.8rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-
-.btn-header:hover {
-  border-color: var(--accent-blue);
-  color: var(--accent-blue);
-}
-
-.btn-toggle.mode-normal {
-  border-color: var(--accent-blue);
-  background: rgba(74, 158, 255, 0.15);
-  color: var(--accent-blue);
-}
-
-.btn-toggle.mode-full-auto {
-  border-color: var(--accent-green);
-  background: rgba(78, 204, 163, 0.15);
-  color: var(--accent-green);
-}
-
-.btn-toggle.mode-manual {
-  border-color: var(--accent-yellow);
-  background: rgba(240, 192, 64, 0.15);
-  color: var(--accent-yellow);
-}
+/* Legacy header action button styles retired per FR-044 (§1.2) —
+ * the legacy <header> element is hidden by ensureTopBar(). */
 
 .hidden { display: none !important; }
 

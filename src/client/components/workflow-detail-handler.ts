@@ -21,7 +21,7 @@ import { hideNotFoundPanel, showNotFoundPanel } from "./not-found-panel";
 import type { PipelineStepsArtifactContext } from "./pipeline-steps";
 import { renderPipelineSteps } from "./pipeline-steps";
 import { hideQuestion, showQuestion } from "./question-panel";
-import { projectRunScreenModel } from "./run-screen/project-run-screen";
+import { displayToFullModelId, projectRunScreenModel } from "./run-screen/project-run-screen";
 import {
 	createRunScreenLayout,
 	type RunScreenLayoutController,
@@ -33,17 +33,7 @@ import {
 	removeThinkingIndicator,
 	renderOutputEntries,
 	syncThinkingIndicator,
-	updateActiveModelPanel,
-	updateBranchInfo,
-	updateDetailActions,
-	updateFeedbackHistorySection,
-	updateFlavor,
-	updateSpecDetails,
-	updateStepSummary,
-	updateSummary,
-	updateUserInput,
 	updateWorkflowErrorBanner,
-	updateWorkflowStatus,
 } from "./workflow-window";
 
 export interface WorkflowDetailDeps {
@@ -66,11 +56,12 @@ export interface WorkflowDetailDeps {
 	setSelectStep?: (selectStep: ((index: number) => void) | null) => void;
 }
 
+// `pipeline-steps` is deliberately retained: it hosts the artifact-dropdown
+// affordance (SC-008, FR-043) which the redesigned stepper does not duplicate.
 const LEGACY_IDS_TO_HIDE = [
 	"status-area",
 	"branch-info",
 	"spec-details",
-	"pipeline-steps",
 	"active-model-panel",
 	"output-area",
 ];
@@ -106,10 +97,11 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 			},
 			onModelChange: (newModel) => {
 				const wf = entry.state;
+				const fullId = displayToFullModelId(newModel);
 				const path =
 					wf.workflowKind === "quick-fix"
-						? { models: { implement: newModel } }
-						: { models: { specify: newModel } };
+						? { models: { implement: fullId } }
+						: { models: { specify: fullId } };
 				deps.send({ type: "config:save", config: path });
 			},
 			onEffortChange: (newEffort) => {
@@ -161,23 +153,15 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		mountRunScreen(entry);
 		hideLegacyInterior();
 
-		updateWorkflowStatus(wf);
+		// Legacy updaters that wrote into DOM hidden by `hideLegacyInterior()`
+		// have been retired (§2.4). The artifact dropdown still lives in the
+		// legacy `#pipeline-steps` strip (FR-043 / §1.8), so that render path
+		// is preserved; everything else is driven by the run-screen layout.
 		updateWorkflowErrorBanner(wf);
-		updateBranchInfo(wf);
-		updateActiveModelPanel({ kind: "workflow", workflow: wf });
 		renderPipelineSteps(wf, selectedStepIndex, doSelectStep, deps.getArtifactContext(wf.id));
 		if (!deps.getArtifactContext(wf.id)) {
 			deps.fetchArtifacts(wf.id);
 		}
-		if (wf.summary) updateSummary(wf.summary);
-		updateStepSummary(wf.stepSummary ?? "");
-		updateFlavor(wf.flavor ?? "");
-		updateUserInput(wf.specification);
-		updateSpecDetails("");
-		updateFeedbackHistorySection(wf.feedbackEntries);
-
-		const actions = buildActionButtons(wf);
-		updateDetailActions(actions);
 
 		renderBackToEpicButton(wf);
 
@@ -205,119 +189,6 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		}
 
 		hideFeedbackPanelUnlessFor(wf.id);
-	}
-
-	function buildActionButtons(
-		wf: WorkflowState,
-	): { label: string; className: string; onClick: () => void }[] {
-		const actions: { label: string; className: string; onClick: () => void }[] = [];
-		const isError = wf.status === "error";
-		const autoMode = deps.getAutoMode();
-
-		if (wf.status === "running") {
-			actions.push({
-				label: "Pause",
-				className: "btn-secondary",
-				onClick: () => deps.send({ type: "workflow:pause", workflowId: wf.id }),
-			});
-		}
-		if (wf.status === "paused") {
-			actions.push({
-				label: "Resume",
-				className: "btn-primary",
-				onClick: () => deps.send({ type: "workflow:resume", workflowId: wf.id }),
-			});
-			if (autoMode === "manual" && wf.steps[wf.currentStepIndex]?.name === STEP.MERGE_PR) {
-				actions.push({
-					label: "Provide Feedback",
-					className: "btn-secondary",
-					onClick: () => deps.openFeedbackPanel(wf),
-				});
-			}
-			actions.push({
-				label: "Abort",
-				className: "btn-danger",
-				onClick: () => {
-					if (confirm("Are you sure you want to abort this workflow?")) {
-						deps.send({ type: "workflow:abort", workflowId: wf.id });
-					}
-				},
-			});
-		}
-		if (wf.status === "waiting_for_input" || wf.status === "waiting_for_dependencies") {
-			actions.push({
-				label: "Abort",
-				className: "btn-danger",
-				onClick: () => {
-					if (confirm("Are you sure you want to abort this workflow?")) {
-						deps.send({ type: "workflow:abort", workflowId: wf.id });
-					}
-				},
-			});
-		}
-		if (isError) {
-			actions.push({
-				label: "Retry step",
-				className: "btn-secondary",
-				onClick: () => deps.send({ type: "workflow:retry", workflowId: wf.id }),
-			});
-			// FR-016: an errored fix-implement step accepts appended feedback as
-			// retry context — expose the same feedback panel used for manual-mode
-			// merge-pr pauses. `handleFeedback` enforces the status/step invariant
-			// server-side; this button is the only UI entry point.
-			if (wf.steps[wf.currentStepIndex]?.name === STEP.FIX_IMPLEMENT) {
-				actions.push({
-					label: "Provide Feedback",
-					className: "btn-secondary",
-					onClick: () => deps.openFeedbackPanel(wf),
-				});
-			}
-			// Abort is offered alongside Retry so the user can put an unrecoverable
-			// workflow into a terminal state. Without it, a stuck error holds its
-			// managed-repo refcount indefinitely (error is non-terminal for refcount).
-			actions.push({
-				label: "Abort",
-				className: "btn-danger",
-				onClick: () => {
-					if (confirm("Are you sure you want to abort this workflow?")) {
-						deps.send({ type: "workflow:abort", workflowId: wf.id });
-					}
-				},
-			});
-		}
-		// Retry workflow — available from `error` OR `aborted`. Resets the entire
-		// workflow to Setup, deleting branch/worktree/artifacts. Distinct from
-		// the per-step "Retry step" action above.
-		if (wf.status === "error" || wf.status === "aborted") {
-			actions.push({
-				label: "Retry workflow",
-				className: "btn-secondary",
-				onClick: () => {
-					if (
-						confirm(
-							"This will reset the workflow to Setup and delete its branch, worktree, and artifacts. Uncommitted changes in the managed worktree will be lost. Continue?",
-						)
-					) {
-						deps.send({ type: "workflow:retry-workflow", workflowId: wf.id });
-					}
-				},
-			});
-		}
-		if (wf.status === "idle" && wf.epicId) {
-			actions.push({
-				label: "Start",
-				className: "btn-primary",
-				onClick: () => deps.send({ type: "workflow:start-existing", workflowId: wf.id }),
-			});
-		}
-		if (wf.status === "waiting_for_dependencies") {
-			actions.push({
-				label: "Force Start",
-				className: "btn-secondary",
-				onClick: () => deps.send({ type: "workflow:force-start", workflowId: wf.id }),
-			});
-		}
-		return actions;
 	}
 
 	let lastBackButtonEpicId: string | null = null;

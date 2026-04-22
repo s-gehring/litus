@@ -43,7 +43,6 @@ function stateChip(state: TaskCardModel["state"], accentColor: string): HTMLElem
 function pipelineBar(
 	pipeline: TaskPipelineSegment[],
 	accentC: string,
-	accentGlow: string,
 	type: TaskCardModel["type"],
 ): HTMLElement {
 	const total = pipeline.length > 0 ? pipeline.length : DEFAULT_STEPS[type];
@@ -75,7 +74,6 @@ function pipelineBar(
 		if (isCurrent) seg.dataset.litusAnimate = "running-step-bar";
 		wrap.appendChild(seg);
 	}
-	void accentGlow;
 	return wrap;
 }
 
@@ -176,7 +174,6 @@ export function createTaskCard(
 		overflow: "hidden",
 		minHeight: "34px",
 	} satisfies Partial<CSSStyleDeclaration>);
-	(title.style as CSSStyleDeclaration & Record<string, string>)["webkit-line-clamp"] = "2";
 	(title.style as CSSStyleDeclaration & Record<string, string>)["-webkit-line-clamp"] = "2";
 	title.textContent = model.title;
 	btn.appendChild(title);
@@ -199,7 +196,7 @@ export function createTaskCard(
 	meta.textContent = metaParts.join(" · ");
 	btn.appendChild(meta);
 
-	btn.appendChild(pipelineBar(model.pipeline, accent.c, accent.glow, model.type));
+	btn.appendChild(pipelineBar(model.pipeline, accent.c, model.type));
 
 	return btn;
 }

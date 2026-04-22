@@ -2,7 +2,7 @@
 // RunScreenModel. Kept separate from run-screen-model.ts so the model file
 // stays a pure type-declaration + state-mapping helper.
 
-import type { AppConfig, WorkflowClientState, WorkflowState } from "../../../types";
+import type { AppConfig, ToolUsage, WorkflowClientState, WorkflowState } from "../../../types";
 import type { LogEvent } from "./log-kind-classifier";
 import { classifyLine } from "./log-kind-classifier";
 import {
@@ -11,7 +11,32 @@ import {
 	taskStateFromStatus,
 	taskTypeFromWorkflow,
 } from "./run-screen-model";
-import { projectTouchedFiles, toolUsagesToLogItems } from "./touched-files-projector";
+import {
+	EDIT_TOOLS,
+	projectTouchedFiles,
+	READ_TOOLS,
+	toolUsagesToLogItems,
+} from "./touched-files-projector";
+
+// Mapping between the segmented picker's display IDs and full Anthropic
+// model IDs persisted in `AppConfig.models`. The picker's UI surface is
+// `haiku-4 | sonnet-4.5 | opus-4.7`; the CLI accepts the full dated ID.
+const FULL_MODEL_IDS: Record<"haiku-4" | "sonnet-4.5" | "opus-4.7", string> = {
+	"haiku-4": "claude-haiku-4-5-20251001",
+	"sonnet-4.5": "claude-sonnet-4-5",
+	"opus-4.7": "claude-opus-4-7",
+};
+
+export function displayToFullModelId(display: string): string {
+	const key = display as keyof typeof FULL_MODEL_IDS;
+	return FULL_MODEL_IDS[key] ?? display;
+}
+
+export function fullToDisplayModelId(full: string): "haiku-4" | "sonnet-4.5" | "opus-4.7" {
+	if (/haiku/i.test(full)) return "haiku-4";
+	if (/opus/i.test(full)) return "opus-4.7";
+	return "sonnet-4.5";
+}
 
 export interface ProjectOptions {
 	/** Current server config (for model/effort readout). Null while not loaded. */
@@ -24,13 +49,17 @@ function configModelFor(wf: WorkflowState, config: AppConfig | null): string {
 	// representative per-type config (FR-027 allows reusing existing endpoints;
 	// AppConfig is keyed by step rather than type).
 	const m = wf.workflowKind === "quick-fix" ? config.models.implement : config.models.specify;
-	return m && m.length > 0 ? m : "sonnet-4.5";
+	if (!m || m.length === 0) return "sonnet-4.5";
+	return fullToDisplayModelId(m);
 }
 
-function configEffortFor(wf: WorkflowState, config: AppConfig | null): "low" | "medium" | "high" {
+function configEffortFor(
+	wf: WorkflowState,
+	config: AppConfig | null,
+): "low" | "medium" | "high" | "xhigh" | "max" {
 	if (!config) return "medium";
 	const e = wf.workflowKind === "quick-fix" ? config.efforts.implement : config.efforts.specify;
-	if (e === "low" || e === "medium" || e === "high") return e;
+	if (e === "low" || e === "medium" || e === "high" || e === "xhigh" || e === "max") return e;
 	return "medium";
 }
 
@@ -59,8 +88,8 @@ function upcomingStepNames(wf: WorkflowState): string[] {
 	return wf.steps.slice(idx + 1).map((s) => s.displayName);
 }
 
-function aggregateTools(entry: WorkflowClientState) {
-	const all: import("../../../types").ToolUsage[] = [];
+function aggregateTools(entry: WorkflowClientState): ToolUsage[] {
+	const all: ToolUsage[] = [];
 	for (const step of entry.state.steps) {
 		for (const row of step.outputLog ?? []) {
 			if (row.kind === "tools") all.push(...row.tools);
@@ -81,8 +110,8 @@ export function projectRunScreenModel(
 	const events = projectLogEvents(entry);
 	const counters = {
 		toolCalls: allTools.length,
-		reads: allTools.filter((t) => /read/i.test(t.name)).length,
-		edits: allTools.filter((t) => /edit|write/i.test(t.name)).length,
+		reads: allTools.filter((t) => READ_TOOLS.has(t.name)).length,
+		edits: allTools.filter((t) => EDIT_TOOLS.has(t.name)).length,
 	};
 	const writingLineIndex = state === "running" && events.length > 0 ? events.length - 1 : null;
 
@@ -125,7 +154,7 @@ export function projectRunScreenModel(
 			python: null,
 			node: null,
 			pnpm: null,
-			claudeMdLoaded: false,
+			claudeMdLoaded: false, // TODO: infer from setup-step artifact per data-model.md §9
 			skills: [],
 		},
 		touched: projectTouchedFiles(allTools),

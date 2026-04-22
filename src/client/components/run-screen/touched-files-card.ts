@@ -43,18 +43,9 @@ function fileRow(file: TouchedFile): HTMLElement {
 	path.title = file.path;
 	d.appendChild(path);
 
-	if (file.added > 0 || file.removed > 0) {
-		const stat = document.createElement("span");
-		Object.assign(stat.style, {
-			color: col,
-			fontSize: "10.5px",
-		} satisfies Partial<CSSStyleDeclaration>);
-		const parts: string[] = [];
-		if (file.added) parts.push(`+${file.added}`);
-		if (file.removed) parts.push(`−${file.removed}`);
-		stat.textContent = parts.join(" ");
-		d.appendChild(stat);
-	}
+	// Stat column (+n −m) dropped per §2.6: the server doesn't emit per-file
+	// added/removed line counts, so the UI would ship permanently empty. Drop
+	// it from data-model.md §10 / FR-035 when re-spec'd.
 
 	return d;
 }

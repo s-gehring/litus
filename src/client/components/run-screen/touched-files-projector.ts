@@ -5,8 +5,8 @@ import type { ToolUsage } from "../../../types";
 import type { LogToolItem } from "./log-kind-classifier";
 import type { TouchedFile } from "./run-screen-model";
 
-const READ_TOOLS = new Set(["Read", "read"]);
-const EDIT_TOOLS = new Set(["Edit", "Write"]);
+export const READ_TOOLS = new Set(["Read", "read"]);
+export const EDIT_TOOLS = new Set(["Edit", "Write"]);
 const GREP_TOOLS = new Set(["Grep", "Glob"]);
 const CMD_TOOLS = new Set(["Bash", "PowerShell"]);
 
@@ -32,8 +32,6 @@ export function projectTouchedFiles(tools: ToolUsage[]): TouchedFile[] {
 		byPath.set(path, {
 			path,
 			kind: prev?.kind === "new" ? "new" : kind,
-			added: prev?.added ?? 0,
-			removed: prev?.removed ?? 0,
 		});
 	}
 	return Array.from(byPath.values());

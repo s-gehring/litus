@@ -11,7 +11,7 @@ import { createUpcomingCard } from "./upcoming-card";
 export interface RunScreenLayoutHandlers {
 	onPauseToggle: () => void;
 	onModelChange: (model: string) => void;
-	onEffortChange: (effort: "low" | "medium" | "high") => void;
+	onEffortChange: (effort: "low" | "medium" | "high" | "xhigh" | "max") => void;
 	onStepClick: (stepName: string) => void;
 }
 

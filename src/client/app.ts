@@ -40,10 +40,9 @@ import {
 import { getAnswer } from "./components/question-panel";
 import { projectTaskCards } from "./components/run-screen/task-card-model";
 import { createTaskRail, type TaskRailController } from "./components/run-screen/task-rail";
-import { EPIC_CARD_PREFIX } from "./components/status-maps";
 import { createTopBar, type TopBarController } from "./components/top-bar";
 import { serverAutoModeFor, type TopBarModel, topBarAutoMode } from "./components/top-bar-model";
-import { renderCardStrip, updateTimers } from "./components/workflow-cards";
+import { updateTimers } from "./components/workflow-cards";
 import { workflowCreatedTarget } from "./components/workflow-created-route";
 import { createWorkflowDetailHandler } from "./components/workflow-detail-handler";
 import { appendOutput, setDefaultModelDisplayName } from "./components/workflow-window";
@@ -272,26 +271,6 @@ function isViewingWorkflow(workflowId: string): boolean {
 	);
 }
 
-function activeCardId(): string | null {
-	const path = appRouter?.currentPath ?? null;
-	if (!path) return null;
-	const wfMatch = path.match(/^\/workflow\/(.+)$/);
-	if (wfMatch) {
-		const id = wfMatch[1];
-		const entry = stateManager.getWorkflows().get(id);
-		if (entry?.state.epicId) return `${EPIC_CARD_PREFIX}${entry.state.epicId}`;
-		return id;
-	}
-	const epicMatch = path.match(/^\/epic\/(.+)$/);
-	if (epicMatch) {
-		const id = epicMatch[1];
-		// Epic analysis card (no prefix) if the aggregate isn't present yet.
-		if (stateManager.getEpicAggregates().has(id)) return `${EPIC_CARD_PREFIX}${id}`;
-		return id;
-	}
-	return null;
-}
-
 function handleMessage(msg: ServerMessage): void {
 	stateManager.handleMessage(msg);
 
@@ -385,7 +364,6 @@ function handleMessage(msg: ServerMessage): void {
 
 		case "config:state": {
 			updateConfigPage(msg.config, msg.warnings);
-			syncAutoModeToggle(msg.config.autoMode);
 			currentAutoMode = msg.config.autoMode;
 			refreshTopBar();
 			latestConfig = msg.config;
@@ -585,38 +563,6 @@ function attachCloneSubmission(
 	};
 }
 
-function handleCardClick(cardId: string): void {
-	if (cardId.startsWith(EPIC_CARD_PREFIX)) {
-		const epicId = cardId.slice(EPIC_CARD_PREFIX.length);
-		appRouter?.navigate(`/epic/${epicId}`);
-		return;
-	}
-	if (stateManager.getWorkflows().has(cardId)) {
-		appRouter?.navigate(`/workflow/${cardId}`);
-		return;
-	}
-	// Epic analysis card — raw epicId
-	appRouter?.navigate(`/epic/${cardId}`);
-}
-
-const AUTO_MODE_CYCLE = ["manual", "normal", "full-auto"] as const;
-const AUTO_MODE_LABELS: Record<string, { icon: string; label: string; className: string }> = {
-	manual: { icon: "⏸", label: "Manual", className: "mode-manual" },
-	normal: { icon: "▶", label: "Normal", className: "mode-normal" },
-	"full-auto": { icon: "⏩", label: "Full Auto", className: "mode-full-auto" },
-};
-
-function syncAutoModeToggle(mode: string): void {
-	const btn = document.getElementById("btn-auto-mode");
-	if (!btn) return;
-	const info = AUTO_MODE_LABELS[mode] ?? AUTO_MODE_LABELS.normal;
-	btn.className = `btn-header btn-toggle ${info.className}`;
-	const icon = btn.querySelector(".toggle-icon");
-	if (icon) icon.textContent = info.icon;
-	const label = btn.querySelector(".toggle-label");
-	if (label) label.textContent = info.label;
-}
-
 let taskRail: TaskRailController | null = null;
 
 function ensureTaskRail(): TaskRailController | null {
@@ -645,9 +591,6 @@ function renderCards(): void {
 		const cards = projectTaskCards(cardOrder, workflows, epics, epicAggregates, activeRouteId);
 		rail.update(cards);
 	}
-	// Legacy card strip still wired up for its internal click handler while
-	// components that depend on it (epic-tree interactions, etc.) are migrated.
-	renderCardStrip(cardOrder, workflows, epics, epicAggregates, activeCardId(), handleCardClick);
 }
 
 function activeEpicIdFromRoute(): string | null {
@@ -989,26 +932,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	const btnSubmitAnswer = $("#btn-submit-answer") as HTMLButtonElement;
 	const btnSkip = $("#btn-skip-question") as HTMLButtonElement;
-
-	const btnQuickFix = document.getElementById("btn-quick-fix");
-	if (btnQuickFix) btnQuickFix.addEventListener("click", openQuickFixModal);
-
-	const btnNewSpec = document.getElementById("btn-new-spec");
-	if (btnNewSpec) btnNewSpec.addEventListener("click", openSpecModal);
-
-	const btnNewEpic = document.getElementById("btn-new-epic");
-	if (btnNewEpic) btnNewEpic.addEventListener("click", openEpicModal);
-
-	const btnAutoMode = document.getElementById("btn-auto-mode");
-	if (btnAutoMode) {
-		btnAutoMode.addEventListener("click", () => {
-			const current =
-				AUTO_MODE_CYCLE.find((m) => btnAutoMode.classList.contains(`mode-${m}`)) ?? "normal";
-			const idx = AUTO_MODE_CYCLE.indexOf(current);
-			const next = AUTO_MODE_CYCLE[(idx + 1) % AUTO_MODE_CYCLE.length];
-			send({ type: "config:save", config: { autoMode: next } });
-		});
-	}
 
 	btnSubmitAnswer.addEventListener("click", () => {
 		const answer = getAnswer();
