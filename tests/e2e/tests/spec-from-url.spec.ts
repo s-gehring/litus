@@ -2,15 +2,11 @@ import { expect, test } from "../harness/fixtures";
 import { ServerMessageObserver } from "../helpers";
 import { AppPage, SpecFormPage } from "../pages";
 
-// US2 — spec-from-URL creation path (shape 2b: the existing repo-URL clone
-// path via `targetRepository`). This feature made no production changes;
-// the full GitHub-URL happy-tail (T023) is intentionally out of scope
-// because end-to-end clone coverage requires harness work to make the `gh`
-// fake perform a real side-effect clone, which is beyond a test-only
-// feature. The non-GitHub rejection path (T024) is covered here and maps
-// cleanly onto the `non-github-url` contract asserted by
-// `tests/integration/spec-from-url.test.ts`.
-test.use({ scenarioName: "spec-from-url", autoMode: "manual" });
+// US2 — spec-from-URL creation path. See `specs/001-creation-modal-e2e/tasks.md`
+// (T023) for the deferred happy-tail scope. The non-github rejection below
+// short-circuits in the server before any scripted fake is invoked, so we
+// reuse the default `happy-path` scenario rather than duplicating it.
+test.use({ autoMode: "manual" });
 
 test.describe("spec from URL", () => {
 	test("non-GitHub URL surfaces clone-error and no workflow is created", async ({
