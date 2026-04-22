@@ -12,6 +12,12 @@ import { createMockWebSocket } from "../test-infra/mock-websocket";
 
 // ── Module mocks ──────────────────────────────────────────────────────
 
+// Import the real git-logger module BEFORE installing the mock so we can
+// restore it in afterAll. Bun's mock.module replaces the module for the rest
+// of the test run, which otherwise pollutes later files (e.g.
+// claude-md-merger.test.ts) that rely on the real gitSpawn.
+import * as realGitLogger from "../../src/git-logger";
+
 const gitSpawnCalls: { args: string[]; cwd?: string }[] = [];
 type GitSpawnImpl = (
 	args: string[],
@@ -45,6 +51,10 @@ mock.module("../../src/git-logger", () => ({
 }));
 
 import { handlePurgeAll } from "../../src/server/purge-handlers";
+
+afterAll(() => {
+	mock.module("../../src/git-logger", () => realGitLogger);
+});
 
 describe("purge-handlers", () => {
 	let tmpRepo: string;
