@@ -68,8 +68,16 @@
 			"exitCode": 0,
 			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"
 		},
-		"pr merge --auto": { "exitCode": 0, "stdout": "Merged pull request #77 (Squash and merge)\n" },
-		"pr merge": { "exitCode": 0, "stdout": "Merged pull request #77 (Squash and merge)\n" },
+		"pr merge --auto": {
+			"exitCode": 0,
+			"stdout": "Merged pull request #77 (Squash and merge)\n",
+			"delayMs": 500
+		},
+		"pr merge": {
+			"exitCode": 0,
+			"stdout": "Merged pull request #77 (Squash and merge)\n",
+			"delayMs": 500
+		},
 		"pr create": {
 			"exitCode": 0,
 			"stdout": "https://github.com/example/repo/pull/77\n"
