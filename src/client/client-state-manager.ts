@@ -248,9 +248,13 @@ export class ClientStateManager {
 		msg: Extract<ServerMessage, { type: "workflow:state" }>,
 	): StateChange {
 		if (!msg.workflow) return { scope: { entity: "none" }, action: "updated" };
+		const prev = this.workflows.get(msg.workflow.id)?.state.archived ?? false;
 		this.addOrUpdateWorkflow(msg.workflow);
 		if (msg.workflow.epicId) {
 			this.rebuildEpicAggregates();
+		}
+		if (prev !== msg.workflow.archived) {
+			this.rebuildCardOrder();
 		}
 		return { scope: { entity: "workflow", id: msg.workflow.id }, action: "updated" };
 	}
@@ -310,11 +314,22 @@ export class ClientStateManager {
 
 	private handleEpicList(msg: Extract<ServerMessage, { type: "epic:list" }>): StateChange {
 		for (const pe of msg.epics) {
-			if (!this.epics.has(pe.epicId)) {
+			const existing = this.epics.get(pe.epicId);
+			if (!existing) {
 				this.epics.set(pe.epicId, { ...pe, outputLines: [] });
 				if (pe.workflowIds.length === 0 && !this.cardOrder.includes(pe.epicId)) {
 					this.cardOrder.unshift(pe.epicId);
 				}
+			} else {
+				existing.archived = pe.archived;
+				existing.archivedAt = pe.archivedAt;
+				existing.workflowIds = pe.workflowIds;
+				existing.title = pe.title;
+				existing.status = pe.status;
+				existing.completedAt = pe.completedAt;
+				existing.errorMessage = pe.errorMessage;
+				existing.infeasibleNotes = pe.infeasibleNotes;
+				existing.analysisSummary = pe.analysisSummary;
 			}
 		}
 		this.rebuildEpicAggregates();
@@ -335,6 +350,8 @@ export class ClientStateManager {
 			errorMessage: null,
 			infeasibleNotes: null,
 			analysisSummary: null,
+			archived: false,
+			archivedAt: null,
 		});
 		this.cardOrder.unshift(msg.epicId);
 		return { scope: { entity: "epic", id: msg.epicId }, action: "added" };
@@ -497,7 +514,10 @@ export class ClientStateManager {
 
 		for (const [, entry] of this.workflows) {
 			const wf = entry.state;
+			if (wf.archived) continue;
 			if (wf.epicId) {
+				const parentEpic = this.epics.get(wf.epicId);
+				if (parentEpic?.archived) continue;
 				if (!seenEpics.has(wf.epicId)) {
 					seenEpics.add(wf.epicId);
 					const agg = this.epicAggregates.get(wf.epicId);
@@ -512,6 +532,7 @@ export class ClientStateManager {
 		}
 
 		for (const [epicId, epic] of this.epics) {
+			if (epic.archived) continue;
 			if (!seenEpics.has(epicId) && epic.workflowIds.length === 0) {
 				items.push({ key: epicId, sortDate: epic.startedAt });
 			}

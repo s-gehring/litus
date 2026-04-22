@@ -18,6 +18,8 @@ import {
 	showAlertList,
 } from "./components/alert-list";
 import { initAlertToasts, removeAlertToast, showAlertToast } from "./components/alert-toast";
+import { updateArchiveCount } from "./components/archive-count-badge";
+import { createArchiveHandler } from "./components/archive-handler";
 import {
 	createConfigPageHandler,
 	hidePurgeProgress,
@@ -331,6 +333,21 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "workflow:archive-denied": {
+			showAlertToast({
+				id: `archive-denied-${Date.now()}`,
+				type: "error",
+				title: "Archive refused",
+				description: msg.message,
+				workflowId: msg.workflowId,
+				epicId: msg.epicId,
+				targetRoute: "/",
+				createdAt: Date.now(),
+				seen: true,
+			});
+			break;
+		}
+
 		case "repo:clone-start": {
 			pendingCloneSubmissions.get(msg.submissionId)?.onStart(msg.owner, msg.repo, msg.reused);
 			break;
@@ -536,6 +553,7 @@ function renderCards(): void {
 	const epicAggregates = stateManager.getEpicAggregates();
 	const cardOrder = stateManager.getCardOrder();
 	renderCardStrip(cardOrder, workflows, epics, epicAggregates, activeCardId(), handleCardClick);
+	updateArchiveCount(stateManager);
 }
 
 function openFeedbackPanel(wf: WorkflowState): void {
@@ -970,6 +988,14 @@ document.addEventListener("DOMContentLoaded", () => {
 				() => latestConfig,
 			),
 		);
+		appRouter.register(
+			"/archive",
+			createArchiveHandler({
+				getState: () => stateManager,
+				send,
+				navigate: (path) => appRouter?.navigate(path),
+			}),
+		);
 		appRouter.setNavigateListener((path) => {
 			// Re-render the card strip so the `card-expanded` affordance tracks the
 			// URL on every navigation. Without this, back-navigating from a
@@ -1019,6 +1045,14 @@ document.addEventListener("DOMContentLoaded", () => {
 			send({ type: "alert:clear-all" });
 		},
 	});
+
+	const btnArchive = document.getElementById("btn-archive");
+	if (btnArchive) {
+		btnArchive.addEventListener("click", (e) => {
+			e.preventDefault();
+			appRouter?.navigate("/archive");
+		});
+	}
 
 	const btnBell = document.getElementById("btn-alert-bell");
 	if (btnBell) {
