@@ -20,6 +20,15 @@ describe("fix-implementer prompt", () => {
 		expect(prompt).toMatch(/push/i);
 	});
 
+	test("prepends the CLAUDE.md contract header exactly once (T012)", async () => {
+		const wf = await makeQuickFix("Fix X");
+		const prompt = buildFixImplementPrompt(wf);
+		const phrase = "CLAUDE.md is Litus-managed local context";
+		expect(prompt).toContain(phrase);
+		expect(prompt.split(phrase).length - 1).toBe(1);
+		expect(prompt.startsWith("## CLAUDE.md is Litus-managed local context")).toBe(true);
+	});
+
 	test("appends in-flight feedback entry text as retry context", async () => {
 		const wf = await makeQuickFix("Fix X");
 		wf.feedbackEntries.push({

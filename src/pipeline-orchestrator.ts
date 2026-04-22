@@ -6,6 +6,7 @@ import { AuditLogger } from "./audit-logger";
 import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
 import { CIMonitorCoordinator } from "./ci-monitor-coordinator";
+import { type ClaudeMdGuardResult, guardClaudeMd as defaultGuardClaudeMd } from "./claude-md-guard";
 import {
 	type AppendResult,
 	appendProjectClaudeMd as defaultAppendProjectClaudeMd,
@@ -36,6 +37,7 @@ import {
 	mergePr as defaultMergePr,
 	resolveConflicts as defaultResolveConflicts,
 } from "./pr-merger";
+import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
 import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
@@ -122,6 +124,12 @@ export interface PipelineDeps {
 	detectNewCommits?: (preRunHead: string, cwd: string) => Promise<string[]>;
 	/** Override per-step output cap (default `MAX_STEP_OUTPUT_CHARS`). Test-only. */
 	maxStepOutputChars?: number;
+	/** Pre-push CLAUDE.md guard. Overridable in tests. */
+	guardClaudeMd?: (cwd: string) => Promise<ClaudeMdGuardResult>;
+	/** `git push -u origin <branch>`. Overridable in tests. */
+	gitPushFeatureBranch?: (cwd: string, branch: string) => Promise<{ code: number; stderr: string }>;
+	/** `gh pr create --fill`. Overridable in tests. */
+	ghPrCreate?: (cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
 }
 
 const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
@@ -211,6 +219,12 @@ export class PipelineOrchestrator {
 	private checkoutMasterFn: (cwd: string) => Promise<{ code: number; stderr: string }>;
 	private getGitHeadFn: (cwd: string) => Promise<string | null>;
 	private detectNewCommitsFn: (preRunHead: string, cwd: string) => Promise<string[]>;
+	private guardClaudeMdFn: (cwd: string) => Promise<ClaudeMdGuardResult>;
+	private gitPushFeatureBranchFn: (
+		cwd: string,
+		branch: string,
+	) => Promise<{ code: number; stderr: string }>;
+	private ghPrCreateFn: (cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
 	private maxStepOutputChars: number;
 	private artifactsState: Map<string, ArtifactsStepState> = new Map();
 
@@ -252,6 +266,16 @@ export class PipelineOrchestrator {
 				}
 			});
 		this.detectNewCommitsFn = deps?.detectNewCommits ?? detectNewCommits;
+		this.guardClaudeMdFn = deps?.guardClaudeMd ?? defaultGuardClaudeMd;
+		this.gitPushFeatureBranchFn =
+			deps?.gitPushFeatureBranch ??
+			(async (cwd: string, branch: string) => {
+				const res = await gitSpawn(["git", "push", "-u", "origin", branch], { cwd });
+				return { code: res.code, stderr: res.stderr };
+			});
+		this.ghPrCreateFn =
+			deps?.ghPrCreate ??
+			(async (cwd: string) => gitSpawn(["gh", "pr", "create", "--fill"], { cwd }));
 		this.maxStepOutputChars = deps?.maxStepOutputChars ?? MAX_STEP_OUTPUT_CHARS;
 		this.callbacks = callbacks;
 	}
@@ -1188,6 +1212,67 @@ export class PipelineOrchestrator {
 		);
 	}
 
+	/**
+	 * After the agent's commit phase completes: run the CLAUDE.md guard (restore
+	 * the merge-base version if the agent touched CLAUDE.md), then programmatically
+	 * `git push -u origin <branch>` and `gh pr create --fill`. Capture the PR URL
+	 * and route as before. Any failure routes to `handleStepError`.
+	 */
+	private async completeCommitPushPr(workflow: Workflow): Promise<void> {
+		const cwd = requireWorktreePath(workflow);
+
+		const guardResult = await this.guardClaudeMdFn(cwd);
+		if (guardResult.outcome === "unchanged") {
+			this.handleStepOutput(workflow.id, "✓ CLAUDE.md unchanged vs merge-base — no restore needed");
+		} else if (guardResult.outcome === "restored") {
+			this.handleStepOutput(
+				workflow.id,
+				`✓ Restored CLAUDE.md (${guardResult.action}) in ${guardResult.commitSha.slice(0, 7)}`,
+			);
+		} else {
+			const warnMsg = "⚠ No merge-base with origin/master — skipping CLAUDE.md restore";
+			this.handleStepOutput(workflow.id, warnMsg);
+			// Also surface to the server log for postmortem — this path is rare
+			// (disjoint histories) and matches the in-guard warn pattern.
+			logger.warn(`[claude-md-guard] ${warnMsg} (workflow=${workflow.id})`);
+		}
+
+		const branch = workflow.featureBranch ?? workflow.worktreeBranch;
+		if (!branch) {
+			throw new Error("completeCommitPushPr: no feature branch available for push");
+		}
+
+		const push = await this.gitPushFeatureBranchFn(cwd, branch);
+		if (push.code !== 0) {
+			throw new Error(`git push -u origin ${branch} failed: ${push.stderr || `exit ${push.code}`}`);
+		}
+
+		const prRes = await this.ghPrCreateFn(cwd);
+		if (prRes.code !== 0) {
+			throw new Error(`gh pr create failed: ${prRes.stderr || `exit ${prRes.code}`}`);
+		}
+
+		const url = extractPrUrl(prRes.stdout) ?? extractPrUrl(prRes.stderr);
+		if (url) {
+			const firstPr = !workflow.prUrl;
+			workflow.prUrl = url;
+			const step = workflow.steps[workflow.currentStepIndex];
+			step.output += `${url}\n`;
+			step.outputLog.push({ kind: "text", text: url });
+			this.callbacks.onOutput(workflow.id, url);
+			if (firstPr && configStore.get().autoMode === "manual") {
+				this.emitAlert(
+					"pr-opened-manual",
+					workflow,
+					"PR opened — ready to review",
+					`${workflow.summary || workflow.specification.slice(0, 80)} — ${url}`,
+				);
+			}
+		}
+
+		this.routeAfterStep(workflow);
+	}
+
 	private runSetup(workflow: Workflow): void {
 		const targetDir = requireTargetRepository(workflow);
 
@@ -1582,9 +1667,8 @@ export class PipelineOrchestrator {
 		let finalPrompt = prompt;
 		if (step?.name !== STEP.FEEDBACK_IMPLEMENTER && step?.name !== STEP.FIX_IMPLEMENT) {
 			const feedbackCtx = buildFeedbackContext(workflow);
-			if (feedbackCtx) {
-				finalPrompt = `${feedbackCtx}\n\n---\n\n${prompt}`;
-			}
+			const headerBlock = `${CLAUDE_MD_CONTRACT_HEADER}\n\n---\n\n${prompt}`;
+			finalPrompt = feedbackCtx ? `${feedbackCtx}\n\n---\n\n${headerBlock}` : headerBlock;
 		}
 		const stepWorkflow: Workflow = {
 			...workflow,
@@ -1949,19 +2033,10 @@ export class PipelineOrchestrator {
 		}
 
 		if (step.name === STEP.COMMIT_PUSH_PR) {
-			const url = extractPrUrl(step.output);
-			if (url) {
-				const firstPr = !workflow.prUrl;
-				workflow.prUrl = url;
-				if (firstPr && configStore.get().autoMode === "manual") {
-					this.emitAlert(
-						"pr-opened-manual",
-						workflow,
-						"PR opened — ready to review",
-						`${workflow.summary || workflow.specification.slice(0, 80)} — ${url}`,
-					);
-				}
-			}
+			this.completeCommitPushPr(workflow).catch((err) => {
+				this.handleStepError(workflow.id, toErrorMessage(err));
+			});
+			return;
 		}
 
 		// After specify completes, detect the feature branch and rename

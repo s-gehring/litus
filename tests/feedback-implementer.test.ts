@@ -63,6 +63,16 @@ describe("buildFeedbackPrompt", () => {
 		expect(prompt).toContain("rename x to count");
 	});
 
+	test("default template includes the CLAUDE.md contract header exactly once", () => {
+		const cfg = cloneConfig(); // uses DEFAULT_CONFIG.prompts.feedbackImplementerInstruction verbatim
+		const wf = makeWorkflow();
+
+		const prompt = buildFeedbackPrompt(cfg, wf, "apply this", "https://pr");
+		const phrase = "CLAUDE.md is Litus-managed local context";
+		expect(prompt).toContain(phrase);
+		expect(prompt.split(phrase).length - 1).toBe(1);
+	});
+
 	test("empty feedbackEntries produces empty feedbackContext and priorOutcomes", () => {
 		const cfg = cloneConfig();
 		cfg.prompts.feedbackImplementerInstruction =
