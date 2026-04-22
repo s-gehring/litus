@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { runClaude } from "../../src/spawn-utils";
+import { runClaude } from "../../src/claude-spawn";
 
 const originalSpawn = Bun.spawn;
 const originalWarn = console.warn;

@@ -1,7 +1,7 @@
+import { spawnClaude } from "./claude-spawn";
 import { configStore } from "./config-store";
 import { buildGraph, detectCycles } from "./dependency-resolver";
 import { logger } from "./logger";
-import { cleanEnv } from "./spawn-utils";
 import { DELTA_FLUSH_TIMEOUT_MS, type EpicAnalysisResult, type ToolUsage } from "./types";
 
 export function buildDecompositionPrompt(epicDescription: string): string {
@@ -118,13 +118,7 @@ async function runCLIStream(
 	onKillRef?: { current: EpicAnalysisProcess | null },
 	callbacks?: EpicAnalysisCallbacks,
 ): Promise<StreamResult> {
-	const proc = Bun.spawn(args, {
-		cwd,
-		stdout: "pipe",
-		stderr: "pipe",
-		env: cleanEnv(),
-		windowsHide: true,
-	});
+	const proc = spawnClaude(args, { cwd });
 
 	if (onKillRef) {
 		onKillRef.current = { kill: () => proc.kill() };
@@ -264,7 +258,6 @@ export async function analyzeEpic(
 	const effectiveTimeout = timeoutMs ?? config.timing.epicTimeoutMs;
 	const maxJsonRetries = config.limits.maxJsonRetries;
 	const args = [
-		"claude",
 		"-p",
 		prompt,
 		"--output-format",
@@ -307,7 +300,6 @@ export async function analyzeEpic(
 			callbacks?.onOutput?.(`\n\n--- Retrying: ${lastError.message} ---\n\n`);
 
 			const retryArgs = [
-				"claude",
 				"-p",
 				JSON_FIX_PROMPT,
 				"--resume",
