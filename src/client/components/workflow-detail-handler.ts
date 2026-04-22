@@ -369,8 +369,16 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 
 	function syncThinkingIndicatorForStep(wf: WorkflowState, idx: number): void {
 		const step = wf.steps[idx];
+		// Gate on activeInvocation so the spinner only shows when a model is
+		// actually at work. Non-AI steps (SETUP / MERGE_PR / SYNC_REPO) run
+		// without an invocation, and there are brief windows between steps
+		// where activeInvocation is cleared — the spinner must not contradict
+		// the "No model in use" panel in either case.
 		syncThinkingIndicator(
-			idx === wf.currentStepIndex && wf.status === "running" && step?.status === "running",
+			idx === wf.currentStepIndex &&
+				wf.status === "running" &&
+				step?.status === "running" &&
+				wf.activeInvocation !== null,
 		);
 	}
 
