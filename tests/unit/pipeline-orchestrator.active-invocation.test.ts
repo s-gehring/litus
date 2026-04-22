@@ -69,6 +69,8 @@ function createFakeEngine() {
 				error: null,
 				createdAt: now,
 				updatedAt: now,
+				archived: false,
+				archivedAt: null,
 			};
 			return workflow;
 		},

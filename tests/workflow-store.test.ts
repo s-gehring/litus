@@ -141,6 +141,8 @@ describe("WorkflowStore", () => {
 			epicId: null,
 			createdAt: new Date().toISOString(),
 			updatedAt: new Date().toISOString(),
+			archived: false,
+			archivedAt: null,
 		});
 		writeFileSync(indexPath, JSON.stringify(index, null, 2));
 
@@ -317,6 +319,8 @@ describe("WorkflowStore", () => {
 				errorMessage: null,
 				infeasibleNotes: null,
 				analysisSummary: null,
+				archived: false,
+				archivedAt: null,
 			});
 			// Re-reset + re-save to prove the epic's linkage is orthogonal to
 			// the workflow reset cycle.

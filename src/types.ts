@@ -143,6 +143,10 @@ export type AuditEventType =
 	| "answer"
 	| "commit"
 	| "workflow.reset"
+	| "workflow.archive"
+	| "workflow.unarchive"
+	| "epic.archive"
+	| "epic.unarchive"
 	| "artifacts.step.start"
 	| "artifacts.step.end";
 
@@ -344,6 +348,8 @@ export interface WorkflowIndexEntry {
 	epicId: string | null;
 	createdAt: string;
 	updatedAt: string;
+	archived: boolean;
+	archivedAt: string | null;
 }
 
 // CI check result from gh pr checks
@@ -611,6 +617,10 @@ export interface Workflow {
 	error: { message: string } | null;
 	createdAt: string;
 	updatedAt: string;
+	/** Pure visibility flag. Orthogonal to `status`. See 001-archive-workflows. */
+	archived: boolean;
+	/** ISO-8601 timestamp when `archived` flipped to true; null otherwise. */
+	archivedAt: string | null;
 }
 
 // Serializable workflow state for WebSocket messages (strips internal fields from workflow and steps)
@@ -766,6 +776,19 @@ export type ServerMessage =
 	| { type: "alert:dismissed"; alertIds: string[] }
 	| { type: "alert:seen"; alertIds: string[] }
 	| {
+			type: "workflow:archive-denied";
+			workflowId: string | null;
+			epicId: string | null;
+			reason:
+				| "not-archivable-state"
+				| "child-spec-independent-archive"
+				| "not-found"
+				| "already-archived"
+				| "already-active"
+				| "persist-failed";
+			message: string;
+	  }
+	| {
 			type: "error";
 			message: string;
 			requestType?: "workflow:retry-workflow";
@@ -803,6 +826,8 @@ export interface PersistedEpic {
 	errorMessage: string | null;
 	infeasibleNotes: string | null;
 	analysisSummary: string | null;
+	archived: boolean;
+	archivedAt: string | null;
 }
 
 export interface EpicClientState extends PersistedEpic {
@@ -894,4 +919,8 @@ export type ClientMessage =
 	| { type: "alert:dismiss"; alertId: string }
 	| { type: "alert:clear-all" }
 	| { type: "alert:route-changed"; path: string }
+	| { type: "workflow:archive"; workflowId: string }
+	| { type: "workflow:unarchive"; workflowId: string }
+	| { type: "epic:archive"; epicId: string }
+	| { type: "epic:unarchive"; epicId: string }
 	| { type: "purge:all" };

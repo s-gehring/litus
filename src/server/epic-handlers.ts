@@ -25,6 +25,8 @@ function buildEpicData(
 		errorMessage: null,
 		infeasibleNotes: fields.infeasibleNotes,
 		analysisSummary: fields.summary,
+		archived: false,
+		archivedAt: null,
 	};
 }
 
@@ -209,5 +211,211 @@ export const handleEpicAbort: MessageHandler = (_ws, _data, deps) => {
 	if (deps.epicAnalysisRef.current) {
 		deps.epicAnalysisRef.current.kill();
 		deps.epicAnalysisRef.current = null;
+	}
+};
+
+// ── Archive / Unarchive (cascade) ─────────────────────────
+
+async function loadLiveOrPersisted(deps: Parameters<MessageHandler>[2], id: string) {
+	const orch = deps.orchestrators.get(id);
+	const live = orch?.getEngine().getWorkflow();
+	if (live) return live;
+	return deps.sharedStore.load(id);
+}
+
+export const handleArchiveEpic: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "epic:archive" };
+	const { epicId } = msg;
+	if (!epicId) {
+		deps.sendTo(ws, { type: "error", message: "Missing epicId" });
+		return;
+	}
+	const epics = await deps.sharedEpicStore.loadAll();
+	const epic = epics.find((e) => e.epicId === epicId);
+	if (!epic) {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId: null,
+			epicId,
+			reason: "not-found",
+			message: "Epic not found.",
+		});
+		return;
+	}
+	if (epic.archived) {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId: null,
+			epicId,
+			reason: "already-archived",
+			message: "Epic is already archived.",
+		});
+		return;
+	}
+
+	const children: import("../types").Workflow[] = [];
+	for (const childId of epic.workflowIds) {
+		const child = await loadLiveOrPersisted(deps, childId);
+		if (child) children.push(child);
+	}
+	const runningChildren = children.filter((c) => c.status === "running");
+	if (runningChildren.length > 0) {
+		const names = runningChildren.map((c) => c.summary || c.specification || c.id).join(", ");
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId: runningChildren[0].id,
+			epicId,
+			reason: "not-archivable-state",
+			message: `Cannot archive epic while running: ${names}.`,
+		});
+		return;
+	}
+
+	const archivedAt = new Date().toISOString();
+	const affected: import("../types").Workflow[] = [];
+	try {
+		// Persist epic first, then children (research R-05): a mid-cascade failure
+		// leaves an archived epic with possibly-unarchived children — recoverable
+		// via retry — rather than orphan archived children under a live epic.
+		const epicSnapshot = { archived: epic.archived, archivedAt: epic.archivedAt };
+		epic.archived = true;
+		epic.archivedAt = archivedAt;
+		try {
+			await deps.sharedEpicStore.save(epic);
+		} catch (err) {
+			epic.archived = epicSnapshot.archived;
+			epic.archivedAt = epicSnapshot.archivedAt;
+			throw err;
+		}
+		for (const child of children) {
+			if (child.archived) continue;
+			const snapshot = {
+				archived: child.archived,
+				archivedAt: child.archivedAt,
+				updatedAt: child.updatedAt,
+			};
+			child.archived = true;
+			child.archivedAt = archivedAt;
+			child.updatedAt = archivedAt;
+			try {
+				await deps.sharedStore.save(child);
+				affected.push(child);
+			} catch (err) {
+				child.archived = snapshot.archived;
+				child.archivedAt = snapshot.archivedAt;
+				child.updatedAt = snapshot.updatedAt;
+				throw err;
+			}
+		}
+	} catch (err) {
+		logger.error(`[ws] epic:archive persist failed: ${err}`);
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId: null,
+			epicId,
+			reason: "persist-failed",
+			message: "Could not persist epic archive — please retry.",
+		});
+		return;
+	}
+
+	deps.sharedAuditLogger.logArchiveEvent({
+		eventType: "epic.archive",
+		pipelineName: `epic-${epicId}`,
+		workflowId: null,
+		epicId,
+	});
+
+	deps.broadcast({ type: "epic:list", epics });
+	for (const child of affected) {
+		deps.broadcast({ type: "workflow:state", workflow: deps.stripInternalFields(child) });
+	}
+};
+
+export const handleUnarchiveEpic: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "epic:unarchive" };
+	const { epicId } = msg;
+	if (!epicId) {
+		deps.sendTo(ws, { type: "error", message: "Missing epicId" });
+		return;
+	}
+	const epics = await deps.sharedEpicStore.loadAll();
+	const epic = epics.find((e) => e.epicId === epicId);
+	if (!epic) {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId: null,
+			epicId,
+			reason: "not-found",
+			message: "Epic not found.",
+		});
+		return;
+	}
+	if (!epic.archived) {
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId: null,
+			epicId,
+			reason: "already-active",
+			message: "Epic is not archived.",
+		});
+		return;
+	}
+
+	const affected: import("../types").Workflow[] = [];
+	try {
+		const epicSnapshot = { archived: epic.archived, archivedAt: epic.archivedAt };
+		epic.archived = false;
+		epic.archivedAt = null;
+		try {
+			await deps.sharedEpicStore.save(epic);
+		} catch (err) {
+			epic.archived = epicSnapshot.archived;
+			epic.archivedAt = epicSnapshot.archivedAt;
+			throw err;
+		}
+		for (const childId of epic.workflowIds) {
+			const child = await loadLiveOrPersisted(deps, childId);
+			if (!child?.archived) continue;
+			const snapshot = {
+				archived: child.archived,
+				archivedAt: child.archivedAt,
+				updatedAt: child.updatedAt,
+			};
+			child.archived = false;
+			child.archivedAt = null;
+			child.updatedAt = new Date().toISOString();
+			try {
+				await deps.sharedStore.save(child);
+				affected.push(child);
+			} catch (err) {
+				child.archived = snapshot.archived;
+				child.archivedAt = snapshot.archivedAt;
+				child.updatedAt = snapshot.updatedAt;
+				throw err;
+			}
+		}
+	} catch (err) {
+		logger.error(`[ws] epic:unarchive persist failed: ${err}`);
+		deps.sendTo(ws, {
+			type: "workflow:archive-denied",
+			workflowId: null,
+			epicId,
+			reason: "persist-failed",
+			message: "Could not persist epic unarchive — please retry.",
+		});
+		return;
+	}
+
+	deps.sharedAuditLogger.logArchiveEvent({
+		eventType: "epic.unarchive",
+		pipelineName: `epic-${epicId}`,
+		workflowId: null,
+		epicId,
+	});
+
+	deps.broadcast({ type: "epic:list", epics });
+	for (const child of affected) {
+		deps.broadcast({ type: "workflow:state", workflow: deps.stripInternalFields(child) });
 	}
 };

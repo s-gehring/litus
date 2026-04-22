@@ -66,6 +66,8 @@ export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 		error: null,
 		createdAt: now,
 		updatedAt: now,
+		archived: false,
+		archivedAt: null,
 		...overrides,
 	};
 }
@@ -114,6 +116,8 @@ export function makeWorkflowState(overrides?: Partial<WorkflowState>): WorkflowS
 		error: null,
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
+		archived: false,
+		archivedAt: null,
 		...overrides,
 	};
 }

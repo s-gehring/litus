@@ -9,6 +9,7 @@ import { STEP } from "../../types";
 import type { ClientStateManager } from "../client-state-manager";
 import type { RouteHandler, RouteMatch } from "../router";
 import { BACK_TO_EPIC_PREFIX, backToEpicLabel } from "./back-to-epic-label";
+import { showConfirmModal } from "./confirm-modal";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
 import {
 	hideFeedbackPanel,
@@ -66,6 +67,25 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		const entry = deps.getState().getWorkflows().get(currentWorkflowId);
 		if (!entry) {
 			showNotFoundPanel("workflow", currentWorkflowId);
+			return;
+		}
+		if (entry.state.archived) {
+			const summary = entry.state.summary || entry.state.specification;
+			hideNotFoundPanel();
+			deps.navigate("/archive");
+			import("./alert-toast").then(({ showAlertToast }) => {
+				showAlertToast({
+					id: `archive-redirect-${entry.state.id}-${Date.now()}`,
+					type: "workflow-finished",
+					title: "Workflow is archived",
+					description: summary,
+					workflowId: entry.state.id,
+					epicId: entry.state.epicId,
+					targetRoute: "/archive",
+					createdAt: Date.now(),
+					seen: true,
+				});
+			});
 			return;
 		}
 		hideNotFoundPanel();
@@ -231,6 +251,29 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 				label: "Force Start",
 				className: "btn-secondary",
 				onClick: () => deps.send({ type: "workflow:force-start", workflowId: wf.id }),
+			});
+		}
+		// Archive — hidden for child specs (FR-008), disabled while running (FR-003).
+		if (wf.epicId === null) {
+			const running = wf.status === "running";
+			const isTerminal =
+				wf.status === "completed" || wf.status === "aborted" || wf.status === "error";
+			actions.push({
+				label: running ? "Archive (disabled while running)" : "Archive",
+				className: running ? "btn-secondary btn-disabled" : "btn-secondary",
+				onClick: async () => {
+					if (running) return;
+					if (!isTerminal) {
+						const ok = await showConfirmModal({
+							title: "Archive this workflow?",
+							body: "This workflow has not finished. Archiving it will hide it from the active workspace. You can unarchive it later from the Archive page.",
+							confirmLabel: "Archive",
+							cancelLabel: "Cancel",
+						});
+						if (!ok) return;
+					}
+					deps.send({ type: "workflow:archive", workflowId: wf.id });
+				},
 			});
 		}
 		return actions;
