@@ -56,7 +56,7 @@ import { Router } from "./router";
 // the bundle is consumed in a non-build context (tests, type-checking). Read
 // by the redesigned top bar to stamp the wordmark with the current version.
 declare const LITUS_VERSION: string;
-export const LITUS_APP_VERSION: string =
+const LITUS_APP_VERSION: string =
 	typeof LITUS_VERSION !== "undefined" && typeof LITUS_VERSION === "string"
 		? LITUS_VERSION
 		: "0.0.0";

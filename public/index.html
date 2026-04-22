@@ -16,12 +16,11 @@
       <img src="/logo.svg" alt="Litus" class="header-logo">
       <h1>Litus</h1>
       <div id="connection-status" class="status-dot disconnected" title="Disconnected"></div>
-      <div class="header-actions">
-        <button id="btn-auto-mode" class="btn-header btn-toggle mode-normal" title="Automation level: Manual (pause before merge) / Normal (auto-merge) / Full Auto (auto-answer + auto-merge)"><span class="toggle-icon">▶</span> <span class="toggle-label">Normal</span></button>
-        <button id="btn-quick-fix" class="btn-header" title="Quick Fix">Quick Fix</button>
-        <button id="btn-new-spec" class="btn-header" title="New Specification">New Specification</button>
-        <button id="btn-new-epic" class="btn-header" title="New Epic">New Epic</button>
-      </div>
+      <!-- Legacy creation/auto-mode buttons live on the redesigned top bar
+           (src/client/components/top-bar.ts). The old <header> is kept only
+           to host #connection-status, #btn-alert-bell, and #btn-config, which
+           app.ts still queries by id. -->
+
       <button id="btn-alert-bell" class="btn-alert-bell" title="Alerts" aria-label="Alerts">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
