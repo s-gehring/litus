@@ -96,6 +96,8 @@ function makeSpecWorkflow(id: string, worktreePath: string, branch: string): Wor
 		managedRepo: null,
 		createdAt: now,
 		updatedAt: now,
+		archived: false,
+		archivedAt: null,
 	};
 }
 

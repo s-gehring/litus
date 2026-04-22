@@ -36,6 +36,8 @@ export function makePersistedEpic(overrides?: Partial<PersistedEpic>): Persisted
 		errorMessage: null,
 		infeasibleNotes: null,
 		analysisSummary: null,
+		archived: false,
+		archivedAt: null,
 		...overrides,
 	};
 }

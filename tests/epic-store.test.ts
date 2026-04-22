@@ -17,6 +17,8 @@ function makeEpic(overrides?: Partial<PersistedEpic>): PersistedEpic {
 		errorMessage: null,
 		infeasibleNotes: null,
 		analysisSummary: null,
+		archived: false,
+		archivedAt: null,
 		...overrides,
 	};
 }

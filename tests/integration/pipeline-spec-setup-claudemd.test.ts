@@ -156,6 +156,8 @@ function makeWorkflow(kind: WorkflowKind, worktreePath: string): Workflow {
 		error: null,
 		createdAt: now,
 		updatedAt: now,
+		archived: false,
+		archivedAt: null,
 	};
 }
 

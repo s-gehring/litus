@@ -65,6 +65,8 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
 		error: null,
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
+		archived: false,
+		archivedAt: null,
 		...overrides,
 	};
 }
