@@ -2612,6 +2612,29 @@ export class PipelineOrchestrator {
 		if (step.name === STEP.ARTIFACTS) {
 			const artifactsState = this.clearArtifactsTimer(workflowId);
 			const timedOut = artifactsState?.timedOut === true;
+			// Salvage: the CLI can be killed (idle timeout, wall-clock timeout,
+			// or a non-zero exit) AFTER the agent already wrote a complete
+			// manifest and all listed files. Retrying in that state loops
+			// because the agent correctly reports "already done" and emits no
+			// fresh tool activity, tripping the idle timer again. If a valid
+			// manifest is on disk, finish the step from it instead of erroring.
+			if (artifactsState) {
+				const salvaged = collectArtifactsFromManifest(workflow, artifactsState.outputDir, {
+					perFileMaxBytes: artifactsState.perFileMaxBytes,
+					perStepMaxBytes: artifactsState.perStepMaxBytes,
+				});
+				if (salvaged.outcome !== "error") {
+					logger.warn(
+						`[artifacts] Recovered from CLI error for workflow ${workflowId} (timedOut=${timedOut}): ${error}`,
+					);
+					this.handleStepOutput(
+						workflowId,
+						`[artifacts] CLI terminated (${timedOut ? "timeout" : "error"}: ${error}) — salvaged ${salvaged.accepted.length} file(s) from the existing manifest`,
+					);
+					this.finishArtifactsStep(workflow, salvaged);
+					return;
+				}
+			}
 			const finalMessage = timedOut
 				? `Artifacts step exceeded wall-clock timeout (${configStore.get().timing.artifactsTimeoutMs}ms)`
 				: error;
