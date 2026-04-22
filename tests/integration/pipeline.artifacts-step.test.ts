@@ -500,6 +500,111 @@ describe("US1: artifacts step runs and collects files for spec workflows", () =>
 		expect(listArtifacts(wf).items.some((i) => i.step === "artifacts")).toBe(false);
 	});
 
+	test("salvage: CLI error AFTER a valid manifest was written → step completes with those files", async () => {
+		const id = `wf-salvage-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const worktreePath = join(baseDir, "worktree-salvage");
+		mkdirSync(worktreePath, { recursive: true });
+		const branch = "feat-salvage";
+
+		const wf = makeSpecWorkflow(id, worktreePath, branch);
+		registerCleanup(getArtifactsRoot(id));
+
+		const cli = makeStubCli();
+		const engine = makeStubEngine(wf);
+		const orch = new PipelineOrchestrator(
+			{
+				onStepChange: () => {},
+				onOutput: () => {},
+				onTools: () => {},
+				onComplete: () => {},
+				onError: () => {},
+				onStateChange: () => {},
+			},
+			{ engine, cliRunner: cli.runner, workflowStore: store },
+		);
+
+		orch.startPipelineFromWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+
+		// Agent finished its real work (manifest + files on disk) but the CLI
+		// then hung and the idle timer killed it — reproducing the 001
+		// merge-conflict-e2e report.
+		const outputDir = join(worktreePath, "specs", branch, "artifacts-output");
+		mkdirSync(outputDir, { recursive: true });
+		writeFileSync(join(outputDir, "summary.md"), "# Summary");
+		writeFileSync(
+			join(outputDir, "manifest.json"),
+			JSON.stringify({
+				version: 1,
+				artifacts: [{ path: "summary.md", description: "Reviewer overview" }],
+			}),
+		);
+
+		cli
+			.lastStarted()
+			?.callbacks.onError("CLI process killed — no output received within idle timeout");
+		await new Promise((r) => setTimeout(r, 30));
+
+		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
+		expect(step?.status).toBe("completed");
+		expect(step?.outcome).toBe("with-files");
+		expect(step?.error).toBeNull();
+
+		const items = listArtifacts(wf).items.filter((i) => i.step === "artifacts");
+		expect(items.map((i) => i.relPath)).toEqual(["summary.md"]);
+	});
+
+	test("salvage: wall-clock timeout AFTER a valid manifest was written → step completes", async () => {
+		const id = `wf-salvage-to-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const worktreePath = join(baseDir, "worktree-salvage-to");
+		mkdirSync(worktreePath, { recursive: true });
+		const branch = "feat-salvage-to";
+
+		const wf = makeSpecWorkflow(id, worktreePath, branch);
+		registerCleanup(getArtifactsRoot(id));
+
+		const cli = makeStubCli();
+		const engine = makeStubEngine(wf);
+		const orch = new PipelineOrchestrator(
+			{
+				onStepChange: () => {},
+				onOutput: () => {},
+				onTools: () => {},
+				onComplete: () => {},
+				onError: () => {},
+				onStateChange: () => {},
+			},
+			{ engine, cliRunner: cli.runner, workflowStore: store },
+		);
+
+		orch.startPipelineFromWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+
+		const outputDir = join(worktreePath, "specs", branch, "artifacts-output");
+		mkdirSync(outputDir, { recursive: true });
+		writeFileSync(join(outputDir, "report.md"), "# Report");
+		writeFileSync(
+			join(outputDir, "manifest.json"),
+			JSON.stringify({
+				version: 1,
+				artifacts: [{ path: "report.md", description: "Run report" }],
+			}),
+		);
+
+		// Flip the wall-clock flag the orchestrator's timer would set, then
+		// deliver the CLI kill it would have dispatched.
+		// biome-ignore lint/suspicious/noExplicitAny: access to private state for focused test
+		const artifactsState = (orch as any).artifactsState.get(id);
+		expect(artifactsState).toBeDefined();
+		artifactsState.timedOut = true;
+		cli.lastStarted()?.callbacks.onError("process killed");
+		await new Promise((r) => setTimeout(r, 30));
+
+		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
+		expect(step?.status).toBe("completed");
+		expect(step?.outcome).toBe("with-files");
+	});
+
 	test("US5: wall-clock timeout kills the CLI and surfaces a timeout: error (FR-016)", async () => {
 		const id = `wf-timeout-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const worktreePath = join(baseDir, "worktree-timeout");
