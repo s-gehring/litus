@@ -20,13 +20,14 @@ describe("fix-implementer prompt", () => {
 		expect(prompt).toMatch(/push/i);
 	});
 
-	test("prepends the CLAUDE.md contract header exactly once (T012)", async () => {
+	test("does not embed the CLAUDE.md contract header in the user prompt", async () => {
+		// The header is delivered via --append-system-prompt by CLIRunner, not
+		// embedded in the user prompt — embedding it here would push the user's
+		// task text off the first character and break slash-command interception
+		// for other call sites that also use this builder.
 		const wf = await makeQuickFix("Fix X");
 		const prompt = buildFixImplementPrompt(wf);
-		const phrase = "CLAUDE.md is Litus-managed local context";
-		expect(prompt).toContain(phrase);
-		expect(prompt.split(phrase).length - 1).toBe(1);
-		expect(prompt.startsWith("## CLAUDE.md is Litus-managed local context")).toBe(true);
+		expect(prompt).not.toContain("CLAUDE.md is Litus-managed local context");
 	});
 
 	test("appends in-flight feedback entry text as retry context", async () => {

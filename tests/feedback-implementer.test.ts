@@ -63,14 +63,14 @@ describe("buildFeedbackPrompt", () => {
 		expect(prompt).toContain("rename x to count");
 	});
 
-	test("default template includes the CLAUDE.md contract header exactly once", () => {
-		const cfg = cloneConfig(); // uses DEFAULT_CONFIG.prompts.feedbackImplementerInstruction verbatim
+	test("default template does not embed the CLAUDE.md contract header", () => {
+		// The header is delivered via --append-system-prompt by CLIRunner, not
+		// embedded in the default user-prompt template.
+		const cfg = cloneConfig();
 		const wf = makeWorkflow();
 
 		const prompt = buildFeedbackPrompt(cfg, wf, "apply this", "https://pr");
-		const phrase = "CLAUDE.md is Litus-managed local context";
-		expect(prompt).toContain(phrase);
-		expect(prompt.split(phrase).length - 1).toBe(1);
+		expect(prompt).not.toContain("CLAUDE.md is Litus-managed local context");
 	});
 
 	test("empty feedbackEntries produces empty feedbackContext and priorOutcomes", () => {

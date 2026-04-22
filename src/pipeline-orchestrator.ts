@@ -37,7 +37,6 @@ import {
 	mergePr as defaultMergePr,
 	resolveConflicts as defaultResolveConflicts,
 } from "./pr-merger";
-import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
 import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
@@ -1711,12 +1710,16 @@ export class PipelineOrchestrator {
 		// fix-implement, whose prompt builder (`buildFixImplementPrompt`) already
 		// appends any in-flight retry-guidance inline — prepending here would
 		// duplicate the same text under a second header.
+		//
+		// The CLAUDE.md-is-Litus-managed contract header is NOT prepended here: it
+		// is injected via `--append-system-prompt` in `CLIRunner.start()` so that
+		// slash-command step prompts (e.g. `/speckit-specify`) remain intercepted
+		// by Claude Code's `-p` mode, which only triggers on a leading `/`.
 		const step = workflow.steps[workflow.currentStepIndex];
 		let finalPrompt = prompt;
 		if (step?.name !== STEP.FEEDBACK_IMPLEMENTER && step?.name !== STEP.FIX_IMPLEMENT) {
 			const feedbackCtx = buildFeedbackContext(workflow);
-			const headerBlock = `${CLAUDE_MD_CONTRACT_HEADER}\n\n---\n\n${prompt}`;
-			finalPrompt = feedbackCtx ? `${feedbackCtx}\n\n---\n\n${headerBlock}` : headerBlock;
+			if (feedbackCtx) finalPrompt = `${feedbackCtx}\n\n---\n\n${prompt}`;
 		}
 		const stepWorkflow: Workflow = {
 			...workflow,

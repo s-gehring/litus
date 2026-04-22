@@ -286,6 +286,75 @@ describe("CLIRunner", () => {
 		});
 	});
 
+	describe("CLAUDE.md contract header injection (regression: slash-command steps)", () => {
+		// The CLAUDE.md-is-Litus-managed contract header used to be prepended to
+		// the user prompt by the orchestrator. That broke speckit steps whose
+		// user prompts are bare slash commands (e.g. `/speckit-specify`), because
+		// Claude Code's `-p` mode only intercepts slash commands when the prompt
+		// starts with `/`. Pushing the slash command off the first character made
+		// the CLI forward the raw text to the model — and the speckit skills set
+		// `disable-model-invocation: true`, so the model replied with
+		// "the `/speckit-specify` skill isn't registered".
+		//
+		// Fix: pass the header through `--append-system-prompt` so it stays in
+		// system context while the user prompt remains pristine.
+		function captureArgs(): { args: Promise<string[]> } {
+			const { promise, resolve } = createDeferredPromise<string[]>();
+			BunGlobal.Bun.spawn = (args: string[]) => {
+				queueMicrotask(() => resolve(args));
+				return {
+					stdout: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					stderr: new ReadableStream({
+						start(c) {
+							c.close();
+						},
+					}),
+					exited: Promise.resolve(0),
+					kill: () => {},
+					pid: 1,
+				};
+			};
+			return { args: promise };
+		}
+
+		test("start() passes --append-system-prompt with the CLAUDE.md contract phrase", async () => {
+			const { args } = captureArgs();
+			runner.start(makeWorkflow("w-sys-start"), makeCallbacks());
+
+			const captured = await args;
+			const flagIdx = captured.indexOf("--append-system-prompt");
+			expect(flagIdx).toBeGreaterThanOrEqual(0);
+			expect(captured[flagIdx + 1]).toContain("CLAUDE.md is Litus-managed local context");
+		});
+
+		test("resume() passes --append-system-prompt with the CLAUDE.md contract phrase", async () => {
+			const { args } = captureArgs();
+			runner.resume("w-sys-resume", "sess-xyz", WORKTREE_DIR, makeCallbacks());
+
+			const captured = await args;
+			const flagIdx = captured.indexOf("--append-system-prompt");
+			expect(flagIdx).toBeGreaterThanOrEqual(0);
+			expect(captured[flagIdx + 1]).toContain("CLAUDE.md is Litus-managed local context");
+		});
+
+		test("bare slash-command step prompt reaches the CLI unwrapped (starts with /)", async () => {
+			const { args } = captureArgs();
+			runner.start(makeWorkflow("w-slash", { specification: "/speckit-specify" }), makeCallbacks());
+
+			const captured = await args;
+			// `-p` is followed by the user prompt; the first character must be `/`
+			// so Claude Code intercepts the slash command.
+			const pIdx = captured.indexOf("-p");
+			expect(pIdx).toBeGreaterThanOrEqual(0);
+			expect(captured[pIdx + 1]).toBe("/speckit-specify");
+			expect(captured[pIdx + 1].startsWith("/")).toBe(true);
+		});
+	});
+
 	describe("handleStreamEvent (via streamOutput)", () => {
 		test("extracts session_id from stream events", async () => {
 			const { promise: sessionPromise, resolve: resolveSession } = createDeferredPromise<string>();

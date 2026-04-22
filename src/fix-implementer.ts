@@ -1,4 +1,3 @@
-import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
 import type { FeedbackEntry, Workflow } from "./types";
 
 export const FIX_IMPLEMENT_EMPTY_DIFF_MESSAGE = "no changes produced";
@@ -11,10 +10,6 @@ export const FIX_IMPLEMENT_HEAD_READ_FAILED_MESSAGE = "failed to read git HEAD a
  */
 export function buildFixImplementPrompt(workflow: Workflow): string {
 	const lines: string[] = [];
-	lines.push(CLAUDE_MD_CONTRACT_HEADER);
-	lines.push("");
-	lines.push("---");
-	lines.push("");
 	lines.push("You are implementing a small, self-contained fix in this repository.");
 	lines.push("");
 	lines.push("Fix description:");
