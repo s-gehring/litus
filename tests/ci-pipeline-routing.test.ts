@@ -91,6 +91,7 @@ function createFakeEngine() {
 					globalTimeoutMs: 30 * 60 * 1000,
 					lastCheckResults: [],
 					failureLogs: [],
+					userFixGuidance: null,
 				},
 				mergeCycle: {
 					attempt: 0,
@@ -538,6 +539,40 @@ describe("CI Pipeline Routing", () => {
 		expect(wf.status).toBe("running");
 		expect(wf.pendingQuestion).toBeNull();
 		expect(mockStartMonitoring).toHaveBeenCalledTimes(1);
+	});
+
+	test("cancelled checks + user answers free-form text → routes to fix-ci with guidance", async () => {
+		const wf = getWf(engine);
+		wf.prUrl = "https://github.com/owner/repo/pull/42";
+
+		const monitorIndex = wf.steps.findIndex((s) => s.name === "monitor-ci");
+		const fixIndex = wf.steps.findIndex((s) => s.name === "fix-ci");
+		const commitIndex = monitorIndex - 1;
+		wf.currentStepIndex = commitIndex;
+		wf.steps[commitIndex].status = "running";
+		wf.steps[commitIndex].startedAt = new Date().toISOString();
+		wf.steps[commitIndex].output = "Created PR https://github.com/owner/repo/pull/42";
+
+		cli.getLastCallbacks().onComplete();
+		await new Promise((r) => setTimeout(r, 10));
+
+		monitorResultResolve({
+			passed: false,
+			timedOut: false,
+			results: [{ name: "build", state: "COMPLETED", bucket: "cancel", link: "" }],
+		});
+		await new Promise((r) => setTimeout(r, 10));
+
+		const questionId = wf.pendingQuestion?.id;
+		const guidance = "E2E suite takes too long — split it or shrink the matrix";
+		mockStartMonitoring.mockClear();
+		orchestrator.answerQuestion(wf.id, questionId as string, guidance);
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.currentStepIndex).toBe(fixIndex);
+		expect(wf.pendingQuestion).toBeNull();
+		// Should NOT re-run monitoring (which would loop on the same cancelled checks)
+		expect(mockStartMonitoring).not.toHaveBeenCalled();
 	});
 
 	test("cancelled checks + user answers abort → workflow errors", async () => {

@@ -420,11 +420,22 @@ export class PipelineOrchestrator {
 			}
 
 			if (step.name === STEP.MONITOR_CI) {
-				if (answer.toLowerCase().includes("abort")) {
+				const normalized = answer.trim().toLowerCase();
+				if (normalized === "abort") {
 					this.handleStepError(workflowId, "Workflow aborted by user after cancelled CI checks");
-				} else {
-					this.runMonitorCi(workflow);
+					return;
 				}
+				if (normalized === "retry" || normalized === "") {
+					this.runMonitorCi(workflow);
+					return;
+				}
+				// Any other text is treated as guidance for the Fixing CI agent.
+				// Re-running monitoring would just hit the same cancelled checks
+				// and loop forever, so route straight to fix-ci with the user's
+				// answer attached to the usual failure context.
+				workflow.ciCycle.userFixGuidance = answer.trim();
+				this.persistWorkflow(workflow);
+				this.advanceToFixCi(workflow);
 				return;
 			}
 
@@ -1050,6 +1061,7 @@ export class PipelineOrchestrator {
 			workflow.ciCycle.attempt = 0;
 			workflow.ciCycle.monitorStartedAt = null;
 			workflow.ciCycle.failureLogs = [];
+			workflow.ciCycle.userFixGuidance = null;
 			workflow.mergeCycle.attempt = 0;
 
 			const monitorIdx = this.requireStepIndex(workflow, STEP.MONITOR_CI);
@@ -1629,7 +1641,7 @@ export class PipelineOrchestrator {
 			const names = cancelled.map((r) => r.name).join(", ");
 			this.pauseForQuestion(workflowId, {
 				id: `ci-cancelled-${Date.now()}`,
-				content: `All failed CI checks were cancelled (${names}). This may indicate GitHub Actions usage limits. Answer "retry" to re-run monitoring or "abort" to stop the workflow.`,
+				content: `All failed CI checks were cancelled (${names}). This may indicate GitHub Actions usage limits. Answer "retry" to re-run monitoring, "abort" to stop the workflow, or type any other text to hand the checks off to the Fixing CI agent together with your note as guidance.`,
 				detectedAt: new Date().toISOString(),
 			});
 			return;
@@ -1650,7 +1662,14 @@ export class PipelineOrchestrator {
 			.then((logs) => {
 				workflow.ciCycle.failureLogs = logs;
 				const prUrl = workflow.prUrl as string;
-				const prompt = buildFixPrompt(prUrl, logs);
+				const guidance = workflow.ciCycle.userFixGuidance;
+				let prompt = buildFixPrompt(prUrl, logs);
+				if (guidance) {
+					prompt = `## USER GUIDANCE (authoritative — the user provided this after monitoring flagged the failing checks)\n\n${guidance}\n\n---\n\n${prompt}`;
+				}
+				// Consume the guidance so subsequent fix attempts in this cycle
+				// don't keep prepending the same note.
+				workflow.ciCycle.userFixGuidance = null;
 				this.persistWorkflow(workflow);
 
 				const cwd = requireWorktreePath(workflow);

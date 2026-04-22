@@ -369,6 +369,12 @@ export interface CiCycle {
 	globalTimeoutMs: number;
 	lastCheckResults: CiCheckResult[];
 	failureLogs: CiFailureLog[];
+	/**
+	 * Free-form text supplied by the user when answering the "all CI checks
+	 * cancelled" question with anything other than "retry" / "abort". Passed
+	 * to the Fixing CI agent on the next fix attempt and cleared afterwards.
+	 */
+	userFixGuidance?: string | null;
 }
 
 // Merge-conflict-resolution loop tracker
