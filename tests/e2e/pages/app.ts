@@ -19,6 +19,10 @@ export class AppPage {
 		return this.page.locator("#btn-new-epic");
 	}
 
+	autoModeButton(): Locator {
+		return this.page.locator("#btn-auto-mode");
+	}
+
 	cardStrip(): Locator {
 		return this.page.locator("#card-strip");
 	}
