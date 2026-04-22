@@ -328,8 +328,11 @@ test.describe("routing", () => {
 
 		// FR-008 deep-link → card-strip selection: navigate away then deep-link
 		// straight back to `/workflow/<id>` and assert the strip re-selects the
-		// matching card without a click.
-		await deepLink(app, server.baseUrl, "/");
+		// matching card without a click. `/config` is used as the "navigate
+		// away" surface (rather than `/`) because the single-top-level-item
+		// auto-navigate would re-redirect `/` straight back to `/workflow/<id>`
+		// and make the `not.toHaveClass` assertion fight the product behaviour.
+		await deepLink(app, server.baseUrl, "/config");
 		await expect(seededCard).not.toHaveClass(/\bcard-expanded\b/);
 		await deepLink(app, server.baseUrl, `/workflow/${seededId}`);
 		await expect(seededCard).toHaveClass(/\bcard-expanded\b/);

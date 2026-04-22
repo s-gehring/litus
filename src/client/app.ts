@@ -971,6 +971,12 @@ document.addEventListener("DOMContentLoaded", () => {
 			),
 		);
 		appRouter.setNavigateListener((path) => {
+			// Re-render the card strip so the `card-expanded` affordance tracks the
+			// URL on every navigation. Without this, back-navigating from a
+			// `/workflow/<id>` view to `/` (or any route change where no server
+			// message fires) leaves the stale selection class on the previously
+			// active card.
+			renderCards();
 			send({ type: "alert:route-changed", path });
 		});
 		appRouter.start();
