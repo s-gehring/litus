@@ -18,6 +18,7 @@ import {
 	showAlertList,
 } from "./components/alert-list";
 import { initAlertToasts, removeAlertToast, showAlertToast } from "./components/alert-toast";
+import { mountAmbientBackground } from "./components/ambient-background";
 import {
 	createConfigPageHandler,
 	hidePurgeProgress,
@@ -42,9 +43,34 @@ import { renderCardStrip, updateTimers } from "./components/workflow-cards";
 import { workflowCreatedTarget } from "./components/workflow-created-route";
 import { createWorkflowDetailHandler } from "./components/workflow-detail-handler";
 import { appendOutput, setDefaultModelDisplayName } from "./components/workflow-window";
+import { ensureLitusFonts } from "./design-system/fonts";
+import { buildLitusPrimitivesCss } from "./design-system/primitives.css";
 import { $ } from "./dom";
 import { attachFolderValidation } from "./folder-validation";
 import { Router } from "./router";
+
+// Build-time injected via define in src/build.ts. Falls back to "0.0.0" when
+// the bundle is consumed in a non-build context (tests, type-checking). Read
+// by the redesigned top bar to stamp the wordmark with the current version.
+declare const LITUS_VERSION: string;
+export const LITUS_APP_VERSION: string =
+	typeof LITUS_VERSION !== "undefined" && typeof LITUS_VERSION === "string"
+		? LITUS_VERSION
+		: "0.0.0";
+
+function bootLitusDesignSystem(): void {
+	ensureLitusFonts();
+	if (!document.getElementById("litus-primitives")) {
+		const style = document.createElement("style");
+		style.id = "litus-primitives";
+		style.textContent = buildLitusPrimitivesCss();
+		document.head.appendChild(style);
+	}
+	document.body.classList.add("litus");
+}
+
+bootLitusDesignSystem();
+mountAmbientBackground();
 
 const stateManager = new ClientStateManager();
 

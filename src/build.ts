@@ -1,5 +1,4 @@
-// Module scope required for top-level await
-export {};
+import packageJson from "../package.json" with { type: "json" };
 
 await Bun.build({
 	entrypoints: ["./src/client/app.ts"],
@@ -7,6 +6,9 @@ await Bun.build({
 	naming: "app.js",
 	target: "browser",
 	minify: false,
+	define: {
+		LITUS_VERSION: JSON.stringify(packageJson.version),
+	},
 });
 
 console.log("Client bundle built → public/app.js");

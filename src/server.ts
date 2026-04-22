@@ -108,8 +108,8 @@ function createCallbacks() {
 				reviewIteration,
 			});
 		},
-		onOutput: (workflowId: string, text: string) => {
-			broadcast({ type: "workflow:output", workflowId, text });
+		onOutput: (workflowId: string, text: string, kind?: "cmd" | "assistant" | "diff") => {
+			broadcast({ type: "workflow:output", workflowId, text, ...(kind ? { kind } : {}) });
 		},
 		onTools: (workflowId: string, tools: ToolUsage[]) => {
 			broadcast({ type: "workflow:tools", workflowId, tools });

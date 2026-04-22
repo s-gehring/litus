@@ -145,8 +145,16 @@ interface CLIStreamEvent {
 	[key: string]: unknown;
 }
 
+/**
+ * Optional server-side classification for a streamed output line. Mirrors
+ * the `kind?` field on the `workflow:output` ServerMessage (FR-032). When a
+ * call site knows the line is one of these classes, it passes the tag so
+ * the client doesn't have to re-derive it heuristically.
+ */
+export type CLIOutputKind = "cmd" | "assistant" | "diff";
+
 export interface CLICallbacks {
-	onOutput: (text: string) => void;
+	onOutput: (text: string, kind?: CLIOutputKind) => void;
 	onTools: (tools: ToolUsage[]) => void;
 	onComplete: () => void;
 	onError: (error: string) => void;
@@ -503,7 +511,7 @@ export class CLIRunner {
 			entry.deltaFlushTimer = null;
 		}
 		if (entry.deltaBuffer && !entry.stale) {
-			entry.callbacks.onOutput(entry.deltaBuffer);
+			entry.callbacks.onOutput(entry.deltaBuffer, "assistant");
 			entry.assistantSentLen += entry.deltaBuffer.length;
 			entry.deltaBuffer = "";
 		}
@@ -546,7 +554,7 @@ export class CLIRunner {
 				// safe — we'd rather drop a rare duplicate than print twice.
 				const unsent = currentText.slice(entry.assistantSentLen);
 				if (unsent) {
-					entry.callbacks.onOutput(unsent);
+					entry.callbacks.onOutput(unsent, "assistant");
 				}
 				// The finalized-message callback always fires with the full
 				// text — question detection depends on seeing the whole

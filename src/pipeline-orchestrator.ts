@@ -1702,7 +1702,11 @@ export class PipelineOrchestrator {
 		);
 	}
 
-	private handleStepOutput(workflowId: string, text: string): void {
+	private handleStepOutput(
+		workflowId: string,
+		text: string,
+		kind?: "cmd" | "assistant" | "diff",
+	): void {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 
@@ -1713,7 +1717,7 @@ export class PipelineOrchestrator {
 		workflow.updatedAt = new Date().toISOString();
 
 		this.engine.updateLastOutput(workflowId, text);
-		this.callbacks.onOutput(workflowId, text);
+		this.callbacks.onOutput(workflowId, text, kind);
 		this.persistDebounced(workflow);
 
 		this.summarizer.maybeSummarize(workflowId, text, (stepSummary) => {
@@ -2722,7 +2726,7 @@ export class PipelineOrchestrator {
 
 	private buildStepCallbacks(workflowId: string): CLICallbacks {
 		return this.stepRunner.buildCallbacks(workflowId, {
-			onOutput: (wfId, text) => this.handleStepOutput(wfId, text),
+			onOutput: (wfId, text, kind) => this.handleStepOutput(wfId, text, kind),
 			onComplete: (wfId) => this.handleStepComplete(wfId),
 			onError: (wfId, error) => this.handleStepError(wfId, error),
 			onSessionId: (wfId, sessionId) => this.handleSessionId(wfId, sessionId),

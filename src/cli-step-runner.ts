@@ -54,7 +54,7 @@ export function archiveAndResetStep(
 }
 
 export interface StepCallbackHandlers {
-	onOutput: (workflowId: string, text: string) => void;
+	onOutput: (workflowId: string, text: string, kind?: "cmd" | "assistant" | "diff") => void;
 	onComplete: (workflowId: string) => void;
 	onError: (workflowId: string, error: string) => void;
 	onSessionId: (workflowId: string, sessionId: string) => void;
@@ -72,7 +72,7 @@ export class CLIStepRunner {
 
 	buildCallbacks(workflowId: string, handlers: StepCallbackHandlers): CLICallbacks {
 		return {
-			onOutput: (text) => handlers.onOutput(workflowId, text),
+			onOutput: (text, kind) => handlers.onOutput(workflowId, text, kind),
 			onTools: (tools) => handlers.onTools(tools),
 			onComplete: () => handlers.onComplete(workflowId),
 			onError: (error) => handlers.onError(workflowId, error),

@@ -677,7 +677,18 @@ export type ServerMessage =
 	| { type: "workflow:state"; workflow: WorkflowState | null }
 	| { type: "workflow:list"; workflows: WorkflowState[] }
 	| { type: "workflow:created"; workflow: WorkflowState }
-	| { type: "workflow:output"; workflowId: string; text: string }
+	| {
+			type: "workflow:output";
+			workflowId: string;
+			text: string;
+			/**
+			 * Optional server-tagged classification for the line. When present, the
+			 * client trusts this value over its heuristic classifier (FR-032). Lines
+			 * the server cannot authoritatively classify omit the field; the client
+			 * runs `classifyLine(text)` and falls back to `out`.
+			 */
+			kind?: "cmd" | "assistant" | "diff";
+	  }
 	| { type: "workflow:tools"; workflowId: string; tools: ToolUsage[] }
 	| { type: "workflow:question"; workflowId: string; question: Question }
 	| {
@@ -812,7 +823,7 @@ export interface PipelineCallbacks {
 		currentStepIndex: number,
 		reviewIteration: number,
 	) => void;
-	onOutput: (workflowId: string, text: string) => void;
+	onOutput: (workflowId: string, text: string, kind?: "cmd" | "assistant" | "diff") => void;
 	onTools: (workflowId: string, tools: ToolUsage[]) => void;
 	onComplete: (workflowId: string) => void;
 	onError: (workflowId: string, error: string) => void;
