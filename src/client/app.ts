@@ -38,6 +38,8 @@ import {
 	renderPipelineSteps,
 } from "./components/pipeline-steps";
 import { getAnswer } from "./components/question-panel";
+import { projectTaskCards } from "./components/run-screen/task-card-model";
+import { createTaskRail, type TaskRailController } from "./components/run-screen/task-rail";
 import { EPIC_CARD_PREFIX } from "./components/status-maps";
 import { renderCardStrip, updateTimers } from "./components/workflow-cards";
 import { workflowCreatedTarget } from "./components/workflow-created-route";
@@ -549,12 +551,44 @@ function syncAutoModeToggle(mode: string): void {
 	if (label) label.textContent = info.label;
 }
 
+let taskRail: TaskRailController | null = null;
+
+function ensureTaskRail(): TaskRailController | null {
+	if (taskRail) return taskRail;
+	const host = document.getElementById("card-strip");
+	if (!host) return null;
+	host.innerHTML = "";
+	taskRail = createTaskRail([], {
+		onCardClick: (routeId: string, type: string) => {
+			if (type === "epic") appRouter?.navigate(`/epic/${routeId}`);
+			else appRouter?.navigate(`/workflow/${routeId}`);
+		},
+	});
+	host.appendChild(taskRail.element);
+	return taskRail;
+}
+
 function renderCards(): void {
 	const workflows = stateManager.getWorkflows();
 	const epics = stateManager.getEpics();
 	const epicAggregates = stateManager.getEpicAggregates();
 	const cardOrder = stateManager.getCardOrder();
+	const rail = ensureTaskRail();
+	if (rail) {
+		const activeRouteId = activeWorkflowIdFromRoute() ?? activeEpicIdFromRoute();
+		const cards = projectTaskCards(cardOrder, workflows, epics, epicAggregates, activeRouteId);
+		rail.update(cards);
+	}
+	// Legacy card strip still wired up for its internal click handler while
+	// components that depend on it (epic-tree interactions, etc.) are migrated.
 	renderCardStrip(cardOrder, workflows, epics, epicAggregates, activeCardId(), handleCardClick);
+}
+
+function activeEpicIdFromRoute(): string | null {
+	const path = appRouter?.currentPath ?? null;
+	if (!path) return null;
+	const m = path.match(/^\/epic\/(.+)$/);
+	return m ? m[1] : null;
 }
 
 function openFeedbackPanel(wf: WorkflowState): void {
