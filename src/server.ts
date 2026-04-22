@@ -29,7 +29,12 @@ import {
 	handleAlertRouteChanged,
 } from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
-import { handleEpicAbort, handleEpicStart } from "./server/epic-handlers";
+import {
+	handleArchiveEpic,
+	handleEpicAbort,
+	handleEpicStart,
+	handleUnarchiveEpic,
+} from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
 import { MessageRouter } from "./server/message-router";
 import { handlePurgeAll } from "./server/purge-handlers";
@@ -37,6 +42,7 @@ import { broadcastPersistedWorkflowState } from "./server/workflow-broadcaster";
 import {
 	handleAbort,
 	handleAnswer,
+	handleArchiveWorkflow,
 	handleArtifactContent,
 	handleArtifactDownload,
 	handleArtifactList,
@@ -49,6 +55,7 @@ import {
 	handleSkip,
 	handleStart,
 	handleStartExisting,
+	handleUnarchiveWorkflow,
 } from "./server/workflow-handlers";
 import { getMimeType, resolveStaticPath } from "./static-files";
 import { Summarizer } from "./summarizer";
@@ -274,11 +281,15 @@ router.register("workflow:retry-workflow", handleRetryWorkflow);
 router.register("workflow:start-existing", handleStartExisting);
 router.register("workflow:force-start", handleForceStart);
 router.register("workflow:feedback", handleFeedback);
+router.register("workflow:archive", handleArchiveWorkflow);
+router.register("workflow:unarchive", handleUnarchiveWorkflow);
 router.register("config:get", handleConfigGet);
 router.register("config:save", handleConfigSave);
 router.register("config:reset", handleConfigReset);
 router.register("epic:start", handleEpicStart);
 router.register("epic:abort", handleEpicAbort);
+router.register("epic:archive", handleArchiveEpic);
+router.register("epic:unarchive", handleUnarchiveEpic);
 router.register("purge:all", handlePurgeAll);
 router.register("alert:list", handleAlertList);
 router.register("alert:dismiss", handleAlertDismiss);

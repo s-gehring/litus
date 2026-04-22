@@ -115,6 +115,9 @@ export class WorkflowStore {
 			}
 			// Migration: backfill workflow-level error field for pre-reset workflows.
 			if (data.error === undefined) data.error = null;
+			// Migration: backfill archive fields for pre-archive workflows.
+			if (data.archived === undefined) data.archived = false;
+			if (data.archivedAt === undefined) data.archivedAt = null;
 			// Migration: backfill per-step history for pre-history workflows
 			for (const step of data.steps) {
 				if (!Array.isArray(step.history)) step.history = [];
@@ -168,6 +171,12 @@ export class WorkflowStore {
 			for (const e of entries) {
 				if (e.workflowKind !== "spec" && e.workflowKind !== "quick-fix") {
 					e.workflowKind = "spec";
+				}
+				if (typeof (e as { archived?: unknown }).archived !== "boolean") {
+					e.archived = false;
+				}
+				if ((e as { archivedAt?: unknown }).archivedAt === undefined) {
+					e.archivedAt = null;
 				}
 			}
 			return entries;
@@ -231,6 +240,8 @@ export class WorkflowStore {
 				epicId: workflow.epicId,
 				createdAt: workflow.createdAt,
 				updatedAt: workflow.updatedAt,
+				archived: workflow.archived,
+				archivedAt: workflow.archivedAt,
 			};
 
 			const existingIdx = index.findIndex((e) => e.id === workflow.id);
@@ -265,6 +276,8 @@ export class WorkflowStore {
 						epicId: workflow.epicId,
 						createdAt: workflow.createdAt,
 						updatedAt: workflow.updatedAt,
+						archived: workflow.archived,
+						archivedAt: workflow.archivedAt,
 					});
 				}
 			}

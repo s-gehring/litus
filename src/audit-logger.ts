@@ -188,6 +188,33 @@ export class AuditLogger {
 		}
 	}
 
+	/**
+	 * Append an archive / unarchive audit line (workflow.archive, workflow.unarchive,
+	 * epic.archive, epic.unarchive) to a standalone JSONL file keyed by pipelineName.
+	 * Like logWorkflowReset, this is not tied to a run.
+	 */
+	logArchiveEvent(params: {
+		eventType: "workflow.archive" | "workflow.unarchive" | "epic.archive" | "epic.unarchive";
+		pipelineName: string;
+		workflowId: string | null;
+		epicId: string | null;
+	}): void {
+		try {
+			const safeFileName = params.pipelineName.replace(/[/\\:*?"<>|]+/g, "--");
+			const event = {
+				type: params.eventType,
+				timestamp: new Date().toISOString(),
+				actor: "local",
+				workflowId: params.workflowId,
+				epicId: params.epicId,
+			};
+			const filePath = join(this.auditDir, `${safeFileName}.jsonl`);
+			appendFileSync(filePath, `${JSON.stringify(event)}\n`);
+		} catch (err) {
+			logger.warn(`[audit] Failed to write ${params.eventType} event: ${err}`);
+		}
+	}
+
 	private writeEvent(
 		runId: string,
 		fields: {
