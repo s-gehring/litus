@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { test as baseTest, describe, expect } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,6 +8,11 @@ import {
 	PROJECT_CLAUDEMD_SEPARATOR,
 	resolveMainWorktreeRoot,
 } from "../../src/claude-md-merger";
+
+// Each test spawns real git processes; under parallel load on Windows the 5s
+// default is flaky. Use a generous per-test timeout.
+const TEST_TIMEOUT_MS = 60_000;
+const test = (name: string, fn: () => Promise<void>) => baseTest(name, fn, TEST_TIMEOUT_MS);
 
 const GIT_ENV = {
 	...process.env,

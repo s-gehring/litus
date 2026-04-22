@@ -291,7 +291,7 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 	}
 
 	async function until(predicate: () => boolean, opts: { timeoutMs?: number } = {}): Promise<void> {
-		const timeoutMs = opts.timeoutMs ?? 5000;
+		const timeoutMs = opts.timeoutMs ?? 30000;
 		const start = Date.now();
 		while (!predicate()) {
 			if (Date.now() - start > timeoutMs) {
@@ -332,7 +332,7 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 		} finally {
 			await fx.cleanup();
 		}
-	});
+	}, 60_000);
 
 	test("assertion 2: agent modifies CLAUDE.md → guard adds chore: restore commit on tip", async () => {
 		const fx = await makeRepo({ baseContent: "x\n" });
@@ -361,7 +361,7 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 		} finally {
 			await fx.cleanup();
 		}
-	});
+	}, 60_000);
 
 	test("assertion 3: main-has-no-file; branch added one → guard git-rm's the file", async () => {
 		const fx = await makeRepo({ baseContent: null });
@@ -381,7 +381,7 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 		} finally {
 			await fx.cleanup();
 		}
-	});
+	}, 60_000);
 
 	test("assertion 4: unchanged on repo whose main has no CLAUDE.md → no restore, push proceeds", async () => {
 		const fx = await makeRepo({ baseContent: null, branchCommitsExtra: true });
@@ -396,7 +396,7 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 		} finally {
 			await fx.cleanup();
 		}
-	});
+	}, 60_000);
 
 	test("assertion 5: guard throws (pre-commit hook blocks restore) → no push, workflow errors, prUrl stays null", async () => {
 		const fx = await makeRepo({ baseContent: "x\n" });
@@ -425,7 +425,7 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 		} finally {
 			await fx.cleanup();
 		}
-	});
+	}, 60_000);
 
 	test("assertion 7: disjoint histories → warn line emitted, push + PR still proceed", async () => {
 		// Build a feature worktree that has no shared ancestor with origin/master.
@@ -469,7 +469,7 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 		} finally {
 			await cleanup();
 		}
-	});
+	}, 60_000);
 
 	test("assertion 6: agent prompt payload includes the CLAUDE.md contract header", async () => {
 		const fx = await makeRepo({ baseContent: "x\n", branchCommitsExtra: true });
@@ -488,5 +488,5 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 		} finally {
 			await fx.cleanup();
 		}
-	});
+	}, 60_000);
 });

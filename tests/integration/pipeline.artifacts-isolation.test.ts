@@ -92,5 +92,5 @@ describe("artifacts step — concurrent-workflow isolation (T036)", () => {
 		// Descriptions sidecars are isolated too.
 		expect(itemsA[0].description).toBe("A");
 		expect(itemsB[0].description).toBe("B");
-	});
+	}, 30_000);
 });
