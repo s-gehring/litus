@@ -95,9 +95,12 @@ test.describe("quick-fix advanced", () => {
 
 			const card = new WorkflowCardPage(page);
 
-			// Mid-running per SC-005; diff vs. run-controls.spec.ts:123-124 —
-			// a post-hoc check after merge completes would silently pass a regression.
-			await waitForStep(card, "merge-pr", "running", { timeoutMs: 60_000 });
+			// SC-005: confirm full-auto never surfaces the operator merge action.
+			// Accept running OR completed — full-auto can race through merge-pr so fast
+			// Playwright's polling misses the transient running state.
+			await expect(card.stepIndicator("merge-pr")).toHaveClass(/\bstep-(running|completed)\b/, {
+				timeout: 60_000,
+			});
 			await expect(card.mergeAction()).toHaveCount(0);
 
 			await waitForStep(card, "merge-pr", "completed", { timeoutMs: 60_000 });
