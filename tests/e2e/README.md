@@ -48,6 +48,19 @@ tests/e2e/
 3. Add a new spec under `tests/` that declares `test.use({ scenarioName: "<my-scenario>" })` and composes helpers from `../helpers`.
 4. Run `bun run test:e2e`.
 
+### Per-subcommand FIFO for `gh` responses
+
+The `gh` map values may be either a single `GhResponse` or an **array** of them. Arrays unlock ordered, stateful responses for a subcommand across successive calls in the same test — e.g. scripting `pr checks` to return a failed check on the first poll and a passing check on the second.
+
+Selection rules (implemented in `tests/e2e/fakes/gh.ts`):
+
+1. **Match-first for `matchFlags`.** Any array entry that defines a non-empty `matchFlags` object is tried first, in declaration order. The first entry whose `matchFlags` fully match the invocation's flags wins, and it does **not** consume a FIFO slot (matching is content-addressed, not order-sensitive).
+2. **FIFO across unconstrained entries.** Entries without `matchFlags` (or with an empty `matchFlags`) are consumed one per call, keyed on the normalised positional prefix (`"pr checks"`, `"pr view"`, …). Each call to that subcommand advances the per-key counter by one.
+3. **Last entry repeats indefinitely.** Once the FIFO index passes the end of the unconstrained list, the final unconstrained entry is returned for every subsequent call. This lets authors script only the transitions that matter (e.g. one `failure` then one `pass`) and rely on the fallback to absorb any extra polls without bookkeeping.
+4. **Single-object entries never advance any counter** — they always return the same response.
+
+See `scenarios/ci-failure-and-fix.json` (`pr checks` key) for a concrete example: a 2-entry array drives `monitor-ci` through `failure` → `pass` across the CI failure / fix / re-monitor loop.
+
 ## Authoring rules
 
 - No raw selectors in `tests/*.spec.ts`. Selectors live in `pages/*.ts`; user-facing actions live in `helpers/*.ts`.
