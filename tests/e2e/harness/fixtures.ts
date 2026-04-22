@@ -21,6 +21,18 @@ export const test = base.extend<Fixtures>({
 	autoMode: ["manual", { option: true }],
 	configOverrides: [null, { option: true }],
 
+	// Block third-party network requests (Google Fonts) in e2e tests. The app
+	// loads Inter / Instrument Serif / JetBrains Mono from fonts.googleapis.com
+	// via a render-blocking <link rel="stylesheet">; in CI sandboxes those
+	// hosts can be slow/unreachable, which makes `page.goto` hang on the
+	// `load` event until the test-level 120s timeout fires. Fonts are pure
+	// presentation — aborting them has no effect on the DOM contracts the
+	// tests assert against.
+	page: async ({ page }, use) => {
+		await page.route(/^https?:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort());
+		await use(page);
+	},
+
 	sandbox: async ({ autoMode, configOverrides }, use) => {
 		const sandbox = await createSandbox({
 			autoMode,
