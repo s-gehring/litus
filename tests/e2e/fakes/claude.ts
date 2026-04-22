@@ -173,10 +173,26 @@ async function main() {
 		if (!match) die("artifacts prompt missing manifest path");
 		const outputDir = match[1];
 		mkdirSync(outputDir, { recursive: true });
-		writeFileSync(
-			resolve(outputDir, "manifest.json"),
-			JSON.stringify({ version: 1, artifacts: [] }),
-		);
+		const override = scenario.artifactsOverride;
+		const manifest = override?.manifest ?? { version: 1, artifacts: [] };
+		writeFileSync(resolve(outputDir, "manifest.json"), JSON.stringify(manifest));
+		if (override?.files) {
+			for (const file of override.files) {
+				const target = resolveSafePath(outputDir, file);
+				mkdirSync(dirname(target), { recursive: true });
+				if (file.encoding === "utf8") writeFileSync(target, file.content, "utf8");
+				else if (file.encoding === "base64") {
+					const normalised = file.content.replace(/\s+/g, "");
+					if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalised)) {
+						die(`artifactsOverride: invalid base64 content for ${file.path}`);
+					}
+					writeFileSync(target, Buffer.from(normalised, "base64"));
+				}
+			}
+		}
+		if (override?.delayMs && override.delayMs > 0) {
+			await new Promise((r) => setTimeout(r, override.delayMs));
+		}
 		if (outputFormat === "stream-json") {
 			const events = [
 				{ type: "system", subtype: "init", session_id: "sess-artifacts" },
@@ -194,7 +210,7 @@ async function main() {
 		await new Promise<void>((resolveFlush) => {
 			process.stdout.write("", () => resolveFlush());
 		});
-		process.exit(0);
+		process.exit(override?.exitCode ?? 0);
 	}
 
 	const counterFile = process.env.LITUS_E2E_COUNTER;

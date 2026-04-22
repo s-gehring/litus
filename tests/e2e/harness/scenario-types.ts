@@ -128,4 +128,19 @@ export interface ScenarioScript {
 	 * the real purge. No-op in production (env var unset).
 	 */
 	purgeError?: PurgeErrorInjection;
+	/**
+	 * Override the fake's default artifacts-step short-circuit. When set, the
+	 * fake writes `manifest` (plus any listed `files`) to the artifacts output
+	 * directory extracted from the prompt, optionally waits `delayMs`, and then
+	 * exits with `exitCode` (default `0`). Setting `exitCode !== 0` simulates
+	 * the "CLI killed after the agent already produced a valid manifest" bug
+	 * (idle timeout, wall-clock timeout, or a non-zero process exit); the
+	 * orchestrator should salvage the manifest and complete the step.
+	 */
+	artifactsOverride?: {
+		manifest: { version: 1; artifacts: Array<{ path: string; description: string }> };
+		files?: ScenarioFile[];
+		exitCode?: number;
+		delayMs?: number;
+	};
 }

@@ -1,0 +1,200 @@
+{
+	"name": "artifacts-salvage",
+	"classifier": ["major\n", "nit\n"],
+	"artifactsOverride": {
+		"manifest": {
+			"version": 1,
+			"artifacts": [{ "path": "summary.md", "description": "Reviewer overview (salvage test)" }]
+		},
+		"files": [
+			{
+				"path": "summary.md",
+				"encoding": "utf8",
+				"content": "# Artifacts salvage summary\n\nWritten by the agent before the CLI was killed.\n"
+			}
+		],
+		"exitCode": 1
+	},
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-specify" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-specify",
+					"result": "Specification drafted."
+				}
+			],
+			"files": [
+				{
+					"path": "specs/001-review-artifacts-loop/spec.md",
+					"encoding": "utf8",
+					"content": "# Review artifacts loop\n\nSpec body.\n"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-clarify" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-clarify",
+					"result": "No clarifications needed."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-plan" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-plan",
+					"result": "Plan generated."
+				}
+			],
+			"files": [
+				{
+					"path": "specs/001-review-artifacts-loop/plan.md",
+					"encoding": "utf8",
+					"content": "# Plan\n"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-tasks" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-tasks",
+					"result": "Tasks generated."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-implement" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-implement",
+					"result": "Implementation complete."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-review-1" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-review-1",
+					"result": "First review written."
+				}
+			],
+			"files": [
+				{
+					"path": "specs/001-review-artifacts-loop/code-review.md",
+					"encoding": "utf8",
+					"content": "# Code review 1\n\nSome concerns need addressing.\n"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-impl-review-1" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-impl-review-1",
+					"result": "First review response appended."
+				}
+			],
+			"files": [
+				{
+					"path": "specs/001-review-artifacts-loop/code-review.md",
+					"encoding": "utf8",
+					"content": "# Code review 1\n\nSome concerns need addressing.\n\n## Response to review 1\n\nAddressed all remarks from review 1.\n"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-review-2" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-review-2",
+					"result": "Second review written."
+				}
+			],
+			"files": [
+				{
+					"path": "specs/001-review-artifacts-loop/code-review-2.md",
+					"encoding": "utf8",
+					"content": "# Code review 2\n\nFollow-up review after fixes.\n"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-impl-review-2" },
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-impl-review-2",
+					"result": "Second review response appended."
+				}
+			],
+			"files": [
+				{
+					"path": "specs/001-review-artifacts-loop/code-review-2.md",
+					"encoding": "utf8",
+					"content": "# Code review 2\n\nFollow-up review after fixes.\n\n## Response to review 2\n\nAddressed remaining nits.\n"
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-cpp" },
+				{
+					"type": "assistant",
+					"session_id": "sess-cpp",
+					"message": {
+						"content": [
+							{ "type": "text", "text": "PR created: https://github.com/example/repo/pull/77" }
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-cpp",
+					"result": "PR created: https://github.com/example/repo/pull/77"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" },
+		"pr view": {
+			"exitCode": 0,
+			"stdout": "{\"state\":\"OPEN\",\"url\":\"https://github.com/example/repo/pull/77\",\"number\":77}"
+		},
+		"pr create": {
+			"exitCode": 0,
+			"stdout": "https://github.com/example/repo/pull/77\n"
+		},
+		"pr checks": {
+			"exitCode": 0,
+			"stdout": "[{\"name\":\"build\",\"state\":\"SUCCESS\",\"bucket\":\"pass\",\"link\":\"https://github.com/example/repo/actions/runs/1\"}]"
+		},
+		"pr merge": { "exitCode": 0, "stdout": "Merged pull request #77 (Squash and merge)\n" },
+		"run view": { "exitCode": 0, "stdout": "" }
+	}
+}
