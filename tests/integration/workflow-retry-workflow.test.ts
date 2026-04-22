@@ -38,9 +38,16 @@ function makeDeps(workflow: Workflow | null) {
 	const broadcasts: string[] = [];
 	const saved: Workflow[] = [];
 	const auditEvents: Record<string, unknown>[] = [];
+	const createdOrchestrators: Array<{ getEngine: () => { setWorkflow: (w: Workflow) => void } }> =
+		[];
+
+	const orchestrators = new Map<
+		string,
+		{ getEngine: () => { setWorkflow: (w: Workflow) => void } }
+	>();
 
 	const deps = {
-		orchestrators: new Map(),
+		orchestrators,
 		broadcast: (_msg: ServerMessage) => {},
 		sendTo: (_ws: unknown, msg: ServerMessage) => {
 			sent.push({ msg });
@@ -60,9 +67,18 @@ function makeDeps(workflow: Workflow | null) {
 		broadcastWorkflowState: (id: string) => {
 			broadcasts.push(id);
 		},
+		createOrchestrator: () => {
+			const orch = {
+				getEngine: () => ({
+					setWorkflow: (_w: Workflow) => {},
+				}),
+			};
+			createdOrchestrators.push(orch);
+			return orch;
+		},
 	} as unknown as Parameters<typeof handleRetryWorkflow>[2];
 
-	return { deps, sent, broadcasts, saved, auditEvents };
+	return { deps, sent, broadcasts, saved, auditEvents, orchestrators, createdOrchestrators };
 }
 
 describe("handleRetryWorkflow", () => {
@@ -136,6 +152,30 @@ describe("handleRetryWorkflow", () => {
 		expect(auditEvents).toHaveLength(1);
 		expect(auditEvents[0].partialFailure).toBe(false);
 		expect(broadcasts).toEqual(["wf-ok"]);
+	});
+
+	test("success from aborted: re-registers orchestrator so Start can launch", async () => {
+		// Abort deletes the orchestrator from the map; without re-registration
+		// here the subsequent `workflow:start-existing` would fail in
+		// `withOrchestrator` and the operator would be stuck on an idle
+		// workflow they cannot launch.
+		const wf = makeWorkflow({
+			id: "wf-reg",
+			status: "aborted",
+			worktreePath: null,
+			worktreeBranch: "tmp-reg",
+			targetRepository: "/tmp/repo",
+		});
+		const { deps, orchestrators, createdOrchestrators } = makeDeps(wf);
+
+		await handleRetryWorkflow(
+			{} as never,
+			{ type: "workflow:retry-workflow", workflowId: "wf-reg" },
+			deps,
+		);
+
+		expect(createdOrchestrators).toHaveLength(1);
+		expect(orchestrators.get("wf-reg")).toBe(createdOrchestrators[0]);
 	});
 
 	test("dedupe: second call while first in flight is a no-op", async () => {

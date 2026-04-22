@@ -237,9 +237,16 @@ export const handleRetryWorkflow: MessageHandler = async (ws, data, deps) => {
 		}
 
 		// Keep in-memory orchestrator (if any) in sync so later WS reads see the
-		// reset state.
+		// reset state. Aborted workflows were removed from the orchestrators map
+		// by `handleAbort`; without re-registering here a follow-up `Start`
+		// action would fail in `withOrchestrator` with "Workflow not found",
+		// leaving the operator with an idle workflow they cannot launch.
 		if (orch) {
 			orch.getEngine().setWorkflow(workflow);
+		} else if (outcome.partialFailure === false) {
+			const newOrch = deps.createOrchestrator();
+			newOrch.getEngine().setWorkflow(workflow);
+			deps.orchestrators.set(workflow.id, newOrch);
 		}
 
 		// Audit event — pipeline name follows the existing convention (feature
