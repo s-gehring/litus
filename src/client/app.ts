@@ -239,6 +239,7 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "workflow:removed":
 		case "workflow:state":
 		case "workflow:output":
 		case "workflow:tools":

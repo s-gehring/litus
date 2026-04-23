@@ -166,6 +166,8 @@ export class ClientStateManager {
 				return this.handleWorkflowCreated(msg);
 			case "workflow:state":
 				return this.handleWorkflowState(msg);
+			case "workflow:removed":
+				return this.handleWorkflowRemoved(msg);
 			case "workflow:output":
 				return this.handleWorkflowOutput(msg);
 			case "workflow:tools":
@@ -259,6 +261,21 @@ export class ClientStateManager {
 			this.rebuildEpicAggregates();
 		}
 		return { scope: { entity: "workflow", id: msg.workflow.id }, action: "updated" };
+	}
+
+	private handleWorkflowRemoved(
+		msg: Extract<ServerMessage, { type: "workflow:removed" }>,
+	): StateChange {
+		const existing = this.workflows.get(msg.workflowId);
+		if (!existing) return { scope: { entity: "none" }, action: "updated" };
+		this.workflows.delete(msg.workflowId);
+		const orderIdx = this.cardOrder.indexOf(msg.workflowId);
+		if (orderIdx >= 0) this.cardOrder.splice(orderIdx, 1);
+		if (existing.state.epicId) {
+			this.rebuildEpicAggregates();
+			this.rebuildCardOrder();
+		}
+		return { scope: { entity: "workflow", id: msg.workflowId }, action: "removed" };
 	}
 
 	private handleWorkflowOutput(
@@ -418,6 +435,11 @@ export class ClientStateManager {
 		}
 		epic.attemptCount = Math.max(epic.attemptCount, epic.feedbackHistory.length + 1);
 		epic.status = "analyzing";
+		// Prior child workflows are being deleted server-side; clear the
+		// reference list so rebuildEpicAggregates does not hold on to them
+		// while new decomposition results stream in.
+		epic.workflowIds = [];
+		this.rebuildEpicAggregates();
 		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
 	}
 

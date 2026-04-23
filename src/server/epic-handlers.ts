@@ -205,6 +205,30 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 		if (err instanceof Error && err.stack) {
 			logger.error(`[epic] Stack trace: ${err.stack}`);
 		}
+		// Persist a minimal epic record so the user can retry via feedback.
+		// Without this save, `handleEpicFeedback` rejects with
+		// validation/"Unknown epic" (research.md R1).
+		try {
+			const errorRecord: PersistedEpic = {
+				epicId,
+				description: trimmedDesc,
+				status: "error",
+				title: null,
+				workflowIds: [],
+				startedAt: new Date(analysisStartedAt).toISOString(),
+				completedAt: new Date().toISOString(),
+				errorMessage: message,
+				infeasibleNotes: null,
+				analysisSummary: null,
+				decompositionSessionId: capturedSessionId,
+				feedbackHistory: [],
+				sessionContextLost: false,
+				attemptCount: 1,
+			};
+			await deps.sharedEpicStore.save(errorRecord);
+		} catch (saveErr) {
+			logger.warn(`[epic] Failed to persist error record: ${saveErr}`);
+		}
 		deps.broadcast({ type: "epic:error", epicId, message });
 	} finally {
 		// If we failed before the workflows took ownership of the clone, release
@@ -272,12 +296,16 @@ async function deleteChildWorkflows(epic: PersistedEpic, deps: HandlerDeps): Pro
 			}
 			deps.orchestrators.delete(wfId);
 		}
+		let removed = true;
 		try {
 			await deps.sharedStore.remove(wfId);
 		} catch (err) {
+			removed = false;
 			logger.warn(`[epic-feedback] remove workflow ${wfId} failed: ${err}`);
 		}
-		deps.broadcast({ type: "workflow:state", workflow: null });
+		if (removed) {
+			deps.broadcast({ type: "workflow:removed", workflowId: wfId });
+		}
 	}
 }
 
@@ -334,6 +362,21 @@ export const handleEpicFeedback: MessageHandler = async (ws, data, deps) => {
 	// 3. in_flight — tryRun returns null if lock held
 	const lock = getFeedbackLock(epicId);
 	const runPromise = lock.tryRun(async () => {
+		// Re-check spec_started inside the lock. Between the earlier
+		// findChildWorkflowsOfEpic await and this point, a
+		// workflow:start-existing / force-start could have flipped
+		// `hasEverStarted` (the event loop can interleave). Serializing the
+		// check here closes that check-then-act race.
+		const freshChildren = await findChildWorkflowsOfEpic(epic, deps);
+		if (freshChildren.some((w) => w.hasEverStarted)) {
+			deps.sendTo(ws, {
+				type: "epic:feedback:rejected",
+				epicId,
+				reasonCode: "spec_started",
+				reason: "A child spec has already started.",
+			});
+			return;
+		}
 		await runFeedbackAttempt(epic, trimmed, deps);
 	});
 	if (runPromise === null) {
@@ -355,6 +398,20 @@ export const handleEpicFeedback: MessageHandler = async (ws, data, deps) => {
 			epicId,
 			message: toErrorMessage(err),
 		});
+	} finally {
+		// Drop the lock entry if the epic is permanently ineligible for further
+		// feedback (any child has started). Prevents feedbackLocks from growing
+		// unboundedly over a long-running server. Safe because no further
+		// submission can acquire this lock — new ones would be rejected with
+		// spec_started before reaching getFeedbackLock anyway.
+		try {
+			const laterChildren = await findChildWorkflowsOfEpic(epic, deps);
+			if (laterChildren.some((w) => w.hasEverStarted)) {
+				feedbackLocks.delete(epicId);
+			}
+		} catch {
+			// Non-fatal; leave the lock and retry on next submission.
+		}
 	}
 };
 
@@ -474,7 +531,8 @@ async function runFeedbackAttempt(
 			contextLost = true;
 			entry.contextLostOnThisAttempt = true;
 			capturedSessionId = null;
-			// Rebuild prompt: original description + accumulated feedback texts.
+			// Rebuild prompt per FR-015: the original epic description followed
+			// by every feedback entry's text, joined with double newlines.
 			const combined = `${epic.description}\n\n${epic.feedbackHistory.map((e) => e.text).join("\n\n")}`;
 			epic = {
 				...epic,

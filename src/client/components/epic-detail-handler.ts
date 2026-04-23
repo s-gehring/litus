@@ -45,6 +45,13 @@ export interface EpicDetailDeps {
 export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 	let currentEpicId: string | null = null;
 	let feedbackPanelHandle: EpicFeedbackPanelHandle | null = null;
+	// Preserve the user's in-progress textarea across re-renders. Unrelated
+	// server broadcasts (workflow:state, epic:feedback:history, etc.) trigger
+	// renderFull() which rebuilds the feedback panel; without this the
+	// textarea would reset to empty mid-typing. FR-014 requires the text to
+	// survive a rejection and its spirit extends to transient re-renders.
+	// Keyed by epicId so switching epics doesn't leak state.
+	const feedbackDrafts = new Map<string, string>();
 
 	function hideLayout(): void {
 		const existingAnalysis = document.getElementById("epic-analysis-notes");
@@ -114,7 +121,16 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		if (eligible) {
 			const handle = createEpicFeedbackPanel({
 				epicId: epic.epicId,
+				initialText: feedbackDrafts.get(epic.epicId) ?? "",
+				onChange: (text) => {
+					if (text.length === 0) feedbackDrafts.delete(epic.epicId);
+					else feedbackDrafts.set(epic.epicId, text);
+				},
 				onSubmit: (text) => {
+					// Keep the draft in the map until the server confirms acceptance
+					// (see the epic:feedback:accepted case below). Rejection leaves
+					// the textarea intact per FR-014.
+					feedbackDrafts.set(epic.epicId, text);
 					deps.send({ type: "epic:feedback", epicId: epic.epicId, text });
 				},
 			});
@@ -375,6 +391,13 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 					renderFull();
 					break;
 				}
+				case "workflow:removed": {
+					// A prior child of the currently viewed epic was deleted (e.g.
+					// feedback accepted). Re-render so the stale row disappears from
+					// the tree.
+					renderFull();
+					break;
+				}
 				case "workflow:list":
 				case "epic:list": {
 					renderFull();
@@ -390,7 +413,10 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 					break;
 				}
 				case "epic:feedback:accepted": {
-					if (msg.epicId === currentEpicId) renderFull();
+					if (msg.epicId === currentEpicId) {
+						feedbackDrafts.delete(msg.epicId);
+						renderFull();
+					}
 					break;
 				}
 				case "epic:feedback:rejected": {

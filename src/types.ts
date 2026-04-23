@@ -690,6 +690,7 @@ export interface Alert {
 // Server → Client messages
 export type ServerMessage =
 	| { type: "workflow:state"; workflow: WorkflowState | null }
+	| { type: "workflow:removed"; workflowId: string }
 	| { type: "workflow:list"; workflows: WorkflowState[] }
 	| { type: "workflow:created"; workflow: WorkflowState }
 	| { type: "workflow:output"; workflowId: string; text: string }

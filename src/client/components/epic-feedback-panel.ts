@@ -11,13 +11,13 @@ export interface EpicFeedbackPanelHandle {
 	element: HTMLDivElement;
 	showError(message: string): void;
 	clearError(): void;
-	getValue(): string;
-	focus(): void;
 }
 
 export interface EpicFeedbackPanelOptions {
 	epicId: string;
 	onSubmit: (text: string) => void;
+	initialText?: string;
+	onChange?: (text: string) => void;
 }
 
 export function createEpicFeedbackPanel(opts: EpicFeedbackPanelOptions): EpicFeedbackPanelHandle {
@@ -34,7 +34,12 @@ export function createEpicFeedbackPanel(opts: EpicFeedbackPanelOptions): EpicFee
 	textarea.className = "epic-feedback-input";
 	textarea.rows = 4;
 	textarea.placeholder = "Describe what should change about the decomposition…";
+	// `+ 1` lets the textarea briefly hold one character past the cap so the
+	// "over-limit" counter styling + disabled submit button render when the
+	// user types past MAX_LENGTH. A hard `maxLength = MAX_LENGTH` would clamp
+	// silently and hide the feedback.
 	textarea.maxLength = MAX_LENGTH + 1;
+	if (opts.initialText) textarea.value = opts.initialText;
 	panel.appendChild(textarea);
 
 	const meta = document.createElement("div");
@@ -70,8 +75,13 @@ export function createEpicFeedbackPanel(opts: EpicFeedbackPanelOptions): EpicFee
 		submitBtn.disabled = trimmedLength === 0 || overLimit;
 	}
 
+	// Apply initial value (if restored from a prior re-render) to the counter
+	// and submit-button disabled state.
+	updateState();
+
 	textarea.addEventListener("input", () => {
 		updateState();
+		opts.onChange?.(textarea.value);
 	});
 
 	submitBtn.addEventListener("click", () => {
@@ -91,12 +101,6 @@ export function createEpicFeedbackPanel(opts: EpicFeedbackPanelOptions): EpicFee
 		clearError(): void {
 			errorEl.textContent = "";
 			errorEl.classList.add("hidden");
-		},
-		getValue(): string {
-			return textarea.value;
-		},
-		focus(): void {
-			textarea.focus();
 		},
 	};
 }

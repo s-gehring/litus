@@ -115,6 +115,12 @@ export class WorkflowStore {
 			}
 			// Migration: backfill workflow-level error field for pre-reset workflows.
 			if (data.error === undefined) data.error = null;
+			// Migration: backfill hasEverStarted for pre-epic-feedback workflows.
+			// Any workflow already past idle/waiting is treated as started so that
+			// feedback eligibility cannot destroy an in-flight or completed run.
+			if (data.hasEverStarted === undefined) {
+				data.hasEverStarted = data.status !== "idle" && data.status !== "waiting_for_dependencies";
+			}
 			// Migration: backfill per-step history for pre-history workflows
 			for (const step of data.steps) {
 				if (!Array.isArray(step.history)) step.history = [];
