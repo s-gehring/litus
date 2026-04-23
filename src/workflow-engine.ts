@@ -126,6 +126,7 @@ export class WorkflowEngine {
 			activeInvocation: null,
 			managedRepo,
 			error: null,
+			hasEverStarted: false,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -138,6 +139,16 @@ export class WorkflowEngine {
 		const allowed = transitions[w.status];
 		if (!allowed.includes(newStatus)) {
 			throw new Error(`Invalid transition: ${w.status} → ${newStatus}`);
+		}
+
+		// Flip hasEverStarted on the first transition out of a not-yet-started state.
+		if (
+			!w.hasEverStarted &&
+			(w.status === "idle" || w.status === "waiting_for_dependencies") &&
+			newStatus !== "idle" &&
+			newStatus !== "waiting_for_dependencies"
+		) {
+			w.hasEverStarted = true;
 		}
 
 		const now = new Date();
