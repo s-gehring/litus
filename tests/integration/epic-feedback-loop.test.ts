@@ -132,6 +132,9 @@ describe("epic-feedback-loop integration", () => {
 		expect(stored?.feedbackHistory).toHaveLength(1);
 		expect(stored?.feedbackHistory[0].outcome).toBe("completed");
 		expect(stored?.feedbackHistory[0].contextLostOnThisAttempt).toBe(false);
+		// H13: the resumed run's onSessionId captured sess-1; the entry's
+		// attemptSessionId must pin to the NEW id, not the prior resumeSessionId.
+		expect(stored?.feedbackHistory[0].attemptSessionId).toBe("sess-1");
 		expect(broadcastedMessages.some((m) => m.type === "epic:result")).toBe(true);
 	});
 
@@ -160,6 +163,9 @@ describe("epic-feedback-loop integration", () => {
 		expect(stored?.status).toBe("completed");
 		expect(stored?.sessionContextLost).toBe(true);
 		expect(stored?.feedbackHistory[0].contextLostOnThisAttempt).toBe(true);
+		// H13: the fresh-fallback run's onSessionId captured sess-2; the
+		// entry must pin to the fresh id, not the prior/resumed one.
+		expect(stored?.feedbackHistory[0].attemptSessionId).toBe("sess-2");
 
 		// FR-015: the fresh-fallback call receives a prompt composed of the
 		// original epic description concatenated with every feedback text, and

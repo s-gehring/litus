@@ -153,15 +153,13 @@ describe("WorkflowEngine", () => {
 			expect(engine.getWorkflow()?.hasEverStarted).toBe(true);
 		});
 
-		test("does not flip if transitioning between idle-like states only", async () => {
+		test("does not flip on idle → waiting_for_dependencies (idle-family transition)", async () => {
 			const w = await engine.createWorkflow("test", "/tmp/test-repo");
+			engine.transition(w.id, "waiting_for_dependencies");
 			const current = engine.getWorkflow();
 			if (!current) throw new Error("no workflow");
-			// Allowed transition in the current table would normally require
-			// going out of idle; just assert directly that the flag stays false
-			// when only the initial state is present.
+			expect(current.status).toBe("waiting_for_dependencies");
 			expect(current.hasEverStarted).toBe(false);
-			expect(w.status).toBe("idle");
 		});
 	});
 

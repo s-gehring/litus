@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ManagedRepoStore } from "../../src/managed-repo-store";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
-import type { ClientMessage } from "../../src/types";
+import { type ClientMessage, EPIC_FEEDBACK_MAX_LENGTH } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockWebSocket } from "../test-infra/mock-websocket";
@@ -481,7 +481,7 @@ describe("epic-handlers", () => {
 		test("rejects over-limit text with validation reasonCode", async () => {
 			const { ws, deps, sentMessages } = setup();
 			const { epic } = seedEpicForFeedback(deps);
-			const longText = "a".repeat(10_001);
+			const longText = "a".repeat(EPIC_FEEDBACK_MAX_LENGTH + 1);
 			await handleEpicFeedback(
 				ws,
 				{ type: "epic:feedback", epicId: epic.epicId, text: longText } as ClientMessage,
@@ -629,6 +629,10 @@ describe("epic-handlers", () => {
 			const lastHist = historyMsgs[historyMsgs.length - 1];
 			expect(lastHist.entries).toHaveLength(1);
 			expect(lastHist.entries[0].outcome).toBe("completed");
+			// Structural pins (H8): id is a UUID-shape, attemptSessionId is
+			// null because the mocked analyzeEpic never fires onSessionId.
+			expect(lastHist.entries[0].id).toMatch(/^[0-9a-f-]{36}$/i);
+			expect(lastHist.entries[0].attemptSessionId).toBeNull();
 			// epic:result broadcast on success
 			expect(broadcastedMessages.some((m) => m.type === "epic:result")).toBe(true);
 			// audit — feedback_submitted + decomposition_resumed

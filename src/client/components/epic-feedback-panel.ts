@@ -69,9 +69,11 @@ export function createEpicFeedbackPanel(opts: EpicFeedbackPanelOptions): EpicFee
 	panel.appendChild(actions);
 
 	function updateState(): void {
+		// Counter and submit gate read the same trimmed length so the UI
+		// cannot show "over limit" while submit is enabled (or vice versa).
+		// Matches validateTextInput's server-side trim+length check.
 		const trimmedLength = textarea.value.trim().length;
-		const rawLength = textarea.value.length;
-		counter.textContent = `${rawLength} / ${MAX_LENGTH}`;
+		counter.textContent = `${trimmedLength} / ${MAX_LENGTH}`;
 		const overLimit = trimmedLength > MAX_LENGTH;
 		counter.classList.toggle("over-limit", overLimit);
 		submitBtn.disabled = trimmedLength === 0 || overLimit;

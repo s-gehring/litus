@@ -322,10 +322,10 @@ type FeedbackRejectReasonCode = Extract<
 
 function sendReject(
 	ws: ServerWebSocket<WsData>,
+	deps: HandlerDeps,
 	epicId: string,
 	reasonCode: FeedbackRejectReasonCode,
 	reason: string,
-	deps: HandlerDeps,
 ): void {
 	deps.sendTo(ws, { type: "epic:feedback:rejected", epicId, reasonCode, reason });
 }
@@ -345,7 +345,7 @@ export const handleEpicFeedback: MessageHandler = async (ws, data, deps) => {
 		overLimitMessage: `Feedback exceeds ${EPIC_FEEDBACK_MAX_LENGTH} characters.`,
 	});
 	if (textError) {
-		sendReject(ws, epicId, "validation", textError, deps);
+		sendReject(ws, deps, epicId, "validation", textError);
 		return;
 	}
 	const trimmed = rawText.trim();
@@ -353,14 +353,14 @@ export const handleEpicFeedback: MessageHandler = async (ws, data, deps) => {
 	const epics = await deps.sharedEpicStore.loadAll();
 	const epic = epics.find((e) => e.epicId === epicId);
 	if (!epic) {
-		sendReject(ws, epicId, "validation", "Unknown epic.", deps);
+		sendReject(ws, deps, epicId, "validation", "Unknown epic.");
 		return;
 	}
 
 	// 2. spec_started check
 	const childWorkflows = await findChildWorkflowsOfEpic(epic, deps);
 	if (childWorkflows.some((w) => w.hasEverStarted)) {
-		sendReject(ws, epicId, "spec_started", "A child spec has already started.", deps);
+		sendReject(ws, deps, epicId, "spec_started", "A child spec has already started.");
 		return;
 	}
 
@@ -374,13 +374,13 @@ export const handleEpicFeedback: MessageHandler = async (ws, data, deps) => {
 		// check here closes that check-then-act race.
 		const freshChildren = await findChildWorkflowsOfEpic(epic, deps);
 		if (freshChildren.some((w) => w.hasEverStarted)) {
-			sendReject(ws, epicId, "spec_started", "A child spec has already started.", deps);
+			sendReject(ws, deps, epicId, "spec_started", "A child spec has already started.");
 			return;
 		}
 		await runFeedbackAttempt(epic, trimmed, deps);
 	});
 	if (runPromise === null) {
-		sendReject(ws, epicId, "in_flight", "Another decomposition attempt is already running.", deps);
+		sendReject(ws, deps, epicId, "in_flight", "Another decomposition attempt is already running.");
 		return;
 	}
 
@@ -404,8 +404,12 @@ export const handleEpicFeedback: MessageHandler = async (ws, data, deps) => {
 			if (laterChildren.some((w) => w.hasEverStarted)) {
 				feedbackLocks.delete(epicId);
 			}
-		} catch {
-			// Non-fatal; leave the lock and retry on next submission.
+		} catch (err) {
+			// Non-fatal; leave the lock and retry on next submission. Log at
+			// debug so an operator seeing repeated lock retention has a
+			// breadcrumb if this path starts failing (e.g. corrupted workflow
+			// file on disk) without adding pager noise.
+			logger.warn(`[epic-feedback] lock cleanup check failed for ${epicId.slice(0, 8)}: ${err}`);
 		}
 	}
 };
@@ -433,34 +437,6 @@ async function runFeedbackAttempt(
 		contextLostOnThisAttempt: false,
 		outcome: null,
 	};
-
-	epic = {
-		...epic,
-		feedbackHistory: [...epic.feedbackHistory, entry],
-		attemptCount: epic.attemptCount + 1,
-		// Clear prior terminal annotations when accepting feedback on infeasible/error.
-		infeasibleNotes: epic.status === "infeasible" ? null : epic.infeasibleNotes,
-		errorMessage: epic.status === "error" ? null : epic.errorMessage,
-		status: "analyzing",
-		workflowIds: [],
-	};
-
-	await deps.sharedEpicStore.save(epic);
-
-	deps.sharedAuditLogger.logFeedbackSubmitted({
-		epicId,
-		feedbackEntryId: entry.id,
-		textLength: trimmedText.length,
-		sessionContextLost: epic.sessionContextLost,
-	});
-
-	deps.broadcast({ type: "epic:feedback:accepted", epicId, entry });
-	deps.broadcast({
-		type: "epic:feedback:history",
-		epicId,
-		entries: epic.feedbackHistory,
-		sessionContextLost: epic.sessionContextLost,
-	});
 
 	// Resolve the repoDir and inherited managedRepo BEFORE aborting the prior
 	// workflows. If the epic was created from a GitHub URL, every child has
@@ -505,6 +481,44 @@ async function runFeedbackAttempt(
 		}
 	};
 
+	// Delete prior child workflows BEFORE persisting the new epic state. Doing
+	// this in reverse (save → delete) leaves a window where a crash between
+	// steps orphans the workflow files on disk: the new epic would have
+	// `workflowIds: []`, so a recovery pass can't find them to clean up. By
+	// deleting first, `epic.workflowIds` on disk still references the
+	// (possibly incomplete) prior set until save completes, and
+	// `deleteChildWorkflows` is idempotent per-ID — a retry after a crash
+	// picks up any survivors via the same loop over `initialEpic.workflowIds`.
+	await deleteChildWorkflows(initialEpic, deps);
+
+	epic = {
+		...epic,
+		feedbackHistory: [...epic.feedbackHistory, entry],
+		attemptCount: epic.attemptCount + 1,
+		// Clear prior terminal annotations when accepting feedback on infeasible/error.
+		infeasibleNotes: epic.status === "infeasible" ? null : epic.infeasibleNotes,
+		errorMessage: epic.status === "error" ? null : epic.errorMessage,
+		status: "analyzing",
+		workflowIds: [],
+	};
+
+	await deps.sharedEpicStore.save(epic);
+
+	deps.sharedAuditLogger.logFeedbackSubmitted({
+		epicId,
+		feedbackEntryId: entry.id,
+		textLength: trimmedText.length,
+		sessionContextLost: epic.sessionContextLost,
+	});
+
+	deps.broadcast({ type: "epic:feedback:accepted", epicId, entry });
+	deps.broadcast({
+		type: "epic:feedback:history",
+		epicId,
+		entries: epic.feedbackHistory,
+		sessionContextLost: epic.sessionContextLost,
+	});
+
 	// Drives the three terminal-error branches (no repoDir, analyze-failed,
 	// fresh-fallback-failed) through one persist+broadcast path.
 	const failAttempt = async (message: string): Promise<void> => {
@@ -529,8 +543,6 @@ async function runFeedbackAttempt(
 		await releaseHeldRefIfAny();
 	};
 
-	// Delete prior child workflows.
-	await deleteChildWorkflows(initialEpic, deps);
 	if (!repoDir) {
 		await failAttempt("No target repository available for feedback attempt.");
 		return;
@@ -572,9 +584,13 @@ async function runFeedbackAttempt(
 			contextLost = true;
 			entry.contextLostOnThisAttempt = true;
 			capturedSessionId = null;
-			// Rebuild prompt per FR-015: the original epic description followed
-			// by every feedback entry's text, joined with double newlines.
-			const combined = `${epic.description}\n\n${epic.feedbackHistory.map((e) => e.text).join("\n\n")}`;
+			// Rebuild prompt per FR-015: the original epic description plus
+			// every feedback entry's text. Sections are labelled so the LLM
+			// can tell the original ask from successive user corrections;
+			// without labels, references like "split spec 2" in later
+			// entries read as part of the original prompt.
+			const feedbackBlock = epic.feedbackHistory.map((e, i) => `${i + 1}. ${e.text}`).join("\n\n");
+			const combined = `Original epic:\n${epic.description}\n\nUser feedback (oldest first):\n${feedbackBlock}`;
 			epic = {
 				...epic,
 				decompositionSessionId: null,

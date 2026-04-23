@@ -371,6 +371,16 @@ export async function analyzeEpic(
 
 			if (retryResult.timedOut) throw new Error("Epic analysis timed out during retry");
 			if (retryResult.exitCode !== 0) {
+				// Sessions can expire between the initial stream finishing and
+				// the retry firing (JSON parse latency, multi-retry budget).
+				// Promote session-not-found into UnrecoverableSessionError so
+				// the caller can trigger the fresh-fallback branch instead of
+				// surfacing a raw stderr as a terminal failure.
+				if (isSessionNotFound(retryResult.stderr)) {
+					throw new UnrecoverableSessionError(
+						retryResult.stderr || "Retry session is unrecoverable",
+					);
+				}
 				throw new Error(
 					retryResult.stderr || `CLI process exited with code ${retryResult.exitCode}`,
 				);
