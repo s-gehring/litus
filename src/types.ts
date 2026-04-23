@@ -526,6 +526,11 @@ export const STEP = {
 // Delta buffer flush timeout used across CLI stream consumers
 export const DELTA_FLUSH_TIMEOUT_MS = 50;
 
+// Maximum trimmed feedback length accepted by the epic-decomposition feedback
+// endpoint (FR-005). Shared between the client-side counter/panel and the
+// server-side validation so the two cannot drift.
+export const EPIC_FEEDBACK_MAX_LENGTH = 10_000;
+
 // Manual-mode feedback loop: per-iteration outcome of a feedback-implementer run
 export type FeedbackOutcomeValue = "success" | "no changes" | "failed" | "aborted";
 

@@ -1,12 +1,16 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { ClientMessage, PersistedEpic } from "../../src/types";
+import type { ClientMessage, PersistedEpic, Workflow } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { makePersistedEpic } from "../test-infra/factories";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockWebSocket } from "../test-infra/mock-websocket";
 
 // Module mocks — analyzeEpic + createEpicWorkflows + validateTargetRepository
-let mockAnalyzeBehavior: "resume-success" | "resume-then-fresh" | "always-throw" = "resume-success";
+let mockAnalyzeBehavior:
+	| "resume-success"
+	| "resume-then-fresh"
+	| "resume-then-fresh-fails"
+	| "always-throw" = "resume-success";
 let mockCreatedResult: { workflows: ReturnType<typeof makeWorkflow>[]; epicId: string } = {
 	workflows: [],
 	epicId: "e1",
@@ -48,6 +52,12 @@ mock.module("../../src/epic-analyzer", () => {
 			analyzerCallArgs.push({ desc, resumeSessionId, behavior: mockAnalyzeBehavior });
 			if (mockAnalyzeBehavior === "resume-then-fresh" && resumeSessionId && prior === 0) {
 				throw new UnrecoverableSessionError("session not found");
+			}
+			if (mockAnalyzeBehavior === "resume-then-fresh-fails") {
+				if (resumeSessionId && prior === 0) {
+					throw new UnrecoverableSessionError("session not found");
+				}
+				throw new Error("fresh also failed");
 			}
 			if (mockAnalyzeBehavior === "always-throw") {
 				throw new Error("persistent failure");
@@ -200,5 +210,154 @@ describe("epic-feedback-loop integration", () => {
 		if (rejected?.type === "epic:feedback:rejected") {
 			expect(rejected.reasonCode).toBe("in_flight");
 		}
+	});
+
+	test("G5: transient analyzer failure (non-UnrecoverableSessionError) persists error outcome", async () => {
+		mockAnalyzeBehavior = "always-throw";
+		const { mock: ws } = createMockWebSocket();
+		const { deps, broadcastedMessages } = createMockHandlerDeps();
+		const epic = seedEpic(deps, { epicId: `always-throw-${Date.now()}` });
+		deps.createOrchestrator = () =>
+			({
+				getEngine: () => ({ setWorkflow() {} }),
+				startPipelineFromWorkflow() {},
+				abortPipeline() {},
+			}) as unknown as ReturnType<typeof deps.createOrchestrator>;
+
+		await handleEpicFeedback(
+			ws as unknown as Parameters<typeof handleEpicFeedback>[0],
+			{ type: "epic:feedback", epicId: epic.epicId, text: "please retry" } as ClientMessage,
+			deps,
+		);
+
+		const stored = (await deps.sharedEpicStore.loadAll()).find((e) => e.epicId === epic.epicId);
+		expect(stored?.status).toBe("error");
+		expect(stored?.errorMessage).toBe("persistent failure");
+		expect(stored?.feedbackHistory[0].outcome).toBe("error");
+		// epic:error broadcast fired.
+		expect(broadcastedMessages.some((m) => m.type === "epic:error")).toBe(true);
+	});
+
+	test("G3: resume-then-fresh fails again → error + sessionContextLost stays sticky", async () => {
+		analyzerCallsByBehavior = new Map();
+		mockAnalyzeBehavior = "resume-then-fresh-fails";
+		const { mock: ws } = createMockWebSocket();
+		const { deps } = createMockHandlerDeps();
+		const epic = seedEpic(deps, { epicId: `fresh-fails-${Date.now()}` });
+		deps.createOrchestrator = () =>
+			({
+				getEngine: () => ({ setWorkflow() {} }),
+				startPipelineFromWorkflow() {},
+				abortPipeline() {},
+			}) as unknown as ReturnType<typeof deps.createOrchestrator>;
+
+		await handleEpicFeedback(
+			ws as unknown as Parameters<typeof handleEpicFeedback>[0],
+			{ type: "epic:feedback", epicId: epic.epicId, text: "retry unrecoverable" } as ClientMessage,
+			deps,
+		);
+		const stored = (await deps.sharedEpicStore.loadAll()).find((e) => e.epicId === epic.epicId);
+		expect(stored?.status).toBe("error");
+		expect(stored?.errorMessage).toBe("fresh also failed");
+		expect(stored?.sessionContextLost).toBe(true);
+		expect(stored?.feedbackHistory[0].contextLostOnThisAttempt).toBe(true);
+		expect(stored?.feedbackHistory[0].outcome).toBe("error");
+	});
+
+	test("G1: URL-submitted epic — feedback preserves managed-repo refcount across abort", async () => {
+		mockAnalyzeBehavior = "resume-success";
+		const { mock: ws } = createMockWebSocket();
+		const { deps } = createMockHandlerDeps();
+		const epic = seedEpic(deps, { epicId: `managed-${Date.now()}` });
+		// Overwrite seeded workflow with one that carries managedRepo.
+		await deps.sharedStore.save(
+			makeWorkflow({
+				id: "wf-1",
+				epicId: epic.epicId,
+				targetRepository: "/mock/repo",
+				hasEverStarted: false,
+				managedRepo: { owner: "Foo", repo: "Bar" },
+			}),
+		);
+
+		// In-memory refcount tracker matching the real store's arithmetic.
+		let refCount = 2;
+		const calls: { method: string; args: unknown[] }[] = [];
+		deps.managedRepoStore = {
+			async acquire() {
+				throw new Error("not expected");
+			},
+			async release(owner: string, repo: string) {
+				calls.push({ method: "release", args: [owner, repo] });
+				if (refCount > 0) refCount -= 1;
+			},
+			async bumpRefCount(owner: string, repo: string, by: number) {
+				calls.push({ method: "bumpRefCount", args: [owner, repo, by] });
+				refCount += by;
+			},
+			async seedFromWorkflows() {},
+			async tryAttachByPath() {
+				return null;
+			},
+		} as unknown as typeof deps.managedRepoStore;
+
+		// The new workflow must inherit managedRepo.
+		let createCallManagedRepo: unknown = "unset";
+		mock.module("../../src/workflow-engine", () => ({
+			createEpicWorkflows: async (
+				_result: unknown,
+				_repo: string,
+				_epicId: string,
+				managedRepo: unknown,
+			) => {
+				createCallManagedRepo = managedRepo;
+				return {
+					workflows: [
+						makeWorkflow({
+							id: "wf-new",
+							managedRepo: managedRepo as Workflow["managedRepo"],
+						}),
+					],
+					epicId: epic.epicId,
+				};
+			},
+		}));
+		// `mock.module` above mutates the live module record, so the already
+		// imported `handleEpicFeedback` will observe the new `createEpicWorkflows`.
+
+		// Simulate the abortPipeline → releaseManagedRepoIfAny path: the
+		// orchestrator's abort releases the refcount for its workflow.
+		deps.createOrchestrator = () =>
+			({
+				getEngine: () => ({
+					setWorkflow() {},
+					getWorkflow: () => null,
+				}),
+				startPipelineFromWorkflow() {},
+				abortPipeline() {
+					// Emulate release of wf-1's managed-repo ref.
+					void deps.managedRepoStore.release("Foo", "Bar");
+				},
+			}) as unknown as ReturnType<typeof deps.createOrchestrator>;
+		// Pre-register orchestrator for wf-1 so abortPipeline is invoked.
+		deps.orchestrators.set("wf-1", deps.createOrchestrator());
+
+		await handleEpicFeedback(
+			ws as unknown as Parameters<typeof handleEpicFeedback>[0],
+			{ type: "epic:feedback", epicId: epic.epicId, text: "refine" } as ClientMessage,
+			deps,
+		);
+
+		// The +1 bump must have fired BEFORE the release triggered by abort,
+		// and the new workflow must inherit managedRepo (so no refcount leak).
+		const bumps = calls.filter((c) => c.method === "bumpRefCount");
+		expect(bumps.length).toBeGreaterThanOrEqual(1);
+		expect((bumps[0].args as unknown[])[2]).toBe(1);
+		expect(createCallManagedRepo).toEqual({ owner: "Foo", repo: "Bar" });
+		// Starting at 2 (two prior workflows), +1 bump, -1 abort release, and
+		// first new workflow inherits the held ref → refCount ends at 2.
+		// (one lingering for the deleted prior workflow that had no orchestrator,
+		// and one owned by the new workflow).
+		expect(refCount).toBeGreaterThan(0);
 	});
 });

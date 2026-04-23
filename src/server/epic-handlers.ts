@@ -1,11 +1,19 @@
 import { randomUUID } from "node:crypto";
+import type { ServerWebSocket } from "bun";
 import { AsyncLock } from "../async-lock";
 import { analyzeEpic, UnrecoverableSessionError } from "../epic-analyzer";
 import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
-import type { ClientMessage, EpicFeedbackEntry, PersistedEpic, Workflow } from "../types";
+import type {
+	ClientMessage,
+	EpicFeedbackEntry,
+	PersistedEpic,
+	ServerMessage,
+	Workflow,
+} from "../types";
+import { EPIC_FEEDBACK_MAX_LENGTH } from "../types";
 import { createEpicWorkflows } from "../workflow-engine";
-import type { HandlerDeps, MessageHandler } from "./handler-types";
+import type { HandlerDeps, MessageHandler, WsData } from "./handler-types";
 import { resolveTargetRepo, validateTextInput } from "./handler-types";
 
 function buildEpicData(
@@ -252,8 +260,6 @@ export const handleEpicAbort: MessageHandler = (_ws, _data, deps) => {
 
 // ── Epic feedback ─────────────────────────────────────────
 
-const MAX_FEEDBACK_LENGTH = 10_000;
-
 // Per-epic serialization of feedback submissions. A held lock surfaces as an
 // `in_flight` rejection rather than queueing, per FR-010.
 const feedbackLocks = new Map<string, AsyncLock>();
@@ -309,53 +315,52 @@ async function deleteChildWorkflows(epic: PersistedEpic, deps: HandlerDeps): Pro
 	}
 }
 
+type FeedbackRejectReasonCode = Extract<
+	ServerMessage,
+	{ type: "epic:feedback:rejected" }
+>["reasonCode"];
+
+function sendReject(
+	ws: ServerWebSocket<WsData>,
+	epicId: string,
+	reasonCode: FeedbackRejectReasonCode,
+	reason: string,
+	deps: HandlerDeps,
+): void {
+	deps.sendTo(ws, { type: "epic:feedback:rejected", epicId, reasonCode, reason });
+}
+
 export const handleEpicFeedback: MessageHandler = async (ws, data, deps) => {
 	const msg = data as ClientMessage & { type: "epic:feedback" };
 	const epicId = msg.epicId;
 	const rawText = typeof msg.text === "string" ? msg.text : "";
-	const trimmed = rawText.trim();
 
-	// 1. Validation errors (text first, then epicId lookup)
-	if (trimmed.length === 0) {
-		deps.sendTo(ws, {
-			type: "epic:feedback:rejected",
-			epicId,
-			reasonCode: "validation",
-			reason: "Feedback is empty.",
-		});
+	// 1. Validation errors (text first, then epicId lookup). Centralise via
+	// `validateTextInput` per T013 — it enforces trim+min+max and composes the
+	// uniform error message shape.
+	const textError = validateTextInput(rawText, "Feedback", {
+		minLength: 1,
+		maxLength: EPIC_FEEDBACK_MAX_LENGTH,
+		emptyMessage: "Feedback is empty.",
+		overLimitMessage: `Feedback exceeds ${EPIC_FEEDBACK_MAX_LENGTH} characters.`,
+	});
+	if (textError) {
+		sendReject(ws, epicId, "validation", textError, deps);
 		return;
 	}
-	if (trimmed.length > MAX_FEEDBACK_LENGTH) {
-		deps.sendTo(ws, {
-			type: "epic:feedback:rejected",
-			epicId,
-			reasonCode: "validation",
-			reason: `Feedback exceeds ${MAX_FEEDBACK_LENGTH} characters.`,
-		});
-		return;
-	}
+	const trimmed = rawText.trim();
 
 	const epics = await deps.sharedEpicStore.loadAll();
 	const epic = epics.find((e) => e.epicId === epicId);
 	if (!epic) {
-		deps.sendTo(ws, {
-			type: "epic:feedback:rejected",
-			epicId,
-			reasonCode: "validation",
-			reason: "Unknown epic.",
-		});
+		sendReject(ws, epicId, "validation", "Unknown epic.", deps);
 		return;
 	}
 
 	// 2. spec_started check
 	const childWorkflows = await findChildWorkflowsOfEpic(epic, deps);
 	if (childWorkflows.some((w) => w.hasEverStarted)) {
-		deps.sendTo(ws, {
-			type: "epic:feedback:rejected",
-			epicId,
-			reasonCode: "spec_started",
-			reason: "A child spec has already started.",
-		});
+		sendReject(ws, epicId, "spec_started", "A child spec has already started.", deps);
 		return;
 	}
 
@@ -369,23 +374,13 @@ export const handleEpicFeedback: MessageHandler = async (ws, data, deps) => {
 		// check here closes that check-then-act race.
 		const freshChildren = await findChildWorkflowsOfEpic(epic, deps);
 		if (freshChildren.some((w) => w.hasEverStarted)) {
-			deps.sendTo(ws, {
-				type: "epic:feedback:rejected",
-				epicId,
-				reasonCode: "spec_started",
-				reason: "A child spec has already started.",
-			});
+			sendReject(ws, epicId, "spec_started", "A child spec has already started.", deps);
 			return;
 		}
 		await runFeedbackAttempt(epic, trimmed, deps);
 	});
 	if (runPromise === null) {
-		deps.sendTo(ws, {
-			type: "epic:feedback:rejected",
-			epicId,
-			reasonCode: "in_flight",
-			reason: "Another decomposition attempt is already running.",
-		});
+		sendReject(ws, epicId, "in_flight", "Another decomposition attempt is already running.", deps);
 		return;
 	}
 
@@ -420,7 +415,12 @@ async function runFeedbackAttempt(
 	trimmedText: string,
 	deps: HandlerDeps,
 ): Promise<void> {
-	// Reload latest epic state inside the lock for a fresh copy.
+	// Reload latest epic state inside the lock for a fresh copy. Inside the
+	// feedback lock, `initialEpic` and the reloaded `epic` should have identical
+	// `workflowIds` (the lock serialises feedback; handleEpicStart can't be
+	// running concurrently because the epic is already persisted). The reload
+	// is defensive — use `epic` for all subsequent reads/writes, `initialEpic`
+	// only for the look-up below.
 	let epics = await deps.sharedEpicStore.loadAll();
 	let epic = epics.find((e) => e.epicId === initialEpic.epicId) ?? initialEpic;
 	const epicId = epic.epicId;
@@ -462,52 +462,93 @@ async function runFeedbackAttempt(
 		sessionContextLost: epic.sessionContextLost,
 	});
 
-	// Resolve the repoDir BEFORE deleting the prior workflows: use one of the
-	// prior workflows' targetRepository if available.
-	const priorEpicForDelete = initialEpic;
+	// Resolve the repoDir and inherited managedRepo BEFORE aborting the prior
+	// workflows. If the epic was created from a GitHub URL, every child has
+	// `managedRepo = {owner, repo}` and the per-workflow `releaseManagedRepoIfAny`
+	// fired inside `deleteChildWorkflows → abortPipeline` would decrement the
+	// refcount to 0 and delete the clone mid-flight, racing the upcoming
+	// `analyzeEpic` call. We hold one extra refcount across the abort loop so
+	// the clone survives, then hand that refcount to the new workflows.
 	let repoDir: string | null = null;
-	for (const wfId of priorEpicForDelete.workflowIds) {
+	let inheritedManagedRepo: Workflow["managedRepo"] = null;
+	for (const wfId of initialEpic.workflowIds) {
 		const loaded = await deps.sharedStore.load(wfId);
-		if (loaded?.targetRepository) {
-			repoDir = loaded.targetRepository;
-			break;
+		if (loaded) {
+			if (!repoDir && loaded.targetRepository) repoDir = loaded.targetRepository;
+			if (!inheritedManagedRepo && loaded.managedRepo) inheritedManagedRepo = loaded.managedRepo;
 		}
+		if (repoDir && inheritedManagedRepo) break;
 	}
 
-	// Delete prior child workflows.
-	await deleteChildWorkflows(priorEpicForDelete, deps);
-	if (!repoDir) {
-		// Fall back: no workflows available. Use the epic description's repo guess — none stored.
-		// We can't proceed without a repoDir. Persist an error outcome and report.
+	// Hold a protective +1 refcount so the clone isn't deleted by the
+	// abort-induced releases. Balanced either by the first new workflow
+	// inheriting the ref (no extra bump) or by an explicit release in the
+	// error path below.
+	let heldManagedRef = false;
+	if (inheritedManagedRepo) {
+		await deps.managedRepoStore.bumpRefCount(
+			inheritedManagedRepo.owner,
+			inheritedManagedRepo.repo,
+			1,
+		);
+		heldManagedRef = true;
+	}
+
+	const releaseHeldRefIfAny = async (): Promise<void> => {
+		if (heldManagedRef && inheritedManagedRepo) {
+			heldManagedRef = false;
+			await deps.managedRepoStore
+				.release(inheritedManagedRepo.owner, inheritedManagedRepo.repo)
+				.catch((err) =>
+					logger.warn(`[epic-feedback] managed-repo release after failed attempt: ${err}`),
+				);
+		}
+	};
+
+	// Drives the three terminal-error branches (no repoDir, analyze-failed,
+	// fresh-fallback-failed) through one persist+broadcast path.
+	const failAttempt = async (message: string): Promise<void> => {
 		entry.outcome = "error";
-		epic = {
-			...epic,
+		const latest = await deps.sharedEpicStore.loadAll();
+		const current = latest.find((e) => e.epicId === epicId) ?? epic;
+		const updated: PersistedEpic = {
+			...current,
 			status: "error",
-			errorMessage: "No target repository available for feedback attempt.",
-			feedbackHistory: epic.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
+			errorMessage: message,
+			feedbackHistory: current.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
 		};
-		await deps.sharedEpicStore.save(epic);
+		await deps.sharedEpicStore.save(updated);
+		epic = updated;
 		deps.broadcast({
 			type: "epic:feedback:history",
 			epicId,
-			entries: epic.feedbackHistory,
-			sessionContextLost: epic.sessionContextLost,
+			entries: updated.feedbackHistory,
+			sessionContextLost: updated.sessionContextLost,
 		});
-		deps.broadcast({
-			type: "epic:error",
-			epicId,
-			message: epic.errorMessage ?? "Feedback attempt failed",
-		});
+		deps.broadcast({ type: "epic:error", epicId, message });
+		await releaseHeldRefIfAny();
+	};
+
+	// Delete prior child workflows.
+	await deleteChildWorkflows(initialEpic, deps);
+	if (!repoDir) {
+		await failAttempt("No target repository available for feedback attempt.");
 		return;
 	}
 
 	let capturedSessionId: string | null = null;
 	const resumeSessionId = epic.decompositionSessionId;
-	deps.sharedAuditLogger.logDecompositionResumed({
-		epicId,
-		sessionId: resumeSessionId,
-		attemptReason: "feedback",
-	});
+	// Only audit `decomposition_resumed` when we actually have a session id to
+	// resume. Without one, the first attempt errored before capturing a
+	// session — no resume is possible, and the audit record would carry a
+	// misleading `sessionId: null`.
+	if (resumeSessionId) {
+		deps.sharedAuditLogger.logDecompositionResumed({
+			epicId,
+			sessionId: resumeSessionId,
+			attemptReason: "feedback",
+		});
+	}
 
 	let contextLost = false;
 	let result: Awaited<ReturnType<typeof analyzeEpic>>;
@@ -555,48 +596,25 @@ async function runFeedbackAttempt(
 						capturedSessionId = sid;
 					},
 				});
+				// Record the fresh-fallback attempt under its NEW session id so the
+				// audit trail shows "resumed X → failed → fresh with Y" instead of
+				// stopping at the resume-failed record.
+				if (capturedSessionId) {
+					deps.sharedAuditLogger.logDecompositionResumed({
+						epicId,
+						sessionId: capturedSessionId,
+						attemptReason: "feedback",
+					});
+				}
 			} catch (err2) {
-				entry.outcome = "error";
-				epic = {
-					...epic,
-					status: "error",
-					errorMessage: toErrorMessage(err2),
-					feedbackHistory: epic.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
-				};
-				await deps.sharedEpicStore.save(epic);
-				deps.broadcast({
-					type: "epic:feedback:history",
-					epicId,
-					entries: epic.feedbackHistory,
-					sessionContextLost: epic.sessionContextLost,
-				});
-				deps.broadcast({
-					type: "epic:error",
-					epicId,
-					message: toErrorMessage(err2),
-				});
+				// Fresh fallback also failed. The earlier branch already set
+				// `sessionContextLost = true` on the epic; leave it sticky. A
+				// subsequent successful attempt or an explicit ack clears it.
+				await failAttempt(toErrorMessage(err2));
 				return;
 			}
 		} else {
-			entry.outcome = "error";
-			epic = {
-				...epic,
-				status: "error",
-				errorMessage: toErrorMessage(err),
-				feedbackHistory: epic.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
-			};
-			await deps.sharedEpicStore.save(epic);
-			deps.broadcast({
-				type: "epic:feedback:history",
-				epicId,
-				entries: epic.feedbackHistory,
-				sessionContextLost: epic.sessionContextLost,
-			});
-			deps.broadcast({
-				type: "epic:error",
-				epicId,
-				message: toErrorMessage(err),
-			});
+			await failAttempt(toErrorMessage(err));
 			return;
 		}
 	}
@@ -635,12 +653,66 @@ async function runFeedbackAttempt(
 			title: result.title,
 			infeasibleNotes: result.infeasibleNotes,
 		});
+		// No child workflows will own the held ref; drop it so the clone can
+		// be cleaned up by its last remaining consumer (now none).
+		await releaseHeldRefIfAny();
 		return;
 	}
 
-	const { workflows } = await createEpicWorkflows(result, repoDir, epicId, null);
+	// Defensive: analyzer returned zero specs AND no infeasibleNotes. Parity
+	// with handleEpicStart's same guard — mark completed with empty children
+	// rather than silently falling through to the workflow-creation loop.
+	if (result.specs.length === 0) {
+		logger.warn(
+			`[epic] ${epicId.slice(0, 8)} feedback produced 0 workflows without infeasibleNotes — releasing clone`,
+		);
+		entry.outcome = "completed";
+		epic = {
+			...persistedNow,
+			status: "completed",
+			title: result.title,
+			workflowIds: [],
+			analysisSummary: result.summary,
+			infeasibleNotes: null,
+			errorMessage: null,
+			decompositionSessionId: capturedSessionId ?? persistedNow.decompositionSessionId,
+			sessionContextLost: contextLost ? true : persistedNow.sessionContextLost,
+			feedbackHistory: persistedNow.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
+		};
+		await deps.sharedEpicStore.save(epic);
+		deps.broadcast({
+			type: "epic:feedback:history",
+			epicId,
+			entries: epic.feedbackHistory,
+			sessionContextLost: epic.sessionContextLost,
+		});
+		deps.broadcast({
+			type: "epic:result",
+			epicId,
+			title: result.title,
+			specCount: 0,
+			workflowIds: [],
+			summary: result.summary,
+		});
+		await releaseHeldRefIfAny();
+		return;
+	}
+
+	// Create new child workflows, inheriting the managed-repo (if any) so they
+	// own the clone's refcount. The first workflow absorbs the protective +1
+	// we held across the abort loop (so we skip an explicit release); each
+	// subsequent workflow bumps by 1, mirroring `handleEpicStart`'s arithmetic.
+	const { workflows } = await createEpicWorkflows(result, repoDir, epicId, inheritedManagedRepo);
 	const workflowIds: string[] = [];
-	for (const workflow of workflows) {
+	for (let i = 0; i < workflows.length; i++) {
+		const workflow = workflows[i];
+		if (i > 0 && inheritedManagedRepo) {
+			await deps.managedRepoStore.bumpRefCount(
+				inheritedManagedRepo.owner,
+				inheritedManagedRepo.repo,
+				1,
+			);
+		}
 		await deps.sharedStore.save(workflow);
 		const orch = deps.createOrchestrator();
 		orch.getEngine().setWorkflow(workflow);
@@ -651,6 +723,8 @@ async function runFeedbackAttempt(
 		});
 		workflowIds.push(workflow.id);
 	}
+	// The first new workflow adopted the held refcount.
+	heldManagedRef = false;
 
 	entry.outcome = "completed";
 	epic = {

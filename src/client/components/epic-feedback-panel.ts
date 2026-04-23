@@ -5,7 +5,9 @@
  * preserved on rejection.
  */
 
-const MAX_LENGTH = 10_000;
+import { EPIC_FEEDBACK_MAX_LENGTH } from "../../types";
+
+const MAX_LENGTH = EPIC_FEEDBACK_MAX_LENGTH;
 
 export interface EpicFeedbackPanelHandle {
 	element: HTMLDivElement;
