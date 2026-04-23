@@ -101,6 +101,29 @@ export interface EpicAnalysisProcess {
 export interface EpicAnalysisCallbacks {
 	onOutput?: (text: string) => void;
 	onTools?: (tools: ToolUsage[]) => void;
+	/**
+	 * Invoked the first time a CLI stream event carries a session id. Callers
+	 * use this to persist `PersistedEpic.decompositionSessionId` mid-analysis
+	 * so the id survives a crash/restart.
+	 */
+	onSessionId?: (sessionId: string) => void;
+}
+
+/**
+ * Error thrown by `analyzeEpic` when a `--resume` invocation fails because the
+ * prior session is unrecoverable (e.g. CLI reports "session not found"). The
+ * caller is expected to fall back to a fresh non-resumed invocation with the
+ * original prompt plus accumulated feedback text.
+ */
+export class UnrecoverableSessionError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "UnrecoverableSessionError";
+	}
+}
+
+function isSessionNotFound(stderr: string): boolean {
+	return /session.*not.*found|no.*such.*session|invalid.*session/i.test(stderr);
 }
 
 interface StreamResult {
@@ -136,6 +159,7 @@ async function runCLIStream(
 	}
 
 	let timedOut = false;
+	let sessionIdReported = false;
 	const timeoutId = setTimeout(() => {
 		timedOut = true;
 		proc.kill();
@@ -176,6 +200,10 @@ async function runCLIStream(
 					const event = JSON.parse(line);
 					if (event.session_id && !sessionId) {
 						sessionId = event.session_id;
+					}
+					if (event.session_id && !sessionIdReported) {
+						sessionIdReported = true;
+						callbacks?.onSessionId?.(event.session_id as string);
 					}
 					if (event.type === "assistant" && event.message?.content) {
 						// Discard pending deltas — assistant event has authoritative text
@@ -256,6 +284,7 @@ export async function analyzeEpic(
 	onKillRef?: { current: EpicAnalysisProcess | null },
 	timeoutMs?: number,
 	callbacks?: EpicAnalysisCallbacks,
+	resumeSessionId?: string | null,
 ): Promise<EpicAnalysisResult> {
 	const prompt = buildDecompositionPrompt(epicDescription);
 	const config = configStore.get();
@@ -275,6 +304,9 @@ export async function analyzeEpic(
 		"--effort",
 		effort,
 	];
+	if (resumeSessionId) {
+		args.push("--resume", resumeSessionId);
+	}
 	if (model.trim() !== "") {
 		args.push("--model", model);
 	}
@@ -283,6 +315,11 @@ export async function analyzeEpic(
 
 	if (result.timedOut) throw new Error("Epic analysis timed out");
 	if (result.exitCode !== 0) {
+		if (resumeSessionId && isSessionNotFound(result.stderr)) {
+			throw new UnrecoverableSessionError(
+				result.stderr || "Prior decomposition session is unrecoverable",
+			);
+		}
 		throw new Error(result.stderr || `CLI process exited with code ${result.exitCode}`);
 	}
 
