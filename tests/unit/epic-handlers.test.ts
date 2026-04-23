@@ -45,7 +45,13 @@ mock.module("../../src/workflow-engine", () => ({
 	createEpicWorkflows: async () => mockCreatedWorkflows,
 }));
 
-import { handleEpicAbort, handleEpicStart } from "../../src/server/epic-handlers";
+import {
+	handleEpicAbort,
+	handleEpicFeedback,
+	handleEpicFeedbackAckContextLost,
+	handleEpicStart,
+} from "../../src/server/epic-handlers";
+import { makePersistedEpic } from "../test-infra/factories";
 
 function setup() {
 	const { mock: ws } = createMockWebSocket();
@@ -412,6 +418,262 @@ describe("epic-handlers", () => {
 			expect(calls.filter((c) => c.method === "acquire")).toHaveLength(1);
 			expect(calls.filter((c) => c.method === "release")).toHaveLength(1);
 			expect(getRefCount()).toBe(0);
+		});
+	});
+
+	describe("handleEpicFeedback", () => {
+		const auditCalls: Array<{ method: string; args: unknown[] }> = [];
+
+		function seedEpicForFeedback(
+			deps: ReturnType<typeof setup>["deps"],
+			overrides?: Partial<ReturnType<typeof makePersistedEpic>>,
+		) {
+			const epic = makePersistedEpic({
+				status: "completed",
+				decompositionSessionId: "sess-1",
+				workflowIds: ["wf-a"],
+				...overrides,
+			});
+			// Seed the epic in the in-memory epic store
+			void deps.sharedEpicStore.save(epic);
+			// Seed an existing child workflow so the handler can find targetRepository.
+			const wf = makeWorkflow({
+				id: "wf-a",
+				epicId: epic.epicId,
+				targetRepository: "/mock/repo",
+				hasEverStarted: false,
+			});
+			void deps.sharedStore.save(wf);
+			// Also install audit logger spy.
+			deps.sharedAuditLogger = {
+				logFeedbackSubmitted(payload: unknown) {
+					auditCalls.push({ method: "logFeedbackSubmitted", args: [payload] });
+				},
+				logDecompositionResumed(payload: unknown) {
+					auditCalls.push({ method: "logDecompositionResumed", args: [payload] });
+				},
+			} as unknown as typeof deps.sharedAuditLogger;
+			return { epic, wf };
+		}
+
+		test("rejects empty text with validation reasonCode", async () => {
+			auditCalls.length = 0;
+			const { ws, deps, sentMessages } = setup();
+			const { epic } = seedEpicForFeedback(deps);
+			await handleEpicFeedback(
+				ws,
+				{ type: "epic:feedback", epicId: epic.epicId, text: "   " } as ClientMessage,
+				deps,
+			);
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some((m) => m.type === "epic:feedback:rejected" && m.reasonCode === "validation"),
+			).toBe(true);
+		});
+
+		test("rejects over-limit text with validation reasonCode", async () => {
+			const { ws, deps, sentMessages } = setup();
+			const { epic } = seedEpicForFeedback(deps);
+			const longText = "a".repeat(10_001);
+			await handleEpicFeedback(
+				ws,
+				{ type: "epic:feedback", epicId: epic.epicId, text: longText } as ClientMessage,
+				deps,
+			);
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some((m) => m.type === "epic:feedback:rejected" && m.reasonCode === "validation"),
+			).toBe(true);
+		});
+
+		test("rejects unknown epicId with validation reasonCode", async () => {
+			const { ws, deps, sentMessages } = setup();
+			await handleEpicFeedback(
+				ws,
+				{ type: "epic:feedback", epicId: "does-not-exist", text: "hello" } as ClientMessage,
+				deps,
+			);
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some((m) => m.type === "epic:feedback:rejected" && m.reasonCode === "validation"),
+			).toBe(true);
+		});
+
+		test("rejects when a child has hasEverStarted === true (spec_started)", async () => {
+			const { ws, deps, sentMessages } = setup();
+			const { epic } = seedEpicForFeedback(deps);
+			// Overwrite the wf to hasEverStarted = true
+			await deps.sharedStore.save(
+				makeWorkflow({
+					id: "wf-a",
+					epicId: epic.epicId,
+					targetRepository: "/mock/repo",
+					hasEverStarted: true,
+				}),
+			);
+			await handleEpicFeedback(
+				ws,
+				{ type: "epic:feedback", epicId: epic.epicId, text: "refine" } as ClientMessage,
+				deps,
+			);
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some((m) => m.type === "epic:feedback:rejected" && m.reasonCode === "spec_started"),
+			).toBe(true);
+			// No workflow deletion should have happened.
+			expect(await deps.sharedStore.load("wf-a")).not.toBeNull();
+		});
+
+		test("happy path — appends entry, bumps attemptCount, resumes analyzer, broadcasts history", async () => {
+			auditCalls.length = 0;
+			const { ws, deps, broadcastedMessages } = setup();
+			const { epic } = seedEpicForFeedback(deps);
+			mockAnalyzeResult = {
+				title: "Refined Epic",
+				specs: [{ title: "Spec 1", specification: "do 1" }],
+				summary: "Refined once",
+			};
+			const wfNew = makeWorkflow({ id: "wf-new", epicDependencyStatus: "satisfied" });
+			mockCreatedWorkflows = { workflows: [wfNew], epicId: epic.epicId };
+
+			deps.createOrchestrator = () =>
+				({
+					getEngine: () => ({ setWorkflow() {} }),
+					startPipelineFromWorkflow() {},
+					abortPipeline() {},
+				}) as unknown as PipelineOrchestrator;
+
+			await handleEpicFeedback(
+				ws,
+				{
+					type: "epic:feedback",
+					epicId: epic.epicId,
+					text: "Split spec 2 into one spec per integration.",
+				} as ClientMessage,
+				deps,
+			);
+
+			// epic:feedback:accepted broadcast
+			const accepted = broadcastedMessages.find((m) => m.type === "epic:feedback:accepted");
+			expect(accepted).toBeDefined();
+			// history broadcast exists and terminal entry has outcome "completed"
+			const historyMsgs = broadcastedMessages.filter(
+				(m) => m.type === "epic:feedback:history",
+			) as Array<
+				Extract<import("../../src/types").ServerMessage, { type: "epic:feedback:history" }>
+			>;
+			expect(historyMsgs.length).toBeGreaterThan(0);
+			const lastHist = historyMsgs[historyMsgs.length - 1];
+			expect(lastHist.entries).toHaveLength(1);
+			expect(lastHist.entries[0].outcome).toBe("completed");
+			// epic:result broadcast on success
+			expect(broadcastedMessages.some((m) => m.type === "epic:result")).toBe(true);
+			// audit — feedback_submitted + decomposition_resumed
+			expect(auditCalls.some((c) => c.method === "logFeedbackSubmitted")).toBe(true);
+			expect(auditCalls.some((c) => c.method === "logDecompositionResumed")).toBe(true);
+			// feedback_submitted metadata does NOT include the feedback text
+			const submittedCall = auditCalls.find((c) => c.method === "logFeedbackSubmitted");
+			expect(submittedCall).toBeDefined();
+			const payload = submittedCall?.args[0] as Record<string, unknown>;
+			expect(payload).not.toHaveProperty("text");
+			expect(payload.textLength).toBe("Split spec 2 into one spec per integration.".length);
+		});
+
+		test("accept on infeasible epic clears infeasibleNotes", async () => {
+			const { ws, deps } = setup();
+			const { epic } = seedEpicForFeedback(deps, {
+				status: "infeasible",
+				infeasibleNotes: "old notes",
+			});
+			mockAnalyzeResult = {
+				title: "Now feasible",
+				specs: [{ title: "Spec", specification: "do" }],
+			};
+			mockCreatedWorkflows = {
+				workflows: [makeWorkflow({ id: "wf-z", epicDependencyStatus: "satisfied" })],
+				epicId: epic.epicId,
+			};
+			deps.createOrchestrator = () =>
+				({
+					getEngine: () => ({ setWorkflow() {} }),
+					startPipelineFromWorkflow() {},
+					abortPipeline() {},
+				}) as unknown as PipelineOrchestrator;
+
+			await handleEpicFeedback(
+				ws,
+				{ type: "epic:feedback", epicId: epic.epicId, text: "try again" } as ClientMessage,
+				deps,
+			);
+			const allEpics = await deps.sharedEpicStore.loadAll();
+			const stored = allEpics.find((e) => e.epicId === epic.epicId);
+			expect(stored?.infeasibleNotes).toBeNull();
+			expect(stored?.status).toBe("completed");
+		});
+
+		test("accept on error epic clears errorMessage", async () => {
+			const { ws, deps } = setup();
+			const { epic } = seedEpicForFeedback(deps, {
+				status: "error",
+				errorMessage: "prior error",
+			});
+			mockAnalyzeResult = {
+				title: "Recovered",
+				specs: [{ title: "Spec", specification: "do" }],
+			};
+			mockCreatedWorkflows = {
+				workflows: [makeWorkflow({ id: "wf-r", epicDependencyStatus: "satisfied" })],
+				epicId: epic.epicId,
+			};
+			deps.createOrchestrator = () =>
+				({
+					getEngine: () => ({ setWorkflow() {} }),
+					startPipelineFromWorkflow() {},
+					abortPipeline() {},
+				}) as unknown as PipelineOrchestrator;
+
+			await handleEpicFeedback(
+				ws,
+				{ type: "epic:feedback", epicId: epic.epicId, text: "please retry" } as ClientMessage,
+				deps,
+			);
+			const allEpics = await deps.sharedEpicStore.loadAll();
+			const stored = allEpics.find((e) => e.epicId === epic.epicId);
+			expect(stored?.errorMessage).toBeNull();
+		});
+	});
+
+	describe("handleEpicFeedbackAckContextLost", () => {
+		test("clears epic.sessionContextLost and broadcasts history", async () => {
+			const { ws, deps, broadcastedMessages } = setup();
+			const epic = makePersistedEpic({ sessionContextLost: true });
+			await deps.sharedEpicStore.save(epic);
+			await handleEpicFeedbackAckContextLost(
+				ws,
+				{ type: "epic:feedback:ack-context-lost", epicId: epic.epicId } as ClientMessage,
+				deps,
+			);
+			const all = await deps.sharedEpicStore.loadAll();
+			const stored = all.find((e) => e.epicId === epic.epicId);
+			expect(stored?.sessionContextLost).toBe(false);
+			expect(
+				broadcastedMessages.some(
+					(m) => m.type === "epic:feedback:history" && m.sessionContextLost === false,
+				),
+			).toBe(true);
+		});
+
+		test("idempotent when already false", async () => {
+			const { ws, deps } = setup();
+			const epic = makePersistedEpic({ sessionContextLost: false });
+			await deps.sharedEpicStore.save(epic);
+			await handleEpicFeedbackAckContextLost(
+				ws,
+				{ type: "epic:feedback:ack-context-lost", epicId: epic.epicId } as ClientMessage,
+				deps,
+			);
+			const all = await deps.sharedEpicStore.loadAll();
+			expect(all.find((e) => e.epicId === epic.epicId)?.sessionContextLost).toBe(false);
 		});
 	});
 
