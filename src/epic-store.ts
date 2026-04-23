@@ -6,6 +6,16 @@ import { atomicWrite } from "./atomic-write";
 import { logger } from "./logger";
 import type { PersistedEpic } from "./types";
 
+function normalizePersistedEpic(data: Partial<PersistedEpic>): PersistedEpic {
+	return {
+		...(data as PersistedEpic),
+		decompositionSessionId: data.decompositionSessionId ?? null,
+		feedbackHistory: Array.isArray(data.feedbackHistory) ? data.feedbackHistory : [],
+		sessionContextLost: data.sessionContextLost === true,
+		attemptCount: typeof data.attemptCount === "number" ? data.attemptCount : 1,
+	};
+}
+
 export class EpicStore {
 	private baseDir: string;
 	private writeLock = new AsyncLock();
@@ -28,7 +38,7 @@ export class EpicStore {
 			if (!(await file.exists())) return [];
 			const data = await file.json();
 			if (!Array.isArray(data)) return [];
-			return data as PersistedEpic[];
+			return (data as Partial<PersistedEpic>[]).map(normalizePersistedEpic);
 		} catch (err) {
 			logger.warn("[epic-store] Failed to load epics:", err);
 			return [];
