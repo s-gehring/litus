@@ -29,7 +29,12 @@ import {
 	handleAlertRouteChanged,
 } from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
-import { handleEpicAbort, handleEpicStart } from "./server/epic-handlers";
+import {
+	handleEpicAbort,
+	handleEpicFeedback,
+	handleEpicFeedbackAckContextLost,
+	handleEpicStart,
+} from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
 import { MessageRouter } from "./server/message-router";
 import { handlePurgeAll } from "./server/purge-handlers";
@@ -279,6 +284,8 @@ router.register("config:save", handleConfigSave);
 router.register("config:reset", handleConfigReset);
 router.register("epic:start", handleEpicStart);
 router.register("epic:abort", handleEpicAbort);
+router.register("epic:feedback", handleEpicFeedback);
+router.register("epic:feedback:ack-context-lost", handleEpicFeedbackAckContextLost);
 router.register("purge:all", handlePurgeAll);
 router.register("alert:list", handleAlertList);
 router.register("alert:dismiss", handleAlertDismiss);

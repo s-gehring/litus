@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { analyzeEpic } from "../epic-analyzer";
+import { AsyncLock } from "../async-lock";
+import { analyzeEpic, UnrecoverableSessionError } from "../epic-analyzer";
 import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
-import type { ClientMessage, PersistedEpic } from "../types";
+import type { ClientMessage, EpicFeedbackEntry, PersistedEpic, Workflow } from "../types";
 import { createEpicWorkflows } from "../workflow-engine";
-import type { MessageHandler } from "./handler-types";
+import type { HandlerDeps, MessageHandler } from "./handler-types";
 import { resolveTargetRepo, validateTextInput } from "./handler-types";
 
 function buildEpicData(
@@ -12,6 +13,10 @@ function buildEpicData(
 		analysisStartedAt: number;
 		infeasibleNotes: string | null;
 		summary: string | null;
+		decompositionSessionId?: string | null;
+		feedbackHistory?: PersistedEpic["feedbackHistory"];
+		sessionContextLost?: boolean;
+		attemptCount?: number;
 	},
 ): PersistedEpic {
 	return {
@@ -25,6 +30,10 @@ function buildEpicData(
 		errorMessage: null,
 		infeasibleNotes: fields.infeasibleNotes,
 		analysisSummary: fields.summary,
+		decompositionSessionId: fields.decompositionSessionId ?? null,
+		feedbackHistory: fields.feedbackHistory ?? [],
+		sessionContextLost: fields.sessionContextLost ?? false,
+		attemptCount: fields.attemptCount ?? 1,
 	};
 }
 
@@ -62,10 +71,14 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 			logger.warn(`[epic] Summary generation failed: ${err}`);
 		});
 
+	let capturedSessionId: string | null = null;
 	try {
 		const result = await analyzeEpic(trimmedDesc, repoDir, deps.epicAnalysisRef, undefined, {
 			onOutput: (text) => deps.broadcast({ type: "epic:output", epicId, text }),
 			onTools: (tools) => deps.broadcast({ type: "epic:tools", epicId, tools }),
+			onSessionId: (sid) => {
+				capturedSessionId = sid;
+			},
 		});
 
 		const analysisMs = Date.now() - analysisStartedAt;
@@ -85,6 +98,7 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 				analysisStartedAt,
 				infeasibleNotes: result.infeasibleNotes,
 				summary: result.summary,
+				decompositionSessionId: capturedSessionId,
 			});
 			await deps.sharedEpicStore.save(epicData);
 			deps.broadcast({
@@ -210,4 +224,429 @@ export const handleEpicAbort: MessageHandler = (_ws, _data, deps) => {
 		deps.epicAnalysisRef.current.kill();
 		deps.epicAnalysisRef.current = null;
 	}
+};
+
+// ── Epic feedback ─────────────────────────────────────────
+
+const MAX_FEEDBACK_LENGTH = 10_000;
+
+// Per-epic serialization of feedback submissions. A held lock surfaces as an
+// `in_flight` rejection rather than queueing, per FR-010.
+const feedbackLocks = new Map<string, AsyncLock>();
+
+function getFeedbackLock(epicId: string): AsyncLock {
+	let lock = feedbackLocks.get(epicId);
+	if (!lock) {
+		lock = new AsyncLock();
+		feedbackLocks.set(epicId, lock);
+	}
+	return lock;
+}
+
+async function findChildWorkflowsOfEpic(
+	epic: PersistedEpic,
+	deps: HandlerDeps,
+): Promise<Workflow[]> {
+	const results: Workflow[] = [];
+	for (const wfId of epic.workflowIds) {
+		const orch = deps.orchestrators.get(wfId);
+		const fromOrch = orch?.getEngine().getWorkflow() ?? null;
+		if (fromOrch) {
+			results.push(fromOrch);
+			continue;
+		}
+		const loaded = await deps.sharedStore.load(wfId);
+		if (loaded) results.push(loaded);
+	}
+	return results;
+}
+
+async function deleteChildWorkflows(epic: PersistedEpic, deps: HandlerDeps): Promise<void> {
+	for (const wfId of epic.workflowIds) {
+		const orch = deps.orchestrators.get(wfId);
+		if (orch) {
+			try {
+				orch.abortPipeline(wfId);
+			} catch (err) {
+				logger.warn(`[epic-feedback] abort orchestrator ${wfId} failed: ${err}`);
+			}
+			deps.orchestrators.delete(wfId);
+		}
+		try {
+			await deps.sharedStore.remove(wfId);
+		} catch (err) {
+			logger.warn(`[epic-feedback] remove workflow ${wfId} failed: ${err}`);
+		}
+		deps.broadcast({ type: "workflow:state", workflow: null });
+	}
+}
+
+export const handleEpicFeedback: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "epic:feedback" };
+	const epicId = msg.epicId;
+	const rawText = typeof msg.text === "string" ? msg.text : "";
+	const trimmed = rawText.trim();
+
+	// 1. Validation errors (text first, then epicId lookup)
+	if (trimmed.length === 0) {
+		deps.sendTo(ws, {
+			type: "epic:feedback:rejected",
+			epicId,
+			reasonCode: "validation",
+			reason: "Feedback is empty.",
+		});
+		return;
+	}
+	if (trimmed.length > MAX_FEEDBACK_LENGTH) {
+		deps.sendTo(ws, {
+			type: "epic:feedback:rejected",
+			epicId,
+			reasonCode: "validation",
+			reason: `Feedback exceeds ${MAX_FEEDBACK_LENGTH} characters.`,
+		});
+		return;
+	}
+
+	const epics = await deps.sharedEpicStore.loadAll();
+	const epic = epics.find((e) => e.epicId === epicId);
+	if (!epic) {
+		deps.sendTo(ws, {
+			type: "epic:feedback:rejected",
+			epicId,
+			reasonCode: "validation",
+			reason: "Unknown epic.",
+		});
+		return;
+	}
+
+	// 2. spec_started check
+	const childWorkflows = await findChildWorkflowsOfEpic(epic, deps);
+	if (childWorkflows.some((w) => w.hasEverStarted)) {
+		deps.sendTo(ws, {
+			type: "epic:feedback:rejected",
+			epicId,
+			reasonCode: "spec_started",
+			reason: "A child spec has already started.",
+		});
+		return;
+	}
+
+	// 3. in_flight — tryRun returns null if lock held
+	const lock = getFeedbackLock(epicId);
+	const runPromise = lock.tryRun(async () => {
+		await runFeedbackAttempt(epic, trimmed, deps);
+	});
+	if (runPromise === null) {
+		deps.sendTo(ws, {
+			type: "epic:feedback:rejected",
+			epicId,
+			reasonCode: "in_flight",
+			reason: "Another decomposition attempt is already running.",
+		});
+		return;
+	}
+
+	try {
+		await runPromise;
+	} catch (err) {
+		logger.error(`[epic-feedback] run failed (${epicId.slice(0, 8)}): ${toErrorMessage(err)}`);
+		deps.broadcast({
+			type: "epic:error",
+			epicId,
+			message: toErrorMessage(err),
+		});
+	}
+};
+
+async function runFeedbackAttempt(
+	initialEpic: PersistedEpic,
+	trimmedText: string,
+	deps: HandlerDeps,
+): Promise<void> {
+	// Reload latest epic state inside the lock for a fresh copy.
+	let epics = await deps.sharedEpicStore.loadAll();
+	let epic = epics.find((e) => e.epicId === initialEpic.epicId) ?? initialEpic;
+	const epicId = epic.epicId;
+
+	const entry: EpicFeedbackEntry = {
+		id: randomUUID(),
+		text: trimmedText,
+		submittedAt: new Date().toISOString(),
+		attemptSessionId: null,
+		contextLostOnThisAttempt: false,
+		outcome: null,
+	};
+
+	epic = {
+		...epic,
+		feedbackHistory: [...epic.feedbackHistory, entry],
+		attemptCount: epic.attemptCount + 1,
+		// Clear prior terminal annotations when accepting feedback on infeasible/error.
+		infeasibleNotes: epic.status === "infeasible" ? null : epic.infeasibleNotes,
+		errorMessage: epic.status === "error" ? null : epic.errorMessage,
+		status: "analyzing",
+		workflowIds: [],
+	};
+
+	await deps.sharedEpicStore.save(epic);
+
+	deps.sharedAuditLogger.logFeedbackSubmitted({
+		epicId,
+		feedbackEntryId: entry.id,
+		textLength: trimmedText.length,
+		sessionContextLost: epic.sessionContextLost,
+	});
+
+	deps.broadcast({ type: "epic:feedback:accepted", epicId, entry });
+	deps.broadcast({
+		type: "epic:feedback:history",
+		epicId,
+		entries: epic.feedbackHistory,
+		sessionContextLost: epic.sessionContextLost,
+	});
+
+	// Resolve the repoDir BEFORE deleting the prior workflows: use one of the
+	// prior workflows' targetRepository if available.
+	const priorEpicForDelete = initialEpic;
+	let repoDir: string | null = null;
+	for (const wfId of priorEpicForDelete.workflowIds) {
+		const loaded = await deps.sharedStore.load(wfId);
+		if (loaded?.targetRepository) {
+			repoDir = loaded.targetRepository;
+			break;
+		}
+	}
+
+	// Delete prior child workflows.
+	await deleteChildWorkflows(priorEpicForDelete, deps);
+	if (!repoDir) {
+		// Fall back: no workflows available. Use the epic description's repo guess — none stored.
+		// We can't proceed without a repoDir. Persist an error outcome and report.
+		entry.outcome = "error";
+		epic = {
+			...epic,
+			status: "error",
+			errorMessage: "No target repository available for feedback attempt.",
+			feedbackHistory: epic.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
+		};
+		await deps.sharedEpicStore.save(epic);
+		deps.broadcast({
+			type: "epic:feedback:history",
+			epicId,
+			entries: epic.feedbackHistory,
+			sessionContextLost: epic.sessionContextLost,
+		});
+		deps.broadcast({
+			type: "epic:error",
+			epicId,
+			message: epic.errorMessage ?? "Feedback attempt failed",
+		});
+		return;
+	}
+
+	let capturedSessionId: string | null = null;
+	const resumeSessionId = epic.decompositionSessionId;
+	deps.sharedAuditLogger.logDecompositionResumed({
+		epicId,
+		sessionId: resumeSessionId,
+		attemptReason: "feedback",
+	});
+
+	let contextLost = false;
+	let result: Awaited<ReturnType<typeof analyzeEpic>>;
+	try {
+		result = await analyzeEpic(
+			epic.description,
+			repoDir,
+			deps.epicAnalysisRef,
+			undefined,
+			{
+				onOutput: (text) => deps.broadcast({ type: "epic:output", epicId, text }),
+				onTools: (tools) => deps.broadcast({ type: "epic:tools", epicId, tools }),
+				onSessionId: (sid) => {
+					capturedSessionId = sid;
+				},
+			},
+			resumeSessionId,
+		);
+	} catch (err) {
+		if (err instanceof UnrecoverableSessionError && resumeSessionId) {
+			contextLost = true;
+			entry.contextLostOnThisAttempt = true;
+			capturedSessionId = null;
+			// Rebuild prompt: original description + accumulated feedback texts.
+			const combined = `${epic.description}\n\n${epic.feedbackHistory.map((e) => e.text).join("\n\n")}`;
+			epic = {
+				...epic,
+				decompositionSessionId: null,
+				sessionContextLost: true,
+				feedbackHistory: epic.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
+			};
+			await deps.sharedEpicStore.save(epic);
+			deps.broadcast({
+				type: "epic:feedback:history",
+				epicId,
+				entries: epic.feedbackHistory,
+				sessionContextLost: epic.sessionContextLost,
+			});
+			try {
+				result = await analyzeEpic(combined, repoDir, deps.epicAnalysisRef, undefined, {
+					onOutput: (text) => deps.broadcast({ type: "epic:output", epicId, text }),
+					onTools: (tools) => deps.broadcast({ type: "epic:tools", epicId, tools }),
+					onSessionId: (sid) => {
+						capturedSessionId = sid;
+					},
+				});
+			} catch (err2) {
+				entry.outcome = "error";
+				epic = {
+					...epic,
+					status: "error",
+					errorMessage: toErrorMessage(err2),
+					feedbackHistory: epic.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
+				};
+				await deps.sharedEpicStore.save(epic);
+				deps.broadcast({
+					type: "epic:feedback:history",
+					epicId,
+					entries: epic.feedbackHistory,
+					sessionContextLost: epic.sessionContextLost,
+				});
+				deps.broadcast({
+					type: "epic:error",
+					epicId,
+					message: toErrorMessage(err2),
+				});
+				return;
+			}
+		} else {
+			entry.outcome = "error";
+			epic = {
+				...epic,
+				status: "error",
+				errorMessage: toErrorMessage(err),
+				feedbackHistory: epic.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
+			};
+			await deps.sharedEpicStore.save(epic);
+			deps.broadcast({
+				type: "epic:feedback:history",
+				epicId,
+				entries: epic.feedbackHistory,
+				sessionContextLost: epic.sessionContextLost,
+			});
+			deps.broadcast({
+				type: "epic:error",
+				epicId,
+				message: toErrorMessage(err),
+			});
+			return;
+		}
+	}
+
+	entry.attemptSessionId = capturedSessionId;
+
+	// Re-load current epic (persistence may have changed during streaming) and
+	// merge back our session id + entry outcome.
+	epics = await deps.sharedEpicStore.loadAll();
+	const persistedNow = epics.find((e) => e.epicId === epicId) ?? epic;
+
+	// Infeasible path
+	if (result.specs.length === 0 && result.infeasibleNotes) {
+		entry.outcome = "infeasible";
+		epic = {
+			...persistedNow,
+			status: "infeasible",
+			title: result.title,
+			infeasibleNotes: result.infeasibleNotes,
+			analysisSummary: result.summary,
+			workflowIds: [],
+			decompositionSessionId: capturedSessionId ?? persistedNow.decompositionSessionId,
+			sessionContextLost: contextLost ? true : persistedNow.sessionContextLost,
+			feedbackHistory: persistedNow.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
+		};
+		await deps.sharedEpicStore.save(epic);
+		deps.broadcast({
+			type: "epic:feedback:history",
+			epicId,
+			entries: epic.feedbackHistory,
+			sessionContextLost: epic.sessionContextLost,
+		});
+		deps.broadcast({
+			type: "epic:infeasible",
+			epicId,
+			title: result.title,
+			infeasibleNotes: result.infeasibleNotes,
+		});
+		return;
+	}
+
+	const { workflows } = await createEpicWorkflows(result, repoDir, epicId, null);
+	const workflowIds: string[] = [];
+	for (const workflow of workflows) {
+		await deps.sharedStore.save(workflow);
+		const orch = deps.createOrchestrator();
+		orch.getEngine().setWorkflow(workflow);
+		deps.orchestrators.set(workflow.id, orch);
+		deps.broadcast({
+			type: "workflow:created",
+			workflow: deps.stripInternalFields(workflow),
+		});
+		workflowIds.push(workflow.id);
+	}
+
+	entry.outcome = "completed";
+	epic = {
+		...persistedNow,
+		status: "completed",
+		title: result.title,
+		workflowIds,
+		analysisSummary: result.summary,
+		infeasibleNotes: null,
+		errorMessage: null,
+		decompositionSessionId: capturedSessionId ?? persistedNow.decompositionSessionId,
+		sessionContextLost: contextLost ? true : persistedNow.sessionContextLost,
+		feedbackHistory: persistedNow.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
+	};
+	await deps.sharedEpicStore.save(epic);
+
+	deps.broadcast({
+		type: "epic:feedback:history",
+		epicId,
+		entries: epic.feedbackHistory,
+		sessionContextLost: epic.sessionContextLost,
+	});
+	deps.broadcast({
+		type: "epic:result",
+		epicId,
+		title: result.title,
+		specCount: result.specs.length,
+		workflowIds,
+		summary: result.summary,
+	});
+}
+
+export const handleEpicFeedbackAckContextLost: MessageHandler = async (_ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "epic:feedback:ack-context-lost" };
+	const epicId = msg.epicId;
+	const epics = await deps.sharedEpicStore.loadAll();
+	const epic = epics.find((e) => e.epicId === epicId);
+	if (!epic) return;
+	if (!epic.sessionContextLost) {
+		// Idempotent: still broadcast current state.
+		deps.broadcast({
+			type: "epic:feedback:history",
+			epicId,
+			entries: epic.feedbackHistory,
+			sessionContextLost: epic.sessionContextLost,
+		});
+		return;
+	}
+	const updated: PersistedEpic = { ...epic, sessionContextLost: false };
+	await deps.sharedEpicStore.save(updated);
+	deps.broadcast({
+		type: "epic:feedback:history",
+		epicId,
+		entries: updated.feedbackHistory,
+		sessionContextLost: false,
+	});
 };
