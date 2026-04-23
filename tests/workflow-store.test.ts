@@ -317,6 +317,10 @@ describe("WorkflowStore", () => {
 				errorMessage: null,
 				infeasibleNotes: null,
 				analysisSummary: null,
+				decompositionSessionId: null,
+				feedbackHistory: [],
+				sessionContextLost: false,
+				attemptCount: 1,
 			});
 			// Re-reset + re-save to prove the epic's linkage is orthogonal to
 			// the workflow reset cycle.

@@ -367,6 +367,8 @@ describe("AuditEventType exhaustiveness", () => {
 			"workflow.reset": true,
 			"artifacts.step.start": true,
 			"artifacts.step.end": true,
+			feedback_submitted: true,
+			decomposition_resumed: true,
 		};
 		const values = Object.keys(coverage) as AuditEventType[];
 		expect(new Set(values).size).toBe(values.length);
@@ -439,7 +441,7 @@ describe("Workflow Lifecycle", () => {
 		expect(q.detectedAt).toBe("2026-04-06T12:00:00Z");
 	});
 
-	test("Workflow shape with all 33 fields", () => {
+	test("Workflow shape with all 34 fields", () => {
 		const w: Workflow = {
 			id: "w-1",
 			workflowKind: "spec",
@@ -479,10 +481,11 @@ describe("Workflow Lifecycle", () => {
 			activeInvocation: null,
 			managedRepo: null,
 			error: null,
+			hasEverStarted: false,
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:00:00Z",
 		};
-		expect(Object.keys(w)).toHaveLength(33);
+		expect(Object.keys(w)).toHaveLength(34);
 		expect(w.status).toBe("idle");
 	});
 
@@ -674,6 +677,7 @@ describe("ServerMessage variants", () => {
 					activeInvocation: null,
 					managedRepo: null,
 					error: null,
+					hasEverStarted: false,
 					createdAt: "",
 					updatedAt: "",
 				},
@@ -898,6 +902,10 @@ describe("Epic types", () => {
 			errorMessage: null,
 			infeasibleNotes: null,
 			analysisSummary: null,
+			decompositionSessionId: null,
+			feedbackHistory: [],
+			sessionContextLost: false,
+			attemptCount: 1,
 		};
 		expect(epic.epicId).toBe("e-1");
 		expect(epic.status).toBe("analyzing");
@@ -930,6 +938,10 @@ describe("Epic types", () => {
 			errorMessage: null,
 			infeasibleNotes: null,
 			analysisSummary: "Done",
+			decompositionSessionId: null,
+			feedbackHistory: [],
+			sessionContextLost: false,
+			attemptCount: 1,
 			outputLines: [{ kind: "text", text: "hello" }],
 		};
 		expect(state.outputLines).toHaveLength(1);
@@ -1202,6 +1214,7 @@ describe("WorkflowClientState shape", () => {
 				activeInvocation: null,
 				managedRepo: null,
 				error: null,
+				hasEverStarted: false,
 				createdAt: "",
 				updatedAt: "",
 			},

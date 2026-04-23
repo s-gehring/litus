@@ -110,6 +110,7 @@ function createFakeEngine() {
 				activeInvocation: null,
 				managedRepo: null,
 				error: null,
+				hasEverStarted: false,
 				createdAt: now,
 				updatedAt: now,
 			};

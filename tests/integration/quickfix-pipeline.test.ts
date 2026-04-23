@@ -135,6 +135,7 @@ describe("T020: quick-fix downstream routing parity in automatic mode", () => {
 			feedbackPreRunHead: null,
 			activeInvocation: null,
 			managedRepo: null,
+			hasEverStarted: false,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -321,6 +322,7 @@ describe("T015: fix-implement empty-diff routes to error and blocks advance", ()
 			feedbackPreRunHead: null,
 			activeInvocation: null,
 			managedRepo: null,
+			hasEverStarted: false,
 			createdAt: now,
 			updatedAt: now,
 		};

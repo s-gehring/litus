@@ -67,6 +67,7 @@ function makeWorkflow(id: string, overrides?: Partial<Workflow>): Workflow {
 		activeInvocation: null,
 		managedRepo: null,
 		error: null,
+		hasEverStarted: false,
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
 		...overrides,
