@@ -37,8 +37,15 @@ mock.module("../../src/target-repo-validator", () => ({
 	validateTargetRepository: async () => mockValidationResult,
 }));
 
+class MockUnrecoverableSessionError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "UnrecoverableSessionError";
+	}
+}
 mock.module("../../src/epic-analyzer", () => ({
 	analyzeEpic: async () => mockAnalyzeResult,
+	UnrecoverableSessionError: MockUnrecoverableSessionError,
 }));
 
 mock.module("../../src/workflow-engine", () => ({
@@ -524,6 +531,62 @@ describe("epic-handlers", () => {
 			expect(await deps.sharedStore.load("wf-a")).not.toBeNull();
 		});
 
+		test("rejects with in_flight when a parallel submission holds the lock", async () => {
+			const { ws, deps, sentMessages } = setup();
+			const { epic } = seedEpicForFeedback(deps);
+			mockAnalyzeResult = {
+				title: "Refined",
+				specs: [{ title: "Spec", specification: "do" }],
+			};
+			mockCreatedWorkflows = {
+				workflows: [makeWorkflow({ id: "wf-new-1", epicDependencyStatus: "satisfied" })],
+				epicId: epic.epicId,
+			};
+			deps.createOrchestrator = () =>
+				({
+					getEngine: () => ({ setWorkflow() {} }),
+					startPipelineFromWorkflow() {},
+					abortPipeline() {},
+				}) as unknown as PipelineOrchestrator;
+
+			// Mock analyzeEpic to hold until we let it resolve, so the first call
+			// keeps the per-epic lock while the second one fires.
+			const { resolve: resolveFirst, promise: firstPromise } = Promise.withResolvers<void>();
+			mock.module("../../src/epic-analyzer", () => ({
+				analyzeEpic: async () => {
+					await firstPromise;
+					return mockAnalyzeResult;
+				},
+				UnrecoverableSessionError: MockUnrecoverableSessionError,
+			}));
+
+			const first = handleEpicFeedback(
+				ws,
+				{ type: "epic:feedback", epicId: epic.epicId, text: "first" } as ClientMessage,
+				deps,
+			);
+			// Give the first call a tick to reach tryRun and enter the analyzer.
+			await new Promise((r) => setTimeout(r, 0));
+
+			await handleEpicFeedback(
+				ws,
+				{ type: "epic:feedback", epicId: epic.epicId, text: "second" } as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(
+				msgs.some((m) => m.type === "epic:feedback:rejected" && m.reasonCode === "in_flight"),
+			).toBe(true);
+
+			resolveFirst();
+			await first;
+			// Restore the default analyzer mock so subsequent tests are unaffected.
+			mock.module("../../src/epic-analyzer", () => ({
+				analyzeEpic: async () => mockAnalyzeResult,
+			}));
+		});
+
 		test("happy path — appends entry, bumps attemptCount, resumes analyzer, broadcasts history", async () => {
 			auditCalls.length = 0;
 			const { ws, deps, broadcastedMessages } = setup();
@@ -577,6 +640,13 @@ describe("epic-handlers", () => {
 			const payload = submittedCall?.args[0] as Record<string, unknown>;
 			expect(payload).not.toHaveProperty("text");
 			expect(payload.textLength).toBe("Split spec 2 into one spec per integration.".length);
+
+			// F18: prior child workflow `wf-a` was removed from the store AND a
+			// workflow:removed broadcast fired for it.
+			expect(await deps.sharedStore.load("wf-a")).toBeNull();
+			expect(
+				broadcastedMessages.some((m) => m.type === "workflow:removed" && m.workflowId === "wf-a"),
+			).toBe(true);
 		});
 
 		test("accept on infeasible epic clears infeasibleNotes", async () => {

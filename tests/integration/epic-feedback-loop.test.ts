@@ -17,6 +17,11 @@ mock.module("../../src/target-repo-validator", () => ({
 }));
 
 let analyzerCallsByBehavior: Map<string, number> = new Map();
+const analyzerCallArgs: Array<{
+	desc: string;
+	resumeSessionId: string | null | undefined;
+	behavior: string;
+}> = [];
 mock.module("../../src/epic-analyzer", () => {
 	class UnrecoverableSessionError extends Error {
 		constructor(msg: string) {
@@ -27,7 +32,7 @@ mock.module("../../src/epic-analyzer", () => {
 	return {
 		UnrecoverableSessionError,
 		analyzeEpic: async (
-			_desc: string,
+			desc: string,
 			_repo: string,
 			_ref: unknown,
 			_timeout: unknown,
@@ -40,6 +45,7 @@ mock.module("../../src/epic-analyzer", () => {
 		) => {
 			const prior = analyzerCallsByBehavior.get(mockAnalyzeBehavior) ?? 0;
 			analyzerCallsByBehavior.set(mockAnalyzeBehavior, prior + 1);
+			analyzerCallArgs.push({ desc, resumeSessionId, behavior: mockAnalyzeBehavior });
 			if (mockAnalyzeBehavior === "resume-then-fresh" && resumeSessionId && prior === 0) {
 				throw new UnrecoverableSessionError("session not found");
 			}
@@ -121,6 +127,7 @@ describe("epic-feedback-loop integration", () => {
 
 	test("resume → unrecoverable → fresh fallback succeeds, sets contextLost flag", async () => {
 		analyzerCallsByBehavior = new Map();
+		analyzerCallArgs.length = 0;
 		mockAnalyzeBehavior = "resume-then-fresh";
 		const { mock: ws } = createMockWebSocket();
 		const { deps } = createMockHandlerDeps();
@@ -143,6 +150,16 @@ describe("epic-feedback-loop integration", () => {
 		expect(stored?.status).toBe("completed");
 		expect(stored?.sessionContextLost).toBe(true);
 		expect(stored?.feedbackHistory[0].contextLostOnThisAttempt).toBe(true);
+
+		// FR-015: the fresh-fallback call receives a prompt composed of the
+		// original epic description concatenated with every feedback text, and
+		// no resumeSessionId.
+		const freshCall = analyzerCallArgs.find(
+			(c) => c.behavior === "resume-then-fresh" && !c.resumeSessionId,
+		);
+		expect(freshCall).toBeDefined();
+		expect(freshCall?.desc).toContain(epic.description);
+		expect(freshCall?.desc).toContain("refine again");
 	});
 
 	test("concurrent submission → in_flight rejection for the second caller", async () => {
