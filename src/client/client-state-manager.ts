@@ -192,6 +192,12 @@ export class ClientStateManager {
 				return this.handleEpicError(msg);
 			case "epic:dependency-update":
 				return this.handleEpicDependencyUpdate(msg);
+			case "epic:feedback:accepted":
+				return this.handleEpicFeedbackAccepted(msg);
+			case "epic:feedback:rejected":
+				return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
+			case "epic:feedback:history":
+				return this.handleEpicFeedbackHistory(msg);
 			case "alert:list":
 				return this.handleAlertList(msg);
 			case "alert:created":
@@ -335,6 +341,10 @@ export class ClientStateManager {
 			errorMessage: null,
 			infeasibleNotes: null,
 			analysisSummary: null,
+			decompositionSessionId: null,
+			feedbackHistory: [],
+			sessionContextLost: false,
+			attemptCount: 1,
 		});
 		this.cardOrder.unshift(msg.epicId);
 		return { scope: { entity: "epic", id: msg.epicId }, action: "added" };
@@ -395,6 +405,29 @@ export class ClientStateManager {
 		epic.completedAt = new Date().toISOString();
 		epic.errorMessage = msg.message;
 		epic.outputLines.push({ kind: "text", text: `Error: ${msg.message}`, type: "error" });
+		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
+	}
+
+	private handleEpicFeedbackAccepted(
+		msg: Extract<ServerMessage, { type: "epic:feedback:accepted" }>,
+	): StateChange {
+		const epic = this.epics.get(msg.epicId);
+		if (!epic) return { scope: { entity: "none" }, action: "updated" };
+		if (!epic.feedbackHistory.some((e) => e.id === msg.entry.id)) {
+			epic.feedbackHistory = [...epic.feedbackHistory, msg.entry];
+		}
+		epic.attemptCount = Math.max(epic.attemptCount, epic.feedbackHistory.length + 1);
+		epic.status = "analyzing";
+		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
+	}
+
+	private handleEpicFeedbackHistory(
+		msg: Extract<ServerMessage, { type: "epic:feedback:history" }>,
+	): StateChange {
+		const epic = this.epics.get(msg.epicId);
+		if (!epic) return { scope: { entity: "none" }, action: "updated" };
+		epic.feedbackHistory = msg.entries;
+		epic.sessionContextLost = msg.sessionContextLost;
 		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
 	}
 

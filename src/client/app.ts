@@ -266,7 +266,10 @@ function handleMessage(msg: ServerMessage): void {
 		case "epic:result":
 		case "epic:infeasible":
 		case "epic:error":
-		case "epic:dependency-update": {
+		case "epic:dependency-update":
+		case "epic:feedback:accepted":
+		case "epic:feedback:rejected":
+		case "epic:feedback:history": {
 			renderCards();
 			break;
 		}
