@@ -549,10 +549,21 @@ test.describe("Epic lifecycle", () => {
 					{ timeout: 30_000 },
 				);
 				await expect(tree.allChildRows()).toHaveCount(0, { timeout: 15_000 });
+				// A failed analysis persists a minimal error record so the user
+				// can retry via the feedback flow (see `handleEpicStart` catch
+				// branch in src/server/epic-handlers.ts). Assert that record is
+				// present and well-formed rather than asserting no persistence.
 				const epicsFile = join(sandbox.homeDir, ".litus/workflows/epics.json");
 				if (existsSync(epicsFile)) {
-					const epicsList = JSON.parse(readFileSync(epicsFile, "utf8")) as unknown[];
-					expect(epicsList).toHaveLength(0);
+					const epicsList = JSON.parse(readFileSync(epicsFile, "utf8")) as Array<{
+						status: string;
+						errorMessage: string | null;
+						workflowIds: string[];
+					}>;
+					expect(epicsList).toHaveLength(1);
+					expect(epicsList[0]?.status).toBe("error");
+					expect(epicsList[0]?.workflowIds).toHaveLength(0);
+					expect(epicsList[0]?.errorMessage ?? "").toMatch(/Could not parse decomposition result/i);
 				}
 			});
 		});
