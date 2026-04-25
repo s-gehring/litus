@@ -483,7 +483,7 @@ export async function handleArtifactDownload(
 	});
 }
 
-async function loadWorkflowForArchive(
+export async function loadWorkflowForArchive(
 	workflowId: string,
 	deps: HandlerDeps,
 ): Promise<Workflow | null> {
@@ -499,7 +499,7 @@ async function loadWorkflowForArchive(
  * copy). If the save throws, the in-memory state is untouched so a subsequent
  * broadcast cannot advertise a ghost-archived workflow.
  */
-async function persistArchiveFlip(
+export async function persistArchiveFlip(
 	workflow: Workflow,
 	next: { archived: boolean; archivedAt: string | null; updatedAt: string },
 	deps: HandlerDeps,

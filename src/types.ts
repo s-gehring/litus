@@ -788,6 +788,7 @@ export type ServerMessage =
 				| "persist-failed";
 			message: string;
 	  }
+	| { type: "auto-archive:state"; active: boolean }
 	| {
 			type: "error";
 			message: string;
@@ -923,4 +924,6 @@ export type ClientMessage =
 	| { type: "workflow:unarchive"; workflowId: string }
 	| { type: "epic:archive"; epicId: string }
 	| { type: "epic:unarchive"; epicId: string }
+	| { type: "auto-archive:stop" }
+	| { type: "auto-archive:start" }
 	| { type: "purge:all" };
