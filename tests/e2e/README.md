@@ -26,7 +26,7 @@ tests/e2e/
   pages/            # Page objects (selectors live here)
   helpers/          # Named user actions composing page objects
   scenarios/        # *.json scripts consumed by fake CLIs
-  tests/            # *.spec.ts Playwright tests
+  tests/            # *.e2e.ts Playwright tests
   playwright.config.ts
 ```
 
@@ -63,7 +63,7 @@ See `scenarios/ci-failure-and-fix.json` (`pr checks` key) for a concrete example
 
 ## Authoring rules
 
-- No raw selectors in `tests/*.spec.ts`. Selectors live in `pages/*.ts`; user-facing actions live in `helpers/*.ts`.
+- No raw selectors in `tests/*.e2e.ts`. Selectors live in `pages/*.ts`; user-facing actions live in `helpers/*.ts`.
 - Uncovered invocations fail loudly: any unknown `claude` index or unknown `gh` subcommand key emits `[litus-e2e-fake:<name>] ...` on stderr and exits non-zero.
 
 ## Failure artifacts
@@ -88,10 +88,10 @@ A dedicated GitHub Actions workflow (`.github/workflows/e2e.yml`) runs the suite
 
 ## Spec files
 
-- `tests/happy-path.spec.ts` — baseline end-to-end path (`scenarios/happy-path.json`)
-- `tests/run-controls.spec.ts` — workflow run-control surface: pause/resume, abort, full-auto merge, automation-mode toggle (`scenarios/run-controls.json`)
-- `tests/mid-run-question.spec.ts` — mid-run question handling in both manual and full-auto modes; asserts resume-call payload via the argv capture in `fakes/claude.ts` + `harness/claude-captures.ts` (`scenarios/mid-run-question.json`)
-- `tests/review-feedback-loop.spec.ts` — manual-mode feedback panel loop at the merge-pr pause, including iteration-history persistence (`scenarios/review-feedback-loop.json`)
-- `tests/ws-reconnect.spec.ts` — mid-run WebSocket drop: asserts disconnected indicator, reconnect, `workflow:list` re-hydration, and post-reconnect alert delivery (`scenarios/ws-reconnect.json`)
+- `tests/happy-path.e2e.ts` — baseline end-to-end path (`scenarios/happy-path.json`)
+- `tests/run-controls.e2e.ts` — workflow run-control surface: pause/resume, abort, full-auto merge, automation-mode toggle (`scenarios/run-controls.json`)
+- `tests/mid-run-question.e2e.ts` — mid-run question handling in both manual and full-auto modes; asserts resume-call payload via the argv capture in `fakes/claude.ts` + `harness/claude-captures.ts` (`scenarios/mid-run-question.json`)
+- `tests/review-feedback-loop.e2e.ts` — manual-mode feedback panel loop at the merge-pr pause, including iteration-history persistence (`scenarios/review-feedback-loop.json`)
+- `tests/ws-reconnect.e2e.ts` — mid-run WebSocket drop: asserts disconnected indicator, reconnect, `workflow:list` re-hydration, and post-reconnect alert delivery (`scenarios/ws-reconnect.json`)
 
 Merge-conflict resolution dispatch is **not yet implemented**.
