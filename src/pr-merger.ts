@@ -289,7 +289,6 @@ export async function resolveConflicts(
 	const model = config.models.mergeConflictResolution;
 	const effort = config.efforts.mergeConflictResolution;
 	const conflictArgs = [
-		"claude",
 		"-p",
 		prompt,
 		"--output-format",

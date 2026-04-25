@@ -129,6 +129,8 @@ export class WorkflowEngine {
 			hasEverStarted: false,
 			createdAt: now,
 			updatedAt: now,
+			archived: false,
+			archivedAt: null,
 		};
 
 		return this.workflow;

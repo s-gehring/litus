@@ -157,6 +157,8 @@ function makeWorkflow(kind: WorkflowKind, worktreePath: string): Workflow {
 		hasEverStarted: false,
 		createdAt: now,
 		updatedAt: now,
+		archived: false,
+		archivedAt: null,
 	};
 }
 

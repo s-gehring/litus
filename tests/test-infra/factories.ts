@@ -40,6 +40,8 @@ export function makePersistedEpic(overrides?: Partial<PersistedEpic>): Persisted
 		feedbackHistory: [],
 		sessionContextLost: false,
 		attemptCount: 1,
+		archived: false,
+		archivedAt: null,
 		...overrides,
 	};
 }

@@ -13,6 +13,8 @@ function normalizePersistedEpic(data: Partial<PersistedEpic>): PersistedEpic {
 		feedbackHistory: Array.isArray(data.feedbackHistory) ? data.feedbackHistory : [],
 		sessionContextLost: data.sessionContextLost === true,
 		attemptCount: typeof data.attemptCount === "number" ? data.attemptCount : 1,
+		archived: typeof data.archived === "boolean" ? data.archived : false,
+		archivedAt: data.archivedAt ?? null,
 	};
 }
 

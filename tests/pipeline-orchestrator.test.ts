@@ -86,6 +86,8 @@ function createFakeEngine() {
 				hasEverStarted: false,
 				createdAt: now,
 				updatedAt: now,
+				archived: false,
+				archivedAt: null,
 			};
 			return workflow;
 		},
@@ -3317,6 +3319,8 @@ function makeCallbacksWorkflowForRecovery(): Workflow {
 		hasEverStarted: false,
 		createdAt: now,
 		updatedAt: now,
+		archived: false,
+		archivedAt: null,
 	};
 	const fiIdx = wf.steps.findIndex((s) => s.name === "feedback-implementer");
 	wf.currentStepIndex = fiIdx;

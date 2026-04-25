@@ -138,6 +138,8 @@ describe("T020: quick-fix downstream routing parity in automatic mode", () => {
 			hasEverStarted: false,
 			createdAt: now,
 			updatedAt: now,
+			archived: false,
+			archivedAt: null,
 		};
 	}
 
@@ -325,6 +327,8 @@ describe("T015: fix-implement empty-diff routes to error and blocks advance", ()
 			hasEverStarted: false,
 			createdAt: now,
 			updatedAt: now,
+			archived: false,
+			archivedAt: null,
 		};
 		steps[0].status = "completed";
 		return wf;

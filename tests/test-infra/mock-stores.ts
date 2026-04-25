@@ -55,6 +55,8 @@ export function createMockWorkflowStore(): MockWorkflowStore {
 				epicId: w.epicId,
 				createdAt: w.createdAt,
 				updatedAt: w.updatedAt,
+				archived: w.archived,
+				archivedAt: w.archivedAt,
 			}));
 			tracker.calls.push({
 				method: "loadIndex",

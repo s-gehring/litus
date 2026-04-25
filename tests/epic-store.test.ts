@@ -21,6 +21,8 @@ function makeEpic(overrides?: Partial<PersistedEpic>): PersistedEpic {
 		feedbackHistory: [],
 		sessionContextLost: false,
 		attemptCount: 1,
+		archived: false,
+		archivedAt: null,
 		...overrides,
 	};
 }

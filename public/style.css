@@ -2398,3 +2398,141 @@ body.artifact-modal-open { overflow: hidden; }
   margin: 0 auto;
   max-width: 520px;
 }
+
+/* ── Archive feature (001-archive-workflows) ────────────── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirm-modal {
+  background: var(--bg-panel, #1e1e1e);
+  color: var(--text-normal, #e6e6e6);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 8px;
+  padding: 20px 24px;
+  width: min(420px, 90vw);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+.confirm-modal-title {
+  font-weight: 600;
+  font-size: 1.05rem;
+  margin-bottom: 8px;
+}
+
+.confirm-modal-body {
+  font-size: 0.92rem;
+  color: var(--text-dim, #b0b0b0);
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.archive-count-muted {
+  opacity: 0.55;
+  font-size: 0.82em;
+  margin-left: 4px;
+}
+
+.btn-archive {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Dense archive list */
+.archive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.archive-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-color, #2a2a2a);
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.archive-row .archive-type-cue {
+  display: inline-block;
+  width: 56px;
+  flex: 0 0 56px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-align: center;
+}
+
+.archive-type-cue.archive-type-epic {
+  background: #3a2f68;
+  color: #d6c5ff;
+}
+.archive-type-cue.archive-type-spec {
+  background: #283a55;
+  color: #c3daf5;
+}
+.archive-type-cue.archive-type-quickfix {
+  background: #4a3a1f;
+  color: #ffd699;
+}
+
+.archive-row .archive-summary {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.archive-row .archive-date {
+  color: var(--text-dim, #888);
+  font-size: 0.78rem;
+  flex: 0 0 auto;
+}
+
+.archive-row .archive-unarchive-btn {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  padding: 2px 8px;
+}
+
+.archive-epic-group {
+  border-left: 2px solid #3a2f68;
+  margin-left: 0;
+  margin-bottom: 4px;
+}
+
+.archive-row.is-child-of-epic {
+  padding-left: 28px;
+  opacity: 0.9;
+  border-bottom: 1px dashed var(--border-color, #2a2a2a);
+}
+
+.archive-empty {
+  text-align: center;
+  color: var(--text-dim, #888);
+  padding: 32px;
+}

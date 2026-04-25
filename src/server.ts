@@ -3,6 +3,7 @@ import type { ServerWebSocket } from "bun";
 import { AlertQueue } from "./alert-queue";
 import { AlertStore } from "./alert-store";
 import { AuditLogger } from "./audit-logger";
+import { AutoArchiver } from "./auto-archiver";
 import { CLIRunner } from "./cli-runner";
 import { configStore } from "./config-store";
 import {
@@ -30,10 +31,12 @@ import {
 } from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
 import {
+	handleArchiveEpic,
 	handleEpicAbort,
 	handleEpicFeedback,
 	handleEpicFeedbackAckContextLost,
 	handleEpicStart,
+	handleUnarchiveEpic,
 } from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
 import { MessageRouter } from "./server/message-router";
@@ -42,6 +45,7 @@ import { broadcastPersistedWorkflowState } from "./server/workflow-broadcaster";
 import {
 	handleAbort,
 	handleAnswer,
+	handleArchiveWorkflow,
 	handleArtifactContent,
 	handleArtifactDownload,
 	handleArtifactList,
@@ -54,6 +58,7 @@ import {
 	handleSkip,
 	handleStart,
 	handleStartExisting,
+	handleUnarchiveWorkflow,
 } from "./server/workflow-handlers";
 import { getMimeType, resolveStaticPath } from "./static-files";
 import { Summarizer } from "./summarizer";
@@ -266,6 +271,11 @@ const deps: HandlerDeps = {
 	getAllWorkflowStates,
 };
 
+// Auto-archive sweeper: flips any non-archived, non-epic-child workflow in a
+// terminal state (completed/aborted/error) to archived after it's been resting
+// for `AUTO_ARCHIVE_THRESHOLD_MS`. Users can halt it via `auto-archive:stop`.
+const autoArchiver = new AutoArchiver(deps);
+
 // ── Message router setup ────────────────────────────────
 const router = new MessageRouter();
 router.register("workflow:start", handleStart);
@@ -279,6 +289,8 @@ router.register("workflow:retry-workflow", handleRetryWorkflow);
 router.register("workflow:start-existing", handleStartExisting);
 router.register("workflow:force-start", handleForceStart);
 router.register("workflow:feedback", handleFeedback);
+router.register("workflow:archive", handleArchiveWorkflow);
+router.register("workflow:unarchive", handleUnarchiveWorkflow);
 router.register("config:get", handleConfigGet);
 router.register("config:save", handleConfigSave);
 router.register("config:reset", handleConfigReset);
@@ -286,7 +298,17 @@ router.register("epic:start", handleEpicStart);
 router.register("epic:abort", handleEpicAbort);
 router.register("epic:feedback", handleEpicFeedback);
 router.register("epic:feedback:ack-context-lost", handleEpicFeedbackAckContextLost);
+router.register("epic:archive", handleArchiveEpic);
+router.register("epic:unarchive", handleUnarchiveEpic);
 router.register("purge:all", handlePurgeAll);
+router.register("auto-archive:stop", (_ws, _data, d) => {
+	autoArchiver.stop();
+	d.broadcast({ type: "auto-archive:state", active: autoArchiver.isActive() });
+});
+router.register("auto-archive:start", (_ws, _data, d) => {
+	autoArchiver.start();
+	d.broadcast({ type: "auto-archive:state", active: autoArchiver.isActive() });
+});
 router.register("alert:list", handleAlertList);
 router.register("alert:dismiss", handleAlertDismiss);
 router.register("alert:clear-all", handleAlertClearAll);
@@ -548,6 +570,7 @@ function cleanupChildren() {
 }
 process.on("exit", cleanupChildren);
 async function gracefulExit(): Promise<void> {
+	autoArchiver.stop();
 	cleanupChildren();
 	try {
 		await sharedAlertQueue.flush();
@@ -686,4 +709,5 @@ sharedAlertQueue.loadFromDisk().catch((err) => {
 	} catch (err) {
 		logger.error(`[startup] Failed to restore workflows: ${err}`);
 	}
+	autoArchiver.start();
 })();

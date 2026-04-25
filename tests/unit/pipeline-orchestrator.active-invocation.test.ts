@@ -70,6 +70,8 @@ function createFakeEngine() {
 				hasEverStarted: false,
 				createdAt: now,
 				updatedAt: now,
+				archived: false,
+				archivedAt: null,
 			};
 			return workflow;
 		},

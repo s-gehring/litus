@@ -12,6 +12,7 @@ import type { ClientStateManager } from "../client-state-manager";
 import { $ } from "../dom";
 import { renderMarkdown } from "../render-markdown";
 import type { RouteHandler, RouteMatch } from "../router";
+import { showConfirmModal } from "./confirm-modal";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
 import { createEpicFeedbackPanel, type EpicFeedbackPanelHandle } from "./epic-feedback-panel";
 import { renderEpicTree, updateEpicTreeRow } from "./epic-tree";
@@ -242,7 +243,12 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		const stepLabel = document.getElementById("current-step-label");
 		if (stepLabel) stepLabel.classList.add("hidden");
 		updateFlavor("");
-		updateDetailActions([]);
+		const actionChildren: WorkflowState[] = [];
+		for (const id of agg.childWorkflowIds) {
+			const entry = workflows.get(id);
+			if (entry) actionChildren.push(entry.state);
+		}
+		updateDetailActions(buildEpicActions(epicData ?? null, actionChildren));
 		clearOutput();
 		updateSpecDetails("");
 		updateFeedbackHistorySection([]);
@@ -294,6 +300,47 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		}
 	}
 
+	function buildEpicActions(
+		epic: EpicClientState | null,
+		children: WorkflowState[],
+	): { label: string; className: string; onClick: () => void }[] {
+		const actions: { label: string; className: string; onClick: () => void }[] = [];
+		if (!epic) return actions;
+		const anyRunning = children.some((c) => c.status === "running");
+		const nonTerminal = children.some(
+			(c) => !(c.status === "completed" || c.status === "aborted" || c.status === "error"),
+		);
+		if (epic.archived) {
+			actions.push({
+				label: "View in archive",
+				className: "btn-secondary",
+				onClick: () => deps.navigate("/archive"),
+			});
+			return actions;
+		}
+		actions.push({
+			label: anyRunning ? "Archive (disabled while running)" : "Archive",
+			className: anyRunning ? "btn-secondary btn-disabled" : "btn-secondary",
+			onClick: async () => {
+				if (anyRunning) return;
+				if (nonTerminal) {
+					const unfinished = children.filter(
+						(c) => !(c.status === "completed" || c.status === "aborted" || c.status === "error"),
+					).length;
+					const ok = await showConfirmModal({
+						title: "Archive this epic?",
+						body: `${unfinished} workflow${unfinished === 1 ? " has" : "s have"} not finished. Archiving the epic will archive all of its workflows — you can unarchive later.`,
+						confirmLabel: "Archive",
+						cancelLabel: "Cancel",
+					});
+					if (!ok) return;
+				}
+				deps.send({ type: "epic:archive", epicId: epic.epicId });
+			},
+		});
+		return actions;
+	}
+
 	function updateActiveModelPanelForEpic(epic: EpicClientState): void {
 		const config = deps.getConfig();
 		if (epic.status !== "analyzing" || !config) {
@@ -310,6 +357,27 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 	function renderFull(): void {
 		if (!currentEpicId) return;
 		const state = deps.getState();
+		const archivedEpic = state.getEpics().get(currentEpicId);
+		if (archivedEpic?.archived) {
+			const epicSummary = archivedEpic.title ?? archivedEpic.description;
+			const epicIdSnapshot = archivedEpic.epicId;
+			hideNotFoundPanel();
+			deps.navigate("/archive");
+			import("./alert-toast").then(({ showAlertToast }) => {
+				showAlertToast({
+					id: `archive-redirect-epic-${epicIdSnapshot}-${Date.now()}`,
+					type: "epic-finished",
+					title: "Epic is archived",
+					description: epicSummary,
+					workflowId: null,
+					epicId: epicIdSnapshot,
+					targetRoute: "/archive",
+					createdAt: Date.now(),
+					seen: true,
+				});
+			});
+			return;
+		}
 		const agg = state.getEpicAggregates().get(currentEpicId);
 		if (agg) {
 			hideNotFoundPanel();

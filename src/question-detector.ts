@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { runClaude } from "./claude-spawn";
 import { configStore } from "./config-store";
 import { logger } from "./logger";
-import { runClaude } from "./spawn-utils";
 import type { Question } from "./types";
 
 // Positive indicators that text likely contains a question for the user

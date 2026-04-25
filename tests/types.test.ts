@@ -365,6 +365,10 @@ describe("AuditEventType exhaustiveness", () => {
 			answer: true,
 			commit: true,
 			"workflow.reset": true,
+			"workflow.archive": true,
+			"workflow.unarchive": true,
+			"epic.archive": true,
+			"epic.unarchive": true,
 			"artifacts.step.start": true,
 			"artifacts.step.end": true,
 			feedback_submitted: true,
@@ -484,8 +488,10 @@ describe("Workflow Lifecycle", () => {
 			hasEverStarted: false,
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:00:00Z",
+			archived: false,
+			archivedAt: null,
 		};
-		expect(Object.keys(w)).toHaveLength(34);
+		expect(Object.keys(w)).toHaveLength(36);
 		expect(w.status).toBe("idle");
 	});
 
@@ -538,6 +544,8 @@ describe("Workflow Lifecycle", () => {
 			feedbackEntries: [],
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:00:00Z",
+			archived: false,
+			archivedAt: null,
 		};
 		expect(ws.steps[0].name).toBe("setup");
 		expect(ws.steps[0].status).toBe("completed");
@@ -553,6 +561,8 @@ describe("Workflow Lifecycle", () => {
 			epicId: null,
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:01:00Z",
+			archived: false,
+			archivedAt: null,
 		};
 		expect(entry.id).toBe("w-1");
 		expect(entry.status).toBe("completed");
@@ -680,6 +690,8 @@ describe("ServerMessage variants", () => {
 					hasEverStarted: false,
 					createdAt: "",
 					updatedAt: "",
+					archived: false,
+					archivedAt: null,
 				},
 			},
 			{ type: "workflow:output", workflowId: "w-1", text: "hello" },
@@ -906,6 +918,8 @@ describe("Epic types", () => {
 			feedbackHistory: [],
 			sessionContextLost: false,
 			attemptCount: 1,
+			archived: false,
+			archivedAt: null,
 		};
 		expect(epic.epicId).toBe("e-1");
 		expect(epic.status).toBe("analyzing");
@@ -942,6 +956,8 @@ describe("Epic types", () => {
 			feedbackHistory: [],
 			sessionContextLost: false,
 			attemptCount: 1,
+			archived: false,
+			archivedAt: null,
 			outputLines: [{ kind: "text", text: "hello" }],
 		};
 		expect(state.outputLines).toHaveLength(1);
@@ -1217,6 +1233,8 @@ describe("WorkflowClientState shape", () => {
 				hasEverStarted: false,
 				createdAt: "",
 				updatedAt: "",
+				archived: false,
+				archivedAt: null,
 			},
 			outputLines: [
 				{ kind: "text", text: "hello" },

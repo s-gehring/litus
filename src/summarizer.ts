@@ -1,6 +1,6 @@
+import { runClaude } from "./claude-spawn";
 import { configStore } from "./config-store";
 import { logger } from "./logger";
-import { runClaude } from "./spawn-utils";
 
 // When the E2E harness is driving the server, summarizer spawns race the
 // pipeline-step claude spawns against a shared FIFO scenario counter. Skip

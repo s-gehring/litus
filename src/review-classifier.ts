@@ -1,6 +1,6 @@
+import { runClaude } from "./claude-spawn";
 import { configStore } from "./config-store";
 import { logger } from "./logger";
-import { runClaude } from "./spawn-utils";
 import type { ReviewSeverity } from "./types";
 
 const VALID_SEVERITIES: ReviewSeverity[] = ["critical", "major", "minor", "trivial", "nit"];

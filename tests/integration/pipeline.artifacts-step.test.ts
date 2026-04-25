@@ -97,6 +97,8 @@ function makeSpecWorkflow(id: string, worktreePath: string, branch: string): Wor
 		hasEverStarted: false,
 		createdAt: now,
 		updatedAt: now,
+		archived: false,
+		archivedAt: null,
 	};
 }
 

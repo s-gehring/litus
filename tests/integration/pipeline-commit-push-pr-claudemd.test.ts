@@ -216,6 +216,8 @@ function makeWorkflow(worktreePath: string, branch: string): Workflow {
 		hasEverStarted: false,
 		createdAt: now,
 		updatedAt: now,
+		archived: false,
+		archivedAt: null,
 	};
 }
 
