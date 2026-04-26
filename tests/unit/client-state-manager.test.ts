@@ -680,8 +680,8 @@ describe("purge:progress and purge:complete", () => {
 	});
 });
 
-// T012: config:state, config:error, log, error, unknown message types
-describe("config:state, config:error, log, error, and unknown messages", () => {
+// T012: config:state, config:error, console:output, error, unknown message types
+describe("config:state, config:error, console:output, error, and unknown messages", () => {
 	test("config:state updates maxOutputLines", () => {
 		const mgr = createManager();
 		const change = mgr.handleMessage({
@@ -768,13 +768,6 @@ describe("config:state, config:error, log, error, and unknown messages", () => {
 			errors: [{ path: "models.foo", message: "bad value", value: "" }],
 		});
 		expect(change.scope).toEqual({ entity: "config" });
-		expect(change.action).toBe("updated");
-	});
-
-	test("log returns none scope", () => {
-		const mgr = createManager();
-		const change = mgr.handleMessage({ type: "log", text: "info message" });
-		expect(change.scope).toEqual({ entity: "none" });
 		expect(change.action).toBe("updated");
 	});
 
@@ -1011,7 +1004,7 @@ describe("listener notification", () => {
 			changes.push(change);
 		});
 
-		mgr.handleMessage({ type: "log", text: "info" });
+		mgr.handleMessage({ type: "console:output", text: "info" });
 		mgr.handleMessage({ type: "error", message: "err" });
 
 		expect(changes).toHaveLength(2);

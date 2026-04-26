@@ -318,16 +318,6 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
-		case "log": {
-			// Global logs (no workflowId) are appended to whatever workflow window
-			// is currently open. Workflow-scoped logs are routed via
-			// workflow-detail-handler instead, so they only appear in their own
-			// workflow's output and are buffered into that workflow's outputLines
-			// otherwise.
-			if (!msg.workflowId) appendOutput(msg.text, "system");
-			break;
-		}
-
 		case "console:output": {
 			// Already logged with the [litus:console] prefix by the state manager.
 			// Must not surface in any visible UI.

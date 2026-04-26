@@ -782,7 +782,6 @@ export type ServerMessage =
 			message: string;
 	  }
 	| { type: "console:output"; text: string }
-	| { type: "log"; text: string; workflowId?: string }
 	| { type: "alert:list"; alerts: Alert[] }
 	| { type: "alert:created"; alert: Alert }
 	| { type: "alert:dismissed"; alertIds: string[] }

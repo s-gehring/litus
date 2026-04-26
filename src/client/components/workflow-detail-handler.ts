@@ -482,16 +482,6 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 					}
 					break;
 				}
-				case "log": {
-					if (!msg.workflowId || msg.workflowId !== currentWorkflowId) break;
-					const state = deps.getState();
-					const entry = state.getWorkflows().get(currentWorkflowId);
-					if (!entry) break;
-					if (state.getSelectedStepIndex() === entry.state.currentStepIndex) {
-						appendOutput(msg.text, "system");
-					}
-					break;
-				}
 				case "workflow:tools": {
 					if (msg.workflowId !== currentWorkflowId) break;
 					const state = deps.getState();
