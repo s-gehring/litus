@@ -216,24 +216,14 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 				onClick: () => deps.send({ type: "workflow:force-start", workflowId: wf.id }),
 			});
 		}
-		// Archive — hidden for child specs (FR-008), disabled while running (FR-003).
-		if (wf.epicId === null) {
-			const running = wf.status === "running";
-			const isTerminal =
-				wf.status === "completed" || wf.status === "aborted" || wf.status === "error";
+		// Archive — hidden for child specs (FR-008) and only offered once the
+		// workflow has reached a clean terminal state (`completed` or
+		// `aborted`). An errored workflow must be aborted first; this keeps
+		// archive from masking unresolved failures.
+		if (wf.epicId === null && (wf.status === "completed" || wf.status === "aborted")) {
 			actions.push({
 				key: "archive",
 				onClick: () => deps.send({ type: "workflow:archive", workflowId: wf.id }),
-				disabled: running ? { reason: "Cannot archive while running" } : undefined,
-				// Terminal workflows skip confirmation; non-terminal show a warning copy.
-				confirmOverride: isTerminal
-					? null
-					: {
-							title: "Archive this workflow?",
-							body: "This workflow has not finished. Archiving it will hide it from the active workspace. You can unarchive it later from the Archive page.",
-							confirmLabel: "Archive",
-							cancelLabel: "Cancel",
-						},
 			});
 		}
 		return actions;

@@ -195,51 +195,64 @@ describe("workflow-detail-handler action buttons", () => {
 		const cases: {
 			status: NonNullable<Parameters<typeof makeWorkflowState>[0]>["status"];
 			expected: string[];
+			forbidden?: string[];
 		}[] = [
-			{ status: "running", expected: ["action-pause", "action-archive"] },
-			{ status: "paused", expected: ["action-resume", "action-abort", "action-archive"] },
+			{ status: "running", expected: ["action-pause"], forbidden: ["action-archive"] },
+			{
+				status: "paused",
+				expected: ["action-resume", "action-abort"],
+				forbidden: ["action-archive"],
+			},
 			{
 				status: "error",
-				expected: ["action-retry-step", "action-abort", "action-retry-workflow", "action-archive"],
+				expected: ["action-retry-step", "action-abort", "action-retry-workflow"],
+				forbidden: ["action-archive"],
 			},
 			{ status: "aborted", expected: ["action-retry-workflow", "action-archive"] },
+			{ status: "completed", expected: ["action-archive"] },
 			{
 				status: "waiting_for_dependencies",
-				expected: ["action-force-start", "action-abort", "action-archive"],
+				expected: ["action-force-start", "action-abort"],
+				forbidden: ["action-archive"],
 			},
 		];
-		for (const { status, expected } of cases) {
+		for (const { status, expected, forbidden } of cases) {
 			document.body.innerHTML = BASE_DOM;
 			state = new ClientStateManager();
 			mountForWorkflow({ id: `wf-${status}`, status });
 			const testids = actionTestIds();
 			for (const id of expected) expect(testids).toContain(id);
+			for (const id of forbidden ?? []) expect(testids).not.toContain(id);
 		}
 	});
 
-	test("archive button is disabled-with-tooltip while running, never just hidden", () => {
+	test("archive button is hidden while running (must reach a terminal state first)", () => {
 		mountForWorkflow({ id: "wf-running", status: "running" });
 		const archive = document.querySelector<HTMLButtonElement>(
 			'#detail-actions [data-testid="action-archive"]',
 		);
-		expect(archive).not.toBeNull();
-		expect(archive?.disabled).toBe(true);
-		expect(archive?.getAttribute("aria-disabled")).toBe("true");
-		expect(archive?.title).toBe("Cannot archive while running");
-		expect(archive?.classList.contains("btn-disabled")).toBe(true);
-		// Label stays plain; the disabled state lives in the attribute, not
-		// the visible text.
-		expect(archive?.textContent).toBe("Archive");
+		expect(archive).toBeNull();
 	});
 
-	test("archive button on completed (terminal) workflow skips the confirm modal", async () => {
+	test("archive button is hidden on errored workflow (user must abort first)", () => {
+		mountForWorkflow({ id: "wf-err", status: "error" });
+		const archive = document.querySelector<HTMLButtonElement>(
+			'#detail-actions [data-testid="action-archive"]',
+		);
+		expect(archive).toBeNull();
+	});
+
+	test("archive button on completed workflow fires immediately without a modal", async () => {
 		mountForWorkflow({ id: "wf-done", status: "completed" });
 		const archive = document.querySelector<HTMLButtonElement>(
 			'#detail-actions [data-testid="action-archive"]',
 		);
+		expect(archive).not.toBeNull();
 		archive?.click();
-		// No modal should appear for terminal workflows — confirmOverride: null.
 		await Promise.resolve();
+		// Archive in the registry has no confirm and the workflow handler
+		// never overrides it — terminal-only visibility makes a modal
+		// unnecessary.
 		expect(document.querySelector(".confirm-modal")).toBeNull();
 		expect(sendSpy).toHaveBeenCalledWith({
 			type: "workflow:archive",
@@ -247,24 +260,19 @@ describe("workflow-detail-handler action buttons", () => {
 		});
 	});
 
-	test("archive button on non-terminal workflow opens modal confirm before sending", async () => {
-		mountForWorkflow({ id: "wf-paused", status: "paused" });
+	test("archive button on aborted workflow fires immediately without a modal", async () => {
+		mountForWorkflow({ id: "wf-aborted", status: "aborted" });
 		const archive = document.querySelector<HTMLButtonElement>(
 			'#detail-actions [data-testid="action-archive"]',
 		);
+		expect(archive).not.toBeNull();
 		archive?.click();
 		await Promise.resolve();
-		const modal = document.querySelector(".confirm-modal");
-		expect(modal).not.toBeNull();
-		// Cancel ⇒ no send.
-		(modal?.querySelector(".btn-secondary") as HTMLButtonElement | null)?.click();
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(
-			sendSpy.mock.calls.some(
-				(c) => (c?.[0] as { type?: string } | undefined)?.type === "workflow:archive",
-			),
-		).toBe(false);
+		expect(document.querySelector(".confirm-modal")).toBeNull();
+		expect(sendSpy).toHaveBeenCalledWith({
+			type: "workflow:archive",
+			workflowId: "wf-aborted",
+		});
 	});
 
 	test("epic-child idle workflow shows Start (no Archive — child specs cannot be archived)", () => {
@@ -302,13 +310,15 @@ describe("workflow-detail-handler action buttons", () => {
 	});
 
 	test("button order respects slot contract: primary → secondary → destructive → finalize", () => {
-		mountForWorkflow({ id: "wf-err", status: "error" });
+		// Use `aborted` to exercise all three relevant slots in one render:
+		// errored shows secondary+destructive but no finalize (Archive is
+		// gated to terminal-clean states), and aborted is the only state
+		// that pairs a destructive Restart with a finalize Archive.
+		mountForWorkflow({ id: "wf-aborted", status: "aborted" });
 		const slots = Array.from(
 			document.querySelectorAll<HTMLButtonElement>("#detail-actions button"),
 		).map((b) => b.getAttribute("data-slot") ?? "");
-		// primary first if any, then secondary (retry-step), then destructive
-		// (abort + retry-workflow), then finalize (archive).
 		const slotOrder = slots.join(",");
-		expect(slotOrder).toBe("secondary,destructive,destructive,finalize");
+		expect(slotOrder).toBe("destructive,finalize");
 	});
 });

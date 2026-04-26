@@ -9,8 +9,8 @@ import { AppPage, WorkflowCardPage } from "../pages";
  *   1. Slot order: primary → secondary → destructive → finalize, with the
  *      auto-margin spacer on the first right-side button.
  *   2. Stable, key-derived test-ids (action-pause, action-resume, …).
- *   3. The disabled archive button surfaces `disabled` + `title` instead of
- *      a label-suffix hack.
+ *   3. Archive only surfaces in terminal states (`completed`, `aborted`).
+ *      Running, paused, and errored workflows omit the button entirely.
  *   4. Destructive actions (Abort, Restart) open the in-app
  *      `.confirm-modal` element — never a native `confirm()` dialog.
  *   5. Cancelling the modal is a no-op (no abort message dispatched).
@@ -18,7 +18,7 @@ import { AppPage, WorkflowCardPage } from "../pages";
 test.describe("detail action-bar contract", () => {
 	test.use({ scenarioName: "run-controls-pause", autoMode: "manual" });
 
-	test("running workflow: only primary Pause + disabled finalize Archive", async ({
+	test("running workflow: only primary Pause; Archive is hidden", async ({
 		page,
 		server,
 		sandbox,
@@ -41,19 +41,12 @@ test.describe("detail action-bar contract", () => {
 		await expect(pause).toHaveAttribute("data-slot", "primary");
 		await expect(pause).toHaveClass(/\bbtn-primary\b/);
 
-		// Finalize slot: Archive exists but is disabled-with-tooltip while
-		// running. The label is plain "Archive" — the disabled state lives
-		// in the attributes, not the visible text.
-		const archive = card.archiveAction();
-		await expect(archive).toBeVisible();
-		await expect(archive).toHaveAttribute("data-slot", "finalize");
-		await expect(archive).toBeDisabled();
-		await expect(archive).toHaveAttribute("aria-disabled", "true");
-		await expect(archive).toHaveAttribute("title", "Cannot archive while running");
-		await expect(archive).toHaveText("Archive");
+		// Archive is gated to terminal states (completed/aborted) — not
+		// rendered at all while running.
+		await expect(card.archiveAction()).toHaveCount(0);
 	});
 
-	test("paused workflow: slot order primary → destructive → finalize", async ({
+	test("paused workflow: slot order primary → destructive (no Archive yet)", async ({
 		page,
 		server,
 		sandbox,
@@ -83,19 +76,15 @@ test.describe("detail action-bar contract", () => {
 					slot: el.getAttribute("data-slot"),
 				})),
 			);
-		// Resume (primary) → Abort (destructive) → Archive (finalize).
-		// Provide-feedback is gated on merge-pr step, so it won't appear
-		// here at specify-step pause.
+		// Resume (primary) → Abort (destructive). Archive is gated to terminal
+		// states; provide-feedback is gated on the merge-pr step.
 		expect(slots).toEqual([
 			{ key: "action-resume", slot: "primary" },
 			{ key: "action-abort", slot: "destructive" },
-			{ key: "action-archive", slot: "finalize" },
 		]);
 
 		// First right-side button gets the slot-break (auto-margin spacer).
 		await expect(card.abortAction()).toHaveClass(/\bslot-break\b/);
-		// Subsequent right-side buttons must NOT also break.
-		await expect(card.archiveAction()).not.toHaveClass(/\bslot-break\b/);
 	});
 
 	test("abort opens .confirm-modal; Cancel is a no-op", async ({ page, server, sandbox }) => {
