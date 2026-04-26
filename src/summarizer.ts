@@ -1,4 +1,4 @@
-import { runClaude } from "./claude-spawn";
+import { runConfiguredHelper } from "./claude-helper";
 import { configStore } from "./config-store";
 import { logger } from "./logger";
 
@@ -81,55 +81,43 @@ export class Summarizer {
 	}
 
 	private async generateSummary(text: string): Promise<string | null> {
-		try {
-			const config = configStore.get();
-			const promptTemplate = config.prompts.activitySummarization;
-			const prompt = promptTemplate.replaceAll("${text}", text);
-
-			const { ok, stdout } = await runClaude({
-				prompt,
+		return runConfiguredHelper<string | null>({
+			selector: (config) => ({
+				promptTemplate: config.prompts.activitySummarization,
 				model: config.models.activitySummarization,
 				effort: config.efforts.activitySummarization,
-				callerLabel: "summarizer:activity",
-				timeoutMs: 30_000,
-			});
-			if (!ok) return null;
-			return stdout.trim() || null;
-		} catch (err) {
-			logger.warn("[summarizer] generateSummary failed:", err);
-			return null;
-		}
+			}),
+			vars: { text },
+			parser: (stdout) => stdout.trim() || null,
+			fallback: null,
+			callerLabel: "summarizer:activity",
+		});
 	}
 
 	async generateSpecSummary(specification: string): Promise<{ summary: string; flavor: string }> {
 		if (SUMMARIZER_DISABLED) return { summary: "", flavor: "" };
-		try {
-			const config = configStore.get();
-			const promptTemplate = config.prompts.specSummarization;
-			const prompt = promptTemplate.replaceAll("${specification}", specification);
-
-			const { ok, stdout } = await runClaude({
-				prompt,
+		return runConfiguredHelper<{ summary: string; flavor: string }>({
+			selector: (config) => ({
+				promptTemplate: config.prompts.specSummarization,
 				model: config.models.specSummarization,
 				effort: config.efforts.specSummarization,
-				callerLabel: "summarizer:spec",
-				timeoutMs: 60_000,
-			});
-			if (!ok) return { summary: "", flavor: "" };
-
-			const cleaned = stdout
-				.trim()
-				.replace(/^```(?:json)?\s*\n?/i, "")
-				.replace(/\n?```\s*$/, "");
-			const parsed = JSON.parse(cleaned);
-			return {
-				summary: String(parsed.summary ?? "").slice(0, 50),
-				flavor: String(parsed.flavor ?? "").slice(0, 100),
-			};
-		} catch (err) {
-			logger.warn("[summarizer] generateSpecSummary failed:", err);
-			return { summary: "", flavor: "" };
-		}
+			}),
+			vars: { specification },
+			parser: (stdout) => {
+				const cleaned = stdout
+					.trim()
+					.replace(/^```(?:json)?\s*\n?/i, "")
+					.replace(/\n?```\s*$/, "");
+				const parsed = JSON.parse(cleaned);
+				return {
+					summary: String(parsed.summary ?? "").slice(0, 50),
+					flavor: String(parsed.flavor ?? "").slice(0, 100),
+				};
+			},
+			fallback: { summary: "", flavor: "" },
+			callerLabel: "summarizer:spec",
+			timeoutMs: 60_000,
+		});
 	}
 
 	cleanup(workflowId: string): void {
