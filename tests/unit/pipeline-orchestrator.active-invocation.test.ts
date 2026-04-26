@@ -210,6 +210,7 @@ describe("PipelineOrchestrator.activeInvocation", () => {
 			}),
 			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
 			appendProjectClaudeMd: async () => ({ outcome: "no-project" as const }),
+			markClaudeMdSkipWorktree: async () => ({ outcome: "not-tracked" as const }),
 			checkoutMaster: async () => ({ code: 0, stderr: "" }),
 			getGitHead: async () => "head-sha",
 			detectNewCommits: async () => [],

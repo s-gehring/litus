@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	appendProjectClaudeMd,
+	markClaudeMdSkipWorktree,
 	PROJECT_CLAUDEMD_SEPARATOR,
 	resolveMainWorktreeRoot,
 } from "../../src/claude-md-merger";
@@ -27,6 +28,13 @@ async function run(cmd: string[], cwd: string): Promise<number> {
 	return await p.exited;
 }
 
+async function runCapture(cmd: string[], cwd: string): Promise<{ code: number; stdout: string }> {
+	const p = Bun.spawn(cmd, { cwd, env: GIT_ENV, stdout: "pipe", stderr: "ignore" });
+	const code = await p.exited;
+	const stdout = await new Response(p.stdout).text();
+	return { code, stdout };
+}
+
 interface Fixture {
 	main: string;
 	spec: string;
@@ -36,6 +44,10 @@ interface Fixture {
 async function makeFixture(opts?: {
 	projectContent?: string | null;
 	gitignoreClaudeMd?: boolean;
+	/** When true, CLAUDE.md is committed in main BEFORE the worktree is
+	 *  created — so the worktree's index has CLAUDE.md tracked. Defaults to
+	 *  false to preserve existing test semantics. */
+	commitClaudeMdInMain?: boolean;
 }): Promise<Fixture> {
 	const main = mkdtempSync(join(tmpdir(), "crab-merger-main-"));
 	const worktreesRoot = mkdtempSync(join(tmpdir(), "crab-merger-wt-"));
@@ -56,6 +68,13 @@ async function makeFixture(opts?: {
 
 		if (opts?.projectContent !== null && opts?.projectContent !== undefined) {
 			writeFileSync(join(main, "CLAUDE.md"), opts.projectContent);
+		}
+
+		if (opts?.commitClaudeMdInMain) {
+			if ((await run(["git", "add", "CLAUDE.md"], main)) !== 0)
+				throw new Error("git add CLAUDE.md failed");
+			if ((await run(["git", "commit", "-m", "add CLAUDE.md"], main)) !== 0)
+				throw new Error("git commit CLAUDE.md failed");
 		}
 
 		if ((await run(["git", "worktree", "add", "--detach", spec], main)) !== 0) {
@@ -241,6 +260,69 @@ describe("appendProjectClaudeMd — contract test matrix", () => {
 			expect(r.outcome).toBe("appended");
 			const after = await readFile(join(fx.spec, "CLAUDE.md"), "utf-8");
 			expect(after).toBe(`Y${PROJECT_CLAUDEMD_SEPARATOR}IGNORED-X`);
+		} finally {
+			fx.cleanup();
+		}
+	});
+});
+
+describe("markClaudeMdSkipWorktree", () => {
+	test("returns 'marked' when CLAUDE.md is tracked in the worktree index", async () => {
+		const fx = await makeFixture({ projectContent: "PROJECT\n", commitClaudeMdInMain: true });
+		try {
+			const r = await markClaudeMdSkipWorktree(fx.spec);
+			expect(r.outcome).toBe("marked");
+
+			const lsFiles = await runCapture(["git", "ls-files", "-v", "CLAUDE.md"], fx.spec);
+			expect(lsFiles.code).toBe(0);
+			// `git ls-files -v` prefixes skip-worktree entries with a lowercase
+			// letter (e.g. 'S CLAUDE.md'); tracked-without-flag uses uppercase 'H'.
+			expect(lsFiles.stdout.trim().startsWith("S ")).toBe(true);
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	test("returns 'not-tracked' when CLAUDE.md is absent from the index", async () => {
+		const fx = await makeFixture();
+		try {
+			const r = await markClaudeMdSkipWorktree(fx.spec);
+			expect(r.outcome).toBe("not-tracked");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	test("after marking, modifying CLAUDE.md does not show up in `git status` or `git add -A`", async () => {
+		const fx = await makeFixture({ projectContent: "PROJECT\n", commitClaudeMdInMain: true });
+		try {
+			const r = await markClaudeMdSkipWorktree(fx.spec);
+			expect(r.outcome).toBe("marked");
+
+			// Simulate appendProjectClaudeMd's effect: rewrite the worktree's
+			// CLAUDE.md with assembled content.
+			writeFileSync(join(fx.spec, "CLAUDE.md"), `PROJECT${PROJECT_CLAUDEMD_SEPARATOR}PROJECT\n`);
+
+			const status = await runCapture(["git", "status", "--porcelain"], fx.spec);
+			expect(status.code).toBe(0);
+			expect(status.stdout).not.toContain("CLAUDE.md");
+
+			expect(await run(["git", "add", "-A"], fx.spec)).toBe(0);
+			const diffCached = await runCapture(["git", "diff", "--cached", "--name-only"], fx.spec);
+			expect(diffCached.code).toBe(0);
+			expect(diffCached.stdout).not.toContain("CLAUDE.md");
+		} finally {
+			fx.cleanup();
+		}
+	});
+
+	test("idempotent — second invocation still reports 'marked'", async () => {
+		const fx = await makeFixture({ projectContent: "PROJECT\n", commitClaudeMdInMain: true });
+		try {
+			const r1 = await markClaudeMdSkipWorktree(fx.spec);
+			expect(r1.outcome).toBe("marked");
+			const r2 = await markClaudeMdSkipWorktree(fx.spec);
+			expect(r2.outcome).toBe("marked");
 		} finally {
 			fx.cleanup();
 		}

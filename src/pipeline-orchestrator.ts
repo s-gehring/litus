@@ -10,6 +10,8 @@ import { type ClaudeMdGuardResult, guardClaudeMd as defaultGuardClaudeMd } from 
 import {
 	type AppendResult,
 	appendProjectClaudeMd as defaultAppendProjectClaudeMd,
+	markClaudeMdSkipWorktree as defaultMarkClaudeMdSkipWorktree,
+	type SkipWorktreeResult,
 } from "./claude-md-merger";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
@@ -117,6 +119,7 @@ export interface PipelineDeps {
 	runSetupChecks?: (targetDir: string) => Promise<SetupResult>;
 	ensureSpeckitSkills?: typeof defaultEnsureSpeckitSkills;
 	appendProjectClaudeMd?: (specWorktree: string) => Promise<AppendResult>;
+	markClaudeMdSkipWorktree?: (specWorktree: string) => Promise<SkipWorktreeResult>;
 	checkoutMaster?: (cwd: string) => Promise<{ code: number; stderr: string }>;
 	/** Returns the git HEAD SHA at the worktree, or null on failure. Overridable in tests. */
 	getGitHead?: (cwd: string) => Promise<string | null>;
@@ -229,6 +232,7 @@ export class PipelineOrchestrator {
 	private runSetupChecksFn: (targetDir: string) => Promise<SetupResult>;
 	private ensureSpeckitSkillsFn: typeof defaultEnsureSpeckitSkills;
 	private appendProjectClaudeMdFn: (specWorktree: string) => Promise<AppendResult>;
+	private markClaudeMdSkipWorktreeFn: (specWorktree: string) => Promise<SkipWorktreeResult>;
 	private checkoutMasterFn: (cwd: string) => Promise<{ code: number; stderr: string }>;
 	private getGitHeadFn: (cwd: string) => Promise<string | null>;
 	private detectNewCommitsFn: (preRunHead: string, cwd: string) => Promise<string[]>;
@@ -259,6 +263,8 @@ export class PipelineOrchestrator {
 		this.runSetupChecksFn = deps?.runSetupChecks ?? defaultRunSetupChecks;
 		this.ensureSpeckitSkillsFn = deps?.ensureSpeckitSkills ?? defaultEnsureSpeckitSkills;
 		this.appendProjectClaudeMdFn = deps?.appendProjectClaudeMd ?? defaultAppendProjectClaudeMd;
+		this.markClaudeMdSkipWorktreeFn =
+			deps?.markClaudeMdSkipWorktree ?? defaultMarkClaudeMdSkipWorktree;
 		this.checkoutMasterFn =
 			deps?.checkoutMaster ??
 			(async (cwd: string) => {
@@ -1465,7 +1471,25 @@ export class PipelineOrchestrator {
 							);
 							break;
 					}
-					this.advanceAfterStep(stillActive.id);
+
+					// Mark CLAUDE.md skip-worktree so the assembled file (and any
+					// later modification by an agent) cannot be staged or
+					// committed on the spec branch. claude-md-guard only fires
+					// at commit-push-pr and is bypassed if the workflow is
+					// merged before that step runs.
+					const skip = await this.markClaudeMdSkipWorktreeFn(cwd);
+					const stillActive2 = this.getActiveWorkflow(workflow.id);
+					if (!stillActive2) return;
+					if (skip.outcome === "marked") {
+						this.handleStepOutput(stillActive2.id, "✓ CLAUDE.md marked skip-worktree");
+					} else {
+						this.handleStepOutput(
+							stillActive2.id,
+							"• CLAUDE.md not tracked in index — skip-worktree not applicable",
+						);
+					}
+
+					this.advanceAfterStep(stillActive2.id);
 					return;
 				}
 
