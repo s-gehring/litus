@@ -5,6 +5,7 @@ import { buildArtifactsPrompt } from "./artifacts-prompt";
 import { AuditLogger } from "./audit-logger";
 import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
 import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
+import { type CiFlowOutcome, CiMergeFlowController } from "./ci-merge-flow-controller";
 import { CIMonitorCoordinator } from "./ci-monitor-coordinator";
 import { type ClaudeMdGuardResult, guardClaudeMd as defaultGuardClaudeMd } from "./claude-md-guard";
 import {
@@ -216,6 +217,7 @@ export class PipelineOrchestrator {
 	private cliRunner: CLIRunner;
 	private stepRunner: CLIStepRunner;
 	private ciMonitor: CIMonitorCoordinator;
+	private ciMergeFlow!: CiMergeFlowController;
 	private questionDetector: QuestionDetector;
 	private reviewClassifier: ReviewClassifier;
 	private summarizer: Summarizer;
@@ -297,6 +299,15 @@ export class PipelineOrchestrator {
 			(async (cwd: string) => gitSpawn(["gh", "pr", "create", "--fill"], { cwd }));
 		this.maxStepOutputChars = deps?.maxStepOutputChars ?? MAX_STEP_OUTPUT_CHARS;
 		this.callbacks = callbacks;
+		this.ciMergeFlow = new CiMergeFlowController({
+			ciMonitor: this.ciMonitor,
+			mergePr: this.mergePrFn,
+			resolveConflicts: this.resolveConflictsFn,
+			syncRepo: this.syncRepoFn,
+			discoverPrUrl: discoverPrUrlFn,
+			stepOutput: (id, msg) => this.handleStepOutput(id, msg),
+			engine: this.engine,
+		});
 	}
 
 	getEngine(): WorkflowEngine {
@@ -1617,6 +1628,12 @@ export class PipelineOrchestrator {
 				`Failed to initialize quick-fix branch: ${toErrorMessage(err)}`,
 			);
 		}
+	}
+
+	private applyCiFlowOutcome(workflow: Workflow, outcome: CiFlowOutcome): void {
+		// TODO US1 — implemented in T021
+		void workflow;
+		void outcome;
 	}
 
 	private runMonitorCi(workflow: Workflow): void {
