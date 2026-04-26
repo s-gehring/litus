@@ -3,7 +3,6 @@ import "../happydom";
 import {
 	ACTION_REGISTRY,
 	type ActionSpec,
-	clearDetailActions,
 	renderDetailActions,
 } from "../../src/client/components/detail-actions";
 
@@ -48,15 +47,6 @@ describe("detail-actions / slot-based renderer", () => {
 		renderDetailActions([]);
 		expect(container.classList.contains("hidden")).toBe(true);
 		expect(buttons()).toHaveLength(0);
-	});
-
-	test("clearDetailActions is equivalent to renderDetailActions([])", () => {
-		const container = document.getElementById("detail-actions") as HTMLElement;
-		renderDetailActions([{ key: "pause", onClick: () => {} }]);
-		expect(buttons()).toHaveLength(1);
-		clearDetailActions();
-		expect(buttons()).toHaveLength(0);
-		expect(container.classList.contains("hidden")).toBe(true);
 	});
 
 	test("renders one button per spec, in slot order regardless of spec order", () => {
@@ -145,14 +135,15 @@ describe("detail-actions / slot-based renderer", () => {
 		expect(onClick).not.toHaveBeenCalled();
 	});
 
-	test("loading flag adds btn-loading without disabling click", () => {
+	test("loading flag adds btn-loading and auto-disables the click handler", () => {
 		const onClick = mock(() => {});
 		renderDetailActions([{ key: "start-children", onClick, loading: true }]);
 		const btn = buttons()[0];
 		expect(btn.classList.contains("btn-loading")).toBe(true);
-		expect(btn.disabled).toBe(false);
+		expect(btn.disabled).toBe(true);
+		expect(btn.getAttribute("aria-disabled")).toBe("true");
 		btn.click();
-		expect(onClick).toHaveBeenCalledTimes(1);
+		expect(onClick).not.toHaveBeenCalled();
 	});
 
 	test("button without confirm fires onClick directly", () => {

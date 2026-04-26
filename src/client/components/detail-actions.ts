@@ -35,8 +35,8 @@ const ABORT_CONFIRM: ConfirmModalOptions = {
 };
 
 const ABORT_ALL_CONFIRM: ConfirmModalOptions = {
-	title: "Abort every running spec?",
-	body: "This stops every non-terminal child workflow of the epic. Branches and worktrees are preserved.",
+	title: "Abort every non-terminal child?",
+	body: "This stops every paused, waiting, or errored child workflow of the epic. Running children must be paused first. Branches and worktrees are preserved.",
 	confirmLabel: "Abort all",
 	cancelLabel: "Cancel",
 };
@@ -106,6 +106,7 @@ export interface ActionSpec {
 	/**
 	 * Optional one-shot loading-state class hook. When true, `btn-loading`
 	 * is added so the registry stays free of imperative className strings.
+	 * The button is also auto-disabled while loading to prevent re-clicks.
 	 */
 	loading?: boolean;
 	/**
@@ -117,6 +118,15 @@ export interface ActionSpec {
 	confirmOverride?: ConfirmModalOptions | null;
 }
 
+/**
+ * Render the detail-action bar from a list of `ActionSpec`s.
+ *
+ * Buttons are grouped into slots in the order defined by `ACTION_SLOTS`
+ * (primary → secondary → destructive → finalize). Within a slot the render
+ * order is the *insertion order* of the specs — there is no implicit
+ * priority. Callers that care about intra-slot ordering must push the
+ * specs in the order they want them rendered.
+ */
 export function renderDetailActions(specs: ActionSpec[]): void {
 	const container = $("#detail-actions");
 	container.replaceChildren();
@@ -136,6 +146,7 @@ export function renderDetailActions(specs: ActionSpec[]): void {
 			const btn = document.createElement("button");
 			btn.type = "button";
 
+			const isInactive = Boolean(spec.disabled) || Boolean(spec.loading);
 			const classes = ["btn", entry.className];
 			if (spec.disabled) classes.push("btn-disabled");
 			if (spec.loading) classes.push("btn-loading");
@@ -150,10 +161,10 @@ export function renderDetailActions(specs: ActionSpec[]): void {
 				breakAdded = true;
 			}
 
-			if (spec.disabled) {
+			if (isInactive) {
 				btn.disabled = true;
 				btn.setAttribute("aria-disabled", "true");
-				btn.title = spec.disabled.reason;
+				if (spec.disabled) btn.title = spec.disabled.reason;
 			} else {
 				const confirm =
 					spec.confirmOverride === null ? null : (spec.confirmOverride ?? entry.confirm ?? null);
@@ -185,12 +196,4 @@ function groupBySlot(specs: ActionSpec[]): Record<ActionSlot, ActionSpec[]> {
 		out[slot].push(spec);
 	}
 	return out;
-}
-
-/**
- * Convenience: hide the detail-actions bar. Same effect as
- * `renderDetailActions([])` but expresses intent.
- */
-export function clearDetailActions(): void {
-	renderDetailActions([]);
 }

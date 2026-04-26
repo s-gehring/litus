@@ -368,22 +368,26 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		// Archive — disabled when any child is still running. When children
 		// are non-terminal but not running the archive opens a confirm modal
 		// with a count-aware copy; otherwise the registry confirm is fine.
-		const unfinished = children.filter(
-			(c) => !(c.status === "completed" || c.status === "aborted" || c.status === "error"),
-		).length;
-		actions.push({
+		// Skip computing the confirm payload entirely when disabled, since
+		// the renderer never reads it on the disabled branch.
+		const archiveSpec: ActionSpec = {
 			key: "archive",
 			onClick: () => deps.send({ type: "epic:archive", epicId }),
-			disabled: anyRunning ? { reason: "Cannot archive while children are running" } : undefined,
-			confirmOverride: nonTerminal
-				? {
-						title: "Archive this epic?",
-						body: `${unfinished} workflow${unfinished === 1 ? " has" : "s have"} not finished. Archiving the epic will archive all of its workflows — you can unarchive later.`,
-						confirmLabel: "Archive",
-						cancelLabel: "Cancel",
-					}
-				: null,
-		});
+		};
+		if (anyRunning) {
+			archiveSpec.disabled = { reason: "Cannot archive while children are running" };
+		} else if (nonTerminal) {
+			const unfinished = children.filter(
+				(c) => !(c.status === "completed" || c.status === "aborted" || c.status === "error"),
+			).length;
+			archiveSpec.confirmOverride = {
+				title: "Archive this epic?",
+				body: `${unfinished} workflow${unfinished === 1 ? " has" : "s have"} not finished. Archiving the epic will archive all of its workflows — you can unarchive later.`,
+				confirmLabel: "Archive",
+				cancelLabel: "Cancel",
+			};
+		}
+		actions.push(archiveSpec);
 		return actions;
 	}
 
@@ -479,6 +483,10 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 					// unrelated failure (e.g. from a side-panel handler) could
 					// otherwise prematurely re-enable the button or — if the user
 					// has navigated away — leave the flag stuck for the old epic.
+					// Always clear the flag (even when the user navigated away
+					// mid-flight) so a later visit renders fresh state; only call
+					// renderFull when the result is for the *currently visible*
+					// epic, since that's the only DOM that needs refreshing.
 					if (startFirstLevelInFlight.delete(msg.epicId) && msg.epicId === currentEpicId) {
 						renderFull();
 					}
@@ -503,7 +511,8 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 						// Surgical row update skips the full re-render, so refresh
 						// the aggregate summary + status badge so the counter
 						// ("N/M completed") tracks completions in real time.
-						const agg = deps.getState().getEpicAggregates().get(currentEpicId);
+						const state = deps.getState();
+						const agg = state.getEpicAggregates().get(currentEpicId);
 						if (agg) {
 							updateSummary(
 								`${agg.title} (${agg.progress.completed}/${agg.progress.total} completed)`,
@@ -511,6 +520,16 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 							const statusBadge = $("#workflow-status");
 							statusBadge.textContent = agg.status;
 							statusBadge.className = `status-badge ${EPIC_AGG_STATUS_CLASSES[agg.status] || "card-status-idle"}`;
+							// Refresh the action bar too, since pause-all / resume-all
+							// / abort-all / archive depend on the live child statuses
+							// and would otherwise advertise stale state.
+							const epicData = state.getEpics().get(currentEpicId) ?? null;
+							const childStates: WorkflowState[] = [];
+							for (const id of agg.childWorkflowIds) {
+								const entry = state.getWorkflows().get(id);
+								if (entry) childStates.push(entry.state);
+							}
+							renderDetailActions(buildEpicActions(currentEpicId, epicData, childStates));
 						}
 						break;
 					}

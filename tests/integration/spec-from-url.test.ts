@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { execSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,6 +12,49 @@ import type { ClientMessage } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockWebSocket } from "../test-infra/mock-websocket";
+
+// Other test files (notably tests/unit/epic-handlers.test.ts and
+// tests/integration/epic-feedback-loop.test.ts) install
+// `mock.module("../../src/target-repo-validator", …)` at their top level.
+// Bun applies module mocks process-globally, and they persist across files.
+// For this test we need a validator that recognises GitHub HTTPS / SSH URLs
+// and returns the right `kind: "url"` envelope so `resolveTargetRepo`
+// routes through the clone path. Mock with a small stand-alone implementation
+// — re-importing the real module would still resolve to whatever mock the
+// previously-loaded test installed.
+mock.module("../../src/target-repo-validator", () => ({
+	validateTargetRepository: async (path: string | undefined) => {
+		if (!path) {
+			return { valid: false, error: "Repository path is required", effectivePath: "" };
+		}
+		const trimmed = path.trim();
+		const httpsMatch = trimmed.match(
+			/^https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i,
+		);
+		const sshMatch = trimmed.match(/^git@github\.com:([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i);
+		const m = httpsMatch ?? sshMatch;
+		if (m) {
+			return {
+				valid: true,
+				effectivePath: trimmed,
+				kind: "url" as const,
+				owner: m[1],
+				repo: m[2],
+			};
+		}
+		// Non-GitHub URL — surface the same error code production uses.
+		if (/^https?:\/\//i.test(trimmed) || /^git@/i.test(trimmed)) {
+			return {
+				valid: false,
+				error: "Only GitHub URLs are supported",
+				effectivePath: trimmed,
+				code: "non-github-url" as const,
+			};
+		}
+		// Local path — assume it exists and is a git repo for the test.
+		return { valid: true, effectivePath: trimmed, kind: "path" as const };
+	},
+}));
 
 describe("spec-from-url integration", () => {
 	let tmpBase: string;

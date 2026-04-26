@@ -465,4 +465,128 @@ describe("epic-detail-handler — batch run-controls", () => {
 		// (destructive), archive (finalize). No primary (no eligible specs).
 		expect(slots).toEqual(["secondary", "secondary", "destructive", "finalize"]);
 	});
+
+	test("Archive on an all-terminal epic renders without confirm or disabled state", () => {
+		// Once every child reaches a terminal status (completed/aborted/error),
+		// `nonTerminal === false` and `anyRunning === false`, so Archive
+		// renders enabled and uses only the registry confirm copy. Pinned to
+		// detect any regression that would surface a confusing "0 workflows
+		// have not finished" override on a settled epic.
+		mount({
+			epicId: "e-done",
+			children: [
+				{ id: "wf-1", status: "completed", epicDependencies: [] },
+				{ id: "wf-2", status: "completed", epicDependencies: [] },
+			],
+		});
+		const archive = actionButtons().find((b) => b.getAttribute("data-testid") === "action-archive");
+		expect(archive).toBeDefined();
+		expect(archive?.disabled).toBe(false);
+		expect(archive?.title).toBe("");
+	});
+});
+
+describe("epic-detail-handler — action bar refresh on workflow:state", () => {
+	let router: TestRouter | null = null;
+	let sendSpy: ReturnType<typeof mock>;
+	let state: ClientStateManager;
+	let routeHandler: ReturnType<typeof createEpicDetailHandler>;
+
+	beforeEach(() => {
+		document.body.innerHTML = BASE_DOM;
+		sendSpy = mock(() => {});
+		state = new ClientStateManager();
+	});
+
+	afterEach(() => {
+		router?.destroy();
+		router = null;
+		document.body.innerHTML = "";
+	});
+
+	function mount(opts: MountOptions): void {
+		const epic = makePersistedEpic({
+			epicId: opts.epicId,
+			title: "Test Epic",
+			workflowIds: opts.children.map((c, i) => c?.id ?? `wf-${i}`),
+			archived: opts.archived ?? false,
+		});
+		const wfs = opts.children.map((c, i) =>
+			makeWorkflowState({
+				epicId: opts.epicId,
+				epicTitle: "Test Epic",
+				id: c?.id ?? `wf-${i}`,
+				...c,
+			}),
+		);
+		state.handleMessage({ type: "epic:list", epics: [epic] });
+		state.handleMessage({ type: "workflow:list", workflows: wfs });
+		const container = document.getElementById("app-content") as HTMLElement;
+		router = new TestRouter(container, "/");
+		router.register("/", { mount: () => {}, unmount: () => {}, onMessage: () => {} });
+		routeHandler = createEpicDetailHandler({
+			getState: () => state,
+			getConfig: () => null,
+			send: sendSpy as unknown as (m: ClientMessage) => void,
+			navigate: (p) => router?.navigate(p),
+		});
+		router.register("/epic/:id", routeHandler);
+		router.setTestPath(`/epic/${opts.epicId}`);
+		router.start();
+	}
+
+	function dispatch(msg: ServerMessage): void {
+		routeHandler.onMessage?.(msg);
+	}
+
+	test("transitioning a child running→paused refreshes Pause-all → Resume-all", () => {
+		mount({
+			epicId: "e-1",
+			children: [{ id: "wf-1", status: "running", epicDependencies: [] }],
+		});
+		expect(actionButtons().map((b) => b.getAttribute("data-testid"))).toContain("action-pause-all");
+		expect(actionButtons().map((b) => b.getAttribute("data-testid"))).not.toContain(
+			"action-resume-all",
+		);
+
+		const updated = makeWorkflowState({
+			id: "wf-1",
+			epicId: "e-1",
+			epicTitle: "Test Epic",
+			status: "paused",
+			epicDependencies: [],
+		});
+		state.handleMessage({ type: "workflow:state", workflow: updated });
+		dispatch({ type: "workflow:state", workflow: updated });
+
+		const ids = actionButtons().map((b) => b.getAttribute("data-testid"));
+		expect(ids).not.toContain("action-pause-all");
+		expect(ids).toContain("action-resume-all");
+	});
+
+	test("transitioning the last running child to completed unlocks Archive", () => {
+		mount({
+			epicId: "e-1",
+			children: [{ id: "wf-1", status: "running", epicDependencies: [] }],
+		});
+		const archiveBefore = actionButtons().find(
+			(b) => b.getAttribute("data-testid") === "action-archive",
+		);
+		expect(archiveBefore?.disabled).toBe(true);
+
+		const updated = makeWorkflowState({
+			id: "wf-1",
+			epicId: "e-1",
+			epicTitle: "Test Epic",
+			status: "completed",
+			epicDependencies: [],
+		});
+		state.handleMessage({ type: "workflow:state", workflow: updated });
+		dispatch({ type: "workflow:state", workflow: updated });
+
+		const archiveAfter = actionButtons().find(
+			(b) => b.getAttribute("data-testid") === "action-archive",
+		);
+		expect(archiveAfter?.disabled).toBe(false);
+	});
 });

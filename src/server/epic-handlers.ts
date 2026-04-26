@@ -891,32 +891,49 @@ async function applyEpicBatchControl(
 		return;
 	}
 	const persisted = await deps.sharedStore.loadAll();
-	const childIds = persisted.filter((wf) => wf.epicId === epicId).map((wf) => wf.id);
-	for (const wfId of childIds) {
-		const live = await loadLiveOrPersisted(deps, wfId);
-		if (!live) continue;
+	// Skip archived children explicitly. In practice archived workflows
+	// shed their orchestrator on archive, but the explicit filter prevents
+	// any future change to that contract from accidentally fanning out
+	// pause/resume/abort to archived rows.
+	const childIds = persisted
+		.filter((wf) => wf.epicId === epicId && wf.archived !== true)
+		.map((wf) => wf.id);
+	// Resolve live-or-persisted states in parallel — most lookups are
+	// in-memory cache hits but a fall-through to disk shouldn't serialize.
+	const lives = await Promise.all(childIds.map((id) => loadLiveOrPersisted(deps, id)));
+	for (let i = 0; i < childIds.length; i++) {
+		const wfId = childIds[i];
+		const live = lives[i];
+		if (!wfId || !live) continue;
 		const orch = deps.orchestrators.get(wfId);
 		if (!orch) continue;
-		switch (kind) {
-			case "pause-all":
-				if (live.status === "running") orch.pause(wfId);
-				break;
-			case "resume-all":
-				if (live.status === "paused") orch.resume(wfId);
-				break;
-			case "abort-all":
-				// Mirror handleAbort's predicate: only non-terminal, non-running
-				// statuses admit abort. Running workflows must be paused first.
-				if (
-					live.status === "paused" ||
-					live.status === "waiting_for_input" ||
-					live.status === "waiting_for_dependencies" ||
-					live.status === "error"
-				) {
-					orch.abortPipeline(wfId);
-					deps.orchestrators.delete(wfId);
-				}
-				break;
+		// Per-child error isolation: a single failing orchestrator must not
+		// strand the rest of the fan-out. Mirror the semantics of
+		// handleEpicStartFirstLevel which uses Promise.allSettled.
+		try {
+			switch (kind) {
+				case "pause-all":
+					if (live.status === "running") orch.pause(wfId);
+					break;
+				case "resume-all":
+					if (live.status === "paused") orch.resume(wfId);
+					break;
+				case "abort-all":
+					// Mirror handleAbort's predicate: only non-terminal, non-running
+					// statuses admit abort. Running workflows must be paused first.
+					if (
+						live.status === "paused" ||
+						live.status === "waiting_for_input" ||
+						live.status === "waiting_for_dependencies" ||
+						live.status === "error"
+					) {
+						orch.abortPipeline(wfId);
+						deps.orchestrators.delete(wfId);
+					}
+					break;
+			}
+		} catch (err) {
+			logger.warn(`[ws] epic:${kind} on ${wfId} failed: ${toErrorMessage(err)}`);
 		}
 	}
 }

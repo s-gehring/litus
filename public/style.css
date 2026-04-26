@@ -918,7 +918,7 @@ header h1 {
 
 .btn-primary { background: var(--accent-blue); color: #fff; }
 .btn-secondary { background: var(--border); color: var(--text); }
-.btn-warning { background: var(--accent-orange); color: #fff; }
+.btn-warning { background: var(--accent-orange); color: #1a1a1a; }
 .btn-danger { background: var(--accent); color: #fff; }
 
 /* Slot separator: pushes destructive + finalize actions to the right. */
