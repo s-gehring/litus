@@ -604,26 +604,4 @@ function renderFeedbackHistoryEntry(entry: FeedbackEntry): HTMLDivElement {
 	return row;
 }
 
-export function updateDetailActions(
-	buttons: { label: string; className: string; onClick: () => void }[],
-): void {
-	const container = $("#detail-actions");
-	if (!container) return;
 
-	container.replaceChildren();
-
-	if (buttons.length === 0) {
-		container.classList.add("hidden");
-		return;
-	}
-
-	for (const btn of buttons) {
-		const el = document.createElement("button");
-		el.className = `btn ${btn.className}`;
-		el.textContent = btn.label;
-		el.dataset.testid = `action-${btn.label.toLowerCase().replace(/\s+/g, "-")}`;
-		el.addEventListener("click", btn.onClick);
-		container.appendChild(el);
-	}
-	container.classList.remove("hidden");
-}

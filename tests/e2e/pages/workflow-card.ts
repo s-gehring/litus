@@ -80,8 +80,8 @@ export class WorkflowCardPage {
 	}
 
 	/**
-	 * The detail-action button rendered by `updateDetailActions` in
-	 * `workflow-window.ts`. In manual mode this doubles as both the
+	 * The detail-action button rendered by `renderDetailActions` in
+	 * `detail-actions.ts`. In manual mode this doubles as both the
 	 * post-pause Resume control and the merge-pr Merge control — the label
 	 * differs but the test id does not. Callers choose `resumeAction()` vs.
 	 * `mergeAction()` to encode intent at the call site.
