@@ -42,9 +42,9 @@ const ABORT_ALL_CONFIRM: ConfirmModalOptions = {
 };
 
 const RETRY_WORKFLOW_CONFIRM: ConfirmModalOptions = {
-	title: "Reset and retry?",
+	title: "Restart this workflow?",
 	body: "This resets the workflow to Setup and deletes its branch, worktree, and artifacts. Uncommitted changes in the managed worktree will be lost.",
-	confirmLabel: "Reset and retry",
+	confirmLabel: "Restart",
 	cancelLabel: "Cancel",
 };
 
@@ -73,7 +73,7 @@ export const ACTION_REGISTRY: Record<ActionKey, ActionRegistryEntry> = {
 		confirm: ABORT_ALL_CONFIRM,
 	},
 	"retry-workflow": {
-		label: "Reset and retry",
+		label: "Restart",
 		slot: "destructive",
 		className: "btn-warning",
 		confirm: RETRY_WORKFLOW_CONFIRM,

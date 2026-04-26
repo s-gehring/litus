@@ -11,7 +11,7 @@ import { AppPage, WorkflowCardPage } from "../pages";
  *   2. Stable, key-derived test-ids (action-pause, action-resume, …).
  *   3. The disabled archive button surfaces `disabled` + `title` instead of
  *      a label-suffix hack.
- *   4. Destructive actions (Abort, Reset and retry) open the in-app
+ *   4. Destructive actions (Abort, Restart) open the in-app
  *      `.confirm-modal` element — never a native `confirm()` dialog.
  *   5. Cancelling the modal is a no-op (no abort message dispatched).
  */
@@ -163,7 +163,7 @@ test.describe("detail action-bar contract", () => {
 		});
 	});
 
-	test("aborted workflow surfaces Reset-and-retry with btn-warning style", async ({
+	test("aborted workflow surfaces Restart with btn-warning style", async ({
 		page,
 		server,
 		sandbox,
@@ -186,10 +186,10 @@ test.describe("detail action-bar contract", () => {
 			timeout: 30_000,
 		});
 
-		// "Reset and retry" — visible label, but selector is action-retry-workflow.
+		// "Restart" — visible label, but selector is action-retry-workflow.
 		const reset = card.retryWorkflowAction();
 		await expect(reset).toBeVisible();
-		await expect(reset).toHaveText("Reset and retry");
+		await expect(reset).toHaveText("Restart");
 		await expect(reset).toHaveClass(/\bbtn-warning\b/);
 		await expect(reset).toHaveAttribute("data-slot", "destructive");
 	});

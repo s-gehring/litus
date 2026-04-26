@@ -119,11 +119,11 @@ describe("workflow-detail-handler action buttons", () => {
 		router.start();
 	}
 
-	test("errored workflow renders both per-step retry and the destructive workflow reset", () => {
+	test("errored workflow renders both per-step retry and the destructive workflow restart", () => {
 		mountForWorkflow({ id: "wf-err", status: "error" });
 		const labels = actionLabels();
 		expect(labels).toContain("Retry step");
-		expect(labels).toContain("Reset and retry");
+		expect(labels).toContain("Restart");
 		// Generated testids must match what the e2e page-object expects;
 		// keys (and thus testids) are stable even when labels are reworded.
 		const testids = actionTestIds();

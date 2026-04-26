@@ -37,7 +37,7 @@ async function confirmModal(card: WorkflowCardPage): Promise<void> {
 }
 
 /**
- * Click the whole-workflow "Reset and retry" button and confirm the modal
+ * Click the whole-workflow "Restart" button and confirm the modal
  * the action-bar opens.
  */
 export async function retryWorkflow(card: WorkflowCardPage): Promise<void> {

@@ -195,7 +195,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 				onClick: () => deps.send({ type: "workflow:abort", workflowId: wf.id }),
 			});
 		}
-		// Reset and retry — available from `error` OR `aborted`. Resets the entire
+		// Restart — available from `error` OR `aborted`. Resets the entire
 		// workflow to Setup, deleting branch/worktree/artifacts. Distinct from
 		// the per-step `retry-step` action above.
 		if (wf.status === "error" || wf.status === "aborted") {
