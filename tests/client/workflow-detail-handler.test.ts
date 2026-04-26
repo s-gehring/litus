@@ -119,29 +119,30 @@ describe("workflow-detail-handler action buttons", () => {
 		router.start();
 	}
 
-	test("errored workflow renders both 'Retry step' and 'Retry workflow' buttons", () => {
+	test("errored workflow renders both per-step retry and the destructive workflow restart", () => {
 		mountForWorkflow({ id: "wf-err", status: "error" });
 		const labels = actionLabels();
 		expect(labels).toContain("Retry step");
-		expect(labels).toContain("Retry workflow");
-		// Generated testids must match what the e2e page-object expects.
+		expect(labels).toContain("Restart");
+		// Generated testids must match what the e2e page-object expects;
+		// keys (and thus testids) are stable even when labels are reworded.
 		const testids = actionTestIds();
 		expect(testids).toContain("action-retry-step");
 		expect(testids).toContain("action-retry-workflow");
 	});
 
-	test("aborted workflow renders only 'Retry workflow' (not 'Retry step')", () => {
+	test("aborted workflow renders only the workflow-level reset (not the per-step retry)", () => {
 		mountForWorkflow({ id: "wf-abort", status: "aborted" });
-		const labels = actionLabels();
-		expect(labels).toContain("Retry workflow");
-		expect(labels).not.toContain("Retry step");
+		const testids = actionTestIds();
+		expect(testids).toContain("action-retry-workflow");
+		expect(testids).not.toContain("action-retry-step");
 	});
 
 	test("idle workflow renders neither retry button", () => {
 		mountForWorkflow({ id: "wf-idle", status: "idle" });
-		const labels = actionLabels();
-		expect(labels).not.toContain("Retry step");
-		expect(labels).not.toContain("Retry workflow");
+		const testids = actionTestIds();
+		expect(testids).not.toContain("action-retry-step");
+		expect(testids).not.toContain("action-retry-workflow");
 	});
 
 	test("workflow-level error message is rendered in the detail pane banner", () => {
@@ -189,25 +190,135 @@ describe("workflow-detail-handler action buttons", () => {
 	});
 
 	test("all action testids stay in sync with the e2e page-object contract", () => {
-		// Covers every button label this pane can emit, not just the retry pair.
-		// Renaming any label here will break the generated testid used by the
-		// Playwright page objects; extending the assertion surfaces that in
-		// review diff rather than only at e2e time.
+		// Covers every key this pane can emit. Test-ids are derived from
+		// stable keys (not labels), so reword-only diffs don't break this.
 		const cases: {
 			status: NonNullable<Parameters<typeof makeWorkflowState>[0]>["status"];
 			expected: string[];
+			forbidden?: string[];
 		}[] = [
-			{ status: "running", expected: ["action-pause"] },
-			{ status: "paused", expected: ["action-resume", "action-abort"] },
-			{ status: "error", expected: ["action-retry-step", "action-retry-workflow", "action-abort"] },
-			{ status: "aborted", expected: ["action-retry-workflow"] },
+			{ status: "running", expected: ["action-pause"], forbidden: ["action-archive"] },
+			{
+				status: "paused",
+				expected: ["action-resume", "action-abort"],
+				forbidden: ["action-archive"],
+			},
+			{
+				status: "error",
+				expected: ["action-retry-step", "action-abort", "action-retry-workflow"],
+				forbidden: ["action-archive"],
+			},
+			{ status: "aborted", expected: ["action-retry-workflow", "action-archive"] },
+			{ status: "completed", expected: ["action-archive"] },
+			{
+				status: "waiting_for_dependencies",
+				expected: ["action-force-start", "action-abort"],
+				forbidden: ["action-archive"],
+			},
 		];
-		for (const { status, expected } of cases) {
+		for (const { status, expected, forbidden } of cases) {
 			document.body.innerHTML = BASE_DOM;
 			state = new ClientStateManager();
 			mountForWorkflow({ id: `wf-${status}`, status });
 			const testids = actionTestIds();
 			for (const id of expected) expect(testids).toContain(id);
+			for (const id of forbidden ?? []) expect(testids).not.toContain(id);
 		}
+	});
+
+	test("archive button is hidden while running (must reach a terminal state first)", () => {
+		mountForWorkflow({ id: "wf-running", status: "running" });
+		const archive = document.querySelector<HTMLButtonElement>(
+			'#detail-actions [data-testid="action-archive"]',
+		);
+		expect(archive).toBeNull();
+	});
+
+	test("archive button is hidden on errored workflow (user must abort first)", () => {
+		mountForWorkflow({ id: "wf-err", status: "error" });
+		const archive = document.querySelector<HTMLButtonElement>(
+			'#detail-actions [data-testid="action-archive"]',
+		);
+		expect(archive).toBeNull();
+	});
+
+	test("archive button on completed workflow fires immediately without a modal", async () => {
+		mountForWorkflow({ id: "wf-done", status: "completed" });
+		const archive = document.querySelector<HTMLButtonElement>(
+			'#detail-actions [data-testid="action-archive"]',
+		);
+		expect(archive).not.toBeNull();
+		archive?.click();
+		await Promise.resolve();
+		// Archive in the registry has no confirm and the workflow handler
+		// never overrides it — terminal-only visibility makes a modal
+		// unnecessary.
+		expect(document.querySelector(".confirm-modal")).toBeNull();
+		expect(sendSpy).toHaveBeenCalledWith({
+			type: "workflow:archive",
+			workflowId: "wf-done",
+		});
+	});
+
+	test("archive button on aborted workflow fires immediately without a modal", async () => {
+		mountForWorkflow({ id: "wf-aborted", status: "aborted" });
+		const archive = document.querySelector<HTMLButtonElement>(
+			'#detail-actions [data-testid="action-archive"]',
+		);
+		expect(archive).not.toBeNull();
+		archive?.click();
+		await Promise.resolve();
+		expect(document.querySelector(".confirm-modal")).toBeNull();
+		expect(sendSpy).toHaveBeenCalledWith({
+			type: "workflow:archive",
+			workflowId: "wf-aborted",
+		});
+	});
+
+	test("epic-child idle workflow shows Start (no Archive — child specs cannot be archived)", () => {
+		mountForWorkflow({ id: "wf-child", status: "idle", epicId: "e-1" });
+		const testids = actionTestIds();
+		expect(testids).toContain("action-start");
+		expect(testids).not.toContain("action-archive");
+	});
+
+	test("paused merge-pr step in normal mode does NOT expose Provide feedback", () => {
+		// Approximate the pre-merge-PR pause: status=paused at the merge-pr step.
+		// `mountForWorkflow` always wires getAutoMode → "normal", so feedback
+		// should NOT show even on merge-pr — the button is gated on manual mode.
+		mountForWorkflow({
+			id: "wf-merge",
+			status: "paused",
+			steps: [
+				{
+					name: "merge-pr",
+					displayName: "Merging PR",
+					status: "paused",
+					output: "",
+					outputLog: [],
+					error: null,
+					startedAt: null,
+					completedAt: null,
+					history: [],
+					outcome: null,
+				},
+			],
+			currentStepIndex: 0,
+		});
+		const testids = actionTestIds();
+		expect(testids).not.toContain("action-provide-feedback");
+	});
+
+	test("button order respects slot contract: primary → secondary → destructive → finalize", () => {
+		// Use `aborted` to exercise all three relevant slots in one render:
+		// errored shows secondary+destructive but no finalize (Archive is
+		// gated to terminal-clean states), and aborted is the only state
+		// that pairs a destructive Restart with a finalize Archive.
+		mountForWorkflow({ id: "wf-aborted", status: "aborted" });
+		const slots = Array.from(
+			document.querySelectorAll<HTMLButtonElement>("#detail-actions button"),
+		).map((b) => b.getAttribute("data-slot") ?? "");
+		const slotOrder = slots.join(",");
+		expect(slotOrder).toBe("destructive,finalize");
 	});
 });

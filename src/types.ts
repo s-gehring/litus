@@ -1003,6 +1003,13 @@ export type ClientMessage =
 	| { type: "epic:feedback"; epicId: string; text: string }
 	| { type: "epic:feedback:ack-context-lost"; epicId: string }
 	| { type: "epic:start-first-level"; epicId: string }
+	// Fan-out controls for the epic detail view: the server iterates the
+	// epic's child workflows and dispatches the per-workflow control to each
+	// non-terminal child. Best-effort: a child whose status doesn't admit the
+	// control (e.g. abort on already-aborted) is silently skipped.
+	| { type: "epic:pause-all"; epicId: string }
+	| { type: "epic:resume-all"; epicId: string }
+	| { type: "epic:abort-all"; epicId: string }
 	| { type: "workflow:start-existing"; workflowId: string }
 	| { type: "workflow:force-start"; workflowId: string }
 	| { type: "workflow:feedback"; workflowId: string; text: string }

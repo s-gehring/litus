@@ -22,49 +22,36 @@ export async function retryStep(card: WorkflowCardPage): Promise<void> {
 }
 
 /**
- * Click the whole-workflow "Retry workflow" reset button. Wraps `confirm()`
- * so the underlying `workflow:retry-workflow` actually dispatches — mirrors
- * the pattern in `abortRun` for the same reason.
+ * Confirm the `showConfirmModal` dialog that the action-bar opens for
+ * destructive buttons (abort, abort-all, retry-workflow, archive of an
+ * unfinished workflow). The modal is a DOM element under
+ * `.confirm-modal`, NOT a native `confirm()` dialog — the legacy native
+ * dialog handlers were removed when the action bar unified onto the
+ * registry-driven renderer.
+ */
+async function confirmModal(card: WorkflowCardPage): Promise<void> {
+	const modal = card.page.locator(".confirm-modal");
+	await expect(modal).toBeVisible({ timeout: 5_000 });
+	await modal.locator(".btn-primary").click();
+	await expect(modal).toHaveCount(0, { timeout: 5_000 });
+}
+
+/**
+ * Click the whole-workflow "Restart" button and confirm the modal
+ * the action-bar opens.
  */
 export async function retryWorkflow(card: WorkflowCardPage): Promise<void> {
-	const onDialog = (dialog: import("@playwright/test").Dialog): void => {
-		void dialog.accept();
-	};
-	card.page.on("dialog", onDialog);
-	try {
-		const btn = card.retryWorkflowAction();
-		await expect(btn).toBeVisible({ timeout: 30_000 });
-		const dialogSettled = card.page
-			.waitForEvent("dialog", { timeout: 5_000 })
-			.catch(() => undefined);
-		await btn.click();
-		await dialogSettled;
-	} finally {
-		card.page.off("dialog", onDialog);
-	}
+	const btn = card.retryWorkflowAction();
+	await expect(btn).toBeVisible({ timeout: 30_000 });
+	await btn.click();
+	await confirmModal(card);
 }
 
 export async function abortRun(card: WorkflowCardPage): Promise<void> {
-	// The abort handler wraps the dispatch in a `confirm()` — auto-accept
-	// it so the underlying workflow:abort message actually fires. Register
-	// a scoped listener and remove it after the dialog is handled (or the
-	// click settles with no dialog) so a later stray dialog isn't silently
-	// accepted on this page.
-	const onDialog = (dialog: import("@playwright/test").Dialog): void => {
-		void dialog.accept();
-	};
-	card.page.on("dialog", onDialog);
-	try {
-		const btn = card.abortAction();
-		await expect(btn).toBeVisible({ timeout: 30_000 });
-		const dialogSettled = card.page
-			.waitForEvent("dialog", { timeout: 5_000 })
-			.catch(() => undefined);
-		await btn.click();
-		await dialogSettled;
-	} finally {
-		card.page.off("dialog", onDialog);
-	}
+	const btn = card.abortAction();
+	await expect(btn).toBeVisible({ timeout: 30_000 });
+	await btn.click();
+	await confirmModal(card);
 }
 
 export async function forceStart(card: WorkflowCardPage): Promise<void> {

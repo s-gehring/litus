@@ -5,7 +5,11 @@ export interface ConfirmModalOptions {
 	cancelLabel?: string;
 }
 
+let modalInFlight = false;
+
 export function showConfirmModal(options: ConfirmModalOptions): Promise<boolean> {
+	if (modalInFlight) return Promise.resolve(false);
+	modalInFlight = true;
 	return new Promise<boolean>((resolve) => {
 		const backdrop = document.createElement("div");
 		backdrop.className = "modal-backdrop confirm-modal-backdrop";
@@ -45,6 +49,7 @@ export function showConfirmModal(options: ConfirmModalOptions): Promise<boolean>
 		const cleanup = (result: boolean): void => {
 			document.removeEventListener("keydown", onKey);
 			backdrop.remove();
+			modalInFlight = false;
 			resolve(result);
 		};
 		const onKey = (e: KeyboardEvent): void => {

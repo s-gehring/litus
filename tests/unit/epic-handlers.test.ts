@@ -54,8 +54,11 @@ mock.module("../../src/workflow-engine", () => ({
 
 import {
 	handleEpicAbort,
+	handleEpicAbortAll,
 	handleEpicFeedback,
 	handleEpicFeedbackAckContextLost,
+	handleEpicPauseAll,
+	handleEpicResumeAll,
 	handleEpicStart,
 	handleEpicStartFirstLevel,
 } from "../../src/server/epic-handlers";
@@ -1121,6 +1124,256 @@ describe("epic-handlers", () => {
 			expect(result.started).toEqual([]);
 			expect(result.skipped).toEqual([]);
 			expect(result.failed).toEqual([]);
+		});
+	});
+
+	describe("epic batch controls (pause-all / resume-all / abort-all)", () => {
+		type BatchCall = { method: "pause" | "resume" | "abortPipeline"; args: unknown[] };
+
+		type BatchOrchOptions = {
+			/**
+			 * Status reported by the live engine. When set the orchestrator's
+			 * `getEngine().getWorkflow()` returns a workflow with this status,
+			 * exercising the live-engine branch of `loadLiveOrPersisted`. When
+			 * `null` (the default) the engine returns null, falling through to
+			 * the persisted-store branch.
+			 */
+			engineStatus?: ReturnType<typeof makeWorkflow>["status"] | null;
+			/**
+			 * If set, every method call throws this error. Used to verify
+			 * per-child error isolation in the batch fan-out.
+			 */
+			throwError?: Error;
+		};
+
+		function makeBatchOrch(
+			workflow: ReturnType<typeof makeWorkflow>,
+			options: BatchOrchOptions = {},
+		): {
+			orch: PipelineOrchestrator;
+			calls: BatchCall[];
+		} {
+			const calls: BatchCall[] = [];
+			const engineStatus = options.engineStatus ?? null;
+			const liveWorkflow = engineStatus !== null ? { ...workflow, status: engineStatus } : null;
+			const guarded =
+				(method: BatchCall["method"]) =>
+				(...args: unknown[]) => {
+					calls.push({ method, args });
+					if (options.throwError) throw options.throwError;
+				};
+			const orch = {
+				getEngine: () => ({
+					getWorkflow: () => liveWorkflow,
+				}),
+				pause: guarded("pause"),
+				resume: guarded("resume"),
+				abortPipeline: guarded("abortPipeline"),
+			} as unknown as PipelineOrchestrator;
+			return { orch, calls };
+		}
+
+		async function setupBatch(
+			workflows: ReturnType<typeof makeWorkflow>[],
+			perWorkflowOptions: Map<string, BatchOrchOptions> = new Map(),
+		): Promise<{
+			ws: Parameters<typeof handleEpicPauseAll>[0];
+			deps: ReturnType<typeof createMockHandlerDeps>["deps"];
+			calls: Map<string, BatchCall[]>;
+			orchestrators: Map<string, PipelineOrchestrator>;
+			sentMessages: ReturnType<typeof createMockHandlerDeps>["sentMessages"];
+		}> {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleEpicPauseAll>[0];
+			const orchestrators = new Map<string, PipelineOrchestrator>();
+			const orchCalls = new Map<string, BatchCall[]>();
+			for (const wf of workflows) {
+				const { orch, calls } = makeBatchOrch(wf, perWorkflowOptions.get(wf.id) ?? {});
+				orchestrators.set(wf.id, orch);
+				orchCalls.set(wf.id, calls);
+			}
+			const { deps, sentMessages } = createMockHandlerDeps({ orchestrators });
+			for (const wf of workflows) {
+				await deps.sharedStore.save(wf);
+			}
+			return { ws: mockWs, deps, calls: orchCalls, orchestrators, sentMessages };
+		}
+
+		test("pause-all only pauses children that are currently running", async () => {
+			const running = makeWorkflow({ id: "wf-r", epicId: "e-1", status: "running" });
+			const paused = makeWorkflow({ id: "wf-p", epicId: "e-1", status: "paused" });
+			const idle = makeWorkflow({ id: "wf-i", epicId: "e-1", status: "idle" });
+			// Different epic — must be ignored.
+			const other = makeWorkflow({ id: "wf-o", epicId: "e-2", status: "running" });
+			const { ws, deps, calls } = await setupBatch([running, paused, idle, other]);
+
+			await handleEpicPauseAll(
+				ws,
+				{ type: "epic:pause-all", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+
+			expect(calls.get("wf-r")?.map((c) => c.method)).toEqual(["pause"]);
+			expect(calls.get("wf-p")?.length ?? 0).toBe(0);
+			expect(calls.get("wf-i")?.length ?? 0).toBe(0);
+			expect(calls.get("wf-o")?.length ?? 0).toBe(0);
+		});
+
+		test("resume-all only resumes children that are paused", async () => {
+			const paused = makeWorkflow({ id: "wf-p", epicId: "e-1", status: "paused" });
+			const running = makeWorkflow({ id: "wf-r", epicId: "e-1", status: "running" });
+			const { ws, deps, calls } = await setupBatch([paused, running]);
+
+			await handleEpicResumeAll(
+				ws,
+				{ type: "epic:resume-all", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+
+			expect(calls.get("wf-p")?.map((c) => c.method)).toEqual(["resume"]);
+			expect(calls.get("wf-r")?.length ?? 0).toBe(0);
+		});
+
+		test("abort-all aborts every non-running, non-terminal child", async () => {
+			// Mirrors handleAbort's predicate. `running` cannot be aborted —
+			// users must pause it first; `completed` and `aborted` are
+			// terminal and must be skipped to avoid the orchestrator crashing
+			// on already-released resources.
+			const paused = makeWorkflow({ id: "wf-p", epicId: "e-1", status: "paused" });
+			const waiting = makeWorkflow({ id: "wf-w", epicId: "e-1", status: "waiting_for_input" });
+			const errored = makeWorkflow({ id: "wf-e", epicId: "e-1", status: "error" });
+			const running = makeWorkflow({ id: "wf-r", epicId: "e-1", status: "running" });
+			const done = makeWorkflow({ id: "wf-d", epicId: "e-1", status: "completed" });
+			const { ws, deps, calls, orchestrators } = await setupBatch([
+				paused,
+				waiting,
+				errored,
+				running,
+				done,
+			]);
+
+			await handleEpicAbortAll(
+				ws,
+				{ type: "epic:abort-all", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+
+			expect(calls.get("wf-p")?.map((c) => c.method)).toEqual(["abortPipeline"]);
+			expect(calls.get("wf-w")?.map((c) => c.method)).toEqual(["abortPipeline"]);
+			expect(calls.get("wf-e")?.map((c) => c.method)).toEqual(["abortPipeline"]);
+			expect(calls.get("wf-r")?.length ?? 0).toBe(0);
+			expect(calls.get("wf-d")?.length ?? 0).toBe(0);
+			// Aborted orchestrators are deregistered, mirroring handleAbort.
+			expect(orchestrators.has("wf-p")).toBe(false);
+			expect(orchestrators.has("wf-w")).toBe(false);
+			expect(orchestrators.has("wf-e")).toBe(false);
+			expect(orchestrators.has("wf-r")).toBe(true);
+			expect(orchestrators.has("wf-d")).toBe(true);
+		});
+
+		test("missing epicId emits an error envelope from every batch handler", async () => {
+			const { ws, deps, sentMessages } = await setupBatch([]);
+			for (const handler of [handleEpicPauseAll, handleEpicResumeAll, handleEpicAbortAll]) {
+				await handler(ws, { type: "epic:abort-all", epicId: "" } as ClientMessage, deps);
+			}
+			const errors = (sentMessages.get(ws) ?? []).filter(
+				(m) => m.type === "error" && m.message === "epicId is required",
+			);
+			expect(errors).toHaveLength(3);
+		});
+
+		test("non-string epicId is rejected with an error envelope", async () => {
+			const { ws, deps, sentMessages } = await setupBatch([]);
+			for (const epicId of [42, true, null, undefined]) {
+				await handleEpicAbortAll(
+					ws,
+					{ type: "epic:abort-all", epicId: epicId as unknown as string } as ClientMessage,
+					deps,
+				);
+			}
+			const errors = (sentMessages.get(ws) ?? []).filter(
+				(m) => m.type === "error" && m.message === "epicId is required",
+			);
+			expect(errors).toHaveLength(4);
+		});
+
+		test("archived children are excluded from the fan-out", async () => {
+			// An archived workflow (with its orchestrator still registered, as a
+			// pathological case) must NOT receive a pause/resume/abort even
+			// though its epicId still matches.
+			const live = makeWorkflow({ id: "wf-live", epicId: "e-1", status: "running" });
+			const archivedRunning = makeWorkflow({
+				id: "wf-arch",
+				epicId: "e-1",
+				status: "running",
+				archived: true,
+			});
+			const { ws, deps, calls } = await setupBatch([live, archivedRunning]);
+			await handleEpicPauseAll(
+				ws,
+				{ type: "epic:pause-all", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+			expect(calls.get("wf-live")?.map((c) => c.method)).toEqual(["pause"]);
+			expect(calls.get("wf-arch")?.length ?? 0).toBe(0);
+		});
+
+		test("a thrown orchestrator does not strand the rest of the fan-out", async () => {
+			const a = makeWorkflow({ id: "wf-a", epicId: "e-1", status: "running" });
+			const b = makeWorkflow({ id: "wf-b", epicId: "e-1", status: "running" });
+			const c = makeWorkflow({ id: "wf-c", epicId: "e-1", status: "running" });
+			const opts = new Map([["wf-b", { throwError: new Error("boom") }]]);
+			const { ws, deps, calls } = await setupBatch([a, b, c], opts);
+			await handleEpicPauseAll(
+				ws,
+				{ type: "epic:pause-all", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+			// All three were attempted; the failure on b did not abort the loop.
+			expect(calls.get("wf-a")?.map((c) => c.method)).toEqual(["pause"]);
+			expect(calls.get("wf-b")?.map((c) => c.method)).toEqual(["pause"]);
+			expect(calls.get("wf-c")?.map((c) => c.method)).toEqual(["pause"]);
+		});
+
+		test("live engine status overrides the persisted status (pause-all)", async () => {
+			// Persisted store says running, but the live engine reports paused.
+			// Pause-all must trust the live status and skip this child, since
+			// pausing an already-paused workflow is a no-op the orchestrator
+			// would not expect from its own predicate.
+			const wf = makeWorkflow({ id: "wf-1", epicId: "e-1", status: "running" });
+			const opts = new Map([["wf-1", { engineStatus: "paused" as const }]]);
+			const { ws, deps, calls } = await setupBatch([wf], opts);
+			await handleEpicPauseAll(
+				ws,
+				{ type: "epic:pause-all", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+			expect(calls.get("wf-1")?.length ?? 0).toBe(0);
+		});
+
+		test("live engine status overrides the persisted status (resume-all)", async () => {
+			// Persisted says paused, but the engine already resumed it. Skip.
+			const wf = makeWorkflow({ id: "wf-1", epicId: "e-1", status: "paused" });
+			const opts = new Map([["wf-1", { engineStatus: "running" as const }]]);
+			const { ws, deps, calls } = await setupBatch([wf], opts);
+			await handleEpicResumeAll(
+				ws,
+				{ type: "epic:resume-all", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+			expect(calls.get("wf-1")?.length ?? 0).toBe(0);
+		});
+
+		test("unknown epicId is a no-op (no error message, no calls)", async () => {
+			const wf = makeWorkflow({ id: "wf-1", epicId: "e-1", status: "running" });
+			const { ws, deps, calls, sentMessages } = await setupBatch([wf]);
+			await handleEpicPauseAll(
+				ws,
+				{ type: "epic:pause-all", epicId: "e-unknown" } as ClientMessage,
+				deps,
+			);
+			expect(calls.get("wf-1")?.length ?? 0).toBe(0);
+			expect((sentMessages.get(ws) ?? []).filter((m) => m.type === "error")).toHaveLength(0);
 		});
 	});
 });

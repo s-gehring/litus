@@ -918,7 +918,17 @@ header h1 {
 
 .btn-primary { background: var(--accent-blue); color: #fff; }
 .btn-secondary { background: var(--border); color: var(--text); }
+.btn-warning { background: var(--accent-orange); color: #1a1a1a; }
 .btn-danger { background: var(--accent); color: #fff; }
+
+/* Slot separator: visually groups destructive + finalize actions next to
+   primary + secondary, kept left-aligned with a thin divider rather than
+   pushed to the far right. */
+.detail-actions .slot-break {
+  margin-inline-start: 12px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--border);
+}
 
 /* Current step label */
 .current-step-label {
@@ -2448,6 +2458,28 @@ body.artifact-modal-open { overflow: hidden; }
 .btn-disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-loading {
+  position: relative;
+}
+
+.btn-loading::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: 8px;
+  inset-block-start: 50%;
+  inline-size: 10px;
+  block-size: 10px;
+  margin-block-start: -5px;
+  border: 2px solid currentcolor;
+  border-block-end-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 0.7s linear infinite;
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
 }
 
 .archive-count-muted {

@@ -9,7 +9,7 @@ import { STEP } from "../../types";
 import type { ClientStateManager } from "../client-state-manager";
 import type { RouteHandler, RouteMatch } from "../router";
 import { BACK_TO_EPIC_PREFIX, backToEpicLabel } from "./back-to-epic-label";
-import { showConfirmModal } from "./confirm-modal";
+import { type ActionSpec, renderDetailActions } from "./detail-actions";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
 import {
 	hideFeedbackPanel,
@@ -30,7 +30,6 @@ import {
 	syncThinkingIndicator,
 	updateActiveModelPanel,
 	updateBranchInfo,
-	updateDetailActions,
 	updateFeedbackHistorySection,
 	updateFlavor,
 	updateSpecDetails,
@@ -116,7 +115,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		updateFeedbackHistorySection(wf.feedbackEntries);
 
 		const actions = buildActionButtons(wf);
-		updateDetailActions(actions);
+		renderDetailActions(actions);
 
 		renderBackToEpicButton(wf);
 
@@ -146,137 +145,85 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		hideFeedbackPanelUnlessFor(wf.id);
 	}
 
-	function buildActionButtons(
-		wf: WorkflowState,
-	): { label: string; className: string; onClick: () => void }[] {
-		const actions: { label: string; className: string; onClick: () => void }[] = [];
-		const isError = wf.status === "error";
+	function buildActionButtons(wf: WorkflowState): ActionSpec[] {
+		const actions: ActionSpec[] = [];
 		const autoMode = deps.getAutoMode();
+		const currentStepName = wf.steps[wf.currentStepIndex]?.name;
 
 		if (wf.status === "running") {
 			actions.push({
-				label: "Pause",
-				className: "btn-secondary",
+				key: "pause",
 				onClick: () => deps.send({ type: "workflow:pause", workflowId: wf.id }),
 			});
 		}
 		if (wf.status === "paused") {
 			actions.push({
-				label: "Resume",
-				className: "btn-primary",
+				key: "resume",
 				onClick: () => deps.send({ type: "workflow:resume", workflowId: wf.id }),
 			});
-			if (autoMode === "manual" && wf.steps[wf.currentStepIndex]?.name === STEP.MERGE_PR) {
-				actions.push({
-					label: "Provide Feedback",
-					className: "btn-secondary",
-					onClick: () => deps.openFeedbackPanel(wf),
-				});
+			if (autoMode === "manual" && currentStepName === STEP.MERGE_PR) {
+				actions.push({ key: "provide-feedback", onClick: () => deps.openFeedbackPanel(wf) });
 			}
 			actions.push({
-				label: "Abort",
-				className: "btn-danger",
-				onClick: () => {
-					if (confirm("Are you sure you want to abort this workflow?")) {
-						deps.send({ type: "workflow:abort", workflowId: wf.id });
-					}
-				},
+				key: "abort",
+				onClick: () => deps.send({ type: "workflow:abort", workflowId: wf.id }),
 			});
 		}
 		if (wf.status === "waiting_for_input" || wf.status === "waiting_for_dependencies") {
 			actions.push({
-				label: "Abort",
-				className: "btn-danger",
-				onClick: () => {
-					if (confirm("Are you sure you want to abort this workflow?")) {
-						deps.send({ type: "workflow:abort", workflowId: wf.id });
-					}
-				},
+				key: "abort",
+				onClick: () => deps.send({ type: "workflow:abort", workflowId: wf.id }),
 			});
 		}
-		if (isError) {
+		if (wf.status === "error") {
 			actions.push({
-				label: "Retry step",
-				className: "btn-secondary",
+				key: "retry-step",
 				onClick: () => deps.send({ type: "workflow:retry", workflowId: wf.id }),
 			});
 			// FR-016: an errored fix-implement step accepts appended feedback as
 			// retry context — expose the same feedback panel used for manual-mode
 			// merge-pr pauses. `handleFeedback` enforces the status/step invariant
 			// server-side; this button is the only UI entry point.
-			if (wf.steps[wf.currentStepIndex]?.name === STEP.FIX_IMPLEMENT) {
-				actions.push({
-					label: "Provide Feedback",
-					className: "btn-secondary",
-					onClick: () => deps.openFeedbackPanel(wf),
-				});
+			if (currentStepName === STEP.FIX_IMPLEMENT) {
+				actions.push({ key: "provide-feedback", onClick: () => deps.openFeedbackPanel(wf) });
 			}
 			// Abort is offered alongside Retry so the user can put an unrecoverable
 			// workflow into a terminal state. Without it, a stuck error holds its
 			// managed-repo refcount indefinitely (error is non-terminal for refcount).
 			actions.push({
-				label: "Abort",
-				className: "btn-danger",
-				onClick: () => {
-					if (confirm("Are you sure you want to abort this workflow?")) {
-						deps.send({ type: "workflow:abort", workflowId: wf.id });
-					}
-				},
+				key: "abort",
+				onClick: () => deps.send({ type: "workflow:abort", workflowId: wf.id }),
 			});
 		}
-		// Retry workflow — available from `error` OR `aborted`. Resets the entire
+		// Restart — available from `error` OR `aborted`. Resets the entire
 		// workflow to Setup, deleting branch/worktree/artifacts. Distinct from
-		// the per-step "Retry step" action above.
+		// the per-step `retry-step` action above.
 		if (wf.status === "error" || wf.status === "aborted") {
 			actions.push({
-				label: "Retry workflow",
-				className: "btn-secondary",
-				onClick: () => {
-					if (
-						confirm(
-							"This will reset the workflow to Setup and delete its branch, worktree, and artifacts. Uncommitted changes in the managed worktree will be lost. Continue?",
-						)
-					) {
-						deps.send({ type: "workflow:retry-workflow", workflowId: wf.id });
-					}
-				},
+				key: "retry-workflow",
+				onClick: () => deps.send({ type: "workflow:retry-workflow", workflowId: wf.id }),
 			});
 		}
 		if (wf.status === "idle" && wf.epicId) {
 			actions.push({
-				label: "Start",
-				className: "btn-primary",
+				key: "start",
 				onClick: () => deps.send({ type: "workflow:start-existing", workflowId: wf.id }),
 			});
 		}
 		if (wf.status === "waiting_for_dependencies") {
 			actions.push({
-				label: "Force Start",
-				className: "btn-secondary",
+				key: "force-start",
 				onClick: () => deps.send({ type: "workflow:force-start", workflowId: wf.id }),
 			});
 		}
-		// Archive — hidden for child specs (FR-008), disabled while running (FR-003).
-		if (wf.epicId === null) {
-			const running = wf.status === "running";
-			const isTerminal =
-				wf.status === "completed" || wf.status === "aborted" || wf.status === "error";
+		// Archive — hidden for child specs (FR-008) and only offered once the
+		// workflow has reached a clean terminal state (`completed` or
+		// `aborted`). An errored workflow must be aborted first; this keeps
+		// archive from masking unresolved failures.
+		if (wf.epicId === null && (wf.status === "completed" || wf.status === "aborted")) {
 			actions.push({
-				label: running ? "Archive (disabled while running)" : "Archive",
-				className: running ? "btn-secondary btn-disabled" : "btn-secondary",
-				onClick: async () => {
-					if (running) return;
-					if (!isTerminal) {
-						const ok = await showConfirmModal({
-							title: "Archive this workflow?",
-							body: "This workflow has not finished. Archiving it will hide it from the active workspace. You can unarchive it later from the Archive page.",
-							confirmLabel: "Archive",
-							cancelLabel: "Cancel",
-						});
-						if (!ok) return;
-					}
-					deps.send({ type: "workflow:archive", workflowId: wf.id });
-				},
+				key: "archive",
+				onClick: () => deps.send({ type: "workflow:archive", workflowId: wf.id }),
 			});
 		}
 		return actions;

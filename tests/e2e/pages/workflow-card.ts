@@ -80,8 +80,8 @@ export class WorkflowCardPage {
 	}
 
 	/**
-	 * The detail-action button rendered by `updateDetailActions` in
-	 * `workflow-window.ts`. In manual mode this doubles as both the
+	 * The detail-action button rendered by `renderDetailActions` in
+	 * `detail-actions.ts`. In manual mode this doubles as both the
 	 * post-pause Resume control and the merge-pr Merge control — the label
 	 * differs but the test id does not. Callers choose `resumeAction()` vs.
 	 * `mergeAction()` to encode intent at the call site.
@@ -112,6 +112,48 @@ export class WorkflowCardPage {
 
 	provideFeedbackAction(): Locator {
 		return this.detailActions().locator('[data-testid="action-provide-feedback"]');
+	}
+
+	startAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-start"]');
+	}
+
+	archiveAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-archive"]');
+	}
+
+	startChildrenAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-start-children"]');
+	}
+
+	pauseAllAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-pause-all"]');
+	}
+
+	resumeAllAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-resume-all"]');
+	}
+
+	abortAllAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-abort-all"]');
+	}
+
+	/**
+	 * The DOM-based confirmation modal opened by destructive action-bar
+	 * buttons (abort, abort-all, retry-workflow, archive-of-non-terminal).
+	 * The legacy native `confirm()` dialogs were removed when the action
+	 * bar unified onto the registry-driven renderer.
+	 */
+	confirmModal(): Locator {
+		return this.page.locator(".confirm-modal");
+	}
+
+	confirmModalConfirm(): Locator {
+		return this.confirmModal().locator(".btn-primary");
+	}
+
+	confirmModalCancel(): Locator {
+		return this.confirmModal().locator(".btn-secondary");
 	}
 
 	autoModeToggle(): Locator {
