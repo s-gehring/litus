@@ -603,5 +603,3 @@ function renderFeedbackHistoryEntry(entry: FeedbackEntry): HTMLDivElement {
 
 	return row;
 }
-
-
