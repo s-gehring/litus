@@ -73,6 +73,7 @@ export class AutoArchiver {
 			const archivedEpicIds = new Set<string>();
 			for (const epic of epics) {
 				if (epic.archived) continue;
+				if (epic.autoArchiveExempt) continue;
 				if (!isTerminalEpic(epic.status)) continue;
 				if (!epic.completedAt) continue;
 				const completedMs = Date.parse(epic.completedAt);
@@ -87,6 +88,7 @@ export class AutoArchiver {
 			// Pass 2: archive standalone (non-epic-child) terminal workflows.
 			for (const w of workflows) {
 				if (w.archived) continue;
+				if (w.autoArchiveExempt) continue;
 				if (w.epicId !== null) continue;
 				if (!isTerminalWorkflow(w.status)) continue;
 				const updatedAtMs = Date.parse(w.updatedAt);
@@ -105,6 +107,7 @@ export class AutoArchiver {
 		const workflow = await loadWorkflowForArchive(workflowId, this.deps);
 		if (!workflow) return;
 		if (workflow.archived) return;
+		if (workflow.autoArchiveExempt) return;
 		if (workflow.epicId !== null) return;
 		if (!isTerminalWorkflow(workflow.status)) return;
 		const archivedAt = new Date().toISOString();

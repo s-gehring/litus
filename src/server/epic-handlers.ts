@@ -423,14 +423,20 @@ export const handleUnarchiveEpic: MessageHandler = async (ws, data, deps) => {
 
 	const affected: import("../types").Workflow[] = [];
 	try {
-		const epicSnapshot = { archived: epic.archived, archivedAt: epic.archivedAt };
+		const epicSnapshot = {
+			archived: epic.archived,
+			archivedAt: epic.archivedAt,
+			autoArchiveExempt: epic.autoArchiveExempt,
+		};
 		epic.archived = false;
 		epic.archivedAt = null;
+		epic.autoArchiveExempt = true;
 		try {
 			await deps.sharedEpicStore.save(epic);
 		} catch (err) {
 			epic.archived = epicSnapshot.archived;
 			epic.archivedAt = epicSnapshot.archivedAt;
+			epic.autoArchiveExempt = epicSnapshot.autoArchiveExempt;
 			throw err;
 		}
 		for (const childId of epic.workflowIds) {
@@ -440,10 +446,12 @@ export const handleUnarchiveEpic: MessageHandler = async (ws, data, deps) => {
 				archived: child.archived,
 				archivedAt: child.archivedAt,
 				updatedAt: child.updatedAt,
+				autoArchiveExempt: child.autoArchiveExempt,
 			};
 			child.archived = false;
 			child.archivedAt = null;
 			child.updatedAt = new Date().toISOString();
+			child.autoArchiveExempt = true;
 			try {
 				await deps.sharedStore.save(child);
 				affected.push(child);
@@ -451,6 +459,7 @@ export const handleUnarchiveEpic: MessageHandler = async (ws, data, deps) => {
 				child.archived = snapshot.archived;
 				child.archivedAt = snapshot.archivedAt;
 				child.updatedAt = snapshot.updatedAt;
+				child.autoArchiveExempt = snapshot.autoArchiveExempt;
 				throw err;
 			}
 		}
