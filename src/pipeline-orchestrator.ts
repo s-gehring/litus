@@ -3,8 +3,7 @@ import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { buildArtifactsPrompt } from "./artifacts-prompt";
 import { AuditLogger } from "./audit-logger";
-import { buildFixPrompt, gatherAllFailureLogs } from "./ci-fixer";
-import { allFailuresCancelled, type MonitorResult, startMonitoring } from "./ci-monitor";
+import { startMonitoring } from "./ci-monitor";
 import { type CiFlowOutcome, CiMergeFlowController } from "./ci-merge-flow-controller";
 import { CIMonitorCoordinator } from "./ci-monitor-coordinator";
 import { type ClaudeMdGuardResult, guardClaudeMd as defaultGuardClaudeMd } from "./claude-md-guard";
@@ -228,9 +227,6 @@ export class PipelineOrchestrator {
 	private currentAuditRunId: string | null = null;
 	private pipelineName: string | null = null;
 	private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-	private mergePrFn: typeof defaultMergePr;
-	private resolveConflictsFn: typeof defaultResolveConflicts;
-	private syncRepoFn: typeof defaultSyncRepo;
 	private runSetupChecksFn: (targetDir: string) => Promise<SetupResult>;
 	private ensureSpeckitSkillsFn: typeof defaultEnsureSpeckitSkills;
 	private appendProjectClaudeMdFn: (specWorktree: string) => Promise<AppendResult>;
@@ -251,7 +247,8 @@ export class PipelineOrchestrator {
 		this.engine = deps?.engine ?? new WorkflowEngine();
 		this.cliRunner = deps?.cliRunner ?? new CLIRunner();
 		this.stepRunner = new CLIStepRunner(this.cliRunner);
-		const discoverPrUrlFn = deps?.discoverPrUrl ?? ((w: Workflow) => this.discoverPrUrl(w));
+		const discoverPrUrlFn =
+			deps?.discoverPrUrl ?? ((w: Workflow) => this.ciMergeFlow.discoverPrUrl(w));
 		this.ciMonitor = new CIMonitorCoordinator(startMonitoring, discoverPrUrlFn);
 		this.questionDetector = deps?.questionDetector ?? new QuestionDetector();
 		this.reviewClassifier = deps?.reviewClassifier ?? new ReviewClassifier();
@@ -259,9 +256,6 @@ export class PipelineOrchestrator {
 		this.auditLogger = deps?.auditLogger ?? new AuditLogger();
 		this.store = deps?.workflowStore ?? new WorkflowStore();
 		this.managedRepoStore = deps?.managedRepoStore ?? null;
-		this.mergePrFn = deps?.mergePr ?? defaultMergePr;
-		this.resolveConflictsFn = deps?.resolveConflicts ?? defaultResolveConflicts;
-		this.syncRepoFn = deps?.syncRepo ?? defaultSyncRepo;
 		this.runSetupChecksFn = deps?.runSetupChecks ?? defaultRunSetupChecks;
 		this.ensureSpeckitSkillsFn = deps?.ensureSpeckitSkills ?? defaultEnsureSpeckitSkills;
 		this.appendProjectClaudeMdFn = deps?.appendProjectClaudeMd ?? defaultAppendProjectClaudeMd;
@@ -301,9 +295,9 @@ export class PipelineOrchestrator {
 		this.callbacks = callbacks;
 		this.ciMergeFlow = new CiMergeFlowController({
 			ciMonitor: this.ciMonitor,
-			mergePr: this.mergePrFn,
-			resolveConflicts: this.resolveConflictsFn,
-			syncRepo: this.syncRepoFn,
+			mergePr: deps?.mergePr ?? defaultMergePr,
+			resolveConflicts: deps?.resolveConflicts ?? defaultResolveConflicts,
+			syncRepo: deps?.syncRepo ?? defaultSyncRepo,
 			discoverPrUrl: discoverPrUrlFn,
 			stepOutput: (id, msg) => this.handleStepOutput(id, msg),
 			engine: this.engine,
@@ -442,7 +436,7 @@ export class PipelineOrchestrator {
 					return;
 				}
 				if (normalized === "retry" || normalized === "") {
-					this.runMonitorCi(workflow);
+					this.dispatchCiFlow(workflow, this.ciMergeFlow.runMonitorCi(workflow));
 					return;
 				}
 				// Any other text is treated as guidance for the Fixing CI agent.
@@ -451,7 +445,7 @@ export class PipelineOrchestrator {
 				// answer attached to the usual failure context.
 				workflow.ciCycle.userFixGuidance = answer.trim();
 				this.persistWorkflow(workflow);
-				this.advanceToFixCi(workflow);
+				this.applyCiFlowOutcome(workflow, this.ciMergeFlow.advanceToFixCi());
 				return;
 			}
 
@@ -505,7 +499,7 @@ export class PipelineOrchestrator {
 			const step = workflow.steps[workflow.currentStepIndex];
 			if (step.name !== STEP.MONITOR_CI) return;
 
-			this.runMonitorCi(workflow);
+			this.dispatchCiFlow(workflow, this.ciMergeFlow.runMonitorCi(workflow));
 		});
 	}
 
@@ -601,23 +595,23 @@ export class PipelineOrchestrator {
 				workflow.ciCycle.attempt = 0;
 				workflow.ciCycle.monitorStartedAt = null;
 				workflow.ciCycle.maxAttempts = configStore.get().limits.ciFixMaxAttempts;
-				this.runMonitorCi(workflow);
+				this.dispatchCiFlow(workflow, this.ciMergeFlow.runMonitorCi(workflow));
 				return;
 			}
 
 			if (step.name === STEP.FIX_CI) {
-				this.runFixCi(workflow);
+				this.dispatchCiFlow(workflow, this.ciMergeFlow.runFixCi(workflow));
 				return;
 			}
 
 			if (step.name === STEP.MERGE_PR) {
 				workflow.mergeCycle.attempt = 0;
-				this.runMergePr(workflow);
+				this.dispatchCiFlow(workflow, this.ciMergeFlow.runMergePr(workflow));
 				return;
 			}
 
 			if (step.name === STEP.SYNC_REPO) {
-				this.runSyncRepo(workflow);
+				this.dispatchCiFlow(workflow, this.ciMergeFlow.runSyncRepo(workflow));
 				return;
 			}
 
@@ -697,9 +691,9 @@ export class PipelineOrchestrator {
 			const cwd = requireWorktreePath(workflow);
 
 			if (step.name === STEP.MONITOR_CI) {
-				this.runMonitorCi(workflow);
+				this.dispatchCiFlow(workflow, this.ciMergeFlow.runMonitorCi(workflow));
 			} else if (step.name === STEP.FIX_CI) {
-				this.runFixCi(workflow);
+				this.dispatchCiFlow(workflow, this.ciMergeFlow.runFixCi(workflow));
 			} else if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
 				if (step.sessionId) {
 					const fiConfig = configStore.get();
@@ -727,9 +721,9 @@ export class PipelineOrchestrator {
 				}
 			} else if (step.name === STEP.MERGE_PR) {
 				workflow.mergeCycle.attempt = 0;
-				this.runMergePr(workflow);
+				this.dispatchCiFlow(workflow, this.ciMergeFlow.runMergePr(workflow));
 			} else if (step.name === STEP.SYNC_REPO) {
-				this.runSyncRepo(workflow);
+				this.dispatchCiFlow(workflow, this.ciMergeFlow.runSyncRepo(workflow));
 			} else if (step.name === STEP.ARTIFACTS) {
 				// Don't resume the prior artifacts session — its timer and output
 				// dir state are gone. Restart the step from scratch with a fresh
@@ -1130,20 +1124,7 @@ export class PipelineOrchestrator {
 		}
 
 		// no changes / agent-reported failed → rewind to merge-pr pause.
-		this.routeToMergePrPause(workflow);
-	}
-
-	/**
-	 * Rewind currentStepIndex to merge-pr and re-enter startStep, which will
-	 * pause in manual mode (the same state the user was in before submitting).
-	 */
-	private routeToMergePrPause(workflow: Workflow): void {
-		const mergeIdx = this.requireStepIndex(workflow, STEP.MERGE_PR);
-		const mergeStep = workflow.steps[mergeIdx];
-		this.stepRunner.resetStep(mergeStep, "pending");
-		workflow.currentStepIndex = mergeIdx;
-		this.persistWorkflow(workflow);
-		this.startStep(workflow);
+		this.applyCiFlowOutcome(workflow, this.ciMergeFlow.routeToMergePrPause());
 	}
 
 	private startStep(workflow: Workflow): void {
@@ -1173,12 +1154,12 @@ export class PipelineOrchestrator {
 		}
 
 		if (step.name === STEP.MONITOR_CI) {
-			this.runMonitorCi(workflow);
+			this.dispatchCiFlow(workflow, this.ciMergeFlow.runMonitorCi(workflow));
 			return;
 		}
 
 		if (step.name === STEP.FIX_CI) {
-			this.runFixCi(workflow);
+			this.dispatchCiFlow(workflow, this.ciMergeFlow.runFixCi(workflow));
 			return;
 		}
 
@@ -1215,12 +1196,12 @@ export class PipelineOrchestrator {
 				this.callbacks.onStateChange(workflow.id);
 				return;
 			}
-			this.runMergePr(workflow);
+			this.dispatchCiFlow(workflow, this.ciMergeFlow.runMergePr(workflow));
 			return;
 		}
 
 		if (step.name === STEP.SYNC_REPO) {
-			this.runSyncRepo(workflow);
+			this.dispatchCiFlow(workflow, this.ciMergeFlow.runSyncRepo(workflow));
 			return;
 		}
 
@@ -1344,7 +1325,7 @@ export class PipelineOrchestrator {
 			if (/already exists/i.test(prRes.stderr) || /already exists/i.test(prRes.stdout)) {
 				url = extractPrUrl(prRes.stderr) ?? extractPrUrl(prRes.stdout);
 				if (!url) {
-					url = await this.discoverPrUrl(workflow);
+					url = await this.ciMergeFlow.discoverPrUrl(workflow);
 				}
 				if (!url) {
 					throw new Error(
@@ -1630,167 +1611,79 @@ export class PipelineOrchestrator {
 		}
 	}
 
-	private applyCiFlowOutcome(workflow: Workflow, outcome: CiFlowOutcome): void {
-		// TODO US1 — implemented in T021
-		void workflow;
-		void outcome;
+	private dispatchCiFlow(workflow: Workflow, work: Promise<CiFlowOutcome>): void {
+		work
+			.then((outcome) => this.applyCiFlowOutcome(workflow, outcome))
+			.catch((err) => this.handleStepError(workflow.id, toErrorMessage(err)));
 	}
 
-	private runMonitorCi(workflow: Workflow): void {
-		if (!workflow.prUrl) {
-			// Try to discover PR URL from branch
-			this.ciMonitor
-				.discoverPrUrl(workflow)
-				.then((url) => {
-					// The user may have paused while discoverPrUrl awaited. Without this
-					// guard we would start a fresh CI polling session whose AbortController
-					// the prior pause() cannot reach.
-					const current = this.getActiveWorkflow(workflow.id);
-					if (!current || current.status !== "running") {
-						logger.info(
-							`[pipeline] discoverPrUrl continuation skipped for workflow ${workflow.id}: status=${current?.status ?? "missing"}`,
-						);
-						return;
-					}
-					if (!url) {
-						this.handleStepError(workflow.id, "No PR URL found — cannot monitor CI checks");
-						return;
-					}
-					current.prUrl = url;
-					this.persistWorkflow(current);
-					this.startCiMonitoring(current);
-				})
-				.catch((err) => {
-					this.handleStepError(workflow.id, `Failed to discover PR URL: ${toErrorMessage(err)}`);
-				});
-			return;
-		}
-
-		this.startCiMonitoring(workflow);
-	}
-
-	private startCiMonitoring(workflow: Workflow): void {
-		workflow.ciCycle.monitorStartedAt =
-			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
+	private rewindToStep(workflow: Workflow, name: PipelineStepName): void {
+		const idx = this.requireStepIndex(workflow, name);
+		this.stepRunner.resetStep(workflow.steps[idx], "pending");
+		workflow.currentStepIndex = idx;
 		this.persistWorkflow(workflow);
-
-		this.ciMonitor
-			.startMonitoring(workflow, (msg) => this.handleStepOutput(workflow.id, msg))
-			.then((result) => this.handleMonitorResult(workflow.id, result))
-			.catch((err) => {
-				this.handleStepError(workflow.id, `CI monitoring failed: ${toErrorMessage(err)}`);
-			});
-	}
-
-	private async discoverPrUrl(workflow: Workflow): Promise<string | null> {
-		const cwd = workflow.worktreePath ?? workflow.targetRepository;
-		if (!cwd) return null;
-
-		const branch = workflow.featureBranch ?? workflow.worktreeBranch;
-		const result = await gitSpawn(
-			["gh", "pr", "list", "--head", branch, "--json", "url", "--limit", "1"],
-			{ cwd, extra: { branch } },
-		);
-		if (result.code !== 0) return null;
-
-		try {
-			const parsed = JSON.parse(result.stdout);
-			if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].url) {
-				return parsed[0].url;
-			}
-		} catch {
-			// ignore parse errors
-		}
-		return null;
-	}
-
-	private handleMonitorResult(workflowId: string, result: MonitorResult): void {
-		const workflow = this.getActiveWorkflow(workflowId);
-		if (!workflow) return;
-
-		// If workflow was paused/aborted while monitoring, ignore the result
-		if (workflow.status !== "running") return;
-
-		if (result.passed) {
-			this.advanceAfterStep(workflowId);
-			return;
-		}
-
-		workflow.ciCycle.lastCheckResults = result.results;
-
-		// Refresh from config so limit changes take effect on the next monitor
-		// result rather than being frozen at workflow creation time.
-		workflow.ciCycle.maxAttempts = configStore.get().limits.ciFixMaxAttempts;
-
-		// If max attempts already reached, give up
-		if (workflow.ciCycle.attempt >= workflow.ciCycle.maxAttempts) {
-			const msg = result.timedOut
-				? `CI monitoring timed out after ${workflow.ciCycle.attempt} fix attempts`
-				: `CI checks still failing after ${workflow.ciCycle.attempt} fix attempts`;
-			this.handleStepError(workflowId, msg);
-			return;
-		}
-
-		if (allFailuresCancelled(result.results)) {
-			const cancelled = result.results.filter((r) => r.bucket === "cancel");
-			const names = cancelled.map((r) => r.name).join(", ");
-			this.pauseForQuestion(workflowId, {
-				id: `ci-cancelled-${Date.now()}`,
-				content: `All failed CI checks were cancelled (${names}). This may indicate GitHub Actions usage limits. Answer "retry" to re-run monitoring, "abort" to stop the workflow, or type any other text to hand the checks off to the Fixing CI agent together with your note as guidance.`,
-				detectedAt: new Date().toISOString(),
-			});
-			return;
-		}
-
-		this.advanceToFixCi(workflow);
-	}
-
-	private runFixCi(workflow: Workflow): void {
-		if (!workflow.prUrl) {
-			this.handleStepError(workflow.id, "No PR URL found — cannot fix CI");
-			return;
-		}
-
-		const failedChecks = workflow.ciCycle.lastCheckResults.filter((r) => r.bucket !== "pass");
-
-		gatherAllFailureLogs(workflow.prUrl, failedChecks)
-			.then((logs) => {
-				workflow.ciCycle.failureLogs = logs;
-				const prUrl = workflow.prUrl as string;
-				const guidance = workflow.ciCycle.userFixGuidance;
-				let prompt = buildFixPrompt(prUrl, logs);
-				if (guidance) {
-					prompt = `## USER GUIDANCE (authoritative — the user provided this after monitoring flagged the failing checks)\n\n${guidance}\n\n---\n\n${prompt}`;
-				}
-				// Consume the guidance so subsequent fix attempts in this cycle
-				// don't keep prepending the same note.
-				workflow.ciCycle.userFixGuidance = null;
-				this.persistWorkflow(workflow);
-
-				const cwd = requireWorktreePath(workflow);
-				const config = configStore.get();
-				this.runStep(workflow, prompt, cwd, config.models.ciFix, config.efforts.ciFix);
-			})
-			.catch((err) => {
-				this.handleStepError(
-					workflow.id,
-					`Failed to gather CI failure logs: ${toErrorMessage(err)}`,
-				);
-			});
-	}
-
-	private advanceToFixCi(workflow: Workflow): void {
-		const step = workflow.steps[workflow.currentStepIndex];
-		step.status = "completed";
-		step.completedAt = new Date().toISOString();
-		step.pid = null;
-		workflow.updatedAt = new Date().toISOString();
-		this.flushPersistDebounce();
-		this.persistWorkflow(workflow);
-
-		const fixCiIndex = workflow.steps.findIndex((s) => s.name === STEP.FIX_CI);
-		workflow.currentStepIndex = fixCiIndex;
 		this.startStep(workflow);
+	}
+
+	private applyCiFlowOutcome(workflow: Workflow, outcome: CiFlowOutcome): void {
+		const current = this.getActiveWorkflow(workflow.id);
+		if (!current || current.status !== "running") {
+			logger.info(
+				`[pipeline] applyCiFlowOutcome skipped for ${workflow.id}: status=${current?.status ?? "missing"}`,
+			);
+			return;
+		}
+
+		switch (outcome.kind) {
+			case "advance":
+				this.advanceAfterStep(current.id);
+				return;
+			case "advanceToFixCi": {
+				const step = current.steps[current.currentStepIndex];
+				step.status = "completed";
+				step.completedAt = new Date().toISOString();
+				step.pid = null;
+				current.updatedAt = new Date().toISOString();
+				this.flushPersistDebounce();
+				this.persistWorkflow(current);
+				current.currentStepIndex = this.requireStepIndex(current, STEP.FIX_CI);
+				this.startStep(current);
+				return;
+			}
+			case "routeBackToMonitor":
+				if (outcome.incrementMergeAttempt) current.mergeCycle.attempt++;
+				current.ciCycle.attempt++;
+				current.ciCycle.monitorStartedAt = null;
+				current.ciCycle.failureLogs = [];
+				this.rewindToStep(current, STEP.MONITOR_CI);
+				return;
+			case "routeToMergePrPause":
+				this.rewindToStep(current, STEP.MERGE_PR);
+				return;
+			case "retryMergeAfterAlreadyUpToDate":
+				this.dispatchCiFlow(current, this.ciMergeFlow.retryMergeAfterAlreadyUpToDate(current));
+				return;
+			case "pauseForQuestion":
+				this.pauseForQuestion(current.id, outcome.question);
+				return;
+			case "runCliStep":
+				current.ciCycle.failureLogs = outcome.failureLogs;
+				if (outcome.clearUserFixGuidance) current.ciCycle.userFixGuidance = null;
+				this.persistWorkflow(current);
+				this.runStep(
+					current,
+					outcome.prompt,
+					requireWorktreePath(current),
+					outcome.model,
+					outcome.effort,
+				);
+				return;
+			case "error":
+				this.handleStepError(current.id, outcome.message);
+				return;
+			case "done":
+				return;
+		}
 	}
 
 	private runStep(
@@ -2230,7 +2123,7 @@ export class PipelineOrchestrator {
 					return;
 				}
 				case "route-back-to-monitor":
-					this.routeBackToMonitor(workflow);
+					this.applyCiFlowOutcome(workflow, this.ciMergeFlow.routeBackToMonitor());
 					return;
 				case "route-to-sync-repo": {
 					workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.SYNC_REPO);
@@ -2309,167 +2202,6 @@ export class PipelineOrchestrator {
 			workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.ARTIFACTS);
 			this.startStep(workflow);
 		}
-	}
-
-	/**
-	 * Handle the case where `resolveConflicts` reported that the local tree
-	 * already contained origin/master but `gh pr merge` had still reported a
-	 * conflict. Typically this is stale GitHub mergeability state: retry the
-	 * merge exactly once without consuming a `mergeCycle.attempt`, and surface
-	 * a diagnostic error if it still reports a conflict.
-	 */
-	private retryMergeAfterAlreadyUpToDate(workflow: Workflow): void {
-		if (!workflow.prUrl) {
-			this.handleStepError(workflow.id, "No PR URL found — cannot retry merge");
-			return;
-		}
-		const cwd = requireWorktreePath(workflow);
-		this.handleStepOutput(
-			workflow.id,
-			"Local tree already up-to-date with master, but GitHub reported a conflict. Retrying merge in case mergeability state was stale.",
-		);
-		this.mergePrFn(workflow.prUrl, cwd, (msg) => this.handleStepOutput(workflow.id, msg))
-			.then((retryResult) => {
-				const latest = this.getActiveWorkflow(workflow.id);
-				if (!latest || latest.status !== "running") return;
-				if (retryResult.merged || retryResult.alreadyMerged) {
-					this.advanceAfterStep(workflow.id);
-					return;
-				}
-				if (retryResult.conflict) {
-					this.handleStepError(
-						workflow.id,
-						"GitHub continues to report a merge conflict even though the local branch already contains origin/master. Resolve the PR manually or investigate squash-merge path-level conflicts.",
-					);
-					return;
-				}
-				this.handleStepError(workflow.id, retryResult.error || "PR merge retry failed");
-			})
-			.catch((err) => {
-				this.handleStepError(workflow.id, `PR merge retry failed: ${toErrorMessage(err)}`);
-			});
-	}
-
-	private routeBackToMonitor(workflow: Workflow): void {
-		workflow.ciCycle.attempt++;
-		workflow.ciCycle.monitorStartedAt = null;
-		workflow.ciCycle.failureLogs = [];
-
-		const monitorIndex = this.requireStepIndex(workflow, STEP.MONITOR_CI);
-		const monitorStep = workflow.steps[monitorIndex];
-		this.stepRunner.resetStep(monitorStep, "pending");
-
-		workflow.currentStepIndex = monitorIndex;
-		this.persistWorkflow(workflow);
-		this.startStep(workflow);
-	}
-
-	private runMergePr(workflow: Workflow): void {
-		if (!workflow.prUrl) {
-			this.handleStepError(workflow.id, "No PR URL found — cannot merge PR");
-			return;
-		}
-
-		// Initialize merge cycle on first entry
-		if (workflow.mergeCycle.attempt === 0) {
-			workflow.mergeCycle.attempt = 1;
-			this.persistWorkflow(workflow);
-		}
-
-		const cwd = requireWorktreePath(workflow);
-
-		this.mergePrFn(workflow.prUrl, cwd, (msg) => this.handleStepOutput(workflow.id, msg))
-			.then((result) => this.handleMergeResult(workflow.id, result))
-			.catch((err) => {
-				this.handleStepError(workflow.id, `PR merge failed: ${toErrorMessage(err)}`);
-			});
-	}
-
-	private handleMergeResult(workflowId: string, result: import("./types").MergeResult): void {
-		const workflow = this.getActiveWorkflow(workflowId);
-		if (!workflow) return;
-
-		// If the user paused/aborted while mergePr was in-flight, do not advance
-		// or route back to monitor-ci. Otherwise the async merge completion would
-		// silently restart the pipeline behind a paused workflow status.
-		if (workflow.status !== "running") {
-			logger.info(
-				`[pipeline] handleMergeResult skipped for workflow ${workflowId}: status=${workflow.status}`,
-			);
-			return;
-		}
-
-		if (result.merged || result.alreadyMerged) {
-			// Success — advance to sync-repo
-			this.advanceAfterStep(workflowId);
-			return;
-		}
-
-		if (result.conflict) {
-			// Check if merge cycle exhausted
-			if (workflow.mergeCycle.attempt >= workflow.mergeCycle.maxAttempts) {
-				this.handleStepError(
-					workflowId,
-					`Merge conflicts persist after ${workflow.mergeCycle.attempt} resolution attempts. Resolve the conflict manually or retry with ${workflow.mergeCycle.maxAttempts} more attempts.`,
-				);
-				return;
-			}
-
-			// Resolve conflicts and loop back to monitor-ci
-			const cwd = requireWorktreePath(workflow);
-			this.resolveConflictsFn(cwd, workflow.summary || workflow.specification, (msg) =>
-				this.handleStepOutput(workflow.id, msg),
-			)
-				.then((resolution) => {
-					// Re-check status: the user may have paused while conflict resolution ran.
-					// Without this guard, routeBackToMonitor would start a fresh CI polling
-					// session with a new AbortController that pause() cannot reach.
-					const current = this.getActiveWorkflow(workflowId);
-					if (!current || current.status !== "running") {
-						logger.info(
-							`[pipeline] conflict-resolution continuation skipped for workflow ${workflowId}: status=${current?.status ?? "missing"}`,
-						);
-						return;
-					}
-					if (resolution?.kind === "already-up-to-date") {
-						this.retryMergeAfterAlreadyUpToDate(current);
-						return;
-					}
-					current.mergeCycle.attempt++;
-					this.routeBackToMonitor(current);
-				})
-				.catch((err) => {
-					this.handleStepError(workflowId, `Conflict resolution failed: ${toErrorMessage(err)}`);
-				});
-			return;
-		}
-
-		// Non-conflict error
-		this.handleStepError(workflowId, result.error || "PR merge failed");
-	}
-
-	private runSyncRepo(workflow: Workflow): void {
-		const targetRepo = requireTargetRepository(workflow);
-
-		this.syncRepoFn(targetRepo, workflow.worktreePath, this.engine, workflow.id, (msg) =>
-			this.handleStepOutput(workflow.id, msg),
-		)
-			.then((result) => {
-				if (result.worktreeRemoved) {
-					workflow.worktreePath = null;
-				}
-				if (result.warning) {
-					this.handleStepOutput(workflow.id, `Warning: ${result.warning}`);
-				}
-				// sync-repo always completes the workflow
-				this.advanceAfterStep(workflow.id);
-			})
-			.catch((err) => {
-				// Even on error, sync-repo completes (PR is already merged)
-				const msg = toErrorMessage(err);
-				this.handleStepOutput(workflow.id, `Warning: sync failed: ${msg}`);
-				this.advanceAfterStep(workflow.id);
-			});
 	}
 
 	/**
@@ -2763,7 +2495,7 @@ export class PipelineOrchestrator {
 			workflow.feedbackPreRunHead = null;
 			workflow.updatedAt = new Date().toISOString();
 			this.callbacks.onError(workflowId, error);
-			this.routeToMergePrPause(workflow);
+			this.applyCiFlowOutcome(workflow, this.ciMergeFlow.routeToMergePrPause());
 			return;
 		}
 
