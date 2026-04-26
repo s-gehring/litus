@@ -172,15 +172,14 @@ async function runCLIStream(
 	const exitCode = await proc.exited;
 	if (onKillRef) onKillRef.current = null;
 
-	const stderrStream = proc.stderr;
 	const stderr =
-		stderrStream && typeof stderrStream !== "number"
-			? await new Response(stderrStream as ReadableStream).text()
+		proc.stderr && typeof proc.stderr !== "number"
+			? (await new Response(proc.stderr as ReadableStream).text()).trim()
 			: "";
 
 	logger.info(`[epic] Stream done: accumulatedText=${accumulatedText.length} chars`);
 
-	return { accumulatedText, sessionId, exitCode, timedOut, stderr: stderr.trim() };
+	return { accumulatedText, sessionId, exitCode, timedOut, stderr };
 }
 
 const JSON_FIX_PROMPT =
