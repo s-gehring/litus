@@ -23,13 +23,23 @@ async function run(cmd: string[], cwd: string): Promise<number> {
 	return await p.exited;
 }
 
+async function runCapture(cmd: string[], cwd: string): Promise<{ code: number; stdout: string }> {
+	const p = Bun.spawn(cmd, { cwd, env: GIT_ENV, stdout: "pipe", stderr: "ignore" });
+	const code = await p.exited;
+	const stdout = await new Response(p.stdout).text();
+	return { code, stdout };
+}
+
 interface RepoFixture {
 	main: string;
 	spec: string;
 	cleanup: () => Promise<void>;
 }
 
-async function makeRepo(projectClaudeMd: string | null): Promise<RepoFixture> {
+async function makeRepo(
+	projectClaudeMd: string | null,
+	opts?: { commitClaudeMdInMain?: boolean },
+): Promise<RepoFixture> {
 	const main = mkdtempSync(join(tmpdir(), "crab-pipe-main-"));
 	const wtRoot = mkdtempSync(join(tmpdir(), "crab-pipe-wt-"));
 	const spec = join(wtRoot, "spec");
@@ -56,6 +66,12 @@ async function makeRepo(projectClaudeMd: string | null): Promise<RepoFixture> {
 		if ((await run(["git", "add", "."], main)) !== 0) throw new Error("git add");
 		if ((await run(["git", "commit", "-m", "init"], main)) !== 0) throw new Error("git commit");
 		if (projectClaudeMd !== null) writeFileSync(join(main, "CLAUDE.md"), projectClaudeMd);
+		if (opts?.commitClaudeMdInMain && projectClaudeMd !== null) {
+			if ((await run(["git", "add", "CLAUDE.md"], main)) !== 0)
+				throw new Error("git add CLAUDE.md");
+			if ((await run(["git", "commit", "-m", "add CLAUDE.md"], main)) !== 0)
+				throw new Error("git commit CLAUDE.md");
+		}
 		if ((await run(["git", "worktree", "add", "--detach", spec], main)) !== 0)
 			throw new Error("git worktree add");
 		return { main, spec, cleanup };
@@ -287,6 +303,10 @@ describe("pipeline spec-setup CLAUDE.md append — integration", () => {
 				wf,
 			);
 			await until(() => outputs.some((o) => o.text.includes("Could not resolve main worktree")));
+			// Wait for the final skip-worktree step to finish so the trailing
+			// `git update-index` subprocess is not still holding handles when
+			// `rmSync` runs (Windows EBUSY).
+			await until(() => outputs.some((o) => o.text.includes("CLAUDE.md not tracked in index")));
 
 			expect(errors.length).toBe(0);
 			// Generated file untouched.
@@ -313,6 +333,56 @@ describe("pipeline spec-setup CLAUDE.md append — integration", () => {
 			await until(() => errors.length > 0, { timeoutMs: 5000 });
 
 			expect(errors[0].text.startsWith("Failed to initialize spec-kit:")).toBe(true);
+		} finally {
+			await fx.cleanup();
+		}
+	});
+
+	test("spec workflow marks CLAUDE.md skip-worktree → modifications never reach the index", async () => {
+		// CLAUDE.md committed in main → worktree's index has it tracked,
+		// reproducing the cca0db1 leak scenario.
+		const projectBytes = "# Project\n\nrules.";
+		const fx = await makeRepo(projectBytes, { commitClaudeMdInMain: true });
+		try {
+			// The worktree starts with the committed CLAUDE.md; the merger will
+			// then append to it.
+			const wf = makeWorkflow("spec", fx.spec);
+			const { orch, outputs } = makeOrch(wf);
+			(orch as unknown as { initSpeckitInWorktree: (w: Workflow) => void }).initSpeckitInWorktree(
+				wf,
+			);
+			await until(() => outputs.some((o) => o.text.includes("CLAUDE.md marked skip-worktree")));
+
+			// The assembled CLAUDE.md is on disk (merger appended), but the
+			// skip-worktree flag must hide it from `git status` and `git add`.
+			const status = await runCapture(["git", "status", "--porcelain"], fx.spec);
+			expect(status.code).toBe(0);
+			expect(status.stdout).not.toContain("CLAUDE.md");
+
+			expect(await run(["git", "add", "-A"], fx.spec)).toBe(0);
+			const diffCached = await runCapture(["git", "diff", "--cached", "--name-only"], fx.spec);
+			expect(diffCached.code).toBe(0);
+			expect(diffCached.stdout).not.toContain("CLAUDE.md");
+		} finally {
+			await fx.cleanup();
+		}
+	});
+
+	test("spec workflow on a project without committed CLAUDE.md → skip-worktree-not-applicable notice", async () => {
+		// Main has no CLAUDE.md → worktree has nothing tracked. The orchestrator
+		// must surface a non-error notice and continue.
+		const fx = await makeRepo(null);
+		try {
+			// Provide a generated CLAUDE.md in the spec worktree so the merger
+			// has a file to operate on (returns "no-project" since main lacks one).
+			writeFileSync(join(fx.spec, "CLAUDE.md"), "# Speckit\n");
+			const wf = makeWorkflow("spec", fx.spec);
+			const { orch, outputs, errors } = makeOrch(wf);
+			(orch as unknown as { initSpeckitInWorktree: (w: Workflow) => void }).initSpeckitInWorktree(
+				wf,
+			);
+			await until(() => outputs.some((o) => o.text.includes("CLAUDE.md not tracked in index")));
+			expect(errors.length).toBe(0);
 		} finally {
 			await fx.cleanup();
 		}

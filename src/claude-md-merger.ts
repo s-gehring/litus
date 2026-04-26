@@ -10,6 +10,10 @@ export interface AppendResult {
 	outcome: "appended" | "skipped" | "no-project" | "no-main";
 }
 
+export interface SkipWorktreeResult {
+	outcome: "marked" | "not-tracked";
+}
+
 /** Resolve the main worktree root for a given spec-worktree path.
  *  Returns null if resolution fails (not a git repo, orphaned, etc.). */
 export async function resolveMainWorktreeRoot(specWorktree: string): Promise<string | null> {
@@ -84,4 +88,31 @@ export async function appendProjectClaudeMd(specWorktree: string): Promise<Appen
 
 	await atomicWrite(generatedPath, generated + suffix);
 	return { outcome: "appended" };
+}
+
+/** Mark CLAUDE.md as `--skip-worktree` in the spec worktree's index, so that
+ *  the working-tree version (assembled by `appendProjectClaudeMd`) is invisible
+ *  to `git status`/`git add`/`git commit -a`. This prevents the assembled
+ *  CLAUDE.md from ever being committed on the spec branch — defense in depth
+ *  alongside `claude-md-guard.ts`, which only catches modifications that
+ *  *already* reached HEAD.
+ *
+ *  Returns `{ outcome: "marked" }` when the flag is set, or
+ *  `{ outcome: "not-tracked" }` when CLAUDE.md is absent from the index (the
+ *  project's master had no CLAUDE.md to inherit from). The caller logs but
+ *  does not fail in the latter case — there is nothing tracked to leak. */
+export async function markClaudeMdSkipWorktree(specWorktree: string): Promise<SkipWorktreeResult> {
+	const result = await gitSpawn(["git", "update-index", "--skip-worktree", "CLAUDE.md"], {
+		cwd: specWorktree,
+	});
+	if (result.code === 0) return { outcome: "marked" };
+
+	// `git update-index --skip-worktree` exits non-zero when the path is not
+	// already tracked in the index. That is the only expected failure mode in
+	// our flow (worktree just created from master that lacks CLAUDE.md). Any
+	// other stderr would still surface here for diagnosis.
+	logger.info(
+		`[claude-md-merger] skip-worktree not applied — CLAUDE.md not in index (exit ${result.code}): ${result.stderr}`,
+	);
+	return { outcome: "not-tracked" };
 }

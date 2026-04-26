@@ -201,6 +201,8 @@ describe("workflow-active-invocation integration", () => {
 				optionalWarnings: [],
 			}),
 			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+			appendProjectClaudeMd: async () => ({ outcome: "no-project" as const }),
+			markClaudeMdSkipWorktree: async () => ({ outcome: "not-tracked" as const }),
 			checkoutMaster: async () => ({ code: 0, stderr: "" }),
 			getGitHead: async () => "pre-head",
 			detectNewCommits: async () => [],
