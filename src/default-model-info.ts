@@ -1,15 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { runClaude } from "./claude-spawn";
+import { defaultModelCacheFile } from "./litus-paths";
 import { logger } from "./logger";
 
 export interface DefaultModelInfo {
 	modelId: string;
 	displayName: string;
 }
-
-const CACHE_PATH = join(homedir(), ".litus", "default-model.json");
 
 const DETECTION_PROMPT = `Respond with ONLY a single JSON object (no markdown, no explanation) containing exactly these two string fields:
 - "modelId": your exact model ID (e.g. "claude-opus-4-7")
@@ -20,8 +18,9 @@ const listeners = new Set<(info: DefaultModelInfo) => void>();
 
 function loadFromDisk(): DefaultModelInfo | null {
 	try {
-		if (!existsSync(CACHE_PATH)) return null;
-		const parsed = JSON.parse(readFileSync(CACHE_PATH, "utf-8"));
+		const cachePath = defaultModelCacheFile();
+		if (!existsSync(cachePath)) return null;
+		const parsed = JSON.parse(readFileSync(cachePath, "utf-8"));
 		if (
 			parsed &&
 			typeof parsed.modelId === "string" &&
@@ -39,8 +38,9 @@ function loadFromDisk(): DefaultModelInfo | null {
 
 function saveToDisk(info: DefaultModelInfo): void {
 	try {
-		mkdirSync(dirname(CACHE_PATH), { recursive: true });
-		writeFileSync(CACHE_PATH, JSON.stringify(info, null, 2));
+		const cachePath = defaultModelCacheFile();
+		mkdirSync(dirname(cachePath), { recursive: true });
+		writeFileSync(cachePath, JSON.stringify(info, null, 2));
 	} catch (err) {
 		logger.warn("[default-model] Failed to cache default model:", err);
 	}

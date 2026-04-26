@@ -10,13 +10,13 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import {
 	type ArtifactsManifest,
 	type ManifestParseError,
 	parseArtifactsManifest,
 } from "./artifacts-manifest";
+import { artifactsDir } from "./litus-paths";
 import { logger } from "./logger";
 import type { ArtifactDescriptor, ArtifactListResponse, PipelineStepName, Workflow } from "./types";
 
@@ -101,7 +101,7 @@ export function getSpecsRoot(
  * Survives worktree deletion so archived workflows retain their artifacts.
  */
 export function getArtifactsRoot(workflowId: string): string {
-	return join(homedir(), ".litus", "artifacts", workflowId);
+	return artifactsDir(workflowId);
 }
 
 function ordinalSegment(runOrdinal: number | null): string {
