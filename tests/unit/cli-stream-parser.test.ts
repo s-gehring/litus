@@ -304,9 +304,17 @@ describe("parseClaudeStream", () => {
 			expect(outputs).toEqual(["abc", "done"]);
 		});
 
-		test("does not emit onText when result is non-string", async () => {
+		test("flushes pending delta but emits no extra onText when result is non-string (B-6)", async () => {
+			// Asserts both halves of B-6: the internal delta flush still fires
+			// (so the buffered "abc" reaches onText), but the non-string `result`
+			// itself produces no additional onText invocation.
 			const outputs: string[] = [];
-			const stream = createReadableStream(ndjson([{ type: "result", result: 42 }]));
+			const stream = createReadableStream(
+				ndjson([
+					{ type: "content_block_delta", delta: { text: "abc" } },
+					{ type: "result", result: 42 },
+				]),
+			);
 
 			await parseClaudeStream(stream, {
 				onText: (t) => {
@@ -316,7 +324,7 @@ describe("parseClaudeStream", () => {
 				onSessionId: () => {},
 			});
 
-			expect(outputs).toEqual([]);
+			expect(outputs).toEqual(["abc"]);
 		});
 	});
 
@@ -522,6 +530,132 @@ describe("parseClaudeStream", () => {
 				"event:content_block_delta",
 				"event:assistant",
 			]);
+		});
+	});
+
+	describe("malformed-shape tolerance (silent-drop contract)", () => {
+		test("tool_use blocks with missing or empty name are silently dropped", async () => {
+			const toolCalls: Array<Array<{ name: string; input?: unknown }>> = [];
+			const stream = createReadableStream(
+				ndjson([
+					{
+						type: "assistant",
+						message: {
+							content: [
+								{ type: "tool_use", input: { command: "ls" } },
+								{ type: "tool_use", name: "", input: {} },
+								{ type: "tool_use", name: "Read", input: { path: "x" } },
+							],
+						},
+					},
+				]),
+			);
+
+			await parseClaudeStream(stream, {
+				onText: () => {},
+				onTools: (tools) => {
+					toolCalls.push(tools);
+				},
+				onSessionId: () => {},
+			});
+
+			expect(toolCalls).toEqual([[{ name: "Read", input: { path: "x" } }]]);
+		});
+
+		test("assistant events whose message.content is not an array are silently ignored", async () => {
+			const outputs: string[] = [];
+			const assistantMessages: string[] = [];
+			const stream = createReadableStream(
+				ndjson([
+					{ type: "assistant", message: { content: "string-not-array" } },
+					{ type: "assistant", message: {} },
+					{
+						type: "assistant",
+						message: { content: [{ type: "text", text: "after" }] },
+					},
+				]),
+			);
+
+			await parseClaudeStream(stream, {
+				onText: (t) => {
+					outputs.push(t);
+				},
+				onTools: () => {},
+				onSessionId: () => {},
+				onAssistantMessage: (t) => {
+					assistantMessages.push(t);
+				},
+			});
+
+			expect(outputs).toEqual(["after"]);
+			expect(assistantMessages).toEqual(["after"]);
+		});
+
+		test("non-string session_id values are silently ignored", async () => {
+			const observed: string[] = [];
+			const stream = createReadableStream(
+				ndjson([
+					{ type: "system", session_id: null },
+					{ type: "system", session_id: 42 },
+					{ type: "system", session_id: "real-id" },
+				]),
+			);
+
+			const result = await parseClaudeStream(stream, {
+				onText: () => {},
+				onTools: () => {},
+				onSessionId: (id) => {
+					observed.push(id);
+				},
+			});
+
+			expect(observed).toEqual(["real-id"]);
+			expect(result.sessionId).toBe("real-id");
+		});
+	});
+
+	describe("prefix-assumption violation path", () => {
+		test("flushed delta followed by an assistant event whose text does not start with the prefix", async () => {
+			// Documents B-3 step 3's shrink-reset behavior when the assistant
+			// text length is shorter than the flushed-delta watermark and does
+			// not start with the prefix. Under FR-006 the watermark resets to
+			// 0 and the full assistant text emits — yielding a duplicated
+			// prefix on screen, which is the documented recovery for this
+			// violation of B-2's prefix assumption (slow-onEvent race included).
+			const outputs: string[] = [];
+			const encoder = new TextEncoder();
+			const stream = new ReadableStream<Uint8Array>({
+				async pull(controller) {
+					controller.enqueue(
+						encoder.encode(
+							`${JSON.stringify({
+								type: "content_block_delta",
+								delta: { text: "abc1" },
+							})}\n`,
+						),
+					);
+					await new Promise((r) => setTimeout(r, 80));
+					controller.enqueue(
+						encoder.encode(
+							`${JSON.stringify({
+								type: "assistant",
+								message: { content: [{ type: "text", text: "Hi" }] },
+							})}\n`,
+						),
+					);
+					controller.close();
+				},
+			});
+
+			await parseClaudeStream(stream, {
+				onText: (t) => {
+					outputs.push(t);
+				},
+				onTools: () => {},
+				onSessionId: () => {},
+			});
+
+			expect(outputs).toEqual(["abc1", "Hi"]);
 		});
 	});
 });

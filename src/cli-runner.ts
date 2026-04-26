@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawnClaude } from "./claude-spawn";
-import { type ParsedStreamEvent, parseClaudeStream } from "./cli-stream-parser";
+import { parseClaudeStream } from "./cli-stream-parser";
 import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
 import { logger } from "./logger";
@@ -38,15 +38,11 @@ export async function streamClaudeOneShot(
 
 	const stdout = proc.stdout;
 	if (stdout && typeof stdout !== "number") {
-		try {
-			await parseClaudeStream(stdout as ReadableStream<Uint8Array>, {
-				onText: onOutput,
-				onTools: () => {},
-				onSessionId: () => {},
-			});
-		} catch (err) {
-			logger.warn(`[cli-runner] streamClaudeOneShot read error: ${toErrorMessage(err)}`);
-		}
+		await parseClaudeStream(stdout as ReadableStream<Uint8Array>, {
+			onText: onOutput,
+			onTools: () => {},
+			onSessionId: () => {},
+		});
 	}
 
 	const exitCode = await proc.exited;
@@ -70,8 +66,6 @@ export function killProcess(pid: number): void {
 		// Process already dead
 	}
 }
-
-// Claude Code CLI stream-json event shape (loosely typed — the CLI format is not formally documented)
 
 export interface CLICallbacks {
 	onOutput: (text: string) => void;
@@ -318,21 +312,22 @@ export class CLIRunner {
 
 		this.resetIdleTimer(entry);
 
-		const auditEvent = (event: ParsedStreamEvent): void => {
-			if (entry.stale) return;
-			try {
-				mkdirSync(EVENTS_DIR, { recursive: true });
-				appendFileSync(EVENTS_FILE, `${JSON.stringify(event)}\n`);
-			} catch (err) {
-				logger.warn("[cli-runner] Failed to write audit event:", err);
-			}
-		};
+		try {
+			mkdirSync(EVENTS_DIR, { recursive: true });
+		} catch (err) {
+			logger.warn("[cli-runner] Failed to ensure audit directory:", err);
+		}
 
 		try {
 			await parseClaudeStream(stdout as ReadableStream<Uint8Array>, {
 				onEvent: (event) => {
 					this.resetIdleTimer(entry);
-					auditEvent(event);
+					if (entry.stale) return;
+					try {
+						appendFileSync(EVENTS_FILE, `${JSON.stringify(event)}\n`);
+					} catch (err) {
+						logger.warn("[cli-runner] Failed to write audit event:", err);
+					}
 				},
 				onText: (text) => {
 					// Reset idle timer here too: the parser's onText fallback for
