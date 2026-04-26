@@ -170,12 +170,12 @@ describe("AutoArchiver.sweep — standalone workflows", () => {
 });
 
 describe("AutoArchiver.sweep — epics", () => {
-	test("archives terminal epic + cascades to ALL children regardless of child status", async () => {
+	test("archives terminal epic + cascades when all children are terminal", async () => {
 		const { workflowStore, epicStore, deps, broadcastedMessages, archiveEvents } = setupHarness();
 		const epic = makeEpic({
 			epicId: "e1",
 			status: "completed",
-			workflowIds: ["c1", "c2", "c3"],
+			workflowIds: ["c1", "c2"],
 			completedAt: OLD_TIMESTAMP,
 		});
 		await epicStore.mock.save(epic);
@@ -191,13 +191,8 @@ describe("AutoArchiver.sweep — epics", () => {
 			epicId: "e1",
 			updatedAt: FRESH_TIMESTAMP,
 		});
-		// Even non-terminal idle/waiting children get archived alongside a
-		// done epic — a finished epic implies its children are done from a
-		// user perspective.
-		const c3 = makeWorkflow({ id: "c3", status: "idle", epicId: "e1", updatedAt: OLD_TIMESTAMP });
 		workflowStore.seedWorkflow(c1);
 		workflowStore.seedWorkflow(c2);
-		workflowStore.seedWorkflow(c3);
 
 		const archiver = new AutoArchiver(deps, THRESHOLD_MS);
 		await archiver.sweep();
@@ -206,7 +201,6 @@ describe("AutoArchiver.sweep — epics", () => {
 		expect(epic.archivedAt).not.toBeNull();
 		expect(c1.archived).toBe(true);
 		expect(c2.archived).toBe(true);
-		expect(c3.archived).toBe(true);
 
 		const epicList = broadcastedMessages.find(
 			(m): m is Extract<ServerMessage, { type: "epic:list" }> => m.type === "epic:list",
@@ -216,7 +210,76 @@ describe("AutoArchiver.sweep — epics", () => {
 			true,
 		);
 		const stateBroadcasts = broadcastedMessages.filter((m) => m.type === "workflow:state");
-		expect(stateBroadcasts).toHaveLength(3);
+		expect(stateBroadcasts).toHaveLength(2);
+	});
+
+	test("does not archive epic with idle children (decomposed but not yet started)", async () => {
+		// A freshly-decomposed epic has `status: "completed"` (analysis done)
+		// and `completedAt` set, but its child specs sit in `idle` waiting for
+		// the user to start them. Archiving here would silently file away
+		// work the user hasn't even kicked off. Regression for fix/013.
+		const { workflowStore, epicStore, deps, archiveEvents } = setupHarness();
+		const epic = makeEpic({
+			epicId: "e1",
+			status: "completed",
+			workflowIds: ["c1", "c2"],
+			completedAt: OLD_TIMESTAMP,
+		});
+		await epicStore.mock.save(epic);
+		const idleChild = makeWorkflow({
+			id: "c1",
+			status: "idle",
+			epicId: "e1",
+			updatedAt: OLD_TIMESTAMP,
+		});
+		const doneChild = makeWorkflow({
+			id: "c2",
+			status: "completed",
+			epicId: "e1",
+			updatedAt: OLD_TIMESTAMP,
+		});
+		workflowStore.seedWorkflow(idleChild);
+		workflowStore.seedWorkflow(doneChild);
+
+		const archiver = new AutoArchiver(deps, THRESHOLD_MS);
+		await archiver.sweep();
+
+		expect(epic.archived).toBe(false);
+		expect(idleChild.archived).toBe(false);
+		expect(doneChild.archived).toBe(false);
+		expect(archiveEvents.filter((e) => e.eventType === "epic.archive")).toHaveLength(0);
+	});
+
+	test("does not archive epic with paused or waiting children", async () => {
+		const { workflowStore, epicStore, deps } = setupHarness();
+		const epic = makeEpic({
+			epicId: "e1",
+			status: "completed",
+			workflowIds: ["c1", "c2"],
+			completedAt: OLD_TIMESTAMP,
+		});
+		await epicStore.mock.save(epic);
+		const paused = makeWorkflow({
+			id: "c1",
+			status: "paused",
+			epicId: "e1",
+			updatedAt: OLD_TIMESTAMP,
+		});
+		const waiting = makeWorkflow({
+			id: "c2",
+			status: "waiting_for_dependencies",
+			epicId: "e1",
+			updatedAt: OLD_TIMESTAMP,
+		});
+		workflowStore.seedWorkflow(paused);
+		workflowStore.seedWorkflow(waiting);
+
+		const archiver = new AutoArchiver(deps, THRESHOLD_MS);
+		await archiver.sweep();
+
+		expect(epic.archived).toBe(false);
+		expect(paused.archived).toBe(false);
+		expect(waiting.archived).toBe(false);
 	});
 
 	test("archives epics in error and infeasible states", async () => {

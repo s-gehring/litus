@@ -67,9 +67,9 @@ export class AutoArchiver {
 			]);
 			const now = Date.now();
 
-			// Pass 1: archive eligible epics (cascades to all children, even
-			// non-terminal idle/waiting ones — terminal epics shouldn't have
-			// running children, but if they do we skip the epic defensively).
+			// Pass 1: archive eligible epics. Cascades to children but only
+			// when every child is itself terminal — otherwise idle/running/
+			// waiting work would be silently filed away.
 			const archivedEpicIds = new Set<string>();
 			for (const epic of epics) {
 				if (epic.archived) continue;
@@ -80,7 +80,12 @@ export class AutoArchiver {
 				if (!Number.isFinite(completedMs)) continue;
 				if (now - completedMs < this.thresholdMs) continue;
 				const children = workflows.filter((w) => w.epicId === epic.epicId);
-				if (children.some((c) => c.status === "running")) continue;
+				// `epic.status === "completed"` only means analysis finished —
+				// freshly-decomposed specs sit at `idle` until the user starts
+				// them. Archiving here would silently file away work the user
+				// hasn't even kicked off yet. Skip unless every (non-archived)
+				// child is itself in a terminal workflow state.
+				if (children.some((c) => !c.archived && !isTerminalWorkflow(c.status))) continue;
 				const ok = await this.archiveEpic(epic, children);
 				if (ok) archivedEpicIds.add(epic.epicId);
 			}
