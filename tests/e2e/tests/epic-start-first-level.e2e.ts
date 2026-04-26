@@ -3,7 +3,7 @@ import { createEpic } from "../helpers/create-epic";
 import { AppPage } from "../pages/app";
 import { EpicTree } from "../pages/epic-tree";
 
-// Same rationale as `epic-lifecycle.spec.ts`: keep the analyzer prompt to a
+// Same rationale as `epic-lifecycle.e2e.ts`: keep the analyzer prompt to a
 // single line so the Windows .cmd shim does not truncate `-p` at the first
 // newline. `maxJsonRetries: 1` fails fast on JSON parse errors.
 const EPIC_E2E_CONFIG_OVERRIDES = {
@@ -85,5 +85,60 @@ test.describe("Epic start-first-level button", () => {
 		// (FR-004 / FR-005).
 		await expect(startButton).toHaveCount(0, { timeout: 15_000 });
 		await expect(page.locator("#detail-actions [data-testid^='action-start-']")).toHaveCount(0);
+	});
+
+	test("'Start N specs' is visible after a page reload and drives the full flow", async ({
+		page,
+		server,
+		sandbox,
+	}) => {
+		// Regression for the bug fixed in 1855b53: `buildEpicActions` early-returned
+		// when `state.getEpics()` had no entry for the epicId. After a page reload
+		// `workflow:list` and `epic:list` both arrive on WS connect; under the
+		// pre-fix code the action bar (and the Start button) could be hidden
+		// during the brief window before `epic:list` populated the epic record.
+		// The fix makes the button independent of the epic record. We exercise
+		// the full flow starting from a reloaded page so a regression here
+		// would surface as a missing button after refresh.
+		test.setTimeout(120_000);
+
+		const app = new AppPage(page);
+		const tree = new EpicTree(page);
+		await app.goto(server.baseUrl);
+		await app.waitConnected();
+
+		await createEpic({
+			page,
+			description: "Bulk start fixture epic with two independent specs and one dependent.",
+			repo: sandbox.targetRepo,
+			start: false,
+		});
+
+		await expect(tree.allChildRows()).toHaveCount(3, { timeout: 15_000 });
+
+		// Reload the page — forces the client to re-issue WS messages from
+		// scratch and re-render the epic detail with state freshly hydrated.
+		await page.reload();
+		await app.waitConnected();
+
+		await expect(tree.allChildRows()).toHaveCount(3, { timeout: 15_000 });
+		const aRow = tree.childRowByTitle("Spec A");
+		const bRow = tree.childRowByTitle("Spec B");
+
+		// The Start button MUST be visible after reload — this is the assertion
+		// that would have failed under the pre-fix code path.
+		const startButton = page.locator("#detail-actions [data-testid='action-start-2-specs']");
+		await expect(startButton).toBeVisible({ timeout: 15_000 });
+
+		// Drive the full flow from the reloaded page to confirm clicking still
+		// starts the first-level specs end-to-end.
+		await startButton.click();
+		await expect(aRow.locator(".card-status")).not.toHaveClass(/card-status-idle/, {
+			timeout: 30_000,
+		});
+		await expect(bRow.locator(".card-status")).not.toHaveClass(/card-status-idle/, {
+			timeout: 30_000,
+		});
+		await expect(startButton).toHaveCount(0, { timeout: 15_000 });
 	});
 });

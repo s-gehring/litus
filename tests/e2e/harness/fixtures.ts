@@ -2,6 +2,7 @@ import { access, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test as base } from "@playwright/test";
+import { type AutoArchiveSeedOptions, seedAutoArchiveState } from "./auto-archive-seed";
 import { type PurgeSeedOptions, seedPurgeState } from "./purge-seed";
 import { createSandbox, type Sandbox } from "./sandbox";
 import { type ServerHandle, spawnServer } from "./server";
@@ -17,6 +18,12 @@ export interface Fixtures {
 	 * server spawns. Used by the `purge-all` spec. Null for all other tests.
 	 */
 	purgeSeed: PurgeSeedOptions | null;
+	/**
+	 * Pre-server seed used by the auto-archive e2e: writes terminal workflow
+	 * + epic JSON with old timestamps so the auto-archiver's initial sweep
+	 * picks them up at startup. Null for all other tests.
+	 */
+	autoArchiveSeed: AutoArchiveSeedOptions | null;
 	/**
 	 * Additional top-level keys to merge into the scenario JSON for this
 	 * test before the server spawns. Used by the `purge-all` failure
@@ -36,6 +43,7 @@ export const test = base.extend<Fixtures>({
 	autoMode: ["manual", { option: true }],
 	configOverrides: [null, { option: true }],
 	purgeSeed: [null, { option: true }],
+	autoArchiveSeed: [null, { option: true }],
 	scenarioOverride: [null, { option: true }],
 
 	sandbox: async ({ autoMode, configOverrides }, use) => {
@@ -68,9 +76,12 @@ export const test = base.extend<Fixtures>({
 	},
 
 	server: [
-		async ({ sandbox, scenario, purgeSeed }, use, testInfo) => {
+		async ({ sandbox, scenario, purgeSeed, autoArchiveSeed }, use, testInfo) => {
 			if (purgeSeed) {
 				await seedPurgeState(sandbox.homeDir, purgeSeed);
+			}
+			if (autoArchiveSeed) {
+				await seedAutoArchiveState(sandbox.homeDir, autoArchiveSeed);
 			}
 			const server = await spawnServer({
 				homeDir: sandbox.homeDir,
