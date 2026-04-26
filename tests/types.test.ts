@@ -4,6 +4,7 @@ import type {
 	AuditConfig,
 	AuditEvent,
 	AuditEventType,
+	Channel,
 	CiCheckResult,
 	CiCycle,
 	CiFailureLog,
@@ -1186,6 +1187,69 @@ describe("Audit types", () => {
 });
 
 // ── Phase 10: Cross-cutting ─────────────────────────────────
+
+// ── Phase 11: Free-Text Emit Channels ───────────────────────
+
+describe("Channel discriminated union", () => {
+	test("workflow variant requires workflowId", () => {
+		const ch: Channel = { kind: "workflow", workflowId: "wf-1" };
+		expect(ch.kind).toBe("workflow");
+	});
+
+	test("epic variant requires epicId", () => {
+		const ch: Channel = { kind: "epic", epicId: "ep-1" };
+		expect(ch.kind).toBe("epic");
+	});
+
+	test("console variant carries no payload", () => {
+		const ch: Channel = { kind: "console" };
+		expect(ch.kind).toBe("console");
+	});
+});
+
+describe("emitText compile-time fixtures", () => {
+	test("type-level misuse is rejected", async () => {
+		const { emitText } = await import("../src/server");
+
+		// @ts-expect-error missing channel argument (FR-001, FR-003)
+		void (() => emitText("x"));
+
+		// @ts-expect-error workflow variant missing workflowId (FR-002)
+		void (() => emitText({ kind: "workflow" }, "x"));
+
+		// @ts-expect-error epic variant missing epicId (FR-002)
+		void (() => emitText({ kind: "epic" }, "x"));
+
+		// @ts-expect-error workflow variant with epic field (FR-002)
+		void (() => emitText({ kind: "workflow", epicId: "ep-1" }, "x"));
+
+		// @ts-expect-error unknown channel kind (FR-002, FR-010)
+		void (() => emitText({ kind: "telemetry" }, "x"));
+
+		// The contractual value of this test is in the `@ts-expect-error`
+		// directives above; the runtime assertion exists only to keep the
+		// `describe` block from being skipped and to keep the dynamic
+		// `import` evaluated.
+		expect(typeof emitText).toBe("function");
+	});
+});
+
+describe("console:output ServerMessage variant", () => {
+	test("can be narrowed by type discriminant", () => {
+		const msg: ServerMessage = { type: "console:output", text: "hello" };
+		if (msg.type === "console:output") {
+			expect(msg.text).toBe("hello");
+		} else {
+			throw new Error("expected console:output narrowing to succeed");
+		}
+	});
+
+	test("removed `log` variant is rejected at the type level (FR-007)", () => {
+		// @ts-expect-error `log` was removed from ServerMessage
+		const m: ServerMessage = { type: "log", text: "" };
+		void m;
+	});
+});
 
 describe("WorkflowClientState shape", () => {
 	test("combines WorkflowState with outputLines", () => {

@@ -10,7 +10,14 @@ import type { ManagedRepoStore } from "../managed-repo-store";
 import type { PipelineOrchestrator } from "../pipeline-orchestrator";
 import type { Summarizer } from "../summarizer";
 import { validateTargetRepository } from "../target-repo-validator";
-import type { Alert, ClientMessage, ServerMessage, Workflow, WorkflowState } from "../types";
+import type {
+	Alert,
+	Channel,
+	ClientMessage,
+	ServerMessage,
+	Workflow,
+	WorkflowState,
+} from "../types";
 import type { WorkflowStore } from "../workflow-store";
 
 export type WsData = Record<string, never>;
@@ -18,6 +25,7 @@ export type WsData = Record<string, never>;
 export interface HandlerDeps {
 	orchestrators: Map<string, PipelineOrchestrator>;
 	broadcast: (msg: ServerMessage) => void;
+	emitText: (channel: Channel, text: string) => void;
 	sendTo: (ws: ServerWebSocket<WsData>, msg: ServerMessage) => void;
 	sharedStore: WorkflowStore;
 	sharedEpicStore: EpicStore;

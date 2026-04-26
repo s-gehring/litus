@@ -30,6 +30,7 @@ import {
 	handleAlertRouteChanged,
 } from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
+import { createEmitText } from "./server/emit-text";
 import {
 	handleArchiveEpic,
 	handleEpicAbort,
@@ -126,7 +127,7 @@ function createCallbacks() {
 			});
 		},
 		onOutput: (workflowId: string, text: string) => {
-			broadcast({ type: "workflow:output", workflowId, text });
+			emitText({ kind: "workflow", workflowId }, text);
 		},
 		onTools: (workflowId: string, tools: ToolUsage[]) => {
 			broadcast({ type: "workflow:tools", workflowId, tools });
@@ -137,7 +138,7 @@ function createCallbacks() {
 		},
 		onError: (workflowId: string, error: string) => {
 			logger.error(`[pipeline] Step error (${workflowId}): ${error}`);
-			broadcast({ type: "workflow:output", workflowId, text: `Error: ${error}` });
+			emitText({ kind: "workflow", workflowId }, `Error: ${error}`);
 			broadcastWorkflowState(workflowId);
 		},
 		onStateChange: (workflowId: string) => {
@@ -227,8 +228,10 @@ function broadcast(msg: ServerMessage) {
 	server.publish(WS_TOPIC, JSON.stringify(msg));
 }
 
+export const emitText = createEmitText(broadcast);
+
 setGitLogCallback((text, workflowId) => {
-	broadcast({ type: "log", text, ...(workflowId ? { workflowId } : {}) });
+	emitText(workflowId ? { kind: "workflow", workflowId } : { kind: "console" }, text);
 });
 
 function sendTo(ws: ServerWebSocket<WsData>, msg: ServerMessage) {
@@ -252,6 +255,7 @@ function broadcastWorkflowState(workflowId: string) {
 const deps: HandlerDeps = {
 	orchestrators,
 	broadcast,
+	emitText,
 	sendTo,
 	sharedStore,
 	sharedEpicStore,

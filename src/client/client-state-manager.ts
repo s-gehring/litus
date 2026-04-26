@@ -168,6 +168,8 @@ export class ClientStateManager {
 				return this.handleWorkflowState(msg);
 			case "workflow:output":
 				return this.handleWorkflowOutput(msg);
+			case "console:output":
+				return this.handleConsoleOutput(msg);
 			case "workflow:tools":
 				return this.handleWorkflowTools(msg);
 			case "workflow:question":
@@ -212,12 +214,22 @@ export class ClientStateManager {
 				return { scope: { entity: "none" }, action: "updated" };
 			case "config:error":
 				return { scope: { entity: "config" }, action: "updated" };
-			case "log":
-				return this.handleLog(msg);
 			case "error":
 				return { scope: { entity: "none" }, action: "updated" };
-			default:
+			case "repo:clone-start":
+			case "repo:clone-progress":
+			case "repo:clone-complete":
+			case "repo:clone-error":
 				return { scope: { entity: "none" }, action: "updated" };
+			case "workflow:archive-denied":
+				return { scope: { entity: "none" }, action: "updated" };
+			case "auto-archive:state":
+				return { scope: { entity: "none" }, action: "updated" };
+			default: {
+				const _exhaustive: never = msg;
+				void _exhaustive;
+				return { scope: { entity: "none" }, action: "updated" };
+			}
 		}
 	}
 
@@ -263,21 +275,21 @@ export class ClientStateManager {
 		msg: Extract<ServerMessage, { type: "workflow:output" }>,
 	): StateChange {
 		const entry = this.workflows.get(msg.workflowId);
-		if (!entry) return { scope: { entity: "none" }, action: "updated" };
+		if (!entry) {
+			console.log(`[litus:unrouted workflow=${msg.workflowId}] ${msg.text}`);
+			return { scope: { entity: "none" }, action: "updated" };
+		}
 		const outputEntry: OutputEntry = { kind: "text", text: msg.text };
 		entry.outputLines.push(outputEntry);
 		this.trimOutput(entry.outputLines);
 		return { scope: { entity: "output", id: msg.workflowId }, action: "appended" };
 	}
 
-	private handleLog(msg: Extract<ServerMessage, { type: "log" }>): StateChange {
-		if (!msg.workflowId) return { scope: { entity: "none" }, action: "updated" };
-		const entry = this.workflows.get(msg.workflowId);
-		if (!entry) return { scope: { entity: "none" }, action: "updated" };
-		const outputEntry: OutputEntry = { kind: "text", text: msg.text, type: "system" };
-		entry.outputLines.push(outputEntry);
-		this.trimOutput(entry.outputLines);
-		return { scope: { entity: "output", id: msg.workflowId }, action: "appended" };
+	private handleConsoleOutput(
+		msg: Extract<ServerMessage, { type: "console:output" }>,
+	): StateChange {
+		console.log(`[litus:console] ${msg.text}`);
+		return { scope: { entity: "none" }, action: "updated" };
 	}
 
 	private handleWorkflowTools(
@@ -366,7 +378,10 @@ export class ClientStateManager {
 
 	private handleEpicOutput(msg: Extract<ServerMessage, { type: "epic:output" }>): StateChange {
 		const epic = this.epics.get(msg.epicId);
-		if (!epic) return { scope: { entity: "none" }, action: "updated" };
+		if (!epic) {
+			console.log(`[litus:unrouted epic=${msg.epicId}] ${msg.text}`);
+			return { scope: { entity: "none" }, action: "updated" };
+		}
 		epic.outputLines.push({ kind: "text", text: msg.text });
 		this.trimOutput(epic.outputLines);
 		return { scope: { entity: "output", id: msg.epicId }, action: "appended" };
