@@ -1,8 +1,16 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { CLICallbacks, CLIRunner } from "../../src/cli-runner";
-import { CLIStepRunner, type StepCallbackHandlers } from "../../src/cli-step-runner";
+import {
+	CLIStepRunner,
+	prepareLlmDispatch,
+	type StepCallbackHandlers,
+} from "../../src/cli-step-runner";
 import type { Workflow } from "../../src/types";
 import { makePipelineStep } from "../test-infra";
+
+function makeWorkflowForDispatch(): Workflow {
+	return { id: "wf-1", activeInvocation: null, updatedAt: "" } as unknown as Workflow;
+}
 
 function makeHandlers(): StepCallbackHandlers {
 	return {
@@ -281,26 +289,43 @@ describe("resetStep", () => {
 // ── startStep / resumeStep / killProcess ───────────────────
 
 describe("startStep", () => {
-	test("delegates to cliRunner.start", () => {
+	test("delegates to cliRunner.start with permit-derived model/effort", () => {
 		const cliRunner = makeMockCLIRunner();
 		const runner = new CLIStepRunner(cliRunner as CLIRunner);
-		const workflow = { id: "wf-1" } as Workflow;
+		const workflow = makeWorkflowForDispatch();
+		const step = makePipelineStep({ name: "implement" });
 		const callbacks = {} as CLICallbacks;
 		const env = { FOO: "bar" };
 
-		runner.startStep(workflow, callbacks, env, "sonnet", "high");
+		const permit = prepareLlmDispatch(workflow, step, "sonnet", "high");
+		runner.startStep(workflow, permit, callbacks, env);
 		expect(cliRunner.start).toHaveBeenCalledWith(workflow, callbacks, env, "sonnet", "high");
+	});
+
+	test("prepareLlmDispatch updates workflow.activeInvocation", () => {
+		const workflow = makeWorkflowForDispatch();
+		const step = makePipelineStep({ name: "implement" });
+
+		prepareLlmDispatch(workflow, step, "claude-opus-4-7", "high");
+		expect(workflow.activeInvocation).not.toBeNull();
+		expect(workflow.activeInvocation?.model).toBe("claude-opus-4-7");
+		expect(workflow.activeInvocation?.effort).toBe("high");
+		expect(workflow.activeInvocation?.stepName).toBe("implement");
+		expect(workflow.activeInvocation?.role).toBe("main");
 	});
 });
 
 describe("resumeStep", () => {
-	test("delegates to cliRunner.resume", () => {
+	test("delegates to cliRunner.resume with permit-derived model/effort", () => {
 		const cliRunner = makeMockCLIRunner();
 		const runner = new CLIStepRunner(cliRunner as CLIRunner);
+		const workflow = makeWorkflowForDispatch();
+		const step = makePipelineStep({ name: "implement" });
 		const callbacks = {} as CLICallbacks;
 		const env = { FOO: "bar" };
 
-		runner.resumeStep("wf-1", "sess-1", "/cwd", callbacks, env, "my answer");
+		const permit = prepareLlmDispatch(workflow, step, undefined, undefined);
+		runner.resumeStep("wf-1", "sess-1", "/cwd", permit, callbacks, env, "my answer");
 		expect(cliRunner.resume).toHaveBeenCalledWith(
 			"wf-1",
 			"sess-1",
@@ -313,12 +338,15 @@ describe("resumeStep", () => {
 		);
 	});
 
-	test("forwards model and effort to cliRunner.resume", () => {
+	test("forwards model and effort from permit to cliRunner.resume", () => {
 		const cliRunner = makeMockCLIRunner();
 		const runner = new CLIStepRunner(cliRunner as CLIRunner);
+		const workflow = makeWorkflowForDispatch();
+		const step = makePipelineStep({ name: "implement" });
 		const callbacks = {} as CLICallbacks;
 
-		runner.resumeStep("wf-1", "sess-1", "/cwd", callbacks, undefined, undefined, "sonnet", "high");
+		const permit = prepareLlmDispatch(workflow, step, "sonnet", "high");
+		runner.resumeStep("wf-1", "sess-1", "/cwd", permit, callbacks, undefined, undefined);
 		expect(cliRunner.resume).toHaveBeenCalledWith(
 			"wf-1",
 			"sess-1",

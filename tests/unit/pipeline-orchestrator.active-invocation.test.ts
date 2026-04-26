@@ -276,6 +276,44 @@ describe("PipelineOrchestrator.activeInvocation", () => {
 		expect(wf.status).toBe("aborted");
 	});
 
+	test("answering a question refreshes activeInvocation with the current configured model", async () => {
+		// Regression: previously, answerQuestion → resumeStep dispatched the LLM
+		// without refreshing workflow.activeInvocation, so the UI kept showing the
+		// pre-question model even if the user changed it while the workflow was
+		// paused for input.
+		await startAndFlush();
+		const wf = getWf(engine);
+		expect(wf.activeInvocation?.model).toBe("claude-opus-4-7");
+
+		// CLI surfaces a session id for the current step, so resume has something
+		// to resume against.
+		const cb = cli.getLastCallbacks();
+		cb.onSessionId?.("sess-specify-1");
+
+		// User changes the configured model for "specify" while the workflow is
+		// waiting on the question.
+		configStore.save({
+			autoMode: "normal",
+			models: { ...DEFAULT_CONFIG.models, specify: "claude-sonnet-4-6" },
+			efforts: { ...DEFAULT_CONFIG.efforts, specify: "low" },
+		});
+
+		// Stage a pending question so answerQuestion takes the resume path.
+		wf.pendingQuestion = {
+			id: "q-1",
+			content: "?",
+			detectedAt: new Date().toISOString(),
+		};
+		wf.status = "waiting_for_input";
+
+		orchestrator.answerQuestion(wf.id, "q-1", "the answer");
+
+		expect(wf.activeInvocation).not.toBeNull();
+		expect(wf.activeInvocation?.model).toBe("claude-sonnet-4-6");
+		expect(wf.activeInvocation?.effort).toBe("low");
+		expect(wf.activeInvocation?.stepName).toBe("specify");
+	});
+
 	test("a step with empty-string configured model still populates activeInvocation (UI shows 'default')", async () => {
 		// Empty model means "use Claude Code default" — the panel should still
 		// reflect that a main AI step is running, not show "No model in use".

@@ -15,7 +15,7 @@ import {
 } from "./claude-md-merger";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
-import { CLIStepRunner } from "./cli-step-runner";
+import { CLIStepRunner, prepareLlmDispatch } from "./cli-step-runner";
 import { configStore } from "./config-store";
 import { computeDependencyStatus } from "./dependency-resolver";
 import { toErrorMessage } from "./errors";
@@ -458,15 +458,22 @@ export class PipelineOrchestrator {
 			const cwd = requireWorktreePath(workflow);
 			const answerConfig = configStore.get();
 			const answerConfigKey = STEP_CONFIG_KEY[step.name];
+			const permit = prepareLlmDispatch(
+				workflow,
+				step,
+				answerConfigKey ? answerConfig.models[answerConfigKey] : undefined,
+				answerConfigKey ? answerConfig.efforts[answerConfigKey] : undefined,
+			);
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflowId);
 			this.stepRunner.resumeStep(
 				workflowId,
 				sessionId,
 				cwd,
+				permit,
 				this.buildStepCallbacks(workflowId),
 				this.buildStepEnv(workflow),
 				answer,
-				answerConfigKey ? answerConfig.models[answerConfigKey] : undefined,
-				answerConfigKey ? answerConfig.efforts[answerConfigKey] : undefined,
 			);
 		});
 	}
@@ -509,15 +516,22 @@ export class PipelineOrchestrator {
 
 			const resumeConfig = configStore.get();
 			const resumeConfigKey = STEP_CONFIG_KEY[step.name];
+			const permit = prepareLlmDispatch(
+				workflow,
+				step,
+				resumeConfigKey ? resumeConfig.models[resumeConfigKey] : undefined,
+				resumeConfigKey ? resumeConfig.efforts[resumeConfigKey] : undefined,
+			);
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflowId);
 			this.stepRunner.resumeStep(
 				workflowId,
 				step.sessionId,
 				cwd,
+				permit,
 				this.buildStepCallbacks(workflowId),
 				this.buildStepEnv(workflow),
 				undefined,
-				resumeConfigKey ? resumeConfig.models[resumeConfigKey] : undefined,
-				resumeConfigKey ? resumeConfig.efforts[resumeConfigKey] : undefined,
 			);
 		});
 	}
@@ -678,15 +692,22 @@ export class PipelineOrchestrator {
 			} else if (step.name === STEP.FEEDBACK_IMPLEMENTER) {
 				if (step.sessionId) {
 					const fiConfig = configStore.get();
+					const fiPermit = prepareLlmDispatch(
+						workflow,
+						step,
+						fiConfig.models.implement,
+						fiConfig.efforts.implement,
+					);
+					this.persistWorkflow(workflow);
+					this.callbacks.onStateChange(workflowId);
 					this.stepRunner.resumeStep(
 						workflowId,
 						step.sessionId,
 						cwd,
+						fiPermit,
 						this.buildStepCallbacks(workflowId),
 						this.buildStepEnv(workflow),
 						undefined,
-						fiConfig.models.implement,
-						fiConfig.efforts.implement,
 					);
 				} else {
 					this.runFeedbackImplementer(workflow).catch((err) => {
@@ -706,15 +727,22 @@ export class PipelineOrchestrator {
 			} else if (step.sessionId) {
 				const resumedConfig = configStore.get();
 				const resumedConfigKey = STEP_CONFIG_KEY[step.name];
+				const resumedPermit = prepareLlmDispatch(
+					workflow,
+					step,
+					resumedConfigKey ? resumedConfig.models[resumedConfigKey] : undefined,
+					resumedConfigKey ? resumedConfig.efforts[resumedConfigKey] : undefined,
+				);
+				this.persistWorkflow(workflow);
+				this.callbacks.onStateChange(workflowId);
 				this.stepRunner.resumeStep(
 					workflowId,
 					step.sessionId,
 					cwd,
+					resumedPermit,
 					this.buildStepCallbacks(workflowId),
 					this.buildStepEnv(workflow),
 					undefined,
-					resumedConfigKey ? resumedConfig.models[resumedConfigKey] : undefined,
-					resumedConfigKey ? resumedConfig.efforts[resumedConfigKey] : undefined,
 				);
 			} else {
 				const config = configStore.get();
@@ -1725,8 +1753,8 @@ export class PipelineOrchestrator {
 		workflow: Workflow,
 		prompt: string,
 		cwd: string,
-		model?: string,
-		effort?: EffortLevel,
+		model: string | undefined,
+		effort: EffortLevel | undefined,
 	): void {
 		// Inject accumulated user feedback as authoritative context into every
 		// CLI-spawned step (FR-010). Skip for feedback-implementer, whose prompt
@@ -1740,8 +1768,13 @@ export class PipelineOrchestrator {
 		// slash-command step prompts (e.g. `/speckit-specify`) remain intercepted
 		// by Claude Code's `-p` mode, which only triggers on a leading `/`.
 		const step = workflow.steps[workflow.currentStepIndex];
+		if (!step) {
+			throw new Error(
+				`runStep called with invalid currentStepIndex=${workflow.currentStepIndex} for workflow ${workflow.id}`,
+			);
+		}
 		let finalPrompt = prompt;
-		if (step?.name !== STEP.FEEDBACK_IMPLEMENTER && step?.name !== STEP.FIX_IMPLEMENT) {
+		if (step.name !== STEP.FEEDBACK_IMPLEMENTER && step.name !== STEP.FIX_IMPLEMENT) {
 			const feedbackCtx = buildFeedbackContext(workflow);
 			if (feedbackCtx) finalPrompt = `${feedbackCtx}\n\n---\n\n${prompt}`;
 		}
@@ -1751,29 +1784,19 @@ export class PipelineOrchestrator {
 			worktreePath: cwd,
 		};
 
-		// Set activeInvocation whenever the caller intends an AI-driven step
-		// (model param provided, even if empty — empty means "Claude Code default").
-		// Steps like SETUP / MERGE_PR / SYNC_REPO pass model === undefined and
-		// correctly don't populate the panel.
-		if (step && model !== undefined) {
-			workflow.activeInvocation = {
-				model,
-				effort: effort ?? null,
-				stepName: step.name,
-				startedAt: new Date().toISOString(),
-				role: "main",
-			};
-			workflow.updatedAt = new Date().toISOString();
-			this.persistWorkflow(workflow);
-			this.callbacks.onStateChange(workflow.id);
-		}
+		// `prepareLlmDispatch` updates workflow.activeInvocation atomically with
+		// the dispatch. The returned permit is the only way to call
+		// `stepRunner.startStep`, so callers cannot dispatch the LLM without
+		// refreshing the model the UI displays.
+		const permit = prepareLlmDispatch(workflow, step, model, effort);
+		this.persistWorkflow(workflow);
+		this.callbacks.onStateChange(workflow.id);
 
 		this.stepRunner.startStep(
 			stepWorkflow,
+			permit,
 			this.buildStepCallbacks(workflow.id),
 			this.buildStepEnv(workflow),
-			model,
-			effort,
 		);
 	}
 

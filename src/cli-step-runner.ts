@@ -8,6 +8,50 @@ import type {
 	Workflow,
 } from "./types";
 
+/**
+ * Branded token witnessing that `workflow.activeInvocation` has been refreshed
+ * for an imminent LLM dispatch. The only way to obtain one — without an
+ * explicit `as` cast — is via `prepareLlmDispatch`, which mutates
+ * `activeInvocation` atomically.
+ *
+ * `CLIStepRunner.startStep` / `resumeStep` accept this token in lieu of free
+ * `model`/`effort` arguments, so the type system rejects any dispatch path
+ * that forgot to update the active invocation (e.g. answering a question
+ * without refreshing the model the UI displays).
+ *
+ * The brand uses a private compile-time-only field; the runtime payload only
+ * carries `model` and `effort`.
+ */
+export interface LlmDispatchPermit {
+	readonly __llmDispatchPermitBrand: never;
+	readonly model: string | undefined;
+	readonly effort: EffortLevel | undefined;
+}
+
+/**
+ * Refresh `workflow.activeInvocation` for an imminent main-step LLM dispatch
+ * and return the permit consumed by `CLIStepRunner.startStep` / `resumeStep`.
+ * The mutation is intentionally synchronous so the caller can persist+broadcast
+ * the workflow before the CLI process is spawned.
+ */
+export function prepareLlmDispatch(
+	workflow: Workflow,
+	step: PipelineStep,
+	model: string | undefined,
+	effort: EffortLevel | undefined,
+): LlmDispatchPermit {
+	const now = new Date().toISOString();
+	workflow.activeInvocation = {
+		model: model ?? "",
+		effort: effort ?? null,
+		stepName: step.name,
+		startedAt: now,
+		role: "main",
+	};
+	workflow.updatedAt = now;
+	return { model, effort } as unknown as LlmDispatchPermit;
+}
+
 // Map a live step's status to the subset allowed in an archived `PipelineStepRun`.
 // Exhaustive switch surfaces future additions to `PipelineStepStatus` at the
 // schema-change site.
@@ -90,25 +134,32 @@ export class CLIStepRunner {
 
 	startStep(
 		workflow: Workflow,
+		permit: LlmDispatchPermit,
 		callbacks: CLICallbacks,
 		extraEnv?: Record<string, string>,
-		model?: string,
-		effort?: EffortLevel,
 	): void {
-		this.cliRunner.start(workflow, callbacks, extraEnv, model, effort);
+		this.cliRunner.start(workflow, callbacks, extraEnv, permit.model, permit.effort);
 	}
 
 	resumeStep(
 		workflowId: string,
 		sessionId: string,
 		cwd: string,
+		permit: LlmDispatchPermit,
 		callbacks: CLICallbacks,
 		extraEnv?: Record<string, string>,
 		prompt?: string,
-		model?: string,
-		effort?: EffortLevel,
 	): void {
-		this.cliRunner.resume(workflowId, sessionId, cwd, callbacks, extraEnv, prompt, model, effort);
+		this.cliRunner.resume(
+			workflowId,
+			sessionId,
+			cwd,
+			callbacks,
+			extraEnv,
+			prompt,
+			permit.model,
+			permit.effort,
+		);
 	}
 
 	killProcess(workflowId: string): void {
