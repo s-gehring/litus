@@ -145,12 +145,15 @@ export async function parseClaudeStream(
 			}
 
 			if (currentText.length < assistantSentLen) {
+				// FR-006: cumulative text shrank — the CLI started a fresh turn,
+				// so reset the watermark before computing the unsent tail.
 				assistantSentLen = 0;
 			}
 			const unsent = currentText.slice(assistantSentLen);
 			if (unsent) {
 				await safeInvoke(callbacks.onText, unsent);
 			}
+			assistantSentLen = currentText.length;
 			lastAssistantText = currentText;
 
 			if (toolUsages.length > 0) {
@@ -160,9 +163,6 @@ export async function parseClaudeStream(
 			if (callbacks.onAssistantMessage) {
 				await safeInvoke(callbacks.onAssistantMessage, currentText);
 			}
-			// End-of-message reset (FR-006): the next assistant event begins a
-			// fresh turn whose cumulative text is independent of this one.
-			assistantSentLen = 0;
 		} else if (
 			event.type === "content_block_delta" &&
 			typeof event.delta?.text === "string" &&
@@ -210,11 +210,7 @@ export async function parseClaudeStream(
 	if (deltaBuffer) {
 		const finalDelta = deltaBuffer;
 		deltaBuffer = "";
-		try {
-			await callbacks.onText(finalDelta);
-		} catch {
-			// Same FR-011a tolerance as in-stream callbacks.
-		}
+		await safeInvoke(callbacks.onText, finalDelta);
 	}
 
 	resolved = true;
