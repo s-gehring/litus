@@ -15,7 +15,13 @@ import { renderMarkdown } from "../render-markdown";
 import type { RouteHandler, RouteMatch } from "../router";
 import { showConfirmModal } from "./confirm-modal";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
-import { createEpicFeedbackPanel, type EpicFeedbackPanelHandle } from "./epic-feedback-panel";
+import {
+	hideEpicFeedbackPanel,
+	hideEpicFeedbackPanelUnlessFor,
+	isEpicFeedbackPanelVisible,
+	showEpicFeedbackError,
+	showEpicFeedbackPanel,
+} from "./epic-feedback-panel";
 import { renderEpicTree, updateEpicTreeRow } from "./epic-tree";
 import { hideNotFoundPanel, showNotFoundPanel } from "./not-found-panel";
 import { renderPipelineSteps } from "./pipeline-steps";
@@ -46,7 +52,6 @@ export interface EpicDetailDeps {
 
 export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 	let currentEpicId: string | null = null;
-	let feedbackPanelHandle: EpicFeedbackPanelHandle | null = null;
 	// Preserve the user's in-progress textarea across re-renders. Unrelated
 	// server broadcasts (workflow:state, epic:feedback:history, etc.) trigger
 	// renderFull() which rebuilds the feedback panel; without this the
@@ -65,32 +70,64 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 	}
 
 	function removeEpicFeedbackUi(): void {
-		feedbackPanelHandle = null;
 		const existing = document.getElementById("epic-feedback-ui");
 		if (existing) existing.remove();
 	}
 
-	function getChildWorkflowsOf(epicId: string): WorkflowState[] {
-		const all: WorkflowState[] = [];
-		for (const [, entry] of deps.getState().getWorkflows()) {
-			if (entry.state.epicId === epicId) all.push(entry.state);
+	function openEpicFeedbackForm(epicId: string): void {
+		showEpicFeedbackPanel({
+			epicId,
+			initialText: feedbackDrafts.get(epicId) ?? "",
+			onChange: (text) => {
+				if (text.length === 0) feedbackDrafts.delete(epicId);
+				else feedbackDrafts.set(epicId, text);
+			},
+			onSubmit: (text) => {
+				// Keep the draft until the server confirms acceptance — see
+				// the epic:feedback:accepted handler. Rejection preserves the
+				// textarea per FR-014.
+				feedbackDrafts.set(epicId, text);
+				deps.send({ type: "epic:feedback", epicId, text });
+			},
+			onCancel: () => {
+				feedbackDrafts.delete(epicId);
+				hideEpicFeedbackPanel();
+				renderFull();
+			},
+		});
+		// Re-render so detail-actions hides the "Provide Feedback" button.
+		renderFull();
+	}
+
+	function renderEpicFeedbackHistorySection(epic: EpicClientState): void {
+		const section = document.getElementById("epic-feedback-section");
+		if (!section) return;
+		section.replaceChildren();
+		if (epic.feedbackHistory.length === 0) {
+			section.classList.add("hidden");
+			return;
 		}
-		return all;
+		section.classList.remove("hidden");
+		for (const entry of epic.feedbackHistory) {
+			section.appendChild(renderEpicFeedbackEntry(entry));
+		}
 	}
 
 	function renderEpicFeedbackUi(epic: EpicClientState): void {
 		removeEpicFeedbackUi();
-		const children = getChildWorkflowsOf(epic.epicId);
-		const eligible = isFeedbackEligible(epic, children);
 		const showableStatuses: Array<EpicClientState["status"]> = ["completed", "infeasible", "error"];
-		if (!showableStatuses.includes(epic.status)) return;
+		if (!showableStatuses.includes(epic.status)) {
+			renderEpicFeedbackHistorySection(epic);
+			return;
+		}
 
-		const container = document.createElement("div");
-		container.id = "epic-feedback-ui";
-		container.className = "epic-feedback-ui";
-
-		// Context-lost notice — dismissable
+		// Context-lost notice — dismissable. Sits next to the history block in
+		// the description column rather than the bottom of the screen.
 		if (epic.sessionContextLost) {
+			const container = document.createElement("div");
+			container.id = "epic-feedback-ui";
+			container.className = "epic-feedback-ui";
+
 			const notice = document.createElement("div");
 			notice.className = "epic-feedback-context-lost";
 			const text = document.createElement("span");
@@ -108,42 +145,12 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 			});
 			notice.appendChild(dismissBtn);
 			container.appendChild(notice);
+
+			const userInput = document.getElementById("user-input");
+			userInput?.parentElement?.insertBefore(container, userInput.nextSibling);
 		}
 
-		// Feedback history timeline
-		if (epic.feedbackHistory.length > 0) {
-			const hist = document.createElement("div");
-			hist.className = "feedback-history epic-feedback-history";
-			for (const entry of epic.feedbackHistory) {
-				hist.appendChild(renderEpicFeedbackEntry(entry));
-			}
-			container.appendChild(hist);
-		}
-
-		// Feedback panel — only when eligible.
-		if (eligible) {
-			const handle = createEpicFeedbackPanel({
-				epicId: epic.epicId,
-				initialText: feedbackDrafts.get(epic.epicId) ?? "",
-				onChange: (text) => {
-					if (text.length === 0) feedbackDrafts.delete(epic.epicId);
-					else feedbackDrafts.set(epic.epicId, text);
-				},
-				onSubmit: (text) => {
-					// Keep the draft in the map until the server confirms acceptance
-					// (see the epic:feedback:accepted case below). Rejection leaves
-					// the textarea intact per FR-014.
-					feedbackDrafts.set(epic.epicId, text);
-					deps.send({ type: "epic:feedback", epicId: epic.epicId, text });
-				},
-			});
-			feedbackPanelHandle = handle;
-			container.appendChild(handle.element);
-		}
-
-		// Mount after the output-area if present, else append to detail-area.
-		const detail = document.getElementById("detail-area");
-		if (detail) detail.appendChild(container);
+		renderEpicFeedbackHistorySection(epic);
 	}
 
 	function renderEpicFeedbackEntry(entry: EpicFeedbackEntry): HTMLDivElement {
@@ -338,6 +345,17 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 			});
 		}
 
+		// Provide Feedback button. Hidden while the form is open (mutual
+		// exclusion invariant 1) and while feedback is in-flight or otherwise
+		// ineligible. The form is the global #epic-feedback-panel host.
+		if (epic && isFeedbackEligible(epic, children) && !isEpicFeedbackPanelVisible()) {
+			actions.push({
+				label: "Provide Feedback",
+				className: "btn-secondary",
+				onClick: () => openEpicFeedbackForm(epicId),
+			});
+		}
+
 		actions.push({
 			label: anyRunning ? "Archive (disabled while running)" : "Archive",
 			className: anyRunning ? "btn-secondary btn-disabled" : "btn-secondary",
@@ -415,11 +433,21 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 
 	return {
 		mount(_container: HTMLElement, match: RouteMatch) {
+			const previousEpicId = currentEpicId;
 			currentEpicId = match.params.id ?? null;
+			// Switching epics with the form open: discard the prior epic's
+			// draft and close the form unless we're remounting the same epic
+			// (FR-013, spec Q4).
+			if (previousEpicId && previousEpicId !== currentEpicId) {
+				feedbackDrafts.delete(previousEpicId);
+			}
+			hideEpicFeedbackPanelUnlessFor(currentEpicId);
 			showDetailLayout();
 			renderFull();
 		},
 		unmount() {
+			if (currentEpicId) feedbackDrafts.delete(currentEpicId);
+			hideEpicFeedbackPanel();
 			currentEpicId = null;
 			hideLayout();
 		},
@@ -515,13 +543,14 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 				case "epic:feedback:accepted": {
 					if (msg.epicId === currentEpicId) {
 						feedbackDrafts.delete(msg.epicId);
+						hideEpicFeedbackPanel();
 						renderFull();
 					}
 					break;
 				}
 				case "epic:feedback:rejected": {
 					if (msg.epicId === currentEpicId) {
-						feedbackPanelHandle?.showError(msg.reason);
+						showEpicFeedbackError(msg.reason);
 					}
 					break;
 				}

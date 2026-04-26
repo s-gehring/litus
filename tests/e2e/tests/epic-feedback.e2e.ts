@@ -60,11 +60,16 @@ test.describe("Epic decomposition feedback", () => {
 		// Wait for decomposition to land.
 		await expect(tree.allChildRows()).toHaveCount(2, { timeout: 15_000 });
 
-		// Feedback container + panel textarea should be present and eligible.
-		await expect(page.locator("#epic-feedback-ui")).toBeVisible({ timeout: 15_000 });
-		await expect(page.locator(".epic-feedback-panel textarea.epic-feedback-input")).toBeVisible();
-		// Submit button starts disabled (empty textarea).
-		await expect(page.locator(".epic-feedback-panel button.btn-primary")).toBeDisabled();
+		// "Provide Feedback" button is present in detail-actions for an
+		// eligible epic. Click to open the form at the top of the screen.
+		const provideFeedbackBtn = page.locator('#detail-actions button:has-text("Provide Feedback")');
+		await expect(provideFeedbackBtn).toBeVisible({ timeout: 15_000 });
+		await provideFeedbackBtn.click();
+
+		// Form panel + textarea visible; submit button disabled on empty input.
+		await expect(page.locator("#epic-feedback-panel")).toBeVisible();
+		await expect(page.locator("#epic-feedback-input")).toBeVisible();
+		await expect(page.locator("#btn-submit-epic-feedback")).toBeDisabled();
 	});
 
 	test("rejects raw epic:feedback with reasonCode=validation on unknown epicId", async ({
