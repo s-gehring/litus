@@ -636,6 +636,53 @@ describe("epic:result, epic:infeasible, epic:error, epic:dependency-update", () 
 		});
 		expect(change.scope).toEqual({ entity: "none" });
 	});
+
+	// Regression: feedback acceptance after a long idle period must reset the
+	// epic's startedAt/completedAt so the live "analyzing" timer doesn't bill
+	// idle time to the new attempt.
+	test("epic:feedback:accepted resets startedAt and clears completedAt", () => {
+		const mgr = createManager();
+		mgr.handleMessage({ type: "epic:created", epicId: "e-1", description: "test" });
+		// Simulate the prior decomposition completing some time ago.
+		mgr.handleMessage({
+			type: "epic:result",
+			epicId: "e-1",
+			title: "Done",
+			specCount: 0,
+			workflowIds: [],
+			summary: null,
+		});
+		const epic = mgr.getEpics().get("e-1");
+		expect(epic).toBeDefined();
+		const oldStartedAt = "2026-01-01T00:00:00.000Z";
+		if (epic) {
+			epic.startedAt = oldStartedAt;
+			epic.completedAt = "2026-01-01T00:00:30.000Z";
+		}
+
+		const before = Date.now();
+		mgr.handleMessage({
+			type: "epic:feedback:accepted",
+			epicId: "e-1",
+			entry: {
+				id: "fb-1",
+				text: "refine please",
+				submittedAt: new Date().toISOString(),
+				attemptSessionId: null,
+				contextLostOnThisAttempt: false,
+				outcome: null,
+			},
+		});
+		const after = Date.now();
+
+		const updated = mgr.getEpics().get("e-1");
+		expect(updated?.status).toBe("analyzing");
+		expect(updated?.completedAt).toBeNull();
+		const newStartedAt = new Date(updated?.startedAt ?? 0).getTime();
+		expect(newStartedAt).toBeGreaterThanOrEqual(before);
+		expect(newStartedAt).toBeLessThanOrEqual(after);
+		expect(updated?.startedAt).not.toBe(oldStartedAt);
+	});
 });
 
 // T011: purge:progress and purge:complete handling

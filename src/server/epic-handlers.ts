@@ -505,6 +505,10 @@ async function runFeedbackAttempt(
 		errorMessage: epic.status === "error" ? null : epic.errorMessage,
 		status: "analyzing",
 		workflowIds: [],
+		// Reset the timer for the new attempt so idle time between the prior
+		// completion and this feedback submission isn't billed to the analysis.
+		startedAt: new Date().toISOString(),
+		completedAt: null,
 	};
 
 	await deps.sharedEpicStore.save(epic);
@@ -534,6 +538,7 @@ async function runFeedbackAttempt(
 			...current,
 			status: "error",
 			errorMessage: message,
+			completedAt: new Date().toISOString(),
 			feedbackHistory: current.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
 		};
 		await deps.sharedEpicStore.save(updated);
@@ -657,6 +662,7 @@ async function runFeedbackAttempt(
 			infeasibleNotes: result.infeasibleNotes,
 			analysisSummary: result.summary,
 			workflowIds: [],
+			completedAt: new Date().toISOString(),
 			decompositionSessionId: capturedSessionId ?? persistedNow.decompositionSessionId,
 			sessionContextLost: contextLost ? true : persistedNow.sessionContextLost,
 			feedbackHistory: persistedNow.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
@@ -696,6 +702,7 @@ async function runFeedbackAttempt(
 			analysisSummary: result.summary,
 			infeasibleNotes: null,
 			errorMessage: null,
+			completedAt: new Date().toISOString(),
 			decompositionSessionId: capturedSessionId ?? persistedNow.decompositionSessionId,
 			sessionContextLost: contextLost ? true : persistedNow.sessionContextLost,
 			feedbackHistory: persistedNow.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
@@ -756,6 +763,7 @@ async function runFeedbackAttempt(
 		analysisSummary: result.summary,
 		infeasibleNotes: null,
 		errorMessage: null,
+		completedAt: new Date().toISOString(),
 		decompositionSessionId: capturedSessionId ?? persistedNow.decompositionSessionId,
 		sessionContextLost: contextLost ? true : persistedNow.sessionContextLost,
 		feedbackHistory: persistedNow.feedbackHistory.map((e) => (e.id === entry.id ? entry : e)),
