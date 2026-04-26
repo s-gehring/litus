@@ -110,7 +110,7 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 			const entry = workflows.get(id);
 			if (entry) actionChildren.push(entry.state);
 		}
-		updateDetailActions(buildEpicActions(epicData ?? null, actionChildren));
+		updateDetailActions(buildEpicActions(agg.epicId, epicData ?? null, actionChildren));
 		clearOutput();
 		updateSpecDetails("");
 		updateFeedbackHistorySection([]);
@@ -159,16 +159,16 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 	}
 
 	function buildEpicActions(
+		epicId: string,
 		epic: EpicClientState | null,
 		children: WorkflowState[],
 	): { label: string; className: string; onClick: () => void }[] {
 		const actions: { label: string; className: string; onClick: () => void }[] = [];
-		if (!epic) return actions;
 		const anyRunning = children.some((c) => c.status === "running");
 		const nonTerminal = children.some(
 			(c) => !(c.status === "completed" || c.status === "aborted" || c.status === "error"),
 		);
-		if (epic.archived) {
+		if (epic?.archived) {
 			actions.push({
 				label: "View in archive",
 				className: "btn-secondary",
@@ -177,18 +177,18 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 			return actions;
 		}
 
-		const eligible = computeEligibleFirstLevelSpecs(epic.epicId, children);
+		const eligible = computeEligibleFirstLevelSpecs(epicId, children);
 		if (eligible.length > 0) {
-			const inFlight = startFirstLevelInFlight.has(epic.epicId);
+			const inFlight = startFirstLevelInFlight.has(epicId);
 			actions.push({
 				label: inFlight
 					? "Starting…"
 					: `Start ${eligible.length} ${eligible.length === 1 ? "spec" : "specs"}`,
 				className: inFlight ? "btn-primary btn-disabled btn-loading" : "btn-primary",
 				onClick: () => {
-					if (startFirstLevelInFlight.has(epic.epicId)) return;
-					startFirstLevelInFlight.add(epic.epicId);
-					deps.send({ type: "epic:start-first-level", epicId: epic.epicId });
+					if (startFirstLevelInFlight.has(epicId)) return;
+					startFirstLevelInFlight.add(epicId);
+					deps.send({ type: "epic:start-first-level", epicId });
 					renderFull();
 				},
 			});
@@ -211,7 +211,7 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 					});
 					if (!ok) return;
 				}
-				deps.send({ type: "epic:archive", epicId: epic.epicId });
+				deps.send({ type: "epic:archive", epicId });
 			},
 		});
 		return actions;
