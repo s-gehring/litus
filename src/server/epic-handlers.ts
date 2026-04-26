@@ -66,7 +66,7 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 
 	try {
 		const result = await analyzeEpic(trimmedDesc, repoDir, deps.epicAnalysisRef, undefined, {
-			onOutput: (text) => deps.broadcast({ type: "epic:output", epicId, text }),
+			onOutput: (text) => deps.emitText({ kind: "epic", epicId }, text),
 			onTools: (tools) => deps.broadcast({ type: "epic:tools", epicId, tools }),
 		});
 
