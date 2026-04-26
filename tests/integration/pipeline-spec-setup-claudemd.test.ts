@@ -154,6 +154,7 @@ function makeWorkflow(kind: WorkflowKind, worktreePath: string): Workflow {
 		activeInvocation: null,
 		managedRepo: null,
 		error: null,
+		hasEverStarted: false,
 		createdAt: now,
 		updatedAt: now,
 		archived: false,

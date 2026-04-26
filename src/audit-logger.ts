@@ -189,6 +189,64 @@ export class AuditLogger {
 	}
 
 	/**
+	 * Standalone epic-feedback audit events. Not tied to a pipeline run (no
+	 * runId/sequenceNumber scope in the runs map); `runId` is set to `epicId`,
+	 * `pipelineName` to `"epic:feedback"`, `branch` to `null`.
+	 */
+	logFeedbackSubmitted(payload: {
+		epicId: string;
+		feedbackEntryId: string;
+		textLength: number;
+		sessionContextLost: boolean;
+	}): void {
+		this.writeStandaloneEpicEvent("feedback_submitted", payload.epicId, {
+			epicId: payload.epicId,
+			feedbackEntryId: payload.feedbackEntryId,
+			textLength: payload.textLength,
+			sessionContextLost: payload.sessionContextLost,
+		});
+	}
+
+	logDecompositionResumed(payload: {
+		epicId: string;
+		sessionId: string | null;
+		attemptReason: "feedback" | "restart-recovery";
+	}): void {
+		this.writeStandaloneEpicEvent("decomposition_resumed", payload.epicId, {
+			epicId: payload.epicId,
+			sessionId: payload.sessionId,
+			attemptReason: payload.attemptReason,
+		});
+	}
+
+	private writeStandaloneEpicEvent(
+		eventType: AuditEventType,
+		epicId: string,
+		metadata: Record<string, unknown>,
+	): void {
+		try {
+			const pipelineName = "epic:feedback";
+			const safeFileName = pipelineName.replace(/[/\\:*?"<>|]+/g, "--");
+			const event: AuditEvent = {
+				timestamp: new Date().toISOString(),
+				eventType,
+				runId: epicId,
+				pipelineName,
+				branch: null,
+				commitHash: null,
+				stepName: null,
+				sequenceNumber: 0,
+				content: null,
+				metadata,
+			};
+			const filePath = join(this.auditDir, `${safeFileName}.jsonl`);
+			appendFileSync(filePath, `${JSON.stringify(event)}\n`);
+		} catch (err) {
+			logger.warn(`[audit] Failed to write ${eventType} event: ${err}`);
+		}
+	}
+
+	/**
 	 * Append an archive / unarchive audit line (workflow.archive, workflow.unarchive,
 	 * epic.archive, epic.unarchive) to a standalone JSONL file keyed by pipelineName.
 	 * Like logWorkflowReset, this is not tied to a run.

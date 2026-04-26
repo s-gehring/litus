@@ -17,6 +17,10 @@ function makeEpic(overrides?: Partial<PersistedEpic>): PersistedEpic {
 		errorMessage: null,
 		infeasibleNotes: null,
 		analysisSummary: null,
+		decompositionSessionId: null,
+		feedbackHistory: [],
+		sessionContextLost: false,
+		attemptCount: 1,
 		archived: false,
 		archivedAt: null,
 		...overrides,
@@ -88,5 +92,62 @@ describe("EpicStore", () => {
 
 		await store.removeAll();
 		expect(await store.loadAll()).toEqual([]);
+	});
+
+	test("round-trips the feedback fields (decompositionSessionId, feedbackHistory, sessionContextLost, attemptCount)", async () => {
+		const epic = makeEpic({
+			epicId: "e-rt",
+			decompositionSessionId: "sess-abc123",
+			feedbackHistory: [
+				{
+					id: "fb-1",
+					text: "Split spec 2 into separate specs.",
+					submittedAt: new Date().toISOString(),
+					attemptSessionId: "sess-abc123",
+					contextLostOnThisAttempt: false,
+					outcome: "completed",
+				},
+			],
+			sessionContextLost: true,
+			attemptCount: 3,
+		});
+
+		await store.save(epic);
+		const [loaded] = await store.loadAll();
+
+		expect(loaded.decompositionSessionId).toBe("sess-abc123");
+		expect(loaded.feedbackHistory).toHaveLength(1);
+		expect(loaded.feedbackHistory[0].text).toBe("Split spec 2 into separate specs.");
+		expect(loaded.feedbackHistory[0].outcome).toBe("completed");
+		expect(loaded.sessionContextLost).toBe(true);
+		expect(loaded.attemptCount).toBe(3);
+	});
+
+	test("normalizes pre-feature records with defaults for the new fields", async () => {
+		mkdirSync(baseDir, { recursive: true });
+		// An older on-disk record missing all four new fields.
+		writeFileSync(
+			join(baseDir, "epics.json"),
+			JSON.stringify([
+				{
+					epicId: "e-old",
+					description: "Old epic",
+					status: "completed",
+					title: "Old",
+					workflowIds: [],
+					startedAt: new Date().toISOString(),
+					completedAt: new Date().toISOString(),
+					errorMessage: null,
+					infeasibleNotes: null,
+					analysisSummary: null,
+				},
+			]),
+		);
+
+		const [loaded] = await store.loadAll();
+		expect(loaded.decompositionSessionId).toBeNull();
+		expect(loaded.feedbackHistory).toEqual([]);
+		expect(loaded.sessionContextLost).toBe(false);
+		expect(loaded.attemptCount).toBe(1);
 	});
 });

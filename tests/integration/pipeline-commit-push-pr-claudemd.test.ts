@@ -213,6 +213,7 @@ function makeWorkflow(worktreePath: string, branch: string): Workflow {
 		activeInvocation: null,
 		managedRepo: null,
 		error: null,
+		hasEverStarted: false,
 		createdAt: now,
 		updatedAt: now,
 		archived: false,

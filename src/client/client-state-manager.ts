@@ -166,6 +166,8 @@ export class ClientStateManager {
 				return this.handleWorkflowCreated(msg);
 			case "workflow:state":
 				return this.handleWorkflowState(msg);
+			case "workflow:removed":
+				return this.handleWorkflowRemoved(msg);
 			case "workflow:output":
 				return this.handleWorkflowOutput(msg);
 			case "console:output":
@@ -194,6 +196,12 @@ export class ClientStateManager {
 				return this.handleEpicError(msg);
 			case "epic:dependency-update":
 				return this.handleEpicDependencyUpdate(msg);
+			case "epic:feedback:accepted":
+				return this.handleEpicFeedbackAccepted(msg);
+			case "epic:feedback:rejected":
+				return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
+			case "epic:feedback:history":
+				return this.handleEpicFeedbackHistory(msg);
 			case "alert:list":
 				return this.handleAlertList(msg);
 			case "alert:created":
@@ -226,7 +234,7 @@ export class ClientStateManager {
 			case "auto-archive:state":
 				return { scope: { entity: "none" }, action: "updated" };
 			case "epic:start-first-level:result":
-				return { scope: { entity: "none" }, action: "updated" };
+				return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
 			default: {
 				const _exhaustive: never = msg;
 				void _exhaustive;
@@ -271,6 +279,21 @@ export class ClientStateManager {
 			this.rebuildCardOrder();
 		}
 		return { scope: { entity: "workflow", id: msg.workflow.id }, action: "updated" };
+	}
+
+	private handleWorkflowRemoved(
+		msg: Extract<ServerMessage, { type: "workflow:removed" }>,
+	): StateChange {
+		const existing = this.workflows.get(msg.workflowId);
+		if (!existing) return { scope: { entity: "none" }, action: "updated" };
+		this.workflows.delete(msg.workflowId);
+		const orderIdx = this.cardOrder.indexOf(msg.workflowId);
+		if (orderIdx >= 0) this.cardOrder.splice(orderIdx, 1);
+		if (existing.state.epicId) {
+			this.rebuildEpicAggregates();
+			this.rebuildCardOrder();
+		}
+		return { scope: { entity: "workflow", id: msg.workflowId }, action: "removed" };
 	}
 
 	private handleWorkflowOutput(
@@ -364,6 +387,10 @@ export class ClientStateManager {
 			errorMessage: null,
 			infeasibleNotes: null,
 			analysisSummary: null,
+			decompositionSessionId: null,
+			feedbackHistory: [],
+			sessionContextLost: false,
+			attemptCount: 1,
 			archived: false,
 			archivedAt: null,
 		});
@@ -429,6 +456,34 @@ export class ClientStateManager {
 		epic.completedAt = new Date().toISOString();
 		epic.errorMessage = msg.message;
 		epic.outputLines.push({ kind: "text", text: `Error: ${msg.message}`, type: "error" });
+		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
+	}
+
+	private handleEpicFeedbackAccepted(
+		msg: Extract<ServerMessage, { type: "epic:feedback:accepted" }>,
+	): StateChange {
+		const epic = this.epics.get(msg.epicId);
+		if (!epic) return { scope: { entity: "none" }, action: "updated" };
+		if (!epic.feedbackHistory.some((e) => e.id === msg.entry.id)) {
+			epic.feedbackHistory = [...epic.feedbackHistory, msg.entry];
+		}
+		epic.attemptCount = Math.max(epic.attemptCount, epic.feedbackHistory.length + 1);
+		epic.status = "analyzing";
+		// Prior child workflows are being deleted server-side; clear the
+		// reference list so rebuildEpicAggregates does not hold on to them
+		// while new decomposition results stream in.
+		epic.workflowIds = [];
+		this.rebuildEpicAggregates();
+		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
+	}
+
+	private handleEpicFeedbackHistory(
+		msg: Extract<ServerMessage, { type: "epic:feedback:history" }>,
+	): StateChange {
+		const epic = this.epics.get(msg.epicId);
+		if (!epic) return { scope: { entity: "none" }, action: "updated" };
+		epic.feedbackHistory = msg.entries;
+		epic.sessionContextLost = msg.sessionContextLost;
 		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
 	}
 

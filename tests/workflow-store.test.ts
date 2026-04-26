@@ -221,6 +221,34 @@ describe("WorkflowStore", () => {
 		expect(loaded.feedbackEntries[1].outcome).toBeNull();
 	});
 
+	describe("hasEverStarted migration backfill (F3 / FR-003)", () => {
+		const statusExpectations: Array<{ status: string; expected: boolean }> = [
+			{ status: "idle", expected: false },
+			{ status: "waiting_for_dependencies", expected: false },
+			{ status: "running", expected: true },
+			{ status: "paused", expected: true },
+			{ status: "waiting_for_input", expected: true },
+			{ status: "completed", expected: true },
+			{ status: "error", expected: true },
+			{ status: "aborted", expected: true },
+		];
+
+		for (const { status, expected } of statusExpectations) {
+			test(`status=${status} → hasEverStarted=${expected}`, async () => {
+				mkdirSync(baseDir, { recursive: true });
+				const wf = makeWorkflow({ id: `legacy-${status}` });
+				wf.status = status as typeof wf.status;
+				const raw = JSON.parse(JSON.stringify(wf)) as Record<string, unknown>;
+				delete raw.hasEverStarted;
+				writeFileSync(join(baseDir, `legacy-${status}.json`), JSON.stringify(raw, null, 2));
+
+				const loaded = await store.load(`legacy-${status}`);
+				assertDefined(loaded);
+				expect(loaded.hasEverStarted).toBe(expected);
+			});
+		}
+	});
+
 	test("migration backfills feedbackEntries = [] for legacy workflows", async () => {
 		mkdirSync(baseDir, { recursive: true });
 		const legacy = makeWorkflow({ id: "legacy-no-feedback" });
@@ -319,6 +347,10 @@ describe("WorkflowStore", () => {
 				errorMessage: null,
 				infeasibleNotes: null,
 				analysisSummary: null,
+				decompositionSessionId: null,
+				feedbackHistory: [],
+				sessionContextLost: false,
+				attemptCount: 1,
 				archived: false,
 				archivedAt: null,
 			});

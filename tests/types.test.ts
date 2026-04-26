@@ -372,6 +372,8 @@ describe("AuditEventType exhaustiveness", () => {
 			"epic.unarchive": true,
 			"artifacts.step.start": true,
 			"artifacts.step.end": true,
+			feedback_submitted: true,
+			decomposition_resumed: true,
 		};
 		const values = Object.keys(coverage) as AuditEventType[];
 		expect(new Set(values).size).toBe(values.length);
@@ -444,7 +446,7 @@ describe("Workflow Lifecycle", () => {
 		expect(q.detectedAt).toBe("2026-04-06T12:00:00Z");
 	});
 
-	test("Workflow shape with all 33 fields", () => {
+	test("Workflow shape with all 34 fields", () => {
 		const w: Workflow = {
 			id: "w-1",
 			workflowKind: "spec",
@@ -484,12 +486,13 @@ describe("Workflow Lifecycle", () => {
 			activeInvocation: null,
 			managedRepo: null,
 			error: null,
+			hasEverStarted: false,
 			createdAt: "2026-04-06T00:00:00Z",
 			updatedAt: "2026-04-06T00:00:00Z",
 			archived: false,
 			archivedAt: null,
 		};
-		expect(Object.keys(w)).toHaveLength(35);
+		expect(Object.keys(w)).toHaveLength(36);
 		expect(w.status).toBe("idle");
 	});
 
@@ -685,6 +688,7 @@ describe("ServerMessage variants", () => {
 					activeInvocation: null,
 					managedRepo: null,
 					error: null,
+					hasEverStarted: false,
 					createdAt: "",
 					updatedAt: "",
 					archived: false,
@@ -921,6 +925,10 @@ describe("Epic types", () => {
 			errorMessage: null,
 			infeasibleNotes: null,
 			analysisSummary: null,
+			decompositionSessionId: null,
+			feedbackHistory: [],
+			sessionContextLost: false,
+			attemptCount: 1,
 			archived: false,
 			archivedAt: null,
 		};
@@ -955,6 +963,10 @@ describe("Epic types", () => {
 			errorMessage: null,
 			infeasibleNotes: null,
 			analysisSummary: "Done",
+			decompositionSessionId: null,
+			feedbackHistory: [],
+			sessionContextLost: false,
+			attemptCount: 1,
 			archived: false,
 			archivedAt: null,
 			outputLines: [{ kind: "text", text: "hello" }],
@@ -1292,6 +1304,7 @@ describe("WorkflowClientState shape", () => {
 				activeInvocation: null,
 				managedRepo: null,
 				error: null,
+				hasEverStarted: false,
 				createdAt: "",
 				updatedAt: "",
 				archived: false,

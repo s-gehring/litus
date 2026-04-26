@@ -4,15 +4,18 @@ import type {
 	ClientMessage,
 	EpicAggregatedState,
 	EpicClientState,
+	EpicFeedbackEntry,
 	ServerMessage,
 	WorkflowState,
 } from "../../types";
+import { isFeedbackEligible } from "../../types";
 import type { ClientStateManager } from "../client-state-manager";
 import { $ } from "../dom";
 import { renderMarkdown } from "../render-markdown";
 import type { RouteHandler, RouteMatch } from "../router";
 import { showConfirmModal } from "./confirm-modal";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
+import { createEpicFeedbackPanel, type EpicFeedbackPanelHandle } from "./epic-feedback-panel";
 import { renderEpicTree, updateEpicTreeRow } from "./epic-tree";
 import { hideNotFoundPanel, showNotFoundPanel } from "./not-found-panel";
 import { renderPipelineSteps } from "./pipeline-steps";
@@ -43,13 +46,148 @@ export interface EpicDetailDeps {
 
 export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 	let currentEpicId: string | null = null;
+	let feedbackPanelHandle: EpicFeedbackPanelHandle | null = null;
+	// Preserve the user's in-progress textarea across re-renders. Unrelated
+	// server broadcasts (workflow:state, epic:feedback:history, etc.) trigger
+	// renderFull() which rebuilds the feedback panel; without this the
+	// textarea would reset to empty mid-typing. FR-014 requires the text to
+	// survive a rejection and its spirit extends to transient re-renders.
+	// Keyed by epicId so switching epics doesn't leak state.
+	const feedbackDrafts = new Map<string, string>();
 	const startFirstLevelInFlight = new Set<string>();
 
 	function hideLayout(): void {
 		const existingAnalysis = document.getElementById("epic-analysis-notes");
 		if (existingAnalysis) existingAnalysis.remove();
+		removeEpicFeedbackUi();
 		hideNotFoundPanel();
 		hideDetailLayout();
+	}
+
+	function removeEpicFeedbackUi(): void {
+		feedbackPanelHandle = null;
+		const existing = document.getElementById("epic-feedback-ui");
+		if (existing) existing.remove();
+	}
+
+	function getChildWorkflowsOf(epicId: string): WorkflowState[] {
+		const all: WorkflowState[] = [];
+		for (const [, entry] of deps.getState().getWorkflows()) {
+			if (entry.state.epicId === epicId) all.push(entry.state);
+		}
+		return all;
+	}
+
+	function renderEpicFeedbackUi(epic: EpicClientState): void {
+		removeEpicFeedbackUi();
+		const children = getChildWorkflowsOf(epic.epicId);
+		const eligible = isFeedbackEligible(epic, children);
+		const showableStatuses: Array<EpicClientState["status"]> = ["completed", "infeasible", "error"];
+		if (!showableStatuses.includes(epic.status)) return;
+
+		const container = document.createElement("div");
+		container.id = "epic-feedback-ui";
+		container.className = "epic-feedback-ui";
+
+		// Context-lost notice — dismissable
+		if (epic.sessionContextLost) {
+			const notice = document.createElement("div");
+			notice.className = "epic-feedback-context-lost";
+			const text = document.createElement("span");
+			text.textContent = "Prior agent context was lost. A fresh decomposition was produced.";
+			notice.appendChild(text);
+			const dismissBtn = document.createElement("button");
+			dismissBtn.type = "button";
+			dismissBtn.className = "btn btn-secondary";
+			dismissBtn.textContent = "Dismiss";
+			dismissBtn.addEventListener("click", () => {
+				deps.send({
+					type: "epic:feedback:ack-context-lost",
+					epicId: epic.epicId,
+				});
+			});
+			notice.appendChild(dismissBtn);
+			container.appendChild(notice);
+		}
+
+		// Feedback history timeline
+		if (epic.feedbackHistory.length > 0) {
+			const hist = document.createElement("div");
+			hist.className = "feedback-history epic-feedback-history";
+			for (const entry of epic.feedbackHistory) {
+				hist.appendChild(renderEpicFeedbackEntry(entry));
+			}
+			container.appendChild(hist);
+		}
+
+		// Feedback panel — only when eligible.
+		if (eligible) {
+			const handle = createEpicFeedbackPanel({
+				epicId: epic.epicId,
+				initialText: feedbackDrafts.get(epic.epicId) ?? "",
+				onChange: (text) => {
+					if (text.length === 0) feedbackDrafts.delete(epic.epicId);
+					else feedbackDrafts.set(epic.epicId, text);
+				},
+				onSubmit: (text) => {
+					// Keep the draft in the map until the server confirms acceptance
+					// (see the epic:feedback:accepted case below). Rejection leaves
+					// the textarea intact per FR-014.
+					feedbackDrafts.set(epic.epicId, text);
+					deps.send({ type: "epic:feedback", epicId: epic.epicId, text });
+				},
+			});
+			feedbackPanelHandle = handle;
+			container.appendChild(handle.element);
+		}
+
+		// Mount after the output-area if present, else append to detail-area.
+		const detail = document.getElementById("detail-area");
+		if (detail) detail.appendChild(container);
+	}
+
+	function renderEpicFeedbackEntry(entry: EpicFeedbackEntry): HTMLDivElement {
+		const row = document.createElement("div");
+		row.className = "feedback-entry epic-feedback-entry";
+
+		const header = document.createElement("div");
+		header.className = "feedback-entry-header";
+
+		const ts = document.createElement("span");
+		ts.className = "feedback-entry-timestamp";
+		ts.textContent = new Date(entry.submittedAt).toLocaleString();
+		ts.title = entry.submittedAt;
+		header.appendChild(ts);
+
+		const badge = document.createElement("span");
+		const outcomeValue = entry.outcome ?? "pending";
+		const outcomeClass =
+			outcomeValue === "completed"
+				? "outcome-success"
+				: outcomeValue === "infeasible"
+					? "outcome-no-changes"
+					: outcomeValue === "error"
+						? "outcome-failed"
+						: "outcome-pending";
+		badge.className = `feedback-entry-outcome ${outcomeClass}`;
+		badge.textContent = outcomeValue;
+		header.appendChild(badge);
+
+		if (entry.contextLostOnThisAttempt) {
+			const flag = document.createElement("span");
+			flag.className = "feedback-entry-context-lost";
+			flag.textContent = "context lost";
+			header.appendChild(flag);
+		}
+
+		row.appendChild(header);
+
+		const text = document.createElement("div");
+		text.className = "feedback-entry-text";
+		text.textContent = entry.text;
+		row.appendChild(text);
+
+		return row;
 	}
 
 	function renderAnalysisView(epic: EpicClientState): void {
@@ -81,6 +219,8 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		} else if (epic.outputLines.length > 0) {
 			renderOutputEntries(epic.outputLines);
 		}
+
+		renderEpicFeedbackUi(epic);
 	}
 
 	function renderTreeView(agg: EpicAggregatedState): void {
@@ -138,6 +278,10 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 			deps.navigate(`/workflow/${workflowId}`);
 		});
 		outputLog.appendChild(tree);
+
+		if (epicData) {
+			renderEpicFeedbackUi(epicData);
+		}
 	}
 
 	function renderEpicAnalysisNotes(epicData: EpicClientState): void {
@@ -347,6 +491,13 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 					renderFull();
 					break;
 				}
+				case "workflow:removed": {
+					// A prior child of the currently viewed epic was deleted (e.g.
+					// feedback accepted). Re-render so the stale row disappears from
+					// the tree.
+					renderFull();
+					break;
+				}
 				case "workflow:list":
 				case "epic:list": {
 					renderFull();
@@ -359,6 +510,23 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 				}
 				case "epic:created": {
 					// A new epic never affects the currently viewed epic.
+					break;
+				}
+				case "epic:feedback:accepted": {
+					if (msg.epicId === currentEpicId) {
+						feedbackDrafts.delete(msg.epicId);
+						renderFull();
+					}
+					break;
+				}
+				case "epic:feedback:rejected": {
+					if (msg.epicId === currentEpicId) {
+						feedbackPanelHandle?.showError(msg.reason);
+					}
+					break;
+				}
+				case "epic:feedback:history": {
+					if (msg.epicId === currentEpicId) renderFull();
 					break;
 				}
 			}

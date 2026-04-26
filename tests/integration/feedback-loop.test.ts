@@ -125,12 +125,13 @@ function createFakeEngine() {
 				activeInvocation: null,
 				managedRepo: null,
 				error: null,
+				hasEverStarted: false,
 				createdAt: now,
 				updatedAt: now,
 				archived: false,
 				archivedAt: null,
 			};
-			return workflow;
+			return workflow as Workflow;
 		},
 		transition: (_id: string, status: WorkflowStatus) => {
 			if (workflow) workflow.status = status;

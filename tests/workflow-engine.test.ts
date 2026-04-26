@@ -123,6 +123,46 @@ describe("WorkflowEngine", () => {
 		});
 	});
 
+	describe("hasEverStarted (FR-003)", () => {
+		test("is false on a fresh workflow", async () => {
+			const w = await engine.createWorkflow("test", "/tmp/test-repo");
+			expect(w.hasEverStarted).toBe(false);
+		});
+
+		test("flips to true on first transition out of idle", async () => {
+			const w = await engine.createWorkflow("test", "/tmp/test-repo");
+			engine.transition(w.id, "running");
+			expect(engine.getWorkflow()?.hasEverStarted).toBe(true);
+		});
+
+		test("flips to true when transitioning from waiting_for_dependencies to running", async () => {
+			const w = await engine.createWorkflow("test", "/tmp/test-repo");
+			// Manually seed waiting_for_dependencies to simulate an epic child.
+			const current = engine.getWorkflow();
+			if (!current) throw new Error("no workflow");
+			current.status = "waiting_for_dependencies";
+			current.hasEverStarted = false;
+			engine.transition(w.id, "running");
+			expect(engine.getWorkflow()?.hasEverStarted).toBe(true);
+		});
+
+		test("stays true after subsequent transitions", async () => {
+			const w = await engine.createWorkflow("test", "/tmp/test-repo");
+			engine.transition(w.id, "running");
+			engine.transition(w.id, "completed");
+			expect(engine.getWorkflow()?.hasEverStarted).toBe(true);
+		});
+
+		test("does not flip on idle → waiting_for_dependencies (idle-family transition)", async () => {
+			const w = await engine.createWorkflow("test", "/tmp/test-repo");
+			engine.transition(w.id, "waiting_for_dependencies");
+			const current = engine.getWorkflow();
+			if (!current) throw new Error("no workflow");
+			expect(current.status).toBe("waiting_for_dependencies");
+			expect(current.hasEverStarted).toBe(false);
+		});
+	});
+
 	describe("transition clears activeInvocation on terminal states (CR-2)", () => {
 		function seedActive(): void {
 			const current = engine.getWorkflow();

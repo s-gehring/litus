@@ -148,7 +148,9 @@ export type AuditEventType =
 	| "epic.archive"
 	| "epic.unarchive"
 	| "artifacts.step.start"
-	| "artifacts.step.end";
+	| "artifacts.step.end"
+	| "feedback_submitted"
+	| "decomposition_resumed";
 
 // Payload persisted as a JSONL record when a workflow is reset via the retry-
 // workflow action. Matches contracts/audit-workflow-reset.md. Lives alongside
@@ -530,6 +532,11 @@ export const STEP = {
 // Delta buffer flush timeout used across CLI stream consumers
 export const DELTA_FLUSH_TIMEOUT_MS = 50;
 
+// Maximum trimmed feedback length accepted by the epic-decomposition feedback
+// endpoint (FR-005). Shared between the client-side counter/panel and the
+// server-side validation so the two cannot drift.
+export const EPIC_FEEDBACK_MAX_LENGTH = 10_000;
+
 // Manual-mode feedback loop: per-iteration outcome of a feedback-implementer run
 export type FeedbackOutcomeValue = "success" | "no changes" | "failed" | "aborted";
 
@@ -615,6 +622,13 @@ export interface Workflow {
 	 * reset. Other workflow paths leave this null.
 	 */
 	error: { message: string } | null;
+	/**
+	 * Set true on the first transition out of `idle`/`waiting_for_dependencies`;
+	 * never cleared (not even by resetWorkflow). Feedback eligibility uses this
+	 * rather than the current `status`, because reset can land a workflow back
+	 * in `idle`.
+	 */
+	hasEverStarted: boolean;
 	createdAt: string;
 	updatedAt: string;
 	/** Pure visibility flag. Orthogonal to `status`. See 001-archive-workflows. */
@@ -702,6 +716,7 @@ export type Channel =
 // Server → Client messages
 export type ServerMessage =
 	| { type: "workflow:state"; workflow: WorkflowState | null }
+	| { type: "workflow:removed"; workflowId: string }
 	| { type: "workflow:list"; workflows: WorkflowState[] }
 	| { type: "workflow:created"; workflow: WorkflowState }
 	| { type: "workflow:output"; workflowId: string; text: string }
@@ -730,6 +745,19 @@ export type ServerMessage =
 	  }
 	| { type: "epic:infeasible"; epicId: string; title: string; infeasibleNotes: string }
 	| { type: "epic:error"; epicId: string; message: string }
+	| { type: "epic:feedback:accepted"; epicId: string; entry: EpicFeedbackEntry }
+	| {
+			type: "epic:feedback:rejected";
+			epicId: string;
+			reasonCode: "spec_started" | "in_flight" | "validation";
+			reason: string;
+	  }
+	| {
+			type: "epic:feedback:history";
+			epicId: string;
+			entries: EpicFeedbackEntry[];
+			sessionContextLost: boolean;
+	  }
 	| {
 			type: "epic:dependency-update";
 			workflowId: string;
@@ -845,8 +873,40 @@ export interface PersistedEpic {
 	errorMessage: string | null;
 	infeasibleNotes: string | null;
 	analysisSummary: string | null;
+	/** Session ID of the most recent decomposition agent invocation for this epic. */
+	decompositionSessionId: string | null;
+	/** Chronological feedback round history (oldest first). */
+	feedbackHistory: EpicFeedbackEntry[];
+	/** True for one completion cycle after a fresh-fallback attempt. */
+	sessionContextLost: boolean;
+	/** Monotonic counter of attempts; 1 = initial, each accepted feedback increments. */
+	attemptCount: number;
 	archived: boolean;
 	archivedAt: string | null;
+}
+
+export interface EpicFeedbackEntry {
+	/** Stable identifier (uuid v4). */
+	id: string;
+	/** Trimmed submitted text, 1–10 000 chars. */
+	text: string;
+	/** ISO 8601 timestamp of server-side acceptance. */
+	submittedAt: string;
+	/** Session ID of the attempt this feedback initiated; null if fresh-fallback or not yet captured. */
+	attemptSessionId: string | null;
+	/** True iff this attempt fell back to a fresh decomposition. */
+	contextLostOnThisAttempt: boolean;
+	/** Terminal outcome of the attempt, or null while in-flight. */
+	outcome: "completed" | "infeasible" | "error" | null;
+}
+
+export function isFeedbackEligible(
+	epic: PersistedEpic,
+	childWorkflows: Pick<Workflow, "hasEverStarted">[],
+): boolean {
+	if (epic.status === "analyzing") return false;
+	if (childWorkflows.some((w) => w.hasEverStarted)) return false;
+	return true;
 }
 
 export interface EpicClientState extends PersistedEpic {
@@ -928,6 +988,8 @@ export type ClientMessage =
 			submissionId?: string;
 	  }
 	| { type: "epic:abort" }
+	| { type: "epic:feedback"; epicId: string; text: string }
+	| { type: "epic:feedback:ack-context-lost"; epicId: string }
 	| { type: "epic:start-first-level"; epicId: string }
 	| { type: "workflow:start-existing"; workflowId: string }
 	| { type: "workflow:force-start"; workflowId: string }

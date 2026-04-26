@@ -827,6 +827,81 @@ header h1 {
   color: var(--text);
 }
 
+/* Epic feedback UI */
+.epic-feedback-ui {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.epic-feedback-context-lost {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: rgba(180, 140, 80, 0.15);
+  border: 1px solid rgba(180, 140, 80, 0.4);
+  border-radius: var(--radius);
+  font-size: 0.8rem;
+}
+
+.epic-feedback-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.epic-feedback-panel-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent-blue);
+}
+
+.epic-feedback-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.epic-feedback-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--text-muted, #9aa);
+}
+
+.epic-feedback-counter.over-limit {
+  color: #d88;
+  font-weight: 600;
+}
+
+.epic-feedback-error {
+  color: #d88;
+}
+
+.epic-feedback-error.hidden {
+  display: none;
+}
+
+.epic-feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.epic-feedback-entry .feedback-entry-context-lost {
+  font-size: 0.7rem;
+  color: #caa;
+  font-style: italic;
+}
+
 /* Buttons */
 .btn {
   padding: 8px 20px;

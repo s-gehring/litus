@@ -88,17 +88,25 @@ const MAX_INPUT_LENGTH = 100_000;
 export function validateTextInput(
 	value: string,
 	label: string,
-	options: { minLength?: number; emptyMessage?: string } = {},
+	options: {
+		minLength?: number;
+		maxLength?: number;
+		emptyMessage?: string;
+		overLimitMessage?: string;
+	} = {},
 ): string | null {
 	const minLength = options.minLength ?? 1;
-	if (!value || value.trim().length < minLength) {
+	const maxLength = options.maxLength ?? MAX_INPUT_LENGTH;
+	const trimmedLen = typeof value === "string" ? value.trim().length : 0;
+	if (!value || trimmedLen < minLength) {
 		if (options.emptyMessage) return options.emptyMessage;
 		return minLength > 1
 			? `${label} must be at least ${minLength} characters`
 			: `${label} must be non-empty`;
 	}
-	if (value.length > MAX_INPUT_LENGTH) {
-		return `${label} exceeds maximum length (${MAX_INPUT_LENGTH.toLocaleString()} characters)`;
+	if (trimmedLen > maxLength) {
+		if (options.overLimitMessage) return options.overLimitMessage;
+		return `${label} exceeds maximum length (${maxLength.toLocaleString()} characters)`;
 	}
 	return null;
 }

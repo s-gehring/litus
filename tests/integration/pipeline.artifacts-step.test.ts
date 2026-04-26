@@ -94,6 +94,7 @@ function makeSpecWorkflow(id: string, worktreePath: string, branch: string): Wor
 		feedbackPreRunHead: null,
 		activeInvocation: null,
 		managedRepo: null,
+		hasEverStarted: false,
 		createdAt: now,
 		updatedAt: now,
 		archived: false,
