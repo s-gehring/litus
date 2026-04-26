@@ -328,6 +328,12 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "console:output": {
+			// Already logged with the [litus:console] prefix by the state manager.
+			// Must not surface in any visible UI.
+			break;
+		}
+
 		case "error": {
 			appendOutput(`Error: ${msg.message}`, "error");
 			break;
