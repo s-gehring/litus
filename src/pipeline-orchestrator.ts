@@ -730,7 +730,7 @@ export class PipelineOrchestrator {
 		});
 	}
 
-	abortPipeline(workflowId: string): void {
+	abortPipeline(workflowId: string, opts?: { suppressEpicFinishedAlert?: boolean }): void {
 		runInWorkflowContext(workflowId, () => {
 			const workflow = this.getWorkflowOrThrow(workflowId);
 
@@ -812,7 +812,9 @@ export class PipelineOrchestrator {
 			// Update epic dependency status for siblings if this workflow was aborted,
 			// and emit `epic-finished` when every sibling has reached a terminal state.
 			if (workflow.epicId) {
-				this.checkEpicDependencies(workflow).catch((err) => {
+				this.checkEpicDependencies(workflow, {
+					suppressEpicFinishedAlert: opts?.suppressEpicFinishedAlert === true,
+				}).catch((err) => {
 					logger.error(`[pipeline] Failed to check epic dependencies: ${err}`);
 				});
 			}
@@ -2476,7 +2478,10 @@ export class PipelineOrchestrator {
 		}
 	}
 
-	private async checkEpicDependencies(triggerWorkflow: Workflow): Promise<void> {
+	private async checkEpicDependencies(
+		triggerWorkflow: Workflow,
+		opts?: { suppressEpicFinishedAlert?: boolean },
+	): Promise<void> {
 		if (!triggerWorkflow.epicId) return;
 
 		// Wait for in-flight saves (trigger's own persist, and any sibling whose
@@ -2522,7 +2527,7 @@ export class PipelineOrchestrator {
 		const allTerminal =
 			epicWorkflows.length > 0 &&
 			epicWorkflows.every((w) => w.id === triggerWorkflow.id || terminal(w.status));
-		if (allTerminal) {
+		if (allTerminal && opts?.suppressEpicFinishedAlert !== true) {
 			this.callbacks.onAlertEmit?.({
 				type: "epic-finished",
 				title: "Epic finished",
