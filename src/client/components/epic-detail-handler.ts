@@ -13,7 +13,7 @@ import type { ClientStateManager } from "../client-state-manager";
 import { $ } from "../dom";
 import { renderMarkdown } from "../render-markdown";
 import type { RouteHandler, RouteMatch } from "../router";
-import { showConfirmModal } from "./confirm-modal";
+import { type ActionSpec, renderDetailActions } from "./detail-actions";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
 import { createEpicFeedbackPanel, type EpicFeedbackPanelHandle } from "./epic-feedback-panel";
 import { renderEpicTree, updateEpicTreeRow } from "./epic-tree";
@@ -27,7 +27,6 @@ import {
 	renderOutputEntries,
 	updateActiveModelPanel,
 	updateBranchInfo,
-	updateDetailActions,
 	updateEpicStatus,
 	updateFeedbackHistorySection,
 	updateFlavor,
@@ -199,7 +198,7 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		updateFlavor("");
 		updateUserInput(epic.description);
 		updateSpecDetails("");
-		updateDetailActions([]);
+		renderDetailActions([]);
 		updateBranchInfo(null);
 		updateFeedbackHistorySection([]);
 
@@ -250,7 +249,7 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 			const entry = workflows.get(id);
 			if (entry) actionChildren.push(entry.state);
 		}
-		updateDetailActions(buildEpicActions(agg.epicId, epicData ?? null, actionChildren));
+		renderDetailActions(buildEpicActions(agg.epicId, epicData ?? null, actionChildren));
 		clearOutput();
 		updateSpecDetails("");
 		updateFeedbackHistorySection([]);
@@ -306,29 +305,35 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		epicId: string,
 		epic: EpicClientState | null,
 		children: WorkflowState[],
-	): { label: string; className: string; onClick: () => void }[] {
-		const actions: { label: string; className: string; onClick: () => void }[] = [];
+	): ActionSpec[] {
+		const actions: ActionSpec[] = [];
 		const anyRunning = children.some((c) => c.status === "running");
+		const anyPaused = children.some((c) => c.status === "paused");
+		const abortable = children.some(
+			(c) =>
+				c.status === "paused" ||
+				c.status === "waiting_for_input" ||
+				c.status === "waiting_for_dependencies" ||
+				c.status === "error",
+		);
 		const nonTerminal = children.some(
 			(c) => !(c.status === "completed" || c.status === "aborted" || c.status === "error"),
 		);
+
 		if (epic?.archived) {
-			actions.push({
-				label: "View in archive",
-				className: "btn-secondary",
-				onClick: () => deps.navigate("/archive"),
-			});
+			actions.push({ key: "view-archive", onClick: () => deps.navigate("/archive") });
 			return actions;
 		}
 
 		const eligible = computeEligibleFirstLevelSpecs(epicId, children);
 		if (eligible.length > 0) {
 			const inFlight = startFirstLevelInFlight.has(epicId);
+			const noun = eligible.length === 1 ? "spec" : "specs";
 			actions.push({
-				label: inFlight
-					? "Starting…"
-					: `Start ${eligible.length} ${eligible.length === 1 ? "spec" : "specs"}`,
-				className: inFlight ? "btn-primary btn-disabled btn-loading" : "btn-primary",
+				key: "start-children",
+				labelOverride: inFlight ? "Starting…" : `Start ${eligible.length} ${noun}`,
+				loading: inFlight,
+				disabled: inFlight ? { reason: "Already starting" } : undefined,
 				onClick: () => {
 					if (startFirstLevelInFlight.has(epicId)) return;
 					startFirstLevelInFlight.add(epicId);
@@ -338,25 +343,46 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 			});
 		}
 
+		// Batch run-controls — fan out to each child via the server. Mirror
+		// the per-workflow predicates so the buttons only appear when at
+		// least one child can react to them.
+		if (anyRunning) {
+			actions.push({
+				key: "pause-all",
+				onClick: () => deps.send({ type: "epic:pause-all", epicId }),
+			});
+		}
+		if (anyPaused) {
+			actions.push({
+				key: "resume-all",
+				onClick: () => deps.send({ type: "epic:resume-all", epicId }),
+			});
+		}
+		if (abortable) {
+			actions.push({
+				key: "abort-all",
+				onClick: () => deps.send({ type: "epic:abort-all", epicId }),
+			});
+		}
+
+		// Archive — disabled when any child is still running. When children
+		// are non-terminal but not running the archive opens a confirm modal
+		// with a count-aware copy; otherwise the registry confirm is fine.
+		const unfinished = children.filter(
+			(c) => !(c.status === "completed" || c.status === "aborted" || c.status === "error"),
+		).length;
 		actions.push({
-			label: anyRunning ? "Archive (disabled while running)" : "Archive",
-			className: anyRunning ? "btn-secondary btn-disabled" : "btn-secondary",
-			onClick: async () => {
-				if (anyRunning) return;
-				if (nonTerminal) {
-					const unfinished = children.filter(
-						(c) => !(c.status === "completed" || c.status === "aborted" || c.status === "error"),
-					).length;
-					const ok = await showConfirmModal({
+			key: "archive",
+			onClick: () => deps.send({ type: "epic:archive", epicId }),
+			disabled: anyRunning ? { reason: "Cannot archive while children are running" } : undefined,
+			confirmOverride: nonTerminal
+				? {
 						title: "Archive this epic?",
 						body: `${unfinished} workflow${unfinished === 1 ? " has" : "s have"} not finished. Archiving the epic will archive all of its workflows — you can unarchive later.`,
 						confirmLabel: "Archive",
 						cancelLabel: "Cancel",
-					});
-					if (!ok) return;
-				}
-				deps.send({ type: "epic:archive", epicId });
-			},
+					}
+				: null,
 		});
 		return actions;
 	}

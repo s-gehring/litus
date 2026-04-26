@@ -57,7 +57,7 @@ test.describe("Epic start-first-level button", () => {
 		await expect(bRow.locator(".card-status")).toHaveClass(/card-status-idle/);
 
 		// Two first-level idle specs ⇒ the button label is "Start 2 specs".
-		const startButton = page.locator("#detail-actions [data-testid='action-start-2-specs']");
+		const startButton = page.locator("#detail-actions [data-testid='action-start-children']");
 		await expect(startButton).toBeVisible();
 
 		await startButton.click();
@@ -84,7 +84,9 @@ test.describe("Epic start-first-level button", () => {
 		// Once no idle first-level specs remain, the button must disappear
 		// (FR-004 / FR-005).
 		await expect(startButton).toHaveCount(0, { timeout: 15_000 });
-		await expect(page.locator("#detail-actions [data-testid^='action-start-']")).toHaveCount(0);
+		await expect(page.locator("#detail-actions [data-testid='action-start-children']")).toHaveCount(
+			0,
+		);
 	});
 
 	test("'Start N specs' is visible after a page reload and drives the full flow", async ({
@@ -127,7 +129,7 @@ test.describe("Epic start-first-level button", () => {
 
 		// The Start button MUST be visible after reload — this is the assertion
 		// that would have failed under the pre-fix code path.
-		const startButton = page.locator("#detail-actions [data-testid='action-start-2-specs']");
+		const startButton = page.locator("#detail-actions [data-testid='action-start-children']");
 		await expect(startButton).toBeVisible({ timeout: 15_000 });
 
 		// Drive the full flow from the reloaded page to confirm clicking still
