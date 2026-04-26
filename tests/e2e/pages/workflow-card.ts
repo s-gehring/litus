@@ -114,6 +114,48 @@ export class WorkflowCardPage {
 		return this.detailActions().locator('[data-testid="action-provide-feedback"]');
 	}
 
+	startAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-start"]');
+	}
+
+	archiveAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-archive"]');
+	}
+
+	startChildrenAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-start-children"]');
+	}
+
+	pauseAllAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-pause-all"]');
+	}
+
+	resumeAllAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-resume-all"]');
+	}
+
+	abortAllAction(): Locator {
+		return this.detailActions().locator('[data-testid="action-abort-all"]');
+	}
+
+	/**
+	 * The DOM-based confirmation modal opened by destructive action-bar
+	 * buttons (abort, abort-all, retry-workflow, archive-of-non-terminal).
+	 * The legacy native `confirm()` dialogs were removed when the action
+	 * bar unified onto the registry-driven renderer.
+	 */
+	confirmModal(): Locator {
+		return this.page.locator(".confirm-modal");
+	}
+
+	confirmModalConfirm(): Locator {
+		return this.confirmModal().locator(".btn-primary");
+	}
+
+	confirmModalCancel(): Locator {
+		return this.confirmModal().locator(".btn-secondary");
+	}
+
 	autoModeToggle(): Locator {
 		return this.page.locator("#btn-auto-mode");
 	}
