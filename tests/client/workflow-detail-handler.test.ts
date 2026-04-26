@@ -163,6 +163,31 @@ describe("workflow-detail-handler action buttons", () => {
 		expect(banner.textContent ?? "").toBe("");
 	});
 
+	test("workflow summary falls back to specification when summarizer produced no summary", () => {
+		// Pre-populate the slot with the previous detail's title to mimic the real
+		// bug: navigating from one workflow to another whose summary is still empty
+		// (e.g. summarizer agent errored) used to leave the prior title visible.
+		const slot = document.getElementById("workflow-summary") as HTMLElement;
+		slot.textContent = "Stale previous title";
+		mountForWorkflow({
+			id: "wf-no-summary",
+			summary: "",
+			specification: "Fix login button alignment on mobile",
+		});
+		expect(slot.textContent).toBe("Fix login button alignment on mobile");
+	});
+
+	test("workflow summary uses generated summary when present", () => {
+		const slot = document.getElementById("workflow-summary") as HTMLElement;
+		slot.textContent = "Stale previous title";
+		mountForWorkflow({
+			id: "wf-with-summary",
+			summary: "Login button fix",
+			specification: "Fix login button alignment on mobile",
+		});
+		expect(slot.textContent).toBe("Login button fix");
+	});
+
 	test("all action testids stay in sync with the e2e page-object contract", () => {
 		// Covers every button label this pane can emit, not just the retry pair.
 		// Renaming any label here will break the generated testid used by the
