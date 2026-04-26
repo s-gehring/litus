@@ -105,7 +105,10 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		if (!deps.getArtifactContext(wf.id)) {
 			deps.fetchArtifacts(wf.id);
 		}
-		if (wf.summary) updateSummary(wf.summary);
+		// Always update — when summary is empty (e.g. summarizer agent errored) fall
+		// back to the raw specification so the title doesn't keep showing the previous
+		// detail's text. Matches the card's `wf.summary || wf.specification` fallback.
+		updateSummary(wf.summary || wf.specification);
 		updateStepSummary(wf.stepSummary ?? "");
 		updateFlavor(wf.flavor ?? "");
 		updateUserInput(wf.specification);
