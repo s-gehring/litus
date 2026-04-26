@@ -4,11 +4,11 @@ import type { CIMonitorCoordinator } from "./ci-monitor-coordinator";
 import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
 import { gitSpawn } from "./git-logger";
-import {
+import type {
 	mergePr as defaultMergePr,
 	resolveConflicts as defaultResolveConflicts,
 } from "./pr-merger";
-import { syncRepo as defaultSyncRepo } from "./repo-syncer";
+import type { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import type { CiFailureLog, EffortLevel, MergeResult, Question, Workflow } from "./types";
 import type { WorkflowEngine } from "./workflow-engine";
 
@@ -205,10 +205,7 @@ export class CiMergeFlowController {
 	 *  - any other text    → treated as guidance for the fix-ci agent; advance
 	 *                        to fix-ci with the user's answer attached.
 	 */
-	async answerMonitorCancelledQuestion(
-		workflow: Workflow,
-		answer: string,
-	): Promise<CiFlowOutcome> {
+	async answerMonitorCancelledQuestion(workflow: Workflow, answer: string): Promise<CiFlowOutcome> {
 		const normalized = answer.trim().toLowerCase();
 		if (normalized === "abort") {
 			return { kind: "error", message: "Workflow aborted by user after cancelled CI checks" };

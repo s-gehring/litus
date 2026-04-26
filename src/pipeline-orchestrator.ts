@@ -3,8 +3,8 @@ import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { buildArtifactsPrompt } from "./artifacts-prompt";
 import { AuditLogger } from "./audit-logger";
-import { startMonitoring } from "./ci-monitor";
 import { type CiFlowOutcome, CiMergeFlowController } from "./ci-merge-flow-controller";
+import { startMonitoring } from "./ci-monitor";
 import { CIMonitorCoordinator } from "./ci-monitor-coordinator";
 import { type ClaudeMdGuardResult, guardClaudeMd as defaultGuardClaudeMd } from "./claude-md-guard";
 import {
