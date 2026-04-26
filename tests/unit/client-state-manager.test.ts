@@ -244,14 +244,24 @@ describe("workflow:output and workflow:tools", () => {
 		expect((entry?.outputLines[0] as { text: string }).text).toBe("line 2");
 	});
 
-	test("returns none for unknown workflow ID", () => {
+	test("returns none for unknown workflow ID and logs unrouted diagnostic", () => {
 		const mgr = createManager();
-		const change = mgr.handleMessage({
-			type: "workflow:output",
-			workflowId: "nonexistent",
-			text: "hello",
-		});
-		expect(change.scope).toEqual({ entity: "none" });
+		const original = console.log;
+		const logs: string[] = [];
+		console.log = (...args: unknown[]) => {
+			logs.push(args.map((a) => String(a)).join(" "));
+		};
+		try {
+			const change = mgr.handleMessage({
+				type: "workflow:output",
+				workflowId: "nonexistent",
+				text: "hello",
+			});
+			expect(change.scope).toEqual({ entity: "none" });
+			expect(logs).toContain("[litus:unrouted workflow=nonexistent] hello");
+		} finally {
+			console.log = original;
+		}
 	});
 
 	test("workflow:tools returns none for unknown workflow ID", () => {
@@ -766,6 +776,51 @@ describe("config:state, config:error, log, error, and unknown messages", () => {
 		const change = mgr.handleMessage({ type: "log", text: "info message" });
 		expect(change.scope).toEqual({ entity: "none" });
 		expect(change.action).toBe("updated");
+	});
+
+	test("epic:output for unknown epic ID logs unrouted diagnostic", () => {
+		const mgr = createManager();
+		const original = console.log;
+		const logs: string[] = [];
+		console.log = (...args: unknown[]) => {
+			logs.push(args.map((a) => String(a)).join(" "));
+		};
+		try {
+			const change = mgr.handleMessage({
+				type: "epic:output",
+				epicId: "unknown-epic",
+				text: "stray epic output",
+			});
+			expect(change.scope).toEqual({ entity: "none" });
+			expect(logs).toContain("[litus:unrouted epic=unknown-epic] stray epic output");
+		} finally {
+			console.log = original;
+		}
+	});
+
+	test("console:output logs with [litus:console] prefix and mutates no UI state", () => {
+		const mgr = createManager();
+		mgr.handleMessage({
+			type: "workflow:created",
+			workflow: makeWorkflowState({ id: "wf-1" }),
+		});
+		mgr.handleMessage({ type: "epic:created", epicId: "ep-1", description: "test" });
+
+		const original = console.log;
+		const logs: string[] = [];
+		console.log = (...args: unknown[]) => {
+			logs.push(args.map((a) => String(a)).join(" "));
+		};
+		try {
+			const change = mgr.handleMessage({ type: "console:output", text: "diagnostic" });
+			expect(logs).toContain("[litus:console] diagnostic");
+			expect(change.scope).toEqual({ entity: "none" });
+			expect(change.action).toBe("updated");
+			expect(mgr.getWorkflows().get("wf-1")?.outputLines).toHaveLength(0);
+			expect(mgr.getEpics().get("ep-1")?.outputLines).toHaveLength(0);
+		} finally {
+			console.log = original;
+		}
 	});
 
 	test("error returns none scope", () => {
