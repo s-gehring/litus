@@ -427,7 +427,7 @@ describe("US1: artifacts step runs and collects files for spec workflows", () =>
 		expect(readFileSync(priorSnap, "utf-8")).toBe("# prior content");
 	});
 
-	test("US5: missing manifest.json → error with the manifest-missing reason", async () => {
+	test("missing manifest.json + no output → step completes empty (no error)", async () => {
 		const id = `wf-no-man-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const worktreePath = join(baseDir, "worktree-no-man");
 		mkdirSync(worktreePath, { recursive: true });
@@ -453,14 +453,73 @@ describe("US1: artifacts step runs and collects files for spec workflows", () =>
 		orch.startPipelineFromWorkflow(wf);
 		await new Promise((r) => setTimeout(r, 10));
 
-		// LLM exits cleanly but never wrote a manifest.json into the output dir.
-		cli.lastStarted()?.callbacks.onOutput("I finished, but forgot the manifest.");
+		// LLM exits cleanly without writing a manifest AND without producing
+		// any files. The step is now treated as a legitimate empty outcome
+		// rather than erroring.
+		cli.lastStarted()?.callbacks.onOutput("Nothing worth keeping.");
 		cli.lastStarted()?.callbacks.onComplete();
 		await new Promise((r) => setTimeout(r, 30));
 
 		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
-		expect(step?.status).toBe("error");
-		expect(step?.error).toContain("No manifest.json");
+		expect(step?.status).toBe("completed");
+		expect(step?.outcome).toBe("empty");
+	});
+
+	test("missing manifest.json + files written → fallback collects them and step completes", async () => {
+		const id = `wf-fallback-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const worktreePath = join(baseDir, "worktree-fallback");
+		mkdirSync(worktreePath, { recursive: true });
+		const branch = "feat-fallback";
+
+		const wf = makeSpecWorkflow(id, worktreePath, branch);
+		registerCleanup(getArtifactsRoot(id));
+
+		const cli = makeStubCli();
+		const engine = makeStubEngine(wf);
+		const orch = new PipelineOrchestrator(
+			{
+				onStepChange: () => {},
+				onOutput: () => {},
+				onTools: () => {},
+				onComplete: () => {},
+				onError: () => {},
+				onStateChange: () => {},
+			},
+			{ engine, cliRunner: cli.runner, workflowStore: store },
+		);
+
+		orch.startPipelineFromWorkflow(wf);
+		await new Promise((r) => setTimeout(r, 10));
+
+		// LLM produced 5 useful files (matches the bug report: summary.md +
+		// log files) but forgot the manifest. The fallback should still
+		// collect them all rather than discarding the run.
+		const outputDir = join(worktreePath, "specs", branch, "artifacts-output");
+		mkdirSync(outputDir, { recursive: true });
+		writeFileSync(join(outputDir, "summary.md"), "# Reviewer overview\n");
+		writeFileSync(join(outputDir, "feature-tests.log"), "39 tests / 107 expects\n");
+		writeFileSync(join(outputDir, "typecheck.log"), "tsc --noEmit clean\n");
+		writeFileSync(join(outputDir, "biome.log"), "biome ci clean (352 files)\n");
+		writeFileSync(join(outputDir, "diffstat.txt"), "src/foo.ts | 12 +-\n");
+
+		cli
+			.lastStarted()
+			?.callbacks.onOutput("Generated 5 artifacts but forgot to write manifest.json");
+		cli.lastStarted()?.callbacks.onComplete();
+		await new Promise((r) => setTimeout(r, 30));
+
+		const step = wf.steps.find((s) => s.name === STEP.ARTIFACTS);
+		expect(step?.status).toBe("completed");
+		expect(step?.outcome).toBe("with-files");
+
+		const items = listArtifacts(wf).items.filter((i) => i.step === "artifacts");
+		expect(items.map((i) => i.relPath).sort()).toEqual([
+			"biome.log",
+			"diffstat.txt",
+			"feature-tests.log",
+			"summary.md",
+			"typecheck.log",
+		]);
 	});
 
 	test("LLM emits empty manifest → outcome=empty and no files listed", async () => {

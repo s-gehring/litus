@@ -105,15 +105,41 @@ describe("parseArtifactsManifest", () => {
 });
 
 describe("collectArtifactsFromManifest", () => {
-	test("missing manifest → error-outcome (manifest-missing)", async () => {
+	test("missing manifest + empty output dir → outcome=empty (no error)", async () => {
 		await withTempDir(async (dir) => {
 			const id = freshWorkflowId("wf-mm");
 			registerForCleanup(id);
 			const wf = makeWorkflow({ id });
 			const r = collectArtifactsFromManifest(wf, dir, DEFAULT_CAPS);
-			expect(r.outcome).toBe("error");
-			expect(r.errorKind).toBe("manifest-missing");
+			expect(r.outcome).toBe("empty");
+			expect(r.errorKind).toBeNull();
 			expect(r.accepted.length).toBe(0);
+		});
+	});
+
+	test("missing manifest + files in output dir → fallback collects everything as artifacts", async () => {
+		await withTempDir(async (dir) => {
+			const id = freshWorkflowId("wf-mm-fallback");
+			registerForCleanup(id);
+			seedFile(dir, "summary.md", "# Summary\n");
+			seedFile(dir, "tests.log", "39 pass / 0 fail\n");
+			seedFile(dir, "logs/biome.log", "biome ci clean\n");
+			const wf = makeWorkflow({ id });
+			const r = collectArtifactsFromManifest(wf, dir, DEFAULT_CAPS);
+			expect(r.outcome).toBe("with-files");
+			expect(r.errorKind).toBeNull();
+			const accepted = r.accepted.map((a) => a.relPath).sort();
+			expect(accepted).toEqual(["logs/biome.log", "summary.md", "tests.log"]);
+			// Each accepted entry gets an auto-generated description so the UI
+			// has something to show in lieu of a manifest.
+			expect(r.accepted.every((a) => a.description.length > 0)).toBe(true);
+
+			const items = listArtifacts(makeWorkflow({ id })).items.filter((i) => i.step === "artifacts");
+			expect(items.map((i) => i.relPath).sort()).toEqual([
+				"logs/biome.log",
+				"summary.md",
+				"tests.log",
+			]);
 		});
 	});
 
