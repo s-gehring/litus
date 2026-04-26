@@ -576,7 +576,7 @@ async function runFeedbackAttempt(
 			deps.epicAnalysisRef,
 			undefined,
 			{
-				onOutput: (text) => deps.broadcast({ type: "epic:output", epicId, text }),
+				onOutput: (text) => deps.emitText({ kind: "epic", epicId }, text),
 				onTools: (tools) => deps.broadcast({ type: "epic:tools", epicId, tools }),
 				onSessionId: (sid) => {
 					capturedSessionId = sid;
@@ -611,7 +611,7 @@ async function runFeedbackAttempt(
 			});
 			try {
 				result = await analyzeEpic(combined, repoDir, deps.epicAnalysisRef, undefined, {
-					onOutput: (text) => deps.broadcast({ type: "epic:output", epicId, text }),
+					onOutput: (text) => deps.emitText({ kind: "epic", epicId }, text),
 					onTools: (tools) => deps.broadcast({ type: "epic:tools", epicId, tools }),
 					onSessionId: (sid) => {
 						capturedSessionId = sid;
