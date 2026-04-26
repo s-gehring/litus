@@ -30,6 +30,7 @@ import {
 	handleAlertRouteChanged,
 } from "./server/alert-handlers";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
+import { createEmitText } from "./server/emit-text";
 import {
 	handleArchiveEpic,
 	handleEpicAbort,
@@ -226,6 +227,8 @@ function broadcast(msg: ServerMessage) {
 	server.publish(WS_TOPIC, JSON.stringify(msg));
 }
 
+export const emitText = createEmitText(broadcast);
+
 setGitLogCallback((text, workflowId) => {
 	broadcast({ type: "log", text, ...(workflowId ? { workflowId } : {}) });
 });
@@ -251,6 +254,7 @@ function broadcastWorkflowState(workflowId: string) {
 const deps: HandlerDeps = {
 	orchestrators,
 	broadcast,
+	emitText,
 	sendTo,
 	sharedStore,
 	sharedEpicStore,
