@@ -469,6 +469,13 @@ export class ClientStateManager {
 		}
 		epic.attemptCount = Math.max(epic.attemptCount, epic.feedbackHistory.length + 1);
 		epic.status = "analyzing";
+		// Reset the timer so idle time between the prior completion and this
+		// feedback submission isn't billed to the new analysis attempt. Mirrors
+		// the server's reset in runFeedbackAttempt; the client renders the live
+		// `Date.now() - startedAt` timer from local state without waiting for
+		// the persisted epic to be re-broadcast.
+		epic.startedAt = new Date().toISOString();
+		epic.completedAt = null;
 		// Prior child workflows are being deleted server-side; clear the
 		// reference list so rebuildEpicAggregates does not hold on to them
 		// while new decomposition results stream in.

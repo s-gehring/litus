@@ -716,6 +716,52 @@ describe("epic-handlers", () => {
 			const stored = allEpics.find((e) => e.epicId === epic.epicId);
 			expect(stored?.errorMessage).toBeNull();
 		});
+
+		// Regression: idle time between the prior decomposition completing and
+		// the user submitting feedback was billed to the new attempt because
+		// startedAt was inherited from the original analysis. Both the new
+		// startedAt and the new completedAt must reflect the feedback-triggered
+		// run, not the original one.
+		test("resets startedAt and completedAt for the new attempt", async () => {
+			const { ws, deps } = setup();
+			const oldStartedAt = "2026-01-01T00:00:00.000Z";
+			const oldCompletedAt = "2026-01-01T00:00:30.000Z";
+			const { epic } = seedEpicForFeedback(deps, {
+				startedAt: oldStartedAt,
+				completedAt: oldCompletedAt,
+			});
+			mockAnalyzeResult = {
+				title: "Refined",
+				specs: [{ title: "Spec", specification: "do" }],
+			};
+			mockCreatedWorkflows = {
+				workflows: [makeWorkflow({ id: "wf-new", epicDependencyStatus: "satisfied" })],
+				epicId: epic.epicId,
+			};
+			deps.createOrchestrator = () =>
+				({
+					getEngine: () => ({ setWorkflow() {} }),
+					startPipelineFromWorkflow() {},
+					abortPipeline() {},
+				}) as unknown as PipelineOrchestrator;
+
+			const beforeFeedback = Date.now();
+			await handleEpicFeedback(
+				ws,
+				{ type: "epic:feedback", epicId: epic.epicId, text: "refine please" } as ClientMessage,
+				deps,
+			);
+			const afterFeedback = Date.now();
+
+			const stored = (await deps.sharedEpicStore.loadAll()).find((e) => e.epicId === epic.epicId);
+			expect(stored).toBeDefined();
+			const newStartedAt = new Date(stored?.startedAt ?? 0).getTime();
+			expect(newStartedAt).toBeGreaterThanOrEqual(beforeFeedback);
+			expect(newStartedAt).toBeLessThanOrEqual(afterFeedback);
+			expect(stored?.completedAt).not.toBeNull();
+			const newCompletedAt = new Date(stored?.completedAt ?? 0).getTime();
+			expect(newCompletedAt).toBeGreaterThanOrEqual(newStartedAt);
+		});
 	});
 
 	describe("handleEpicFeedbackAckContextLost", () => {
