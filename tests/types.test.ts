@@ -1216,6 +1216,10 @@ describe("emitText compile-time fixtures", () => {
 		// @ts-expect-error unknown channel kind (FR-002, FR-010)
 		void (() => emitText({ kind: "telemetry" }, "x"));
 
+		// The contractual value of this test is in the `@ts-expect-error`
+		// directives above; the runtime assertion exists only to keep the
+		// `describe` block from being skipped and to keep the dynamic
+		// `import` evaluated.
 		expect(typeof emitText).toBe("function");
 	});
 });
@@ -1228,6 +1232,12 @@ describe("console:output ServerMessage variant", () => {
 		} else {
 			throw new Error("expected console:output narrowing to succeed");
 		}
+	});
+
+	test("removed `log` variant is rejected at the type level (FR-007)", () => {
+		// @ts-expect-error `log` was removed from ServerMessage
+		const m: ServerMessage = { type: "log", text: "" };
+		void m;
 	});
 });
 

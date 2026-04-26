@@ -216,8 +216,20 @@ export class ClientStateManager {
 				return { scope: { entity: "config" }, action: "updated" };
 			case "error":
 				return { scope: { entity: "none" }, action: "updated" };
-			default:
+			case "repo:clone-start":
+			case "repo:clone-progress":
+			case "repo:clone-complete":
+			case "repo:clone-error":
 				return { scope: { entity: "none" }, action: "updated" };
+			case "workflow:archive-denied":
+				return { scope: { entity: "none" }, action: "updated" };
+			case "auto-archive:state":
+				return { scope: { entity: "none" }, action: "updated" };
+			default: {
+				const _exhaustive: never = msg;
+				void _exhaustive;
+				return { scope: { entity: "none" }, action: "updated" };
+			}
 		}
 	}
 

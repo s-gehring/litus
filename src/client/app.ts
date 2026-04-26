@@ -206,6 +206,10 @@ function activeCardId(): string | null {
 }
 
 function handleMessage(msg: ServerMessage): void {
+	// Side-effects (state mutation, dev-console logging for `console:output`
+	// and unrouted-fallback diagnostics) live in `stateManager.handleMessage`.
+	// The switch below only translates state changes into UI updates; cases
+	// for purely-side-effect messages are intentional no-ops.
 	stateManager.handleMessage(msg);
 
 	switch (msg.type) {
@@ -319,8 +323,7 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "console:output": {
-			// Already logged with the [litus:console] prefix by the state manager.
-			// Must not surface in any visible UI.
+			// Intentional no-op — see comment at top of handleMessage.
 			break;
 		}
 
