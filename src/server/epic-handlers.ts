@@ -870,6 +870,72 @@ export const handleEpicStartFirstLevel: MessageHandler = async (ws, data, deps) 
 	});
 };
 
+type EpicBatchKind = "pause-all" | "resume-all" | "abort-all";
+
+/**
+ * Fan-out helper for the epic-level batch controls. Resolves every child
+ * workflow of the epic and applies the per-workflow control whose status
+ * predicate accepts it. Best-effort: a child whose status doesn't admit the
+ * control is silently skipped — the user gets the same per-workflow guard
+ * as if they'd clicked the button on each child individually.
+ */
+async function applyEpicBatchControl(
+	ws: ServerWebSocket<WsData>,
+	epicId: string,
+	kind: EpicBatchKind,
+	deps: HandlerDeps,
+): Promise<void> {
+	if (!epicId || typeof epicId !== "string") {
+		logger.error(`[ws] epic:${kind} rejected: missing epicId`);
+		deps.sendTo(ws, { type: "error", message: "epicId is required" });
+		return;
+	}
+	const persisted = await deps.sharedStore.loadAll();
+	const childIds = persisted.filter((wf) => wf.epicId === epicId).map((wf) => wf.id);
+	for (const wfId of childIds) {
+		const live = await loadLiveOrPersisted(deps, wfId);
+		if (!live) continue;
+		const orch = deps.orchestrators.get(wfId);
+		if (!orch) continue;
+		switch (kind) {
+			case "pause-all":
+				if (live.status === "running") orch.pause(wfId);
+				break;
+			case "resume-all":
+				if (live.status === "paused") orch.resume(wfId);
+				break;
+			case "abort-all":
+				// Mirror handleAbort's predicate: only non-terminal, non-running
+				// statuses admit abort. Running workflows must be paused first.
+				if (
+					live.status === "paused" ||
+					live.status === "waiting_for_input" ||
+					live.status === "waiting_for_dependencies" ||
+					live.status === "error"
+				) {
+					orch.abortPipeline(wfId);
+					deps.orchestrators.delete(wfId);
+				}
+				break;
+		}
+	}
+}
+
+export const handleEpicPauseAll: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "epic:pause-all" };
+	await applyEpicBatchControl(ws, msg.epicId, "pause-all", deps);
+};
+
+export const handleEpicResumeAll: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "epic:resume-all" };
+	await applyEpicBatchControl(ws, msg.epicId, "resume-all", deps);
+};
+
+export const handleEpicAbortAll: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "epic:abort-all" };
+	await applyEpicBatchControl(ws, msg.epicId, "abort-all", deps);
+};
+
 // ── Archive / Unarchive (cascade) ─────────────────────────
 
 async function loadLiveOrPersisted(deps: Parameters<MessageHandler>[2], id: string) {

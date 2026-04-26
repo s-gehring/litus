@@ -34,8 +34,11 @@ import { createEmitText } from "./server/emit-text";
 import {
 	handleArchiveEpic,
 	handleEpicAbort,
+	handleEpicAbortAll,
 	handleEpicFeedback,
 	handleEpicFeedbackAckContextLost,
+	handleEpicPauseAll,
+	handleEpicResumeAll,
 	handleEpicStart,
 	handleEpicStartFirstLevel,
 	handleUnarchiveEpic,
@@ -304,6 +307,9 @@ router.register("epic:abort", handleEpicAbort);
 router.register("epic:feedback", handleEpicFeedback);
 router.register("epic:feedback:ack-context-lost", handleEpicFeedbackAckContextLost);
 router.register("epic:start-first-level", handleEpicStartFirstLevel);
+router.register("epic:pause-all", handleEpicPauseAll);
+router.register("epic:resume-all", handleEpicResumeAll);
+router.register("epic:abort-all", handleEpicAbortAll);
 router.register("epic:archive", handleArchiveEpic);
 router.register("epic:unarchive", handleUnarchiveEpic);
 router.register("purge:all", handlePurgeAll);
