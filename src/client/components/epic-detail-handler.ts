@@ -1,3 +1,4 @@
+import { computeEligibleFirstLevelSpecs } from "../../epic-eligibility";
 import type {
 	AppConfig,
 	ClientMessage,
@@ -53,6 +54,7 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 	// survive a rejection and its spirit extends to transient re-renders.
 	// Keyed by epicId so switching epics doesn't leak state.
 	const feedbackDrafts = new Map<string, string>();
+	const startFirstLevelInFlight = new Set<string>();
 
 	function hideLayout(): void {
 		const existingAnalysis = document.getElementById("epic-analysis-notes");
@@ -318,6 +320,24 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 			});
 			return actions;
 		}
+
+		const eligible = computeEligibleFirstLevelSpecs(epic.epicId, children);
+		if (eligible.length > 0) {
+			const inFlight = startFirstLevelInFlight.has(epic.epicId);
+			actions.push({
+				label: inFlight
+					? "Starting…"
+					: `Start ${eligible.length} ${eligible.length === 1 ? "spec" : "specs"}`,
+				className: inFlight ? "btn-primary btn-disabled btn-loading" : "btn-primary",
+				onClick: () => {
+					if (startFirstLevelInFlight.has(epic.epicId)) return;
+					startFirstLevelInFlight.add(epic.epicId);
+					deps.send({ type: "epic:start-first-level", epicId: epic.epicId });
+					renderFull();
+				},
+			});
+		}
+
 		actions.push({
 			label: anyRunning ? "Archive (disabled while running)" : "Archive",
 			className: anyRunning ? "btn-secondary btn-disabled" : "btn-secondary",
@@ -423,6 +443,18 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 				case "epic:error": {
 					if (msg.epicId === currentEpicId) {
 						appendOutput(`Error: ${msg.message}`, "error");
+					}
+					break;
+				}
+				case "epic:start-first-level:result": {
+					// The :result envelope is the only canonical signal that clears
+					// the in-flight flag. Generic `error` messages are intentionally
+					// ignored here: they have no request-id correlation, so an
+					// unrelated failure (e.g. from a side-panel handler) could
+					// otherwise prematurely re-enable the button or — if the user
+					// has navigated away — leave the flag stuck for the old epic.
+					if (startFirstLevelInFlight.delete(msg.epicId) && msg.epicId === currentEpicId) {
+						renderFull();
 					}
 					break;
 				}

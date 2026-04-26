@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
 	testDir: "./tests",
+	testMatch: "**/*.e2e.ts",
 	outputDir: "./test-results",
 	// The suite spawns a fresh server+sandbox per test; running them serially
 	// avoids port exhaustion and keeps per-test logs linear. `workers: 1`

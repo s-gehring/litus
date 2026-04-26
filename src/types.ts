@@ -702,6 +702,17 @@ export interface Alert {
 	seen: boolean;
 }
 
+/**
+ * Routing target for a free-text server→client message.
+ *
+ * Closed discriminated union — adding a variant requires updating every
+ * exhaustive `switch (channel.kind)` site.
+ */
+export type Channel =
+	| { kind: "workflow"; workflowId: string }
+	| { kind: "epic"; epicId: string }
+	| { kind: "console" };
+
 // Server → Client messages
 export type ServerMessage =
 	| { type: "workflow:state"; workflow: WorkflowState | null }
@@ -753,6 +764,13 @@ export type ServerMessage =
 			epicDependencyStatus: EpicDependencyStatus;
 			blockingWorkflows: string[];
 	  }
+	| {
+			type: "epic:start-first-level:result";
+			epicId: string;
+			started: string[];
+			skipped: string[];
+			failed: { workflowId: string; message: string }[];
+	  }
 	| { type: "config:state"; config: AppConfig; warnings?: ConfigWarning[] }
 	| {
 			type: "default-model:info";
@@ -798,7 +816,7 @@ export type ServerMessage =
 				| "unknown";
 			message: string;
 	  }
-	| { type: "log"; text: string; workflowId?: string }
+	| { type: "console:output"; text: string }
 	| { type: "alert:list"; alerts: Alert[] }
 	| { type: "alert:created"; alert: Alert }
 	| { type: "alert:dismissed"; alertIds: string[] }
@@ -972,6 +990,7 @@ export type ClientMessage =
 	| { type: "epic:abort" }
 	| { type: "epic:feedback"; epicId: string; text: string }
 	| { type: "epic:feedback:ack-context-lost"; epicId: string }
+	| { type: "epic:start-first-level"; epicId: string }
 	| { type: "workflow:start-existing"; workflowId: string }
 	| { type: "workflow:force-start"; workflowId: string }
 	| { type: "workflow:feedback"; workflowId: string; text: string }

@@ -88,6 +88,12 @@ describe("workflow-detail-handler action buttons", () => {
 	});
 
 	function mountForWorkflow(wfOverrides: Parameters<typeof makeWorkflowState>[0]): void {
+		// Destroy any router from a prior call so its popstate listener does not
+		// leak onto `window` and fire during a later test (the leaked listener's
+		// handler expects DOM nodes this test has since wiped, which throws and
+		// surfaces as an unrelated happy-dom dispatchError in router.test.ts).
+		router?.destroy();
+		router = null;
 		const wf = makeWorkflowState(wfOverrides);
 		state.handleMessage({ type: "workflow:list", workflows: [wf] });
 		const container = document.getElementById("app-content") as HTMLElement;

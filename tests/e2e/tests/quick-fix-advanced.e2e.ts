@@ -64,7 +64,7 @@ test.describe("quick-fix advanced", () => {
 
 			await abortRun(card);
 
-			// Parity: run-controls.spec.ts:85-88 (SC-004) — aborted status + all three
+			// Parity: run-controls.e2e.ts:85-88 (SC-004) — aborted status + all three
 			// run-time actions absent. Shortening this block would mask a regression.
 			await expect(card.statusBadge()).toHaveClass(/\baborted\b/, { timeout: 30_000 });
 			await expect(card.pauseAction()).toHaveCount(0);

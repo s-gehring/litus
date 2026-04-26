@@ -261,7 +261,6 @@ function writeDescriptionsSidecar(workflowId: string, entries: PersistedDescript
 export type ArtifactsCollectionOutcome = "with-files" | "empty" | "error";
 
 export type ArtifactsCollectionErrorKind =
-	| "manifest-missing"
 	| "manifest-invalid"
 	| "manifest-file-missing"
 	| "state-missing"
@@ -305,79 +304,60 @@ function formatManifestError(err: ManifestParseError): string {
 		: `Manifest failed schema validation at ${err.at}: ${err.message}`;
 }
 
+interface ResolvedArtifactEntry {
+	relPath: string;
+	normalizedRel: string;
+	src: string;
+	description: string;
+	contentType?: string;
+	sizeBytes: number;
+}
+
 /**
- * Read and validate `<outputDir>/manifest.json`, then copy each listed file
- * into the persistent artifact store under step `"artifacts"` (ordinal `_`).
- * Hard failures (missing/invalid manifest, a manifest entry pointing at a
- * file that does not exist on disk) leave the store untouched. Per-file and
- * per-step cap overflows are soft rejections: the oversized file is skipped
- * but other accepted files are still persisted (FR-013b, FR-013c).
+ * Resolve every manifest entry against the on-disk output directory. Missing
+ * or non-regular files abort atomically so the persistent store is not touched
+ * with a half-complete set.
  */
-export function collectArtifactsFromManifest(
-	workflow: Pick<Workflow, "id">,
+function resolveManifestEntries(
+	manifest: ArtifactsManifest,
 	outputDir: string,
-	caps: ArtifactsCollectionCaps,
-): ArtifactsCollectionResult {
-	const manifestPath = join(outputDir, "manifest.json");
-	if (!existsSync(manifestPath)) {
-		return errorResult("manifest-missing", `No manifest.json found at ${manifestPath}`);
-	}
-
-	let rawText: string;
-	try {
-		rawText = readFileSync(manifestPath, "utf-8");
-	} catch (err) {
-		return errorResult(
-			"manifest-invalid",
-			`Failed to read manifest.json: ${(err as Error).message}`,
-		);
-	}
-
-	const parsed = parseArtifactsManifest(rawText);
-	if (!parsed.ok || !parsed.manifest) {
-		const message = parsed.error ? formatManifestError(parsed.error) : "manifest parse failed";
-		return errorResult("manifest-invalid", message);
-	}
-
-	const manifest: ArtifactsManifest = parsed.manifest;
-
-	// Pre-flight: resolve every manifest path, confirm it exists and fits the
-	// traversal guard, and record its size. Missing files abort atomically so
-	// the store is not touched with a half-complete set.
-	interface Resolved {
-		relPath: string;
-		normalizedRel: string;
-		src: string;
-		description: string;
-		contentType?: string;
-		sizeBytes: number;
-	}
-
-	const resolvedEntries: Resolved[] = [];
+):
+	| { ok: true; entries: ResolvedArtifactEntry[] }
+	| { ok: false; result: ArtifactsCollectionResult } {
+	const entries: ResolvedArtifactEntry[] = [];
 	for (const entry of manifest.artifacts) {
 		const src = resolveArtifactPath(outputDir, entry.path);
 		if (!src) {
-			return errorResult(
-				"manifest-invalid",
-				`Manifest entry ${JSON.stringify(entry.path)} escapes the output directory`,
-			);
+			return {
+				ok: false,
+				result: errorResult(
+					"manifest-invalid",
+					`Manifest entry ${JSON.stringify(entry.path)} escapes the output directory`,
+				),
+			};
 		}
 		let stat: ReturnType<typeof statSync>;
 		try {
 			stat = statSync(src);
 		} catch {
-			return errorResult(
-				"manifest-file-missing",
-				`Manifest entry ${JSON.stringify(entry.path)} does not exist on disk`,
-			);
+			return {
+				ok: false,
+				result: errorResult(
+					"manifest-file-missing",
+					`Manifest entry ${JSON.stringify(entry.path)} does not exist on disk`,
+				),
+			};
 		}
 		if (!stat.isFile()) {
-			return errorResult(
-				"manifest-file-missing",
-				`Manifest entry ${JSON.stringify(entry.path)} is not a regular file`,
-			);
+			return {
+				ok: false,
+				result: errorResult(
+					"manifest-file-missing",
+					`Manifest entry ${JSON.stringify(entry.path)} is not a regular file`,
+				),
+			};
 		}
-		resolvedEntries.push({
+		entries.push({
 			relPath: entry.path,
 			normalizedRel: entry.path.replace(/\\/g, "/"),
 			src,
@@ -386,10 +366,97 @@ export function collectArtifactsFromManifest(
 			sizeBytes: stat.size,
 		});
 	}
+	return { ok: true, entries };
+}
+
+/**
+ * Fallback path used when the LLM finished the artifacts step but did not
+ * write `manifest.json`. The agent commonly produces useful files (test
+ * reports, logs, summaries) and only forgets the manifest. We recover by
+ * treating every regular file in the output directory as an artifact with an
+ * auto-generated description, rather than discarding the entire run.
+ *
+ * `manifest.json` itself is excluded from the scan even if a partial/invalid
+ * one happens to exist — the caller has already decided to fall back.
+ */
+function scanOutputDirEntries(outputDir: string): ResolvedArtifactEntry[] {
+	if (!existsSync(outputDir)) return [];
+	const found: string[] = [];
+	collectFilesRecursive(outputDir, "", found, (name) => name !== "manifest.json");
+	const entries: ResolvedArtifactEntry[] = [];
+	for (const rel of found) {
+		const src = resolveArtifactPath(outputDir, rel);
+		if (!src) continue;
+		let stat: ReturnType<typeof statSync>;
+		try {
+			stat = statSync(src);
+		} catch {
+			continue;
+		}
+		if (!stat.isFile()) continue;
+		const normalizedRel = rel.replace(/\\/g, "/");
+		entries.push({
+			relPath: rel,
+			normalizedRel,
+			src,
+			description: `${normalizedRel} (auto-collected — no manifest.json)`,
+			sizeBytes: stat.size,
+		});
+	}
+	return entries;
+}
+
+/**
+ * Read and validate `<outputDir>/manifest.json`, then copy each listed file
+ * into the persistent artifact store under step `"artifacts"` (ordinal `_`).
+ * If the manifest is missing the directory is scanned and every regular file
+ * is collected as an artifact (FR-...): this protects the user from losing a
+ * full run when the agent forgets the manifest. Hard failures (invalid
+ * manifest, a manifest entry pointing at a file that does not exist on disk)
+ * leave the store untouched. Per-file and per-step cap overflows are soft
+ * rejections: the oversized file is skipped but other accepted files are
+ * still persisted (FR-013b, FR-013c).
+ */
+export function collectArtifactsFromManifest(
+	workflow: Pick<Workflow, "id">,
+	outputDir: string,
+	caps: ArtifactsCollectionCaps,
+): ArtifactsCollectionResult {
+	const manifestPath = join(outputDir, "manifest.json");
+
+	let resolvedEntries: ResolvedArtifactEntry[];
+	if (existsSync(manifestPath)) {
+		let rawText: string;
+		try {
+			rawText = readFileSync(manifestPath, "utf-8");
+		} catch (err) {
+			return errorResult(
+				"manifest-invalid",
+				`Failed to read manifest.json: ${(err as Error).message}`,
+			);
+		}
+
+		const parsed = parseArtifactsManifest(rawText);
+		if (!parsed.ok || !parsed.manifest) {
+			const message = parsed.error ? formatManifestError(parsed.error) : "manifest parse failed";
+			return errorResult("manifest-invalid", message);
+		}
+
+		const resolved = resolveManifestEntries(parsed.manifest, outputDir);
+		if (!resolved.ok) return resolved.result;
+		resolvedEntries = resolved.entries;
+	} else {
+		resolvedEntries = scanOutputDirEntries(outputDir);
+		if (resolvedEntries.length > 0) {
+			logger.warn(
+				`[artifacts] No manifest.json at ${manifestPath} — falling back to ${resolvedEntries.length} file(s) discovered in the output directory`,
+			);
+		}
+	}
 
 	// Soft rejection pass: enforce per-file and per-step caps.
 	const rejections: ArtifactsRejection[] = [];
-	const toCopy: Resolved[] = [];
+	const toCopy: ResolvedArtifactEntry[] = [];
 	let runningTotal = 0;
 	for (const r of resolvedEntries) {
 		if (r.sizeBytes > caps.perFileMaxBytes) {

@@ -6,6 +6,7 @@ import { AlertQueue } from "../../src/alert-queue";
 import { AlertStore } from "../../src/alert-store";
 import type { ManagedRepoStore } from "../../src/managed-repo-store";
 import { createAlertBroadcasters } from "../../src/server/alert-broadcast";
+import { createEmitText } from "../../src/server/emit-text";
 import type { HandlerDeps, WsData } from "../../src/server/handler-types";
 import type { ServerMessage, Workflow, WorkflowState } from "../../src/types";
 import { type CallTracker, createCallTracker } from "./call-tracker";
@@ -65,6 +66,7 @@ export function createMockHandlerDeps(overrides?: Partial<HandlerDeps>): MockHan
 	const deps: HandlerDeps = {
 		orchestrators,
 		broadcast,
+		emitText: createEmitText(broadcast),
 		sendTo(ws: ServerWebSocket<WsData>, msg: ServerMessage) {
 			tracker.calls.push({ method: "sendTo", args: [ws, msg] });
 			const existing = sentMessages.get(ws) ?? [];

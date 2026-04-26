@@ -14,9 +14,9 @@ Write every file you want to keep under this absolute path:
 
 You may create subdirectories inside it. Do NOT write outside it. Files written elsewhere are ignored by the pipeline.
 
-## Manifest contract — REQUIRED
+## Manifest contract — strongly recommended
 
-Before you exit, you MUST write a single file at:
+Before you exit, write a single file at:
 
     ${outputDir}/manifest.json
 
@@ -29,13 +29,15 @@ with this exact shape:
       ]
     }
 
-Only files listed in \`manifest.json\` are collected and persisted; every other file you write inside the output directory is discarded. The \`description\` is shown next to the file in the UI — make it informative and short.
+The \`description\` is shown next to the file in the UI — make it informative and short. Listing each artifact in the manifest lets you control the per-file description and the optional MIME hint, so always prefer to write one.
+
+If you do NOT write a manifest, every regular file you leave in the output directory is auto-collected as an artifact with a generic description. This is a fallback; the manifest path is the right one to take.
 
 If there is genuinely nothing worth keeping, emit:
 
     { "version": 1, "artifacts": [] }
 
-This is a valid outcome; do not invent artifacts.
+…and do not write any other files inside the output directory. This is a valid outcome; do not invent artifacts.
 
 ## Helpers you may invoke
 

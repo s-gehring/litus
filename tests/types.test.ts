@@ -4,6 +4,7 @@ import type {
 	AuditConfig,
 	AuditEvent,
 	AuditEventType,
+	Channel,
 	CiCheckResult,
 	CiCycle,
 	CiFailureLog,
@@ -715,7 +716,7 @@ describe("ServerMessage variants", () => {
 		expect(msgs[6].type).toBe("workflow:step-change");
 	});
 
-	test("epic message variants (9)", () => {
+	test("epic message variants (10)", () => {
 		const msgs: ServerMessage[] = [
 			{ type: "epic:list", epics: [] },
 			{ type: "epic:created", epicId: "e-1", description: "Build app" },
@@ -743,10 +744,17 @@ describe("ServerMessage variants", () => {
 				epicDependencyStatus: "satisfied",
 				blockingWorkflows: [],
 			},
+			{
+				type: "epic:start-first-level:result",
+				epicId: "e-1",
+				started: ["w-1"],
+				skipped: [],
+				failed: [],
+			},
 		];
-		expect(msgs).toHaveLength(9);
+		expect(msgs).toHaveLength(10);
 		expect(msgs[0].type).toBe("epic:list");
-		expect(msgs[8].type).toBe("epic:dependency-update");
+		expect(msgs[9].type).toBe("epic:start-first-level:result");
 	});
 
 	test("config and error message variants (3)", () => {
@@ -768,8 +776,8 @@ describe("ServerMessage variants", () => {
 		expect(msgs[2].type).toBe("error");
 	});
 
-	test("total ServerMessage variant count is 19", () => {
-		// 7 workflow + 9 epic + 2 config + 1 error = 19
+	test("total ServerMessage variant count is 20", () => {
+		// 7 workflow + 10 epic + 2 config + 1 error = 20
 		const allTypes = [
 			"workflow:state",
 			"workflow:list",
@@ -787,12 +795,13 @@ describe("ServerMessage variants", () => {
 			"epic:infeasible",
 			"epic:error",
 			"epic:dependency-update",
+			"epic:start-first-level:result",
 			"config:state",
 			"config:error",
 			"error",
 		];
-		expect(allTypes).toHaveLength(19);
-		expect(new Set(allTypes).size).toBe(19);
+		expect(allTypes).toHaveLength(20);
+		expect(new Set(allTypes).size).toBe(20);
 	});
 });
 
@@ -814,18 +823,19 @@ describe("ClientMessage variants", () => {
 		expect(msgs[8].type).toBe("workflow:force-start");
 	});
 
-	test("epic and config command variants (5)", () => {
+	test("epic and config command variants (6)", () => {
 		const msgs: ClientMessage[] = [
 			{ type: "epic:start", description: "Build app", autoStart: true },
 			{ type: "epic:abort" },
+			{ type: "epic:start-first-level", epicId: "e-1" },
 			{ type: "config:get" },
 			{ type: "config:save", config: {} },
 			{ type: "config:reset" },
 		];
-		expect(msgs).toHaveLength(5);
+		expect(msgs).toHaveLength(6);
 	});
 
-	test("total ClientMessage variant count is 14", () => {
+	test("total ClientMessage variant count is 15", () => {
 		const allTypes = [
 			"workflow:start",
 			"workflow:answer",
@@ -838,12 +848,13 @@ describe("ClientMessage variants", () => {
 			"workflow:force-start",
 			"epic:start",
 			"epic:abort",
+			"epic:start-first-level",
 			"config:get",
 			"config:save",
 			"config:reset",
 		];
-		expect(allTypes).toHaveLength(14);
-		expect(new Set(allTypes).size).toBe(14);
+		expect(allTypes).toHaveLength(15);
+		expect(new Set(allTypes).size).toBe(15);
 	});
 });
 
@@ -1188,6 +1199,69 @@ describe("Audit types", () => {
 });
 
 // ── Phase 10: Cross-cutting ─────────────────────────────────
+
+// ── Phase 11: Free-Text Emit Channels ───────────────────────
+
+describe("Channel discriminated union", () => {
+	test("workflow variant requires workflowId", () => {
+		const ch: Channel = { kind: "workflow", workflowId: "wf-1" };
+		expect(ch.kind).toBe("workflow");
+	});
+
+	test("epic variant requires epicId", () => {
+		const ch: Channel = { kind: "epic", epicId: "ep-1" };
+		expect(ch.kind).toBe("epic");
+	});
+
+	test("console variant carries no payload", () => {
+		const ch: Channel = { kind: "console" };
+		expect(ch.kind).toBe("console");
+	});
+});
+
+describe("emitText compile-time fixtures", () => {
+	test("type-level misuse is rejected", async () => {
+		const { emitText } = await import("../src/server");
+
+		// @ts-expect-error missing channel argument (FR-001, FR-003)
+		void (() => emitText("x"));
+
+		// @ts-expect-error workflow variant missing workflowId (FR-002)
+		void (() => emitText({ kind: "workflow" }, "x"));
+
+		// @ts-expect-error epic variant missing epicId (FR-002)
+		void (() => emitText({ kind: "epic" }, "x"));
+
+		// @ts-expect-error workflow variant with epic field (FR-002)
+		void (() => emitText({ kind: "workflow", epicId: "ep-1" }, "x"));
+
+		// @ts-expect-error unknown channel kind (FR-002, FR-010)
+		void (() => emitText({ kind: "telemetry" }, "x"));
+
+		// The contractual value of this test is in the `@ts-expect-error`
+		// directives above; the runtime assertion exists only to keep the
+		// `describe` block from being skipped and to keep the dynamic
+		// `import` evaluated.
+		expect(typeof emitText).toBe("function");
+	});
+});
+
+describe("console:output ServerMessage variant", () => {
+	test("can be narrowed by type discriminant", () => {
+		const msg: ServerMessage = { type: "console:output", text: "hello" };
+		if (msg.type === "console:output") {
+			expect(msg.text).toBe("hello");
+		} else {
+			throw new Error("expected console:output narrowing to succeed");
+		}
+	});
+
+	test("removed `log` variant is rejected at the type level (FR-007)", () => {
+		// @ts-expect-error `log` was removed from ServerMessage
+		const m: ServerMessage = { type: "log", text: "" };
+		void m;
+	});
+});
 
 describe("WorkflowClientState shape", () => {
 	test("combines WorkflowState with outputLines", () => {

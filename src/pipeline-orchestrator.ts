@@ -2626,13 +2626,17 @@ export class PipelineOrchestrator {
 					perFileMaxBytes: artifactsState.perFileMaxBytes,
 					perStepMaxBytes: artifactsState.perStepMaxBytes,
 				});
-				if (salvaged.outcome !== "error") {
+				// Only suppress the CLI error if we actually recovered files. An
+				// "empty" outcome on a failed CLI run means the agent died before
+				// producing anything — surface the original error so the user
+				// knows the step did not really succeed.
+				if (salvaged.outcome === "with-files") {
 					logger.warn(
 						`[artifacts] Recovered from CLI error for workflow ${workflowId} (timedOut=${timedOut}): ${error}`,
 					);
 					this.handleStepOutput(
 						workflowId,
-						`[artifacts] CLI terminated (${timedOut ? "timeout" : "error"}: ${error}) — salvaged ${salvaged.accepted.length} file(s) from the existing manifest`,
+						`[artifacts] CLI terminated (${timedOut ? "timeout" : "error"}: ${error}) — salvaged ${salvaged.accepted.length} file(s) from the output directory`,
 					);
 					this.finishArtifactsStep(workflow, salvaged);
 					return;

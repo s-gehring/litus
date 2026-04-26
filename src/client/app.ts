@@ -206,6 +206,10 @@ function activeCardId(): string | null {
 }
 
 function handleMessage(msg: ServerMessage): void {
+	// Side-effects (state mutation, dev-console logging for `console:output`
+	// and unrouted-fallback diagnostics) live in `stateManager.handleMessage`.
+	// The switch below only translates state changes into UI updates; cases
+	// for purely-side-effect messages are intentional no-ops.
 	stateManager.handleMessage(msg);
 
 	switch (msg.type) {
@@ -322,13 +326,8 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
-		case "log": {
-			// Global logs (no workflowId) are appended to whatever workflow window
-			// is currently open. Workflow-scoped logs are routed via
-			// workflow-detail-handler instead, so they only appear in their own
-			// workflow's output and are buffered into that workflow's outputLines
-			// otherwise.
-			if (!msg.workflowId) appendOutput(msg.text, "system");
+		case "console:output": {
+			// Intentional no-op — see comment at top of handleMessage.
 			break;
 		}
 
