@@ -34,6 +34,7 @@ import {
 	handleArchiveEpic,
 	handleEpicAbort,
 	handleEpicStart,
+	handleEpicStartFirstLevel,
 	handleUnarchiveEpic,
 } from "./server/epic-handlers";
 import type { HandlerDeps, WsData } from "./server/handler-types";
@@ -294,6 +295,7 @@ router.register("config:save", handleConfigSave);
 router.register("config:reset", handleConfigReset);
 router.register("epic:start", handleEpicStart);
 router.register("epic:abort", handleEpicAbort);
+router.register("epic:start-first-level", handleEpicStartFirstLevel);
 router.register("epic:archive", handleArchiveEpic);
 router.register("epic:unarchive", handleUnarchiveEpic);
 router.register("purge:all", handlePurgeAll);

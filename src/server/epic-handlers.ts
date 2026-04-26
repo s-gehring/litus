@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { analyzeEpic } from "../epic-analyzer";
+import { computeEligibleFirstLevelSpecs } from "../epic-eligibility";
 import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
 import type { ClientMessage, PersistedEpic } from "../types";
@@ -212,6 +213,64 @@ export const handleEpicAbort: MessageHandler = (_ws, _data, deps) => {
 		deps.epicAnalysisRef.current.kill();
 		deps.epicAnalysisRef.current = null;
 	}
+};
+
+export const handleEpicStartFirstLevel: MessageHandler = async (ws, data, deps) => {
+	const msg = data as ClientMessage & { type: "epic:start-first-level" };
+	const { epicId } = msg;
+	if (!epicId || typeof epicId !== "string") {
+		logger.error(`[ws] epic:start-first-level rejected: missing epicId`);
+		deps.sendTo(ws, { type: "error", message: "epicId is required" });
+		return;
+	}
+
+	// Resolve each workflow via loadLiveOrPersisted so the orchestrator's
+	// in-memory state wins over the (possibly stale) on-disk snapshot. Passing
+	// the live reference into startPipelineFromWorkflow also avoids overwriting
+	// unpersisted in-memory mutations via setWorkflow().
+	const persisted = await deps.sharedStore.loadAll();
+	const epicWorkflowIds = persisted.filter((wf) => wf.epicId === epicId).map((wf) => wf.id);
+	const epicWorkflows: import("../types").Workflow[] = [];
+	for (const id of epicWorkflowIds) {
+		const live = await loadLiveOrPersisted(deps, id);
+		if (live) epicWorkflows.push(live);
+	}
+	const eligible = computeEligibleFirstLevelSpecs(epicId, epicWorkflows);
+	const eligibleIds = new Set(eligible.map((e) => e.workflowId));
+	const skipped = epicWorkflows.filter((wf) => !eligibleIds.has(wf.id)).map((wf) => wf.id);
+
+	const started: string[] = [];
+	const failed: { workflowId: string; message: string }[] = [];
+	const results = await Promise.allSettled(
+		eligible.map(({ workflowId }) => {
+			const wf = epicWorkflows.find((w) => w.id === workflowId) as import("../types").Workflow;
+			return Promise.resolve().then(() => {
+				const orch = deps.orchestrators.get(workflowId);
+				if (!orch) {
+					throw new Error(`Orchestrator for workflow ${workflowId} not registered`);
+				}
+				orch.startPipelineFromWorkflow(wf);
+				return workflowId;
+			});
+		}),
+	);
+	for (let i = 0; i < results.length; i++) {
+		const r = results[i];
+		const workflowId = eligible[i].workflowId;
+		if (r.status === "fulfilled") {
+			started.push(workflowId);
+		} else {
+			failed.push({ workflowId, message: toErrorMessage(r.reason) });
+		}
+	}
+
+	deps.sendTo(ws, {
+		type: "epic:start-first-level:result",
+		epicId,
+		started,
+		skipped,
+		failed,
+	});
 };
 
 // ── Archive / Unarchive (cascade) ─────────────────────────
