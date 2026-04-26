@@ -408,7 +408,7 @@ test.describe("concurrency", () => {
 		server,
 		sandbox,
 	}) => {
-		test.setTimeout(180_000);
+		test.setTimeout(120_000);
 
 		const app = new AppPage(page);
 		const layout = new DashboardLayoutPage(page);
@@ -425,7 +425,7 @@ test.describe("concurrency", () => {
 		});
 
 		// AS1: both cards appear in the strip.
-		await expect(app.workflowCards()).toHaveCount(2, { timeout: 30_000 });
+		await expect(app.workflowCards()).toHaveCount(2, { timeout: 15_000 });
 
 		const cards = app.workflowCards();
 
@@ -470,7 +470,7 @@ test.describe("concurrency", () => {
 					const sizes = [...observedSteps.values()].map((s) => s.size);
 					return sizes.every((n) => n >= 2) && sawDivergence;
 				},
-				{ timeout: 90_000 },
+				{ timeout: 30_000 },
 			)
 			.toBe(true);
 
@@ -501,7 +501,9 @@ test.describe("concurrency", () => {
 
 		// AS4: both cards eventually reach a `card-status-completed` badge.
 		// Full-auto drives through merge-pr; the scenario has 8 scripted
-		// claude calls per workflow, matching the actual step count.
+		// claude calls per workflow, matching the actual step count. Tight
+		// 60s cap so a stalled pipeline fails fast instead of burning the
+		// 120s test budget on a poll that never resolves.
 		await expect
 			.poll(
 				async () => {
@@ -510,7 +512,7 @@ test.describe("concurrency", () => {
 					);
 					return classes.length === 2 && classes.every((c) => /\bcard-status-completed\b/.test(c));
 				},
-				{ timeout: 120_000 },
+				{ timeout: 60_000 },
 			)
 			.toBe(true);
 	});

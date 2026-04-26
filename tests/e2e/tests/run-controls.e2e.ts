@@ -119,8 +119,12 @@ test.describe("run-control surface", () => {
 			// manual-mode Resume/Merge action surfaced. Full-auto merge is
 			// *operator confirmation not required*; a post-hoc check after
 			// merge completes would silently pass a regression that flashed
-			// the action briefly.
-			await waitForStep(card, "merge-pr", "running", { timeoutMs: 60_000 });
+			// the action briefly. Accept running OR completed — full-auto can
+			// race through merge-pr so fast Playwright's polling misses the
+			// transient running state (mirrors quick-fix-advanced.e2e.ts:99).
+			await expect(card.stepIndicator("merge-pr")).toHaveClass(/\bstep-(running|completed)\b/, {
+				timeout: 60_000,
+			});
 			await expect(card.mergeAction()).toHaveCount(0);
 
 			await waitForStep(card, "merge-pr", "completed", { timeoutMs: 60_000 });

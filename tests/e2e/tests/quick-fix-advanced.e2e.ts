@@ -11,7 +11,10 @@ test.describe("quick-fix advanced", () => {
 			server,
 			sandbox,
 		}) => {
-			test.setTimeout(120_000);
+			// Tight 60s cap so a stalled retry fails fast — historically this
+			// test could burn ~4 minutes per CI retry waiting on three back-to-
+			// back 60s `waitForStep` calls before the worker timed out at 120s.
+			test.setTimeout(60_000);
 			const app = new AppPage(page);
 			await app.goto(server.baseUrl);
 			await app.waitConnected();
@@ -23,22 +26,22 @@ test.describe("quick-fix advanced", () => {
 
 			const card = new WorkflowCardPage(page);
 
-			await waitForStep(card, "fix-implement", "error", { timeoutMs: 60_000 });
-			await expect(card.statusBadge()).toHaveClass(/\berror\b/, { timeout: 30_000 });
-			await expect(card.retryAction()).toBeVisible({ timeout: 10_000 });
-			await expect(card.abortAction()).toBeVisible({ timeout: 10_000 });
+			await waitForStep(card, "fix-implement", "error", { timeoutMs: 15_000 });
+			await expect(card.statusBadge()).toHaveClass(/\berror\b/, { timeout: 10_000 });
+			await expect(card.retryAction()).toBeVisible({ timeout: 5_000 });
+			await expect(card.abortAction()).toBeVisible({ timeout: 5_000 });
 			await expect(card.pauseAction()).toHaveCount(0);
 			await expect(card.resumeAction()).toHaveCount(0);
 
 			await retryStep(card);
 
-			await waitForStep(card, "fix-implement", "completed", { timeoutMs: 60_000 });
-			await waitForStep(card, "monitor-ci", "completed", { timeoutMs: 60_000 });
+			await waitForStep(card, "fix-implement", "completed", { timeoutMs: 15_000 });
+			await waitForStep(card, "monitor-ci", "completed", { timeoutMs: 15_000 });
 
 			await mergePullRequest(card);
 
-			await waitForStep(card, "sync-repo", "completed", { timeoutMs: 60_000 });
-			await expect(card.statusBadge()).toHaveClass(/completed/, { timeout: 30_000 });
+			await waitForStep(card, "sync-repo", "completed", { timeoutMs: 15_000 });
+			await expect(card.statusBadge()).toHaveClass(/completed/, { timeout: 10_000 });
 			await expect(card.stepIndicator("specify")).toHaveCount(0);
 		});
 	});
