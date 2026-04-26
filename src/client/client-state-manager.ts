@@ -225,6 +225,8 @@ export class ClientStateManager {
 				return { scope: { entity: "none" }, action: "updated" };
 			case "auto-archive:state":
 				return { scope: { entity: "none" }, action: "updated" };
+			case "epic:start-first-level:result":
+				return { scope: { entity: "none" }, action: "updated" };
 			default: {
 				const _exhaustive: never = msg;
 				void _exhaustive;

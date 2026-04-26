@@ -71,6 +71,7 @@ interface MountOptions {
 	epicId: string;
 	children: Parameters<typeof makeWorkflowState>[0][];
 	archived?: boolean;
+	skipEpicList?: boolean;
 }
 
 describe("epic-detail-handler — Start N specs button", () => {
@@ -110,7 +111,9 @@ describe("epic-detail-handler — Start N specs button", () => {
 				...c,
 			}),
 		);
-		state.handleMessage({ type: "epic:list", epics: [epic] });
+		if (!opts.skipEpicList) {
+			state.handleMessage({ type: "epic:list", epics: [epic] });
+		}
 		state.handleMessage({ type: "workflow:list", workflows: wfs });
 
 		const container = document.getElementById("app-content") as HTMLElement;
@@ -250,6 +253,23 @@ describe("epic-detail-handler — Start N specs button", () => {
 		dispatch({ type: "error", message: "something else went wrong" });
 
 		expect(actionButtons().some((b) => b.className.includes("btn-loading"))).toBe(true);
+	});
+
+	test("button is visible when only workflows are loaded (epic:list not yet received)", () => {
+		// Repro for the "Start Epic button not visible on already existing epics"
+		// bug: workflow:list arrives before epic:list (or epic data is missing
+		// entirely for an orphan epic). The aggregate exists, but `state.getEpics()`
+		// has no entry. The Start button only needs the epicId and children, so
+		// it must still render.
+		mount({
+			epicId: "e-1",
+			skipEpicList: true,
+			children: [
+				{ id: "wf-1", status: "idle", epicDependencies: [] },
+				{ id: "wf-2", status: "idle", epicDependencies: [] },
+			],
+		});
+		expect(actionLabels()).toContain("Start 2 specs");
 	});
 
 	test("does not invoke confirm() modal", () => {
