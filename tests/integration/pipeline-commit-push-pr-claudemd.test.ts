@@ -253,7 +253,10 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 		prCreated: Array<{ cwd: string }>;
 	}
 
-	function makeOrch(workflow: Workflow, opts?: { ghExitCode?: number }): Harness {
+	function makeOrch(
+		workflow: Workflow,
+		opts?: { ghExitCode?: number; ghStdout?: string; ghStderr?: string },
+	): Harness {
 		const outputs: Array<{ workflowId: string; text: string }> = [];
 		const errors: Array<{ workflowId: string; text: string }> = [];
 		const pushed: Array<{ cwd: string; branch: string }> = [];
@@ -281,12 +284,16 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 			ghPrCreate: async (cwd) => {
 				prCreated.push({ cwd });
 				if (opts?.ghExitCode && opts.ghExitCode !== 0) {
-					return { code: opts.ghExitCode, stdout: "", stderr: "boom" };
+					return {
+						code: opts.ghExitCode,
+						stdout: opts.ghStdout ?? "",
+						stderr: opts.ghStderr ?? "boom",
+					};
 				}
 				return {
 					code: 0,
-					stdout: "https://github.com/acme/repo/pull/42\n",
-					stderr: "",
+					stdout: opts?.ghStdout ?? "https://github.com/acme/repo/pull/42\n",
+					stderr: opts?.ghStderr ?? "",
 				};
 			},
 		});
@@ -488,6 +495,46 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 
 			const prompt = h.fakeCli.invocations[0].prompt;
 			expect(prompt).not.toContain("CLAUDE.md is Litus-managed local context");
+		} finally {
+			await fx.cleanup();
+		}
+	}, 60_000);
+
+	test("assertion 8: gh pr create reports PR already exists → reuse existing PR URL from stderr, no error", async () => {
+		// `gh pr create --fill` exits non-zero when a PR already exists for the
+		// branch. The existing PR URL is included in stderr. The orchestrator
+		// must reuse that URL rather than failing the step.
+		const fx = await makeRepo({ baseContent: "x\n", branchCommitsExtra: true });
+		try {
+			const wf = makeWorkflow(fx.work, fx.branch);
+			const h = makeOrch(wf, {
+				ghExitCode: 1,
+				ghStderr: `a pull request for branch "${fx.branch}" into branch "master" already exists:\nhttps://github.com/acme/repo/pull/77`,
+			});
+			driveCommitPushPr(h.orch, wf);
+			await until(() => wf.prUrl !== null || h.errors.length > 0);
+
+			expect(h.errors.length).toBe(0);
+			expect(wf.prUrl).toBe("https://github.com/acme/repo/pull/77");
+			expect(h.prCreated.length).toBe(1);
+			// The reuse note is surfaced in the step output.
+			expect(h.outputs.some((o) => /PR already exists/i.test(o.text))).toBe(true);
+		} finally {
+			await fx.cleanup();
+		}
+	}, 60_000);
+
+	test("assertion 9: gh pr create fails for an unrelated reason → step errors as before", async () => {
+		// Regression guard: only "already exists" should be treated as recoverable.
+		const fx = await makeRepo({ baseContent: "x\n", branchCommitsExtra: true });
+		try {
+			const wf = makeWorkflow(fx.work, fx.branch);
+			const h = makeOrch(wf, { ghExitCode: 1, ghStderr: "network unreachable" });
+			driveCommitPushPr(h.orch, wf);
+			await until(() => h.errors.length > 0);
+
+			expect(wf.prUrl).toBeNull();
+			expect(h.errors[0].text).toMatch(/gh pr create failed/);
 		} finally {
 			await fx.cleanup();
 		}
