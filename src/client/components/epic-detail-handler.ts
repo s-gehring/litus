@@ -63,13 +63,13 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 	function hideLayout(): void {
 		const existingAnalysis = document.getElementById("epic-analysis-notes");
 		if (existingAnalysis) existingAnalysis.remove();
-		removeEpicFeedbackUi();
+		removeEpicContextLostNotice();
 		hideNotFoundPanel();
 		hideDetailLayout();
 	}
 
-	function removeEpicFeedbackUi(): void {
-		const existing = document.getElementById("epic-feedback-ui");
+	function removeEpicContextLostNotice(): void {
+		const existing = document.getElementById("epic-context-lost-notice");
 		if (existing) existing.remove();
 	}
 
@@ -113,7 +113,7 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 	}
 
 	function renderEpicFeedbackUi(epic: EpicClientState): void {
-		removeEpicFeedbackUi();
+		removeEpicContextLostNotice();
 		const showableStatuses: Array<EpicClientState["status"]> = ["completed", "infeasible", "error"];
 		if (!showableStatuses.includes(epic.status)) {
 			renderEpicFeedbackHistorySection(epic);
@@ -123,11 +123,8 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		// Context-lost notice — dismissable. Sits next to the history block in
 		// the description column rather than the bottom of the screen.
 		if (epic.sessionContextLost) {
-			const container = document.createElement("div");
-			container.id = "epic-feedback-ui";
-			container.className = "epic-feedback-ui";
-
 			const notice = document.createElement("div");
+			notice.id = "epic-context-lost-notice";
 			notice.className = "epic-feedback-context-lost";
 			const text = document.createElement("span");
 			text.textContent = "Prior agent context was lost. A fresh decomposition was produced.";
@@ -143,10 +140,9 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 				});
 			});
 			notice.appendChild(dismissBtn);
-			container.appendChild(notice);
 
 			const userInput = document.getElementById("user-input");
-			userInput?.parentElement?.insertBefore(container, userInput.nextSibling);
+			userInput?.parentElement?.insertBefore(notice, userInput.nextSibling);
 		}
 
 		renderEpicFeedbackHistorySection(epic);
@@ -302,6 +298,16 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		container.className = "epic-analysis-notes user-input";
 		container.innerHTML = renderMarkdown(content);
 
+		// FR-010: history (in #epic-feedback-section) sits between #user-input
+		// and the analysis/decomposition summary. Anchor the insert to the
+		// history section's nextSibling so the order is
+		// user-input → workflow-feedback-section → epic-feedback-section →
+		// epic-analysis-notes → spec-details.
+		const anchor = document.getElementById("epic-feedback-section");
+		if (anchor) {
+			anchor.parentElement?.insertBefore(container, anchor.nextSibling);
+			return;
+		}
 		const userInput = document.getElementById("user-input");
 		if (userInput) {
 			userInput.parentElement?.insertBefore(container, userInput.nextSibling);

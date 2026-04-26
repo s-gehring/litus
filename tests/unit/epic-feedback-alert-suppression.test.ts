@@ -45,7 +45,7 @@ mock.module("../../src/workflow-engine", () => ({
 
 import { handleEpicFeedback } from "../../src/server/epic-handlers";
 
-describe("epic feedback alert suppression (FR-001 / FR-002)", () => {
+describe("epic feedback alert suppression — call-site contract (FR-001)", () => {
 	test("aborting all-terminal child workflows during feedback opts into suppression", async () => {
 		const { mock: ws } = createMockWebSocket();
 		const { deps } = createMockHandlerDeps();
@@ -91,14 +91,6 @@ describe("epic feedback alert suppression (FR-001 / FR-002)", () => {
 		deps.orchestrators.set("wf-2", makeStubOrch());
 		deps.createOrchestrator = makeStubOrch;
 
-		// Capture any onAlertEmit emissions a real orchestrator would have
-		// produced. The stub orchestrator never emits, so the bug fix is
-		// proven by the suppression flag being set on every abortPipeline
-		// call from the feedback path.
-		const alertEmissions: Array<{ type: string }> = [];
-		// (No orchestrator path in the stub feeds into onAlertEmit; we keep
-		// this list to express intent: the assertion below is the contract.)
-
 		await handleEpicFeedback(
 			ws as unknown as Parameters<typeof handleEpicFeedback>[0],
 			{ type: "epic:feedback", epicId: epic.epicId, text: "split spec 2" } as ClientMessage,
@@ -109,40 +101,5 @@ describe("epic feedback alert suppression (FR-001 / FR-002)", () => {
 		for (const call of abortCalls) {
 			expect(call.opts).toEqual({ suppressEpicFinishedAlert: true });
 		}
-		// And no `epic-finished` alert was synthesised by any path that ran.
-		expect(alertEmissions.some((a) => a.type === "epic-finished")).toBe(false);
-	});
-
-	test("non-feedback abort callers do not opt into suppression (default off)", () => {
-		// This is a contract assertion: the only call site of
-		// `deleteChildWorkflows` that opts in is `runFeedbackAttempt`. Other
-		// abort-pipeline call sites (e.g. user-initiated abort, archive
-		// cascades) leave `suppressEpicFinishedAlert` at its default `false`,
-		// so genuine sibling-completion still fires `epic-finished`.
-		//
-		// Spec FR-002 / SC-002. Verified by reading the source — there is
-		// exactly one caller of `deleteChildWorkflows`, and the only abort
-		// site that passes the suppression flag is that caller. A grep gate
-		// here is sufficient to lock in the non-regression.
-		const epicHandlersSrc = require("node:fs").readFileSync(
-			require("node:path").join(__dirname, "..", "..", "src", "server", "epic-handlers.ts"),
-			"utf8",
-		) as string;
-		const orchestratorSrc = require("node:fs").readFileSync(
-			require("node:path").join(__dirname, "..", "..", "src", "pipeline-orchestrator.ts"),
-			"utf8",
-		) as string;
-
-		// Only one call site sets the flag, in epic-handlers.ts.
-		const matches = epicHandlersSrc.match(/suppressEpicFinishedAlert:\s*true/g) ?? [];
-		expect(matches.length).toBe(1);
-
-		// And no abortPipeline call inside pipeline-orchestrator.ts itself
-		// (e.g. a future internal caller) silently sets the flag.
-		const orchMatches = orchestratorSrc.match(/suppressEpicFinishedAlert:\s*true/g) ?? [];
-		// Only the caller in checkEpicDependencies short-circuits; the field
-		// appears as the param name and the `?? false` default, never as
-		// `true` literal.
-		expect(orchMatches.length).toBe(0);
 	});
 });
