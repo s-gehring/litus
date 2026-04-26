@@ -711,7 +711,7 @@ describe("ServerMessage variants", () => {
 		expect(msgs[6].type).toBe("workflow:step-change");
 	});
 
-	test("epic message variants (9)", () => {
+	test("epic message variants (10)", () => {
 		const msgs: ServerMessage[] = [
 			{ type: "epic:list", epics: [] },
 			{ type: "epic:created", epicId: "e-1", description: "Build app" },
@@ -739,10 +739,17 @@ describe("ServerMessage variants", () => {
 				epicDependencyStatus: "satisfied",
 				blockingWorkflows: [],
 			},
+			{
+				type: "epic:start-first-level:result",
+				epicId: "e-1",
+				started: ["w-1"],
+				skipped: [],
+				failed: [],
+			},
 		];
-		expect(msgs).toHaveLength(9);
+		expect(msgs).toHaveLength(10);
 		expect(msgs[0].type).toBe("epic:list");
-		expect(msgs[8].type).toBe("epic:dependency-update");
+		expect(msgs[9].type).toBe("epic:start-first-level:result");
 	});
 
 	test("config and error message variants (3)", () => {
@@ -764,8 +771,8 @@ describe("ServerMessage variants", () => {
 		expect(msgs[2].type).toBe("error");
 	});
 
-	test("total ServerMessage variant count is 19", () => {
-		// 7 workflow + 9 epic + 2 config + 1 error = 19
+	test("total ServerMessage variant count is 20", () => {
+		// 7 workflow + 10 epic + 2 config + 1 error = 20
 		const allTypes = [
 			"workflow:state",
 			"workflow:list",
@@ -783,12 +790,13 @@ describe("ServerMessage variants", () => {
 			"epic:infeasible",
 			"epic:error",
 			"epic:dependency-update",
+			"epic:start-first-level:result",
 			"config:state",
 			"config:error",
 			"error",
 		];
-		expect(allTypes).toHaveLength(19);
-		expect(new Set(allTypes).size).toBe(19);
+		expect(allTypes).toHaveLength(20);
+		expect(new Set(allTypes).size).toBe(20);
 	});
 });
 
@@ -810,18 +818,19 @@ describe("ClientMessage variants", () => {
 		expect(msgs[8].type).toBe("workflow:force-start");
 	});
 
-	test("epic and config command variants (5)", () => {
+	test("epic and config command variants (6)", () => {
 		const msgs: ClientMessage[] = [
 			{ type: "epic:start", description: "Build app", autoStart: true },
 			{ type: "epic:abort" },
+			{ type: "epic:start-first-level", epicId: "e-1" },
 			{ type: "config:get" },
 			{ type: "config:save", config: {} },
 			{ type: "config:reset" },
 		];
-		expect(msgs).toHaveLength(5);
+		expect(msgs).toHaveLength(6);
 	});
 
-	test("total ClientMessage variant count is 14", () => {
+	test("total ClientMessage variant count is 15", () => {
 		const allTypes = [
 			"workflow:start",
 			"workflow:answer",
@@ -834,12 +843,13 @@ describe("ClientMessage variants", () => {
 			"workflow:force-start",
 			"epic:start",
 			"epic:abort",
+			"epic:start-first-level",
 			"config:get",
 			"config:save",
 			"config:reset",
 		];
-		expect(allTypes).toHaveLength(14);
-		expect(new Set(allTypes).size).toBe(14);
+		expect(allTypes).toHaveLength(15);
+		expect(new Set(allTypes).size).toBe(15);
 	});
 });
 

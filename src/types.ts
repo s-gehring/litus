@@ -725,6 +725,13 @@ export type ServerMessage =
 			epicDependencyStatus: EpicDependencyStatus;
 			blockingWorkflows: string[];
 	  }
+	| {
+			type: "epic:start-first-level:result";
+			epicId: string;
+			started: string[];
+			skipped: string[];
+			failed: { workflowId: string; message: string }[];
+	  }
 	| { type: "config:state"; config: AppConfig; warnings?: ConfigWarning[] }
 	| {
 			type: "default-model:info";
@@ -910,6 +917,7 @@ export type ClientMessage =
 			submissionId?: string;
 	  }
 	| { type: "epic:abort" }
+	| { type: "epic:start-first-level"; epicId: string }
 	| { type: "workflow:start-existing"; workflowId: string }
 	| { type: "workflow:force-start"; workflowId: string }
 	| { type: "workflow:feedback"; workflowId: string; text: string }

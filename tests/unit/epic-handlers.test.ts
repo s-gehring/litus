@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ManagedRepoStore } from "../../src/managed-repo-store";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
-import type { ClientMessage } from "../../src/types";
+import type { ClientMessage, ServerMessage } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockWebSocket } from "../test-infra/mock-websocket";
@@ -45,7 +45,11 @@ mock.module("../../src/workflow-engine", () => ({
 	createEpicWorkflows: async () => mockCreatedWorkflows,
 }));
 
-import { handleEpicAbort, handleEpicStart } from "../../src/server/epic-handlers";
+import {
+	handleEpicAbort,
+	handleEpicStart,
+	handleEpicStartFirstLevel,
+} from "../../src/server/epic-handlers";
 
 function setup() {
 	const { mock: ws } = createMockWebSocket();
@@ -438,6 +442,306 @@ describe("epic-handlers", () => {
 			// Should not throw
 			handleEpicAbort(ws, { type: "epic:abort" } as ClientMessage, deps);
 			expect(deps.epicAnalysisRef.current).toBeNull();
+		});
+	});
+
+	describe("handleEpicStartFirstLevel", () => {
+		type StartCall = { method: "startPipelineFromWorkflow"; args: unknown[] };
+		function makeOrch(behavior?: { throws?: unknown }): {
+			orch: PipelineOrchestrator;
+			calls: StartCall[];
+		} {
+			const calls: StartCall[] = [];
+			const orch = {
+				getEngine: () => ({ getWorkflow: () => null }),
+				startPipelineFromWorkflow(...args: unknown[]) {
+					calls.push({ method: "startPipelineFromWorkflow", args });
+					if (behavior?.throws !== undefined) throw behavior.throws;
+				},
+			} as unknown as PipelineOrchestrator;
+			return { orch, calls };
+		}
+
+		async function setupBulk(workflows: ReturnType<typeof makeWorkflow>[]) {
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleEpicStartFirstLevel>[0];
+			const orchestrators = new Map<string, PipelineOrchestrator>();
+			const orchCalls = new Map<string, StartCall[]>();
+			for (const wf of workflows) {
+				const { orch, calls } = makeOrch();
+				orchestrators.set(wf.id, orch);
+				orchCalls.set(wf.id, calls);
+			}
+			const { deps, sentMessages, broadcastedMessages } = createMockHandlerDeps({ orchestrators });
+			for (const wf of workflows) {
+				await deps.sharedStore.save(wf);
+			}
+			return { ws: mockWs, deps, sentMessages, broadcastedMessages, orchestrators, orchCalls };
+		}
+
+		function getResult(msgs: ServerMessage[] | undefined) {
+			const found = (msgs ?? []).find((m) => m.type === "epic:start-first-level:result");
+			if (!found) throw new Error("expected epic:start-first-level:result");
+			return found as Extract<ServerMessage, { type: "epic:start-first-level:result" }>;
+		}
+
+		test("starts only idle first-level workflows for the requested epic", async () => {
+			const idleA = makeWorkflow({
+				id: "wf-a",
+				epicId: "e-1",
+				epicDependencies: [],
+				status: "idle",
+			});
+			const idleB = makeWorkflow({
+				id: "wf-b",
+				epicId: "e-1",
+				epicDependencies: [],
+				status: "idle",
+			});
+			const { ws, deps, sentMessages, orchCalls } = await setupBulk([idleA, idleB]);
+
+			await handleEpicStartFirstLevel(
+				ws,
+				{ type: "epic:start-first-level", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+
+			expect(orchCalls.get("wf-a")?.length).toBe(1);
+			expect(orchCalls.get("wf-b")?.length).toBe(1);
+			const result = getResult(sentMessages.get(ws));
+			expect(result.epicId).toBe("e-1");
+			expect(result.started.sort()).toEqual(["wf-a", "wf-b"]);
+			expect(result.skipped).toEqual([]);
+			expect(result.failed).toEqual([]);
+		});
+
+		test("skips non-idle workflows", async () => {
+			const running = makeWorkflow({
+				id: "wf-running",
+				epicId: "e-1",
+				epicDependencies: [],
+				status: "running",
+			});
+			const completed = makeWorkflow({
+				id: "wf-done",
+				epicId: "e-1",
+				epicDependencies: [],
+				status: "completed",
+			});
+			const { ws, deps, sentMessages, orchCalls } = await setupBulk([running, completed]);
+
+			await handleEpicStartFirstLevel(
+				ws,
+				{ type: "epic:start-first-level", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+
+			expect(orchCalls.get("wf-running")?.length).toBe(0);
+			expect(orchCalls.get("wf-done")?.length).toBe(0);
+			const result = getResult(sentMessages.get(ws));
+			expect(result.started).toEqual([]);
+			expect(result.skipped.sort()).toEqual(["wf-done", "wf-running"]);
+			expect(result.failed).toEqual([]);
+		});
+
+		test("skips workflows with non-empty epicDependencies", async () => {
+			const dependent = makeWorkflow({
+				id: "wf-dep",
+				epicId: "e-1",
+				epicDependencies: ["wf-a"],
+				status: "idle",
+			});
+			const { ws, deps, sentMessages, orchCalls } = await setupBulk([dependent]);
+
+			await handleEpicStartFirstLevel(
+				ws,
+				{ type: "epic:start-first-level", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+
+			expect(orchCalls.get("wf-dep")?.length).toBe(0);
+			const result = getResult(sentMessages.get(ws));
+			expect(result.started).toEqual([]);
+			expect(result.skipped).toEqual(["wf-dep"]);
+		});
+
+		test("skips archived workflows", async () => {
+			const archived = makeWorkflow({
+				id: "wf-archived",
+				epicId: "e-1",
+				epicDependencies: [],
+				status: "idle",
+				archived: true,
+			});
+			const { ws, deps, sentMessages, orchCalls } = await setupBulk([archived]);
+
+			await handleEpicStartFirstLevel(
+				ws,
+				{ type: "epic:start-first-level", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+
+			expect(orchCalls.get("wf-archived")?.length).toBe(0);
+			const result = getResult(sentMessages.get(ws));
+			expect(result.started).toEqual([]);
+			expect(result.skipped).toEqual(["wf-archived"]);
+		});
+
+		test("does not include workflows whose epicId does not match", async () => {
+			const matching = makeWorkflow({
+				id: "wf-match",
+				epicId: "e-1",
+				epicDependencies: [],
+				status: "idle",
+			});
+			const otherEpic = makeWorkflow({
+				id: "wf-other",
+				epicId: "e-2",
+				epicDependencies: [],
+				status: "idle",
+			});
+			const { ws, deps, sentMessages, orchCalls } = await setupBulk([matching, otherEpic]);
+
+			await handleEpicStartFirstLevel(
+				ws,
+				{ type: "epic:start-first-level", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+
+			expect(orchCalls.get("wf-match")?.length).toBe(1);
+			expect(orchCalls.get("wf-other")?.length).toBe(0);
+			const result = getResult(sentMessages.get(ws));
+			expect(result.started).toEqual(["wf-match"]);
+			expect(result.skipped).toEqual([]);
+		});
+
+		test("starts in parallel via Promise.allSettled — one failure does not block the others", async () => {
+			const wfA = makeWorkflow({ id: "wf-a", epicId: "e-1", epicDependencies: [], status: "idle" });
+			const wfB = makeWorkflow({ id: "wf-b", epicId: "e-1", epicDependencies: [], status: "idle" });
+			const wfC = makeWorkflow({ id: "wf-c", epicId: "e-1", epicDependencies: [], status: "idle" });
+
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleEpicStartFirstLevel>[0];
+			const orchestrators = new Map<string, PipelineOrchestrator>();
+			const calls: Record<string, number> = { "wf-a": 0, "wf-b": 0, "wf-c": 0 };
+			const engineStub = { getEngine: () => ({ getWorkflow: () => null }) };
+			orchestrators.set("wf-a", {
+				...engineStub,
+				startPipelineFromWorkflow() {
+					calls["wf-a"]++;
+				},
+			} as unknown as PipelineOrchestrator);
+			orchestrators.set("wf-b", {
+				...engineStub,
+				startPipelineFromWorkflow() {
+					calls["wf-b"]++;
+					throw new Error("boom");
+				},
+			} as unknown as PipelineOrchestrator);
+			orchestrators.set("wf-c", {
+				...engineStub,
+				startPipelineFromWorkflow() {
+					calls["wf-c"]++;
+				},
+			} as unknown as PipelineOrchestrator);
+			const { deps, sentMessages } = createMockHandlerDeps({ orchestrators });
+			for (const wf of [wfA, wfB, wfC]) {
+				await deps.sharedStore.save(wf);
+			}
+
+			await handleEpicStartFirstLevel(
+				mockWs,
+				{ type: "epic:start-first-level", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+
+			expect(calls["wf-a"]).toBe(1);
+			expect(calls["wf-b"]).toBe(1);
+			expect(calls["wf-c"]).toBe(1);
+
+			const result = getResult(sentMessages.get(mockWs));
+			expect(result.started.sort()).toEqual(["wf-a", "wf-c"]);
+			expect(result.failed).toHaveLength(1);
+			expect(result.failed[0].workflowId).toBe("wf-b");
+			expect(result.failed[0].message).toContain("boom");
+			expect(result.skipped).toEqual([]);
+		});
+
+		test("rejects malformed request with error message when epicId missing", async () => {
+			const { ws, deps, sentMessages } = await setupBulk([]);
+
+			await handleEpicStartFirstLevel(
+				ws,
+				{ type: "epic:start-first-level" } as unknown as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			const errorMsg = msgs.find((m) => m.type === "error");
+			expect(errorMsg).toBeDefined();
+			expect(errorMsg && errorMsg.type === "error" && errorMsg.message).toBe("epicId is required");
+			expect(msgs.some((m) => m.type === "epic:start-first-level:result")).toBe(false);
+		});
+
+		test("rejects empty epicId with error message", async () => {
+			const { ws, deps, sentMessages } = await setupBulk([]);
+
+			await handleEpicStartFirstLevel(
+				ws,
+				{ type: "epic:start-first-level", epicId: "" } as ClientMessage,
+				deps,
+			);
+
+			const msgs = sentMessages.get(ws) ?? [];
+			expect(msgs.some((m) => m.type === "error" && m.message === "epicId is required")).toBe(true);
+			expect(msgs.some((m) => m.type === "epic:start-first-level:result")).toBe(false);
+		});
+
+		test("reports failed entry when orchestrator is not registered for an eligible workflow", async () => {
+			// Persisted workflow exists in the store but no orchestrator is
+			// registered for it (e.g. mid-startup race). The handler must report
+			// it under `failed[]` rather than crash, so the per-spec UI can stay
+			// truthful.
+			const wf = makeWorkflow({
+				id: "wf-orphan",
+				epicId: "e-1",
+				epicDependencies: [],
+				status: "idle",
+			});
+			const { mock: ws } = createMockWebSocket();
+			const mockWs = ws as unknown as Parameters<typeof handleEpicStartFirstLevel>[0];
+			const orchestrators = new Map<string, PipelineOrchestrator>();
+			const { deps, sentMessages } = createMockHandlerDeps({ orchestrators });
+			await deps.sharedStore.save(wf);
+
+			await handleEpicStartFirstLevel(
+				mockWs,
+				{ type: "epic:start-first-level", epicId: "e-1" } as ClientMessage,
+				deps,
+			);
+
+			const result = getResult(sentMessages.get(mockWs));
+			expect(result.started).toEqual([]);
+			expect(result.failed).toHaveLength(1);
+			expect(result.failed[0].workflowId).toBe("wf-orphan");
+			expect(result.failed[0].message).toContain("not registered");
+		});
+
+		test("returns empty result for unknown epicId", async () => {
+			const wf = makeWorkflow({ id: "wf-x", epicId: "e-1", epicDependencies: [], status: "idle" });
+			const { ws, deps, sentMessages } = await setupBulk([wf]);
+
+			await handleEpicStartFirstLevel(
+				ws,
+				{ type: "epic:start-first-level", epicId: "e-unknown" } as ClientMessage,
+				deps,
+			);
+
+			const result = getResult(sentMessages.get(ws));
+			expect(result.epicId).toBe("e-unknown");
+			expect(result.started).toEqual([]);
+			expect(result.skipped).toEqual([]);
+			expect(result.failed).toEqual([]);
 		});
 	});
 });
