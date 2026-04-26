@@ -63,4 +63,6 @@ TypeScript: Enforced by Biome (`bunx biome ci .`)
 - In pull requests always contain three sections:
     - Changes made (from a user perspective, but might also include technical details for the reviewer)
     - Bugs fixed that were already present before the branch opened
-    - Bugs fixed that were fixed in review and feedback cycle, that were introduced in this branch 
+    - Bugs fixed that were fixed in review and feedback cycle, that were introduced in this branch
+- Every new feature must have an E2E-playwright test
+- Every bugfix must be validated by at least one test
