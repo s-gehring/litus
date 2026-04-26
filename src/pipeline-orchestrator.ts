@@ -1322,15 +1322,42 @@ export class PipelineOrchestrator {
 		}
 
 		const prRes = await this.ghPrCreateFn(cwd);
+		let url: string | null = null;
+		let reusedExistingPr = false;
 		if (prRes.code !== 0) {
-			throw new Error(`gh pr create failed: ${prRes.stderr || `exit ${prRes.code}`}`);
+			// `gh pr create` exits non-zero when a PR for the branch already exists.
+			// The stderr typically contains the existing PR URL, e.g.:
+			//   a pull request for branch "X" into branch "Y" already exists:
+			//   https://github.com/owner/repo/pull/123
+			// In that case, reuse the existing PR rather than failing the step.
+			if (/already exists/i.test(prRes.stderr) || /already exists/i.test(prRes.stdout)) {
+				url = extractPrUrl(prRes.stderr) ?? extractPrUrl(prRes.stdout);
+				if (!url) {
+					url = await this.discoverPrUrl(workflow);
+				}
+				if (!url) {
+					throw new Error(
+						`gh pr create reported PR already exists but URL could not be discovered: ${prRes.stderr || `exit ${prRes.code}`}`,
+					);
+				}
+				reusedExistingPr = true;
+			} else {
+				throw new Error(`gh pr create failed: ${prRes.stderr || `exit ${prRes.code}`}`);
+			}
+		} else {
+			url = extractPrUrl(prRes.stdout) ?? extractPrUrl(prRes.stderr);
 		}
 
-		const url = extractPrUrl(prRes.stdout) ?? extractPrUrl(prRes.stderr);
 		if (url) {
 			const firstPr = !workflow.prUrl;
 			workflow.prUrl = url;
 			const step = workflow.steps[workflow.currentStepIndex];
+			if (reusedExistingPr) {
+				const note = `✓ PR already exists for ${branch} — reusing ${url}`;
+				step.output += `${note}\n`;
+				step.outputLog.push({ kind: "text", text: note });
+				this.callbacks.onOutput(workflow.id, note);
+			}
 			step.output += `${url}\n`;
 			step.outputLog.push({ kind: "text", text: url });
 			this.callbacks.onOutput(workflow.id, url);
