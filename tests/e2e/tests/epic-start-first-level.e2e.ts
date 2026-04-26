@@ -3,7 +3,7 @@ import { createEpic } from "../helpers/create-epic";
 import { AppPage } from "../pages/app";
 import { EpicTree } from "../pages/epic-tree";
 
-// Same rationale as `epic-lifecycle.spec.ts`: keep the analyzer prompt to a
+// Same rationale as `epic-lifecycle.e2e.ts`: keep the analyzer prompt to a
 // single line so the Windows .cmd shim does not truncate `-p` at the first
 // newline. `maxJsonRetries: 1` fails fast on JSON parse errors.
 const EPIC_E2E_CONFIG_OVERRIDES = {
