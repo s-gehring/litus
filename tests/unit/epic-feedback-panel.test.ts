@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
-	getVisibleEpicFeedbackEpicId,
 	hideEpicFeedbackPanel,
 	hideEpicFeedbackPanelUnlessFor,
 	isEpicFeedbackPanelVisible,
@@ -35,7 +34,7 @@ describe("epic-feedback-panel", () => {
 		expect(panel?.classList.contains("hidden")).toBe(false);
 		expect(panel?.dataset.epicId).toBe("e1");
 		expect(isEpicFeedbackPanelVisible()).toBe(true);
-		expect(getVisibleEpicFeedbackEpicId()).toBe("e1");
+		expect(panel?.dataset.epicId).toBe("e1");
 	});
 
 	test("submit button disabled on empty input", () => {

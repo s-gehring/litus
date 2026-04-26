@@ -135,4 +135,63 @@ test.describe("Epic feedback UX (Stories 1–4)", () => {
 		// Either hidden or empty — both signal "no history block".
 		await expect(section).toHaveClass(/hidden/);
 	});
+
+	test("Story 1 + 3: submitting feedback emits no epic-finished alert and renders entry between user-input and analysis notes (FR-001, FR-010)", async ({
+		page,
+		server,
+		sandbox,
+	}) => {
+		test.setTimeout(90_000);
+
+		const app = new AppPage(page);
+		const tree = new EpicTree(page);
+		await app.goto(server.baseUrl);
+		await app.waitConnected();
+
+		await createEpic({
+			page,
+			description: "Add authentication to the application including login and logout.",
+			repo: sandbox.targetRepo,
+			start: false,
+		});
+		await expect(tree.allChildRows()).toHaveCount(2, { timeout: 15_000 });
+
+		// Open the feedback form via the top-mounted button.
+		const provideBtn = page.locator('#detail-actions button:has-text("Provide Feedback")');
+		await expect(provideBtn).toBeVisible({ timeout: 15_000 });
+		await provideBtn.click();
+
+		const input = page.locator("#epic-feedback-input");
+		await input.fill("Please refine the decomposition and split the auth spec further.");
+		await page.locator("#btn-submit-epic-feedback").click();
+
+		// FR-001 / SC-001: no `epic-finished` toast appears as a side-effect of
+		// the abort cascade triggered by feedback submission. Wait long enough
+		// to cover server roundtrip + abort flush.
+		const toasts = page.locator("#alert-toast-container .alert-toast");
+		const epicFinishedToast = toasts.filter({ hasText: "Epic finished" });
+		await page.waitForTimeout(1_500);
+		await expect(epicFinishedToast).toHaveCount(0);
+
+		// FR-010: history entry renders inside #epic-feedback-section, and the
+		// section appears between #user-input and the analysis/decomposition
+		// summary block (#epic-analysis-notes when present, otherwise #spec-details).
+		const section = page.locator("#epic-feedback-section");
+		await expect(section.locator(".feedback-entry")).toHaveCount(1, { timeout: 15_000 });
+
+		const order = await page.evaluate(() => {
+			const userInput = document.getElementById("user-input");
+			const fbSection = document.getElementById("epic-feedback-section");
+			const analysis = document.getElementById("epic-analysis-notes");
+			const specDetails = document.getElementById("spec-details");
+			const tail = analysis ?? specDetails;
+			if (!userInput || !fbSection || !tail) return { ok: false, reason: "missing nodes" };
+			const userBeforeSection =
+				userInput.compareDocumentPosition(fbSection) & Node.DOCUMENT_POSITION_FOLLOWING;
+			const sectionBeforeTail =
+				fbSection.compareDocumentPosition(tail) & Node.DOCUMENT_POSITION_FOLLOWING;
+			return { ok: Boolean(userBeforeSection && sectionBeforeTail), reason: null };
+		});
+		expect(order.ok, order.reason ?? undefined).toBe(true);
+	});
 });
