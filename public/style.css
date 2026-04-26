@@ -921,8 +921,14 @@ header h1 {
 .btn-warning { background: var(--accent-orange); color: #1a1a1a; }
 .btn-danger { background: var(--accent); color: #fff; }
 
-/* Slot separator: pushes destructive + finalize actions to the right. */
-.detail-actions .slot-break { margin-inline-start: auto; }
+/* Slot separator: visually groups destructive + finalize actions next to
+   primary + secondary, kept left-aligned with a thin divider rather than
+   pushed to the far right. */
+.detail-actions .slot-break {
+  margin-inline-start: 12px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--border);
+}
 
 /* Current step label */
 .current-step-label {

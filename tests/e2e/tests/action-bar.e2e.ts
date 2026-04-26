@@ -6,8 +6,8 @@ import { AppPage, WorkflowCardPage } from "../pages";
  * Asserts the unified detail-actions contract introduced by the action-bar
  * refactor. Covers — across the workflow lifecycle:
  *
- *   1. Slot order: primary → secondary → destructive → finalize, with the
- *      auto-margin spacer on the first right-side button.
+ *   1. Slot order: primary → secondary → destructive → finalize, with a
+ *      visual divider (`slot-break`) on the first right-side button.
  *   2. Stable, key-derived test-ids (action-pause, action-resume, …).
  *   3. Archive only surfaces in terminal states (`completed`, `aborted`).
  *      Running, paused, and errored workflows omit the button entirely.
@@ -83,7 +83,7 @@ test.describe("detail action-bar contract", () => {
 			{ key: "action-abort", slot: "destructive" },
 		]);
 
-		// First right-side button gets the slot-break (auto-margin spacer).
+		// First right-side button gets the slot-break (group divider).
 		await expect(card.abortAction()).toHaveClass(/\bslot-break\b/);
 	});
 
