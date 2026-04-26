@@ -586,24 +586,24 @@ describe("CLIRunner", () => {
 		});
 
 		test("emits each assistant message separately across turns", async () => {
-			// After an `assistant` event completes, the sent-length counter must
-			// reset so a subsequent message (with its own deltas + finalization)
-			// is still delivered to the frontend.
+			// Two distinct turns in the same stream: per the parser contract
+			// (`cli-stream-parser.ts` B-3), the second turn's cumulative text
+			// being shorter than the first triggers the FR-006 conditional
+			// reset so the new turn's text is delivered in full.
 			const outputs: string[] = [];
 			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
 
 			const streamContent = [
 				JSON.stringify({ type: "content_block_delta", delta: { text: "First " } }),
-				JSON.stringify({ type: "content_block_delta", delta: { text: "reply" } }),
+				JSON.stringify({ type: "content_block_delta", delta: { text: "reply long" } }),
 				JSON.stringify({
 					type: "assistant",
-					message: { content: [{ type: "text", text: "First reply" }] },
+					message: { content: [{ type: "text", text: "First reply long" }] },
 				}),
-				JSON.stringify({ type: "content_block_delta", delta: { text: "Second " } }),
-				JSON.stringify({ type: "content_block_delta", delta: { text: "reply" } }),
+				JSON.stringify({ type: "content_block_delta", delta: { text: "Second" } }),
 				JSON.stringify({
 					type: "assistant",
-					message: { content: [{ type: "text", text: "Second reply" }] },
+					message: { content: [{ type: "text", text: "Second" }] },
 				}),
 				"",
 			].join("\n");
@@ -634,7 +634,7 @@ describe("CLIRunner", () => {
 			);
 
 			await completePromise;
-			expect(outputs.join("")).toBe("First replySecond reply");
+			expect(outputs.join("")).toBe("First reply longSecond");
 		});
 
 		test("forwards the full finalized text to onAssistantMessage even when streamed as partials", async () => {

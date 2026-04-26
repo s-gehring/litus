@@ -101,17 +101,20 @@ describe("parseClaudeStream", () => {
 			expect(outputs.join("")).toBe("Hello world");
 		});
 
-		test("emits each assistant message separately across turns (FR-006)", async () => {
+		test("emits only the unsent tail when an assistant event grows incrementally (FR-005)", async () => {
+			// Distinguishes the spec'd "track to currentText.length" rule from the
+			// older "reset to 0 after every assistant event" semantics. Under the
+			// rejected rule this would emit "HelloHello world".
 			const outputs: string[] = [];
 			const stream = createReadableStream(
 				ndjson([
 					{
 						type: "assistant",
-						message: { content: [{ type: "text", text: "First reply" }] },
+						message: { content: [{ type: "text", text: "Hello" }] },
 					},
 					{
 						type: "assistant",
-						message: { content: [{ type: "text", text: "Second reply" }] },
+						message: { content: [{ type: "text", text: "Hello world" }] },
 					},
 				]),
 			);
@@ -124,23 +127,78 @@ describe("parseClaudeStream", () => {
 				onSessionId: () => {},
 			});
 
-			expect(outputs.join("")).toBe("First replySecond reply");
+			expect(outputs.join("")).toBe("Hello world");
 		});
 
-		test("cumulative text shorter than what was sent triggers a turn reset", async () => {
+		test("FR-006 conditional reset triggers when cumulative text shrinks after a delta-flushed prefix", async () => {
+			// Drives `assistantSentLen` non-zero via a flushed delta first (the
+			// only path under which FR-006's `currentText.length < assistantSentLen`
+			// branch is reachable today), then sends a shorter assistant event so
+			// the reset must fire to avoid `slice(assistantSentLen)` returning "".
 			const outputs: string[] = [];
-			const stream = createReadableStream(
-				ndjson([
-					{
-						type: "assistant",
-						message: { content: [{ type: "text", text: "long-prior-message-text" }] },
-					},
-					{
-						type: "assistant",
-						message: { content: [{ type: "text", text: "tiny" }] },
-					},
-				]),
-			);
+			// Use a manual stream so we can interleave a wait long enough for the
+			// 50ms delta-flush timer to fire before the assistant event arrives.
+			const encoder = new TextEncoder();
+			const interleaved = new ReadableStream<Uint8Array>({
+				async pull(controller) {
+					controller.enqueue(
+						encoder.encode(
+							`${JSON.stringify({
+								type: "content_block_delta",
+								delta: { text: "long-prior-flushed-prefix" },
+							})}\n`,
+						),
+					);
+					await new Promise((r) => setTimeout(r, 80));
+					controller.enqueue(
+						encoder.encode(
+							`${JSON.stringify({
+								type: "assistant",
+								message: { content: [{ type: "text", text: "tiny" }] },
+							})}\n`,
+						),
+					);
+					controller.close();
+				},
+			});
+			await parseClaudeStream(interleaved, {
+				onText: (t) => {
+					outputs.push(t);
+				},
+				onTools: () => {},
+				onSessionId: () => {},
+			});
+
+			expect(outputs.join("")).toBe("long-prior-flushed-prefixtiny");
+		});
+
+		test("flushed delta deduplicates against a subsequent matching-prefix assistant event (FR-005)", async () => {
+			// Flush a delta, then deliver an assistant event whose cumulative text
+			// starts with the flushed prefix — only the unsent tail should emit.
+			const outputs: string[] = [];
+			const encoder = new TextEncoder();
+			const stream = new ReadableStream<Uint8Array>({
+				async pull(controller) {
+					controller.enqueue(
+						encoder.encode(
+							`${JSON.stringify({
+								type: "content_block_delta",
+								delta: { text: "Hello " },
+							})}\n`,
+						),
+					);
+					await new Promise((r) => setTimeout(r, 80));
+					controller.enqueue(
+						encoder.encode(
+							`${JSON.stringify({
+								type: "assistant",
+								message: { content: [{ type: "text", text: "Hello world" }] },
+							})}\n`,
+						),
+					);
+					controller.close();
+				},
+			});
 
 			await parseClaudeStream(stream, {
 				onText: (t) => {
@@ -150,7 +208,7 @@ describe("parseClaudeStream", () => {
 				onSessionId: () => {},
 			});
 
-			expect(outputs.join("")).toBe("long-prior-message-texttiny");
+			expect(outputs.join("")).toBe("Hello world");
 		});
 	});
 
