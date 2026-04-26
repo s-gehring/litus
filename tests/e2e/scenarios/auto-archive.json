@@ -1,0 +1,8 @@
+{
+	"name": "auto-archive",
+	"claude": [],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com account e2e\n" }
+	}
+}
