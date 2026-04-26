@@ -5,7 +5,7 @@ import { AppPage, WorkflowCardPage } from "../pages";
 /**
  * End-to-end coverage for the whole-workflow "Retry workflow" reset that
  * this branch introduces (distinct from the per-step "Retry step" action
- * covered in `retry-after-error.spec.ts`).
+ * covered in `retry-after-error.e2e.ts`).
  *
  * The action resets an `error` or `aborted` workflow back to Setup,
  * deleting branch/worktree/artifacts. After a successful reset the

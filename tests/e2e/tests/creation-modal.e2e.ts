@@ -105,7 +105,7 @@ test.describe("creation modal", () => {
 
 		const { form } = await openCreationModal(page, server.baseUrl);
 
-		// Count-based traversal mirrors `peripheral-coverage.spec.ts:133-175`.
+		// Count-based traversal mirrors `peripheral-coverage.e2e.ts:133-175`.
 		// Asserting by identity alone would pass a buggy trap that still hits
 		// the same element after one extra cycle; counting the tabbable set and
 		// pressing Tab that many times proves the loop truly cycles.

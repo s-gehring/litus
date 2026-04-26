@@ -3,7 +3,7 @@ import { createEpic } from "../helpers/create-epic";
 import { AppPage } from "../pages/app";
 import { EpicTree } from "../pages/epic-tree";
 
-// Duplicated from `epic-lifecycle.spec.ts`; see that file for the full
+// Duplicated from `epic-lifecycle.e2e.ts`; see that file for the full
 // rationale. Summary: on Windows, cmd.exe's `%*` truncates the analyzer's
 // multi-line `-p` prompt at the first newline, which drops
 // `--output-format stream-json` from the argv the fake observes. Shortening
