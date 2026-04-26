@@ -1053,7 +1053,12 @@ document.addEventListener("DOMContentLoaded", () => {
 	if (btnArchive) {
 		btnArchive.addEventListener("click", (e) => {
 			e.preventDefault();
-			appRouter?.navigate("/archive");
+			if (!appRouter) return;
+			if (appRouter.currentPath === "/archive") {
+				appRouter.navigate("/");
+			} else {
+				appRouter.navigate("/archive");
+			}
 		});
 	}
 

@@ -635,6 +635,12 @@ export interface Workflow {
 	archived: boolean;
 	/** ISO-8601 timestamp when `archived` flipped to true; null otherwise. */
 	archivedAt: string | null;
+	/**
+	 * Set when a user manually unarchives this workflow. The auto-archive
+	 * sweeper skips items with this flag so a deliberate unarchive isn't
+	 * immediately undone on the next sweep.
+	 */
+	autoArchiveExempt?: boolean;
 }
 
 // Serializable workflow state for WebSocket messages (strips internal fields from workflow and steps)
@@ -883,6 +889,12 @@ export interface PersistedEpic {
 	attemptCount: number;
 	archived: boolean;
 	archivedAt: string | null;
+	/**
+	 * Set when a user manually unarchives this epic. The auto-archive sweeper
+	 * skips items with this flag so a deliberate unarchive isn't immediately
+	 * undone on the next sweep.
+	 */
+	autoArchiveExempt?: boolean;
 }
 
 export interface EpicFeedbackEntry {

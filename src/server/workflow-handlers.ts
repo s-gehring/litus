@@ -501,7 +501,12 @@ export async function loadWorkflowForArchive(
  */
 export async function persistArchiveFlip(
 	workflow: Workflow,
-	next: { archived: boolean; archivedAt: string | null; updatedAt: string },
+	next: {
+		archived: boolean;
+		archivedAt: string | null;
+		updatedAt: string;
+		autoArchiveExempt?: boolean;
+	},
 	deps: HandlerDeps,
 ): Promise<void> {
 	const orch = deps.orchestrators.get(workflow.id);
@@ -511,22 +516,30 @@ export async function persistArchiveFlip(
 		archived: target.archived,
 		archivedAt: target.archivedAt,
 		updatedAt: target.updatedAt,
+		autoArchiveExempt: target.autoArchiveExempt,
 	};
 	target.archived = next.archived;
 	target.archivedAt = next.archivedAt;
 	target.updatedAt = next.updatedAt;
+	if (next.autoArchiveExempt !== undefined) {
+		target.autoArchiveExempt = next.autoArchiveExempt;
+	}
 	try {
 		await deps.sharedStore.save(target);
 	} catch (err) {
 		target.archived = snapshot.archived;
 		target.archivedAt = snapshot.archivedAt;
 		target.updatedAt = snapshot.updatedAt;
+		target.autoArchiveExempt = snapshot.autoArchiveExempt;
 		throw err;
 	}
 	if (target !== workflow) {
 		workflow.archived = next.archived;
 		workflow.archivedAt = next.archivedAt;
 		workflow.updatedAt = next.updatedAt;
+		if (next.autoArchiveExempt !== undefined) {
+			workflow.autoArchiveExempt = next.autoArchiveExempt;
+		}
 	}
 }
 
@@ -642,7 +655,12 @@ export const handleUnarchiveWorkflow: MessageHandler = async (ws, data, deps) =>
 	try {
 		await persistArchiveFlip(
 			workflow,
-			{ archived: false, archivedAt: null, updatedAt: new Date().toISOString() },
+			{
+				archived: false,
+				archivedAt: null,
+				updatedAt: new Date().toISOString(),
+				autoArchiveExempt: true,
+			},
 			deps,
 		);
 	} catch (err) {

@@ -1953,6 +1953,9 @@ body::-webkit-scrollbar-track {
 }
 
 .btn-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 5px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1960,6 +1963,8 @@ body::-webkit-scrollbar-track {
   color: var(--text);
   font-size: 0.8rem;
   font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
@@ -2452,8 +2457,6 @@ body.artifact-modal-open { overflow: hidden; }
 }
 
 .btn-archive {
-  display: inline-flex;
-  align-items: center;
   gap: 2px;
 }
 
