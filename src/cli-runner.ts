@@ -335,6 +335,11 @@ export class CLIRunner {
 					auditEvent(event);
 				},
 				onText: (text) => {
+					// Reset idle timer here too: the parser's onText fallback for
+					// malformed-JSON lines bypasses onEvent, so without this a long
+					// burst of malformed JSON would let the workflow time out even
+					// though data is arriving.
+					this.resetIdleTimer(entry);
 					if (entry.stale) return;
 					callbacks.onOutput(text);
 				},
@@ -348,10 +353,6 @@ export class CLIRunner {
 						entry.sessionId = id;
 					}
 					callbacks.onSessionId(id);
-				},
-				onJsonLine: (line) => {
-					if (entry.stale) return;
-					callbacks.onOutput(line);
 				},
 				onAssistantMessage: (text) => {
 					if (entry.stale) return;
