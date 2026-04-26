@@ -430,22 +430,10 @@ export class PipelineOrchestrator {
 			}
 
 			if (step.name === STEP.MONITOR_CI) {
-				const normalized = answer.trim().toLowerCase();
-				if (normalized === "abort") {
-					this.handleStepError(workflowId, "Workflow aborted by user after cancelled CI checks");
-					return;
-				}
-				if (normalized === "retry" || normalized === "") {
-					this.dispatchCiFlow(workflow, this.ciMergeFlow.runMonitorCi(workflow));
-					return;
-				}
-				// Any other text is treated as guidance for the Fixing CI agent.
-				// Re-running monitoring would just hit the same cancelled checks
-				// and loop forever, so route straight to fix-ci with the user's
-				// answer attached to the usual failure context.
-				workflow.ciCycle.userFixGuidance = answer.trim();
-				this.persistWorkflow(workflow);
-				this.applyCiFlowOutcome(workflow, this.ciMergeFlow.advanceToFixCi());
+				this.dispatchCiFlow(
+					workflow,
+					this.ciMergeFlow.answerMonitorCancelledQuestion(workflow, answer),
+				);
 				return;
 			}
 

@@ -197,6 +197,29 @@ export class CiMergeFlowController {
 		return this.handleMonitorResult(workflow, result);
 	}
 
+	/**
+	 * Maps the user's answer to the "all CI checks cancelled" pause-question to
+	 * a follow-up outcome:
+	 *  - "abort"           → error outcome, workflow stops
+	 *  - "retry" / empty   → re-enter monitor-ci
+	 *  - any other text    → treated as guidance for the fix-ci agent; advance
+	 *                        to fix-ci with the user's answer attached.
+	 */
+	async answerMonitorCancelledQuestion(
+		workflow: Workflow,
+		answer: string,
+	): Promise<CiFlowOutcome> {
+		const normalized = answer.trim().toLowerCase();
+		if (normalized === "abort") {
+			return { kind: "error", message: "Workflow aborted by user after cancelled CI checks" };
+		}
+		if (normalized === "retry" || normalized === "") {
+			return this.runMonitorCi(workflow);
+		}
+		workflow.ciCycle.userFixGuidance = answer.trim();
+		return { kind: "advanceToFixCi" };
+	}
+
 	async runMonitorCi(workflow: Workflow): Promise<CiFlowOutcome> {
 		if (!workflow.prUrl) {
 			const url = await this.discoverPrUrlFn(workflow);
