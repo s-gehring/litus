@@ -216,6 +216,10 @@ export class PipelineOrchestrator {
 	private cliRunner: CLIRunner;
 	private stepRunner: CLIStepRunner;
 	private ciMonitor: CIMonitorCoordinator;
+	// Initialized after this.ciMonitor in the constructor — discoverPrUrlFn
+	// captures `this.ciMergeFlow` lazily, so the field is `!`-asserted because
+	// the binding happens before the controller is constructed. Safe because no
+	// caller invokes the captured fn synchronously during construction.
 	private ciMergeFlow!: CiMergeFlowController;
 	private questionDetector: QuestionDetector;
 	private reviewClassifier: ReviewClassifier;
@@ -1613,6 +1617,16 @@ export class PipelineOrchestrator {
 		this.startStep(workflow);
 	}
 
+	/**
+	 * Single reaction site for every CiFlowOutcome the controller emits. This
+	 * is the ONLY place that reads `workflow.status` for the CI flow (FR-014),
+	 * so all pause/abort short-circuits live here. The re-fetch via
+	 * `getActiveWorkflow` is what makes pause/abort race-safe — between the
+	 * controller awaiting an async helper and this method firing, the workflow
+	 * may have been paused or aborted, in which case `current.status !==
+	 * "running"` and the reaction is skipped. The `done` arm is the explicit
+	 * no-op fallback for outcomes that already resolved their own follow-up.
+	 */
 	private applyCiFlowOutcome(workflow: Workflow, outcome: CiFlowOutcome): void {
 		const current = this.getActiveWorkflow(workflow.id);
 		if (!current || current.status !== "running") {

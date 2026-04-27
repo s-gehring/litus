@@ -77,16 +77,35 @@ export class CiMergeFlowController {
 		this.engine = options.engine;
 	}
 
-	advanceToFixCi(): CiFlowOutcome {
-		return { kind: "advanceToFixCi" };
+	async runMonitorCi(workflow: Workflow): Promise<CiFlowOutcome> {
+		if (!workflow.prUrl) {
+			const url = await this.discoverPrUrlFn(workflow);
+			if (!url) {
+				return { kind: "error", message: "No PR URL found — cannot monitor CI checks" };
+			}
+			workflow.prUrl = url;
+		}
+
+		return this.startCiMonitoring(workflow);
 	}
 
-	routeToMergePrPause(): CiFlowOutcome {
-		return { kind: "routeToMergePrPause" };
-	}
+	async startCiMonitoring(workflow: Workflow): Promise<CiFlowOutcome> {
+		workflow.ciCycle.monitorStartedAt =
+			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
 
-	routeBackToMonitor(): CiFlowOutcome {
-		return { kind: "routeBackToMonitor", incrementMergeAttempt: false };
+		const result = await this.ciMonitor.startMonitoring(workflow, (msg) =>
+			this.stepOutput(workflow.id, msg),
+		);
+
+		// Cache the latest check results and refresh maxAttempts so subsequent
+		// fix-ci runs can read them. handleMonitorResult itself stays pure (it
+		// reads but does not mutate); these are the impure wrapper's mutations.
+		if (!result.passed) {
+			workflow.ciCycle.lastCheckResults = result.results;
+			workflow.ciCycle.maxAttempts = configStore.get().limits.ciFixMaxAttempts;
+		}
+
+		return this.handleMonitorResult(workflow, result);
 	}
 
 	async discoverPrUrl(workflow: Workflow): Promise<string | null> {
@@ -178,55 +197,34 @@ export class CiMergeFlowController {
 		};
 	}
 
-	async startCiMonitoring(workflow: Workflow): Promise<CiFlowOutcome> {
-		workflow.ciCycle.monitorStartedAt =
-			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
-
-		const result = await this.ciMonitor.startMonitoring(workflow, (msg) =>
-			this.stepOutput(workflow.id, msg),
-		);
-
-		// Cache the latest check results and refresh maxAttempts so subsequent
-		// fix-ci runs can read them. handleMonitorResult itself stays pure (it
-		// reads but does not mutate); these are the impure wrapper's mutations.
-		if (!result.passed) {
-			workflow.ciCycle.lastCheckResults = result.results;
-			workflow.ciCycle.maxAttempts = configStore.get().limits.ciFixMaxAttempts;
-		}
-
-		return this.handleMonitorResult(workflow, result);
-	}
-
-	/**
-	 * Maps the user's answer to the "all CI checks cancelled" pause-question to
-	 * a follow-up outcome:
-	 *  - "abort"           → error outcome, workflow stops
-	 *  - "retry" / empty   → re-enter monitor-ci
-	 *  - any other text    → treated as guidance for the fix-ci agent; advance
-	 *                        to fix-ci with the user's answer attached.
-	 */
-	async answerMonitorCancelledQuestion(workflow: Workflow, answer: string): Promise<CiFlowOutcome> {
-		const normalized = answer.trim().toLowerCase();
-		if (normalized === "abort") {
-			return { kind: "error", message: "Workflow aborted by user after cancelled CI checks" };
-		}
-		if (normalized === "retry" || normalized === "") {
-			return this.runMonitorCi(workflow);
-		}
-		workflow.ciCycle.userFixGuidance = answer.trim();
+	advanceToFixCi(): CiFlowOutcome {
 		return { kind: "advanceToFixCi" };
 	}
 
-	async runMonitorCi(workflow: Workflow): Promise<CiFlowOutcome> {
+	routeToMergePrPause(): CiFlowOutcome {
+		return { kind: "routeToMergePrPause" };
+	}
+
+	async runMergePr(workflow: Workflow): Promise<CiFlowOutcome> {
 		if (!workflow.prUrl) {
-			const url = await this.discoverPrUrlFn(workflow);
-			if (!url) {
-				return { kind: "error", message: "No PR URL found — cannot monitor CI checks" };
-			}
-			workflow.prUrl = url;
+			return { kind: "error", message: "No PR URL found — cannot merge PR" };
 		}
 
-		return this.startCiMonitoring(workflow);
+		// Initialize merge cycle on first entry
+		if (workflow.mergeCycle.attempt === 0) {
+			workflow.mergeCycle.attempt = 1;
+		}
+
+		const cwd = requireWorktreePath(workflow);
+
+		try {
+			const result = await this.mergePrFn(workflow.prUrl, cwd, (msg) =>
+				this.stepOutput(workflow.id, msg),
+			);
+			return await this.handleMergeResult(workflow, result);
+		} catch (err) {
+			return { kind: "error", message: `PR merge failed: ${toErrorMessage(err)}` };
+		}
 	}
 
 	async handleMergeResult(workflow: Workflow, result: MergeResult): Promise<CiFlowOutcome> {
@@ -263,28 +261,6 @@ export class CiMergeFlowController {
 		return { kind: "error", message: result.error || "PR merge failed" };
 	}
 
-	async runMergePr(workflow: Workflow): Promise<CiFlowOutcome> {
-		if (!workflow.prUrl) {
-			return { kind: "error", message: "No PR URL found — cannot merge PR" };
-		}
-
-		// Initialize merge cycle on first entry
-		if (workflow.mergeCycle.attempt === 0) {
-			workflow.mergeCycle.attempt = 1;
-		}
-
-		const cwd = requireWorktreePath(workflow);
-
-		try {
-			const result = await this.mergePrFn(workflow.prUrl, cwd, (msg) =>
-				this.stepOutput(workflow.id, msg),
-			);
-			return await this.handleMergeResult(workflow, result);
-		} catch (err) {
-			return { kind: "error", message: `PR merge failed: ${toErrorMessage(err)}` };
-		}
-	}
-
 	async retryMergeAfterAlreadyUpToDate(workflow: Workflow): Promise<CiFlowOutcome> {
 		if (!workflow.prUrl) {
 			return { kind: "error", message: "No PR URL found — cannot retry merge" };
@@ -311,6 +287,10 @@ export class CiMergeFlowController {
 		}
 	}
 
+	routeBackToMonitor(): CiFlowOutcome {
+		return { kind: "routeBackToMonitor", incrementMergeAttempt: false };
+	}
+
 	async runSyncRepo(workflow: Workflow): Promise<CiFlowOutcome> {
 		const targetRepo = requireTargetRepository(workflow);
 
@@ -333,5 +313,25 @@ export class CiMergeFlowController {
 			this.stepOutput(workflow.id, `Warning: sync failed: ${toErrorMessage(err)}`);
 		}
 		return { kind: "advance" };
+	}
+
+	/**
+	 * Maps the user's answer to the "all CI checks cancelled" pause-question to
+	 * a follow-up outcome:
+	 *  - "abort"           → error outcome, workflow stops
+	 *  - "retry" / empty   → re-enter monitor-ci
+	 *  - any other text    → treated as guidance for the fix-ci agent; advance
+	 *                        to fix-ci with the user's answer attached.
+	 */
+	async answerMonitorCancelledQuestion(workflow: Workflow, answer: string): Promise<CiFlowOutcome> {
+		const normalized = answer.trim().toLowerCase();
+		if (normalized === "abort") {
+			return { kind: "error", message: "Workflow aborted by user after cancelled CI checks" };
+		}
+		if (normalized === "retry" || normalized === "") {
+			return this.runMonitorCi(workflow);
+		}
+		workflow.ciCycle.userFixGuidance = answer.trim();
+		return { kind: "advanceToFixCi" };
 	}
 }
