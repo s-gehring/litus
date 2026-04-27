@@ -145,6 +145,34 @@ describe("CiMergeFlowController", () => {
 			results: [{ name: "build", state: "failure", bucket: "fail", link: "" }],
 		});
 		expect(outcome.kind).toBe("error");
+		if (outcome.kind === "error") {
+			expect(outcome.message).toContain("CI checks still failing");
+			expect(outcome.message).toContain("99 fix attempts");
+		}
+	});
+
+	test("handleMonitorResult: max attempts exhausted + timed out → distinct error message", async () => {
+		const workflow = makeWorkflow({
+			ciCycle: {
+				attempt: 99,
+				maxAttempts: 3,
+				lastCheckResults: [],
+				failureLogs: [],
+				monitorStartedAt: null,
+				userFixGuidance: null,
+				globalTimeoutMs: 60_000,
+			},
+		});
+		const controller = makeController();
+		const outcome = controller.handleMonitorResult(workflow, {
+			passed: false,
+			timedOut: true,
+			results: [{ name: "build", state: "failure", bucket: "fail", link: "" }],
+		});
+		expect(outcome.kind).toBe("error");
+		if (outcome.kind === "error") {
+			expect(outcome.message).toContain("CI monitoring timed out");
+		}
 	});
 
 	test("handleMonitorResult: all checks cancelled → pauseForQuestion", async () => {
@@ -178,6 +206,10 @@ describe("CiMergeFlowController", () => {
 		const controller = makeController({ discoverPrUrl: async () => null });
 		const outcome = await controller.runMonitorCi(workflow);
 		expect(outcome.kind).toBe("error");
+		if (outcome.kind === "error") {
+			expect(outcome.message).toContain("No PR URL found");
+			expect(outcome.message).toContain("monitor CI");
+		}
 	});
 
 	test("runMonitorCi: null prUrl + discoverPrUrl resolves → workflow.prUrl set", async () => {
@@ -203,6 +235,10 @@ describe("CiMergeFlowController", () => {
 		const controller = makeController();
 		const outcome = await controller.runFixCi(workflow);
 		expect(outcome.kind).toBe("error");
+		if (outcome.kind === "error") {
+			expect(outcome.message).toContain("No PR URL found");
+			expect(outcome.message).toContain("fix CI");
+		}
 	});
 
 	test("runFixCi: happy path returns runCliStep with prompt + guidance", async () => {
@@ -244,6 +280,10 @@ describe("CiMergeFlowController", () => {
 			error: null,
 		});
 		expect(outcome.kind).toBe("error");
+		if (outcome.kind === "error") {
+			expect(outcome.message).toContain("Merge conflicts persist");
+			expect(outcome.message).toContain("3 resolution attempts");
+		}
 	});
 
 	test("handleMergeResult: conflict resolved → routeBackToMonitor with incrementMergeAttempt", async () => {
@@ -336,6 +376,58 @@ describe("CiMergeFlowController", () => {
 		);
 		expect(outcome).toEqual({ kind: "advanceToFixCi" });
 		expect(workflow.ciCycle.userFixGuidance).toBe("please rerun checks #5 only");
+	});
+
+	test("answerMonitorCancelledQuestion: 'ABORT' (uppercase) → error (case-insensitive contract)", async () => {
+		const workflow = makeWorkflow();
+		const controller = makeController();
+		const outcome = await controller.answerMonitorCancelledQuestion(workflow, "ABORT");
+		expect(outcome.kind).toBe("error");
+	});
+
+	// --- runMergePr cache mutation: attempt === 0 → 1 ---
+
+	test("runMergePr: mergeCycle.attempt === 0 is initialized to 1 on first entry", async () => {
+		const workflow = makeWorkflow({
+			prUrl: "https://github.com/owner/repo/pull/42",
+			worktreePath: "/tmp/wt",
+			mergeCycle: { attempt: 0, maxAttempts: 3 },
+		});
+		const controller = makeController({
+			mergePr: async () => ({
+				merged: true,
+				alreadyMerged: false,
+				conflict: false,
+				error: null,
+			}),
+		});
+		const outcome = await controller.runMergePr(workflow);
+		expect(outcome).toEqual({ kind: "advance" });
+		expect(workflow.mergeCycle.attempt).toBe(1);
+	});
+
+	test("runMergePr: null prUrl → error", async () => {
+		const workflow = makeWorkflow({ prUrl: null });
+		const controller = makeController();
+		const outcome = await controller.runMergePr(workflow);
+		expect(outcome.kind).toBe("error");
+		if (outcome.kind === "error") {
+			expect(outcome.message).toContain("No PR URL found");
+			expect(outcome.message).toContain("merge PR");
+		}
+	});
+
+	// --- pure routing helpers (FR-002 surface) ---
+
+	test("routeToMergePrPause returns the literal outcome", () => {
+		expect(makeController().routeToMergePrPause()).toEqual({ kind: "routeToMergePrPause" });
+	});
+
+	test("routeBackToMonitor returns incrementMergeAttempt: false", () => {
+		expect(makeController().routeBackToMonitor()).toEqual({
+			kind: "routeBackToMonitor",
+			incrementMergeAttempt: false,
+		});
 	});
 
 	test("answerMonitorCancelledQuestion: 'retry' → re-enters runMonitorCi", async () => {

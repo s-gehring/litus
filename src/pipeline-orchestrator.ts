@@ -74,6 +74,7 @@ import {
 } from "./workflow-artifacts";
 import { runInWorkflowContext } from "./workflow-context";
 import { nextFixBranchName, WorkflowEngine } from "./workflow-engine";
+import { requireTargetRepository, requireWorktreePath } from "./workflow-paths";
 import { WorkflowStore } from "./workflow-store";
 
 export type { PipelineCallbacks } from "./types";
@@ -173,24 +174,6 @@ export function enforceStepOutputCap(
 			step.outputLog.splice(idx, 1);
 		}
 	}
-}
-
-function requireWorktreePath(workflow: Workflow): string {
-	if (!workflow.worktreePath) {
-		throw new Error(
-			`Workflow ${workflow.id} has no worktreePath — cannot determine working directory`,
-		);
-	}
-	return workflow.worktreePath;
-}
-
-function requireTargetRepository(workflow: Workflow): string {
-	if (!workflow.targetRepository) {
-		throw new Error(
-			`Workflow ${workflow.id} has no targetRepository — cannot determine target directory`,
-		);
-	}
-	return workflow.targetRepository;
 }
 
 export function extractPrUrl(output: string): string | null {

@@ -11,6 +11,7 @@ import type {
 import type { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import type { CiFailureLog, EffortLevel, MergeResult, Question, Workflow } from "./types";
 import type { WorkflowEngine } from "./workflow-engine";
+import { requireTargetRepository, requireWorktreePath } from "./workflow-paths";
 
 export type CiFlowOutcome =
 	| { kind: "advance" }
@@ -38,24 +39,6 @@ export interface CiMergeFlowControllerOptions {
 	discoverPrUrl: (workflow: Workflow) => Promise<string | null>;
 	stepOutput: (workflowId: string, msg: string) => void;
 	engine: WorkflowEngine;
-}
-
-function requireWorktreePath(workflow: Workflow): string {
-	if (!workflow.worktreePath) {
-		throw new Error(
-			`Workflow ${workflow.id} has no worktreePath — cannot determine working directory`,
-		);
-	}
-	return workflow.worktreePath;
-}
-
-function requireTargetRepository(workflow: Workflow): string {
-	if (!workflow.targetRepository) {
-		throw new Error(
-			`Workflow ${workflow.id} has no targetRepository — cannot determine target directory`,
-		);
-	}
-	return workflow.targetRepository;
 }
 
 export class CiMergeFlowController {
@@ -135,8 +118,9 @@ export class CiMergeFlowController {
 			return { kind: "advance" };
 		}
 
-		// Read the freshest limit from configStore so changes take effect on the
-		// next monitor result rather than being frozen at workflow creation time.
+		// Read fresh from configStore so direct callers (unit tests, code paths
+		// that bypass startCiMonitoring) see the latest limit without needing to
+		// pre-populate workflow.ciCycle.maxAttempts themselves.
 		const freshMaxAttempts = configStore.get().limits.ciFixMaxAttempts;
 
 		if (workflow.ciCycle.attempt >= freshMaxAttempts) {
