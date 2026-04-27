@@ -86,6 +86,32 @@ describe("runConfiguredHelper", () => {
 		expect(getPrompt(args)).toBe("hello bar");
 	});
 
+	test("substituted value containing ${k} is NOT re-scanned for further substitution", async () => {
+		await runConfiguredHelper<string>({
+			selector: defaultSelector({ promptTemplate: "first=${a}; second=${b}" }),
+			vars: { a: "see ${b}", b: "actual" },
+			parser: (s) => s,
+			fallback: "fb",
+			callerLabel: "test",
+		});
+
+		const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
+		expect(getPrompt(args)).toBe("first=see ${b}; second=actual");
+	});
+
+	test("unknown ${k} placeholder (not in vars) is left as-is", async () => {
+		await runConfiguredHelper<string>({
+			selector: defaultSelector({ promptTemplate: "x=${known}; y=${unknown}" }),
+			vars: { known: "VAL" },
+			parser: (s) => s,
+			fallback: "fb",
+			callerLabel: "test",
+		});
+
+		const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
+		expect(getPrompt(args)).toBe("x=VAL; y=${unknown}");
+	});
+
 	test("parser receives raw stdout verbatim", async () => {
 		spawnMock = mock(() => mockSpawnResponse("abc"));
 		Bun.spawn = spawnMock as typeof Bun.spawn;
@@ -121,8 +147,8 @@ describe("runConfiguredHelper", () => {
 		expect(result).toBe("FB");
 		// runClaude itself emits one warn for the non-zero exit; our helper emits another.
 		// Find the structured one.
-		const helperWarns = (warnMock.mock.calls as unknown[][]).filter(
-			(c) => typeof c[1] === "object" && c[1] !== null,
+		const helperWarns = (warnMock.mock.calls as unknown[][]).filter((c) =>
+			c.includes("claude helper failed"),
 		) as WarnArgs[];
 		expect(helperWarns.length).toBe(1);
 		const [, meta, msg] = helperWarns[0];
@@ -146,8 +172,8 @@ describe("runConfiguredHelper", () => {
 		});
 
 		expect(result).toBe("FB");
-		const helperWarns = (warnMock.mock.calls as unknown[][]).filter(
-			(c) => typeof c[1] === "object" && c[1] !== null,
+		const helperWarns = (warnMock.mock.calls as unknown[][]).filter((c) =>
+			c.includes("claude helper failed"),
 		) as WarnArgs[];
 		expect(helperWarns.length).toBe(1);
 		const [, meta] = helperWarns[0];
@@ -201,8 +227,8 @@ describe("runConfiguredHelper", () => {
 
 		expect(result).toBe("FB");
 		expect(spawnMock).not.toHaveBeenCalled();
-		const helperWarns = (warnMock.mock.calls as unknown[][]).filter(
-			(c) => typeof c[1] === "object" && c[1] !== null,
+		const helperWarns = (warnMock.mock.calls as unknown[][]).filter((c) =>
+			c.includes("claude helper failed"),
 		) as WarnArgs[];
 		expect(helperWarns.length).toBe(1);
 		const [, meta] = helperWarns[0];

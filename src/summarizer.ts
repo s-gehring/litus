@@ -1,12 +1,13 @@
 import { runConfiguredHelper } from "./claude-helper";
 import { configStore } from "./config-store";
-import { logger } from "./logger";
 
 // When the E2E harness is driving the server, summarizer spawns race the
 // pipeline-step claude spawns against a shared FIFO scenario counter. Skip
 // cosmetic summaries entirely in that mode so scenario authoring stays
 // deterministic per pipeline step.
 const SUMMARIZER_DISABLED = Boolean(process.env.LITUS_E2E_SCENARIO);
+
+const DISABLED_SPEC_SUMMARY = { summary: "", flavor: "" } as const;
 
 export class Summarizer {
 	private charCount: Map<string, number> = new Map();
@@ -56,21 +57,14 @@ export class Summarizer {
 				return;
 			}
 
-			this.generateSummary(recentText)
-				.then((summary) => {
-					// Only deliver if workflow hasn't been cleaned up while we were generating
-					if (!this.pendingSummary.has(workflowId)) return;
-					this.pendingSummary.set(workflowId, false);
-					if (summary) {
-						callback(summary);
-					}
-				})
-				.catch((err) => {
-					logger.warn("[summarizer] Activity summary failed:", err);
-					if (this.pendingSummary.has(workflowId)) {
-						this.pendingSummary.set(workflowId, false);
-					}
-				});
+			this.generateSummary(recentText).then((summary) => {
+				// Only deliver if workflow hasn't been cleaned up while we were generating
+				if (!this.pendingSummary.has(workflowId)) return;
+				this.pendingSummary.set(workflowId, false);
+				if (summary) {
+					callback(summary);
+				}
+			});
 		}
 	}
 
@@ -95,7 +89,7 @@ export class Summarizer {
 	}
 
 	async generateSpecSummary(specification: string): Promise<{ summary: string; flavor: string }> {
-		if (SUMMARIZER_DISABLED) return { summary: "", flavor: "" };
+		if (SUMMARIZER_DISABLED) return DISABLED_SPEC_SUMMARY;
 		return runConfiguredHelper<{ summary: string; flavor: string }>({
 			selector: (config) => ({
 				promptTemplate: config.prompts.specSummarization,
@@ -114,7 +108,7 @@ export class Summarizer {
 					flavor: String(parsed.flavor ?? "").slice(0, 100),
 				};
 			},
-			fallback: { summary: "", flavor: "" },
+			fallback: DISABLED_SPEC_SUMMARY,
 			callerLabel: "summarizer:spec",
 			timeoutMs: 60_000,
 		});

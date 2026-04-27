@@ -49,24 +49,22 @@ export async function runConfiguredHelper<T>(options: RunConfiguredHelperOptions
 		return options.fallback;
 	}
 
-	let prompt = promptTemplate;
-	for (const [key, value] of Object.entries(options.vars)) {
-		prompt = prompt.replaceAll(`\${${key}}`, value);
-	}
+	// Single-pass scan over the original template so substituted values are
+	// never re-scanned for further `${...}` expansion. An unknown key (one
+	// that's not in `vars`) is left as-is rather than blanked.
+	const prompt = promptTemplate.replace(/\$\{(\w+)\}/g, (match, key: string) =>
+		Object.hasOwn(options.vars, key) ? options.vars[key] : match,
+	);
 
-	let result: Awaited<ReturnType<typeof runClaude>>;
-	try {
-		result = await runClaude({
-			prompt,
-			model,
-			effort,
-			callerLabel: options.callerLabel,
-			timeoutMs: options.timeoutMs ?? 30_000,
-		});
-	} catch (err) {
-		warn(err, "spawn");
-		return options.fallback;
-	}
+	// runClaude's contract is to never throw — it catches its own spawn
+	// errors and returns { ok: false } instead. No try/catch here.
+	const result = await runClaude({
+		prompt,
+		model,
+		effort,
+		callerLabel: options.callerLabel,
+		timeoutMs: options.timeoutMs ?? 30_000,
+	});
 
 	if (!result.ok) {
 		warn(result, "spawn");
