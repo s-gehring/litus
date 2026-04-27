@@ -1,4 +1,4 @@
-import type { ServerMessage } from "../types";
+import type { ServerMessage } from "../protocol";
 
 export interface RouteMatch {
 	params: Record<string, string>;

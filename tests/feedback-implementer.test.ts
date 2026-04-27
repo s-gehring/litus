@@ -4,6 +4,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG } from "../src/config-store";
+import type { AppConfig } from "../src/config-types";
 import {
 	buildFeedbackPrompt,
 	buildPriorOutcomesSection,
@@ -11,7 +12,8 @@ import {
 	parseAgentResult,
 	reconcileOutcome,
 } from "../src/feedback-implementer";
-import type { AppConfig, FeedbackEntry, WorkflowStatus } from "../src/types";
+import type { WorkflowStatus } from "../src/pipeline-steps";
+import type { FeedbackEntry } from "../src/types";
 import { makeWorkflow } from "./helpers";
 
 function cloneConfig(): AppConfig {

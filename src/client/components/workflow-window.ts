@@ -1,5 +1,5 @@
+import type { EffortLevel } from "../../config-types";
 import type {
-	EffortLevel,
 	EpicStatus,
 	FeedbackEntry,
 	FeedbackOutcomeValue,

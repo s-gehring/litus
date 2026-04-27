@@ -1,8 +1,9 @@
 import { appendFileSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { AuditConfig } from "./config-types";
 import { logger } from "./logger";
-import type { AuditConfig, AuditEvent, AuditEventType, WorkflowResetAuditEvent } from "./types";
+import type { AuditEvent, AuditEventType, WorkflowResetAuditEvent } from "./types";
 
 const DEFAULT_AUDIT_DIR = join(homedir(), ".litus", "audit");
 

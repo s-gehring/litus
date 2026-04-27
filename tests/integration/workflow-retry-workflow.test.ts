@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import type { ServerMessage } from "../../src/protocol";
 import { handleRetryWorkflow } from "../../src/server/workflow-handlers";
-import type { ServerMessage, Workflow } from "../../src/types";
+import type { Workflow } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 
 // Minimal stand-ins: these tests exercise `handleRetryWorkflow` directly with

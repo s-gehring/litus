@@ -1,11 +1,7 @@
 import { DEFAULT_CONFIG } from "../../src/config-store";
-import type {
-	AppConfig,
-	PersistedEpic,
-	PipelineStep,
-	Workflow,
-	WorkflowStatus,
-} from "../../src/types";
+import type { AppConfig } from "../../src/config-types";
+import type { PipelineStep, WorkflowStatus } from "../../src/pipeline-steps";
+import type { PersistedEpic, Workflow } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 
 /** Create a complete AppConfig with sensible defaults, accepts partial overrides */

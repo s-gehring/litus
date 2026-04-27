@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { CLICallbacks } from "../../src/cli-runner";
 import { configStore, DEFAULT_CONFIG } from "../../src/config-store";
-import { type PipelineCallbacks, PipelineOrchestrator } from "../../src/pipeline-orchestrator";
-import type { Workflow, WorkflowStatus } from "../../src/types";
-import { getStepDefinitionsForKind } from "../../src/types";
+import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
+import { getStepDefinitionsForKind, type WorkflowStatus } from "../../src/pipeline-steps";
+import type { PipelineCallbacks, Workflow } from "../../src/types";
 
 function createFakeEngine() {
 	let workflow: Workflow | null = null;

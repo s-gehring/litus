@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
-import type { ClientMessage, Workflow } from "../../src/types";
-import { getStepDefinitionsForKind } from "../../src/types";
+import { getStepDefinitionsForKind } from "../../src/pipeline-steps";
+import type { ClientMessage } from "../../src/protocol";
+import type { Workflow } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockWebSocket } from "../test-infra/mock-websocket";

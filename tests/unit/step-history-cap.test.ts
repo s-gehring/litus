@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { enforceStepOutputCap } from "../../src/pipeline-orchestrator";
-import type { PipelineStepRun } from "../../src/types";
+import type { PipelineStepRun } from "../../src/pipeline-steps";
 
 function makeRun(output: string, runNumber: number): PipelineStepRun {
 	return {

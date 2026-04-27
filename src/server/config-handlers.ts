@@ -1,4 +1,4 @@
-import type { ClientMessage, ServerMessage } from "../types";
+import type { ClientMessage, ServerMessage } from "../protocol";
 import type { MessageHandler } from "./handler-types";
 
 export const handleConfigGet: MessageHandler = (ws, _data, deps) => {

@@ -1,7 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { ManagedRepoStore } from "../../src/managed-repo-store";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
-import { type ClientMessage, EPIC_FEEDBACK_MAX_LENGTH, type ServerMessage } from "../../src/types";
+import type { ClientMessage, ServerMessage } from "../../src/protocol";
+import { EPIC_FEEDBACK_MAX_LENGTH } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockWebSocket } from "../test-infra/mock-websocket";
@@ -627,7 +628,7 @@ describe("epic-handlers", () => {
 			const historyMsgs = broadcastedMessages.filter(
 				(m) => m.type === "epic:feedback:history",
 			) as Array<
-				Extract<import("../../src/types").ServerMessage, { type: "epic:feedback:history" }>
+				Extract<import("../../src/protocol").ServerMessage, { type: "epic:feedback:history" }>
 			>;
 			expect(historyMsgs.length).toBeGreaterThan(0);
 			const lastHist = historyMsgs[historyMsgs.length - 1];

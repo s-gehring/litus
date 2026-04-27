@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
+import type { ClientMessage, ServerMessage } from "../../src/protocol";
 import { handleArchiveWorkflow, handleUnarchiveWorkflow } from "../../src/server/workflow-handlers";
-import type { ClientMessage, ServerMessage, Workflow } from "../../src/types";
+import type { Workflow } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockWebSocket } from "../test-infra/mock-websocket";

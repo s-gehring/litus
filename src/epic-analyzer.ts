@@ -2,7 +2,8 @@ import { spawnClaude } from "./claude-spawn";
 import { configStore } from "./config-store";
 import { buildGraph, detectCycles } from "./dependency-resolver";
 import { logger } from "./logger";
-import { DELTA_FLUSH_TIMEOUT_MS, type EpicAnalysisResult, type ToolUsage } from "./types";
+import { DELTA_FLUSH_TIMEOUT_MS } from "./protocol";
+import type { EpicAnalysisResult, ToolUsage } from "./types";
 
 export function buildDecompositionPrompt(epicDescription: string): string {
 	const template = configStore.get().prompts.epicDecomposition;

@@ -1,5 +1,6 @@
 import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "../../config-metadata";
-import type { AppConfig, ClientMessage, ConfigWarning } from "../../types";
+import type { AppConfig, ConfigWarning } from "../../config-types";
+import type { ClientMessage } from "../../protocol";
 import type { RouteHandler } from "../router";
 import { showFullPageLayout } from "./detail-layout";
 import { EFFORT_LEVELS_ORDER, formatEffortLabel } from "./effort-label";

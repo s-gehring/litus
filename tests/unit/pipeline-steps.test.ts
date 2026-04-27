@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { renderPipelineSteps } from "../../src/client/components/pipeline-steps";
-import type { PipelineStepName, PipelineStepStatus, WorkflowState } from "../../src/types";
+import type { PipelineStepName, PipelineStepStatus } from "../../src/pipeline-steps";
+import type { WorkflowState } from "../../src/types";
 import { makeWorkflowState } from "../helpers";
 
 function makeStep(

@@ -9,10 +9,10 @@ const srcDir = join(repoRoot, "src");
  * Modules allowed to reference free-text wire-frame discriminants directly.
  * `src/server/emit-text.ts` is the only sanctioned producer (FR-006); the
  * client must still pattern-match on `type: "..."` literals to render, and
- * `src/types.ts` must declare the discriminant literals themselves.
+ * `src/protocol.ts` must declare the discriminant literals themselves.
  */
 const ALLOWED_PRODUCER = join("src", "server", "emit-text.ts");
-const TYPES_FILE = join("src", "types.ts");
+const PROTOCOL_FILE = join("src", "protocol.ts");
 const CLIENT_DIR = join("src", "client") + (process.platform === "win32" ? "\\" : "/");
 
 function* iterTsFiles(dir: string): Generator<string> {
@@ -25,7 +25,7 @@ function* iterTsFiles(dir: string): Generator<string> {
 }
 
 function isAllowed(rel: string): boolean {
-	return rel === ALLOWED_PRODUCER || rel === TYPES_FILE || rel.startsWith(CLIENT_DIR);
+	return rel === ALLOWED_PRODUCER || rel === PROTOCOL_FILE || rel.startsWith(CLIENT_DIR);
 }
 
 describe("emit-text source scan", () => {

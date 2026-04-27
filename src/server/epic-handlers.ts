@@ -5,13 +5,8 @@ import { analyzeEpic, UnrecoverableSessionError } from "../epic-analyzer";
 import { computeEligibleFirstLevelSpecs } from "../epic-eligibility";
 import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
-import type {
-	ClientMessage,
-	EpicFeedbackEntry,
-	PersistedEpic,
-	ServerMessage,
-	Workflow,
-} from "../types";
+import type { ClientMessage, ServerMessage } from "../protocol";
+import type { EpicFeedbackEntry, PersistedEpic, Workflow } from "../types";
 import { EPIC_FEEDBACK_MAX_LENGTH } from "../types";
 import { createEpicWorkflows } from "../workflow-engine";
 import type { HandlerDeps, MessageHandler, WsData } from "./handler-types";

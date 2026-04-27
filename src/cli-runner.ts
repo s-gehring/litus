@@ -3,11 +3,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawnClaude } from "./claude-spawn";
 import { configStore } from "./config-store";
+import type { EffortLevel } from "./config-types";
 import { toErrorMessage } from "./errors";
 import { logger } from "./logger";
 import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
+import { DELTA_FLUSH_TIMEOUT_MS } from "./protocol";
 import { readStream, type SpawnLike } from "./spawn-utils";
-import { DELTA_FLUSH_TIMEOUT_MS, type EffortLevel, type ToolUsage, type Workflow } from "./types";
+import type { ToolUsage, Workflow } from "./types";
 
 export interface OneShotStreamResult {
 	exitCode: number;

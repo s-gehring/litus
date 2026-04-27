@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { AlertQueue } from "../../src/alert-queue";
 import { AlertStore } from "../../src/alert-store";
+import type { ServerMessage } from "../../src/protocol";
 import { createAlertBroadcasters } from "../../src/server/alert-broadcast";
-import type { ServerMessage } from "../../src/types";
 import { withTempDir } from "../test-infra";
 
 // Uses the real `createAlertBroadcasters` helper from server.ts so a regression

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { CLIRunner } from "../../src/cli-runner";
-import type { PipelineCallbacks } from "../../src/pipeline-orchestrator";
 import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
+import type { PipelineCallbacks } from "../../src/types";
 import { WorkflowEngine } from "../../src/workflow-engine";
 import { WorkflowStore } from "../../src/workflow-store";
 

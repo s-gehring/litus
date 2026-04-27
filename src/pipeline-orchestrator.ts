@@ -17,6 +17,12 @@ import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
 import { CLIStepRunner, prepareLlmDispatch } from "./cli-step-runner";
 import { configStore } from "./config-store";
+import {
+	type EffortLevel,
+	type ModelConfig,
+	shouldAutoAnswer,
+	shouldPauseBeforeMerge,
+} from "./config-types";
 import { computeDependencyStatus } from "./dependency-resolver";
 import { toErrorMessage } from "./errors";
 import {
@@ -36,6 +42,12 @@ import { gitSpawn } from "./git-logger";
 import { logger } from "./logger";
 import type { ManagedRepoStore } from "./managed-repo-store";
 import {
+	type PipelineStep,
+	type PipelineStepName,
+	STEP,
+	type WorkflowStatus,
+} from "./pipeline-steps";
+import {
 	mergePr as defaultMergePr,
 	resolveConflicts as defaultResolveConflicts,
 } from "./pr-merger";
@@ -48,23 +60,15 @@ import {
 } from "./setup-checker";
 import { routeAfterStep as computeRoute, shouldLoopReview } from "./step-router";
 import { Summarizer } from "./summarizer";
-import {
-	type AlertType,
-	type EffortLevel,
-	type FeedbackEntry,
-	type ModelConfig,
-	type OutputEntry,
-	type PipelineCallbacks,
-	type PipelineStep,
-	type PipelineStepName,
-	type Question,
-	type SetupResult,
-	STEP,
-	shouldAutoAnswer,
-	shouldPauseBeforeMerge,
-	type ToolUsage,
-	type Workflow,
-	type WorkflowStatus,
+import type {
+	AlertType,
+	FeedbackEntry,
+	OutputEntry,
+	PipelineCallbacks,
+	Question,
+	SetupResult,
+	ToolUsage,
+	Workflow,
 } from "./types";
 import {
 	type ArtifactsCollectionResult,
@@ -75,8 +79,6 @@ import {
 import { runInWorkflowContext } from "./workflow-context";
 import { nextFixBranchName, WorkflowEngine } from "./workflow-engine";
 import { WorkflowStore } from "./workflow-store";
-
-export type { PipelineCallbacks } from "./types";
 
 // Only steps that invoke the CLI with a configurable model
 const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {

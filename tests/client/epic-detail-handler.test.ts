@@ -3,7 +3,7 @@ import "../happydom";
 import { ClientStateManager } from "../../src/client/client-state-manager";
 import { createEpicDetailHandler } from "../../src/client/components/epic-detail-handler";
 import { Router } from "../../src/client/router";
-import type { ClientMessage, ServerMessage } from "../../src/types";
+import type { ClientMessage, ServerMessage } from "../../src/protocol";
 import { makeWorkflowState } from "../helpers";
 import { makePersistedEpic } from "../test-infra/factories";
 

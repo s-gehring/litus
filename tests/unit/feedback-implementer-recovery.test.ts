@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { recoverInterruptedFeedbackImplementer } from "../../src/feedback-implementer";
-import { STEP } from "../../src/types";
+import { STEP } from "../../src/pipeline-steps";
 import { makeWorkflow } from "../helpers";
 
 describe("recoverInterruptedFeedbackImplementer archive behavior", () => {

@@ -1,10 +1,5 @@
-import type {
-	ClientMessage,
-	EpicClientState,
-	PersistedEpic,
-	ServerMessage,
-	WorkflowState,
-} from "../../types";
+import type { ClientMessage, ServerMessage } from "../../protocol";
+import type { EpicClientState, PersistedEpic, WorkflowState } from "../../types";
 import type { ClientStateManager } from "../client-state-manager";
 import type { RouteHandler } from "../router";
 import { showFullPageLayout } from "./detail-layout";

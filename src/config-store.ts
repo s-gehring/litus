@@ -9,7 +9,6 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "./config-metadata";
-import { logger } from "./logger";
 import type {
 	AppConfig,
 	AutoMode,
@@ -17,7 +16,8 @@ import type {
 	ConfigWarning,
 	DeepPartial,
 	EffortLevel,
-} from "./types";
+} from "./config-types";
+import { logger } from "./logger";
 
 export const DEFAULT_CONFIG: AppConfig = {
 	models: {

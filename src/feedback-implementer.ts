@@ -1,14 +1,14 @@
 import { archiveAndResetStep } from "./cli-step-runner";
+import type { AppConfig } from "./config-types";
 import { buildFeedbackContext } from "./feedback-injector";
 import { gitSpawn } from "./git-logger";
 import { logger } from "./logger";
-import {
-	type AppConfig,
-	type FeedbackOutcome,
-	type FeedbackOutcomeValue,
-	type FeedbackOutcomeWarning,
-	STEP,
-	type Workflow,
+import { STEP } from "./pipeline-steps";
+import type {
+	FeedbackOutcome,
+	FeedbackOutcomeValue,
+	FeedbackOutcomeWarning,
+	Workflow,
 } from "./types";
 
 const SENTINEL_PATTERN =

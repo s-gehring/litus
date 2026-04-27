@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { CLIRunner } from "../../src/cli-runner";
 import { CLIStepRunner } from "../../src/cli-step-runner";
-import { STEP } from "../../src/types";
+import { STEP } from "../../src/pipeline-steps";
 import { makeWorkflow } from "../helpers";
 
 function runAndComplete(

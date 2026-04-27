@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
+import type { ServerMessage } from "../../src/protocol";
 import { createEmitText } from "../../src/server/emit-text";
-import type { ServerMessage } from "../../src/types";
 
 describe("createEmitText", () => {
 	test("workflow channel emits workflow:output exactly once", () => {

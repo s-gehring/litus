@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
+import type { ServerMessage } from "../../src/protocol";
 import { handleEpicStartFirstLevel } from "../../src/server/epic-handlers";
 import type { HandlerDeps, WsData } from "../../src/server/handler-types";
 import { MessageRouter } from "../../src/server/message-router";
-import type { ServerMessage, Workflow, WorkflowState } from "../../src/types";
+import type { Workflow, WorkflowState } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockWebSocket } from "../test-infra/mock-websocket";

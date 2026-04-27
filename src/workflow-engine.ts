@@ -3,12 +3,13 @@ import { cp, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { configStore } from "./config-store";
 import { gitSpawn } from "./git-logger";
-import type { EpicAnalysisResult, Question, Workflow, WorkflowKind, WorkflowStatus } from "./types";
 import {
 	getStepDefinitionsForKind,
 	PIPELINE_STEP_DEFINITIONS,
 	VALID_TRANSITIONS as transitions,
-} from "./types";
+	type WorkflowStatus,
+} from "./pipeline-steps";
+import type { EpicAnalysisResult, Question, Workflow, WorkflowKind } from "./types";
 import { clearArtifacts } from "./workflow-artifacts";
 
 /**

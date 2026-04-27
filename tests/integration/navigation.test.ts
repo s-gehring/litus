@@ -6,7 +6,8 @@ import { createDashboardHandler } from "../../src/client/components/dashboard-ha
 import { createEpicDetailHandler } from "../../src/client/components/epic-detail-handler";
 import { createWorkflowDetailHandler } from "../../src/client/components/workflow-detail-handler";
 import { Router } from "../../src/client/router";
-import type { ClientMessage, PipelineStepName } from "../../src/types";
+import type { PipelineStepName } from "../../src/pipeline-steps";
+import type { ClientMessage } from "../../src/protocol";
 import { makeWorkflowState } from "../helpers";
 
 // Reproduces the #app-content children from public/index.html.

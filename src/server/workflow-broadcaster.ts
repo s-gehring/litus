@@ -1,5 +1,6 @@
 import { logger } from "../logger";
-import type { ServerMessage, Workflow, WorkflowState } from "../types";
+import type { ServerMessage } from "../protocol";
+import type { Workflow, WorkflowState } from "../types";
 import type { WorkflowStore } from "../workflow-store";
 
 /**

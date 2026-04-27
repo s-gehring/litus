@@ -5,10 +5,11 @@ import type { ServerWebSocket } from "bun";
 import { AlertQueue } from "../../src/alert-queue";
 import { AlertStore } from "../../src/alert-store";
 import type { ManagedRepoStore } from "../../src/managed-repo-store";
+import type { ServerMessage } from "../../src/protocol";
 import { createAlertBroadcasters } from "../../src/server/alert-broadcast";
 import { createEmitText } from "../../src/server/emit-text";
 import type { HandlerDeps, WsData } from "../../src/server/handler-types";
-import type { ServerMessage, Workflow, WorkflowState } from "../../src/types";
+import type { Workflow, WorkflowState } from "../../src/types";
 import { type CallTracker, createCallTracker } from "./call-tracker";
 import { createMockConfigStore, createMockEpicStore, createMockWorkflowStore } from "./mock-stores";
 

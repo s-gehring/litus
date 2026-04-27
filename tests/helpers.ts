@@ -1,7 +1,7 @@
 import { expect } from "bun:test";
 import { DEFAULT_CONFIG } from "../src/config-store";
+import { getStepDefinitionsForKind } from "../src/pipeline-steps";
 import type { Workflow, WorkflowState } from "../src/types";
-import { getStepDefinitionsForKind } from "../src/types";
 
 export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 	const now = new Date().toISOString();

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getStepDefinitionsForKind, STEP } from "../../src/types";
+import { getStepDefinitionsForKind, STEP } from "../../src/pipeline-steps";
 
 describe("US1: artifacts step is not part of non-spec pipelines", () => {
 	test("quick-fix step order never includes the artifacts step", () => {

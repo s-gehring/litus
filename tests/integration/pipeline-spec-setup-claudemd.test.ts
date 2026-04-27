@@ -4,10 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PROJECT_CLAUDEMD_SEPARATOR } from "../../src/claude-md-merger";
 import type { CLICallbacks } from "../../src/cli-runner";
-import type { PipelineCallbacks } from "../../src/pipeline-orchestrator";
 import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
-import type { Workflow, WorkflowKind, WorkflowStatus } from "../../src/types";
-import { getStepDefinitionsForKind } from "../../src/types";
+import { getStepDefinitionsForKind, type WorkflowStatus } from "../../src/pipeline-steps";
+import type { PipelineCallbacks, Workflow, WorkflowKind } from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
 
 const GIT_ENV = {

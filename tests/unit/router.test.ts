@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { RouteHandler, RouteMatch } from "../../src/client/router";
 import { Router } from "../../src/client/router";
-import type { ServerMessage } from "../../src/types";
+import type { ServerMessage } from "../../src/protocol";
 
 // Minimal DOM container
 function makeContainer(): HTMLElement {

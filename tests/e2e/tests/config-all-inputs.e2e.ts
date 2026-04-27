@@ -1,5 +1,5 @@
 import { DEFAULT_CONFIG, NUMERIC_SETTING_META } from "../../../src/config-store";
-import type { EffortLevel } from "../../../src/types";
+import type { EffortLevel } from "../../../src/config-types";
 import { expect, test } from "../harness/fixtures";
 import { readConfigJson, selectAndSave, setAndSave } from "../helpers/config-actions";
 import { ServerMessageObserver } from "../helpers/server-messages";

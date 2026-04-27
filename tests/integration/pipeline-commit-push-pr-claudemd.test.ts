@@ -3,10 +3,10 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CLICallbacks, CLIRunner } from "../../src/cli-runner";
-import type { PipelineCallbacks } from "../../src/pipeline-orchestrator";
+import type { EffortLevel } from "../../src/config-types";
 import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
-import type { EffortLevel, Workflow, WorkflowStatus } from "../../src/types";
-import { getStepDefinitionsForKind, STEP } from "../../src/types";
+import { getStepDefinitionsForKind, STEP, type WorkflowStatus } from "../../src/pipeline-steps";
+import type { PipelineCallbacks, Workflow } from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
 
 const GIT_ENV = {

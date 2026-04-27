@@ -1,5 +1,6 @@
 import type { AlertQueue } from "../alert-queue";
-import type { Alert, ServerMessage } from "../types";
+import type { ServerMessage } from "../protocol";
+import type { Alert } from "../types";
 
 export type BroadcastFn = (msg: ServerMessage) => void;
 
