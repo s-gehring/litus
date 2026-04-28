@@ -8,8 +8,6 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "./config-metadata";
-import { configFile } from "./litus-paths";
-import { logger } from "./logger";
 import type {
 	AppConfig,
 	AutoMode,
@@ -17,7 +15,9 @@ import type {
 	ConfigWarning,
 	DeepPartial,
 	EffortLevel,
-} from "./types";
+} from "./config-types";
+import { configFile } from "./litus-paths";
+import { logger } from "./logger";
 
 export const DEFAULT_CONFIG: AppConfig = {
 	models: {

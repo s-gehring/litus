@@ -1,8 +1,9 @@
 import { appendFileSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import type { AuditConfig } from "./config-types";
 import { auditDir as defaultAuditDir } from "./litus-paths";
 import { logger } from "./logger";
-import type { AuditConfig, AuditEvent, AuditEventType, WorkflowResetAuditEvent } from "./types";
+import type { AuditEvent, AuditEventType, WorkflowResetAuditEvent } from "./types";
 
 interface RunState {
 	pipelineName: string;

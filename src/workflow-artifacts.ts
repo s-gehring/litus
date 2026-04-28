@@ -18,7 +18,8 @@ import {
 } from "./artifacts-manifest";
 import { artifactsDir } from "./litus-paths";
 import { logger } from "./logger";
-import type { ArtifactDescriptor, ArtifactListResponse, PipelineStepName, Workflow } from "./types";
+import type { PipelineStepName } from "./pipeline-steps";
+import type { ArtifactDescriptor, ArtifactListResponse, Workflow } from "./types";
 
 interface ArtifactLookupEntry {
 	workflowId: string;

@@ -1,12 +1,7 @@
 import type { CLICallbacks, CLIRunner } from "./cli-runner";
-import type {
-	EffortLevel,
-	PipelineStep,
-	PipelineStepRun,
-	PipelineStepStatus,
-	ToolUsage,
-	Workflow,
-} from "./types";
+import type { EffortLevel } from "./config-types";
+import type { PipelineStep, PipelineStepRun, PipelineStepStatus } from "./pipeline-steps";
+import type { ToolUsage, Workflow } from "./types";
 
 /**
  * Branded token witnessing that `workflow.activeInvocation` has been refreshed

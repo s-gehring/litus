@@ -1,8 +1,10 @@
 import { basename } from "node:path";
 import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
+import { STEP } from "../pipeline-steps";
+import type { ClientMessage } from "../protocol";
 import { getMimeType } from "../static-files";
-import { type ClientMessage, STEP, type Workflow } from "../types";
+import type { Workflow } from "../types";
 import {
 	getArtifactSnapshotPath,
 	getWorkflowBranch,

@@ -4,17 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CLICallbacks } from "../../src/cli-runner";
 import { configStore, DEFAULT_CONFIG } from "../../src/config-store";
-import type { PipelineCallbacks } from "../../src/pipeline-orchestrator";
+import { type AutoMode, type EffortLevel, shouldPauseBeforeMerge } from "../../src/config-types";
 import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
+import {
+	getStepDefinitionsForKind,
+	type PipelineStepStatus,
+	STEP,
+	type WorkflowStatus,
+} from "../../src/pipeline-steps";
 import { routeAfterStep } from "../../src/step-router";
-import type {
-	AutoMode,
-	EffortLevel,
-	PipelineStepStatus,
-	Workflow,
-	WorkflowStatus,
-} from "../../src/types";
-import { getStepDefinitionsForKind, STEP, shouldPauseBeforeMerge } from "../../src/types";
+import type { PipelineCallbacks, Workflow } from "../../src/types";
 import { WorkflowEngine } from "../../src/workflow-engine";
 import { WorkflowStore } from "../../src/workflow-store";
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ClientStateManager } from "../../src/client/client-state-manager";
-import type { ClientMessage, ServerMessage, StateChange } from "../../src/types";
+import type { ClientMessage, ServerMessage, StateChange } from "../../src/protocol";
 import { makeWorkflowState } from "../helpers";
 import { makeAppConfig, makePersistedEpic } from "../test-infra/factories";
 

@@ -1,11 +1,7 @@
-import type {
-	AutoMode,
-	ClientMessage,
-	ServerMessage,
-	WorkflowClientState,
-	WorkflowState,
-} from "../../types";
-import { STEP } from "../../types";
+import type { AutoMode } from "../../config-types";
+import { STEP } from "../../pipeline-steps";
+import type { ClientMessage, ServerMessage } from "../../protocol";
+import type { WorkflowClientState, WorkflowState } from "../../types";
 import type { ClientStateManager } from "../client-state-manager";
 import type { RouteHandler, RouteMatch } from "../router";
 import { BACK_TO_EPIC_PREFIX, backToEpicLabel } from "./back-to-epic-label";

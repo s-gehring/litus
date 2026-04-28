@@ -1,8 +1,8 @@
 import { tmpdir } from "node:os";
+import type { EffortLevel } from "./config-types";
 import { toErrorMessage } from "./errors";
 import { logger } from "./logger";
 import { cleanEnv, readStream, type SpawnLike } from "./spawn-utils";
-import type { EffortLevel } from "./types";
 
 /**
  * The SINGLE place in the codebase where the `claude` CLI is spawned.

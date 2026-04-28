@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import type { AppConfig } from "../../src/config-types";
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
+import type { ClientMessage } from "../../src/protocol";
 import {
 	handleConfigGet,
 	handleConfigReset,
 	handleConfigSave,
 } from "../../src/server/config-handlers";
-import type { AppConfig, ClientMessage } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockConfigStore } from "../test-infra/mock-stores";

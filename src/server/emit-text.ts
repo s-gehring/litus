@@ -1,4 +1,4 @@
-import type { Channel, ServerMessage } from "../types";
+import type { Channel, ServerMessage } from "../protocol";
 
 /**
  * Map a `Channel` + free text to its corresponding `ServerMessage` wire frame.

@@ -1,12 +1,6 @@
 import { DEFAULT_CONFIG } from "../../src/config-store";
-import type {
-	AppConfig,
-	ConfigValidationError,
-	ConfigWarning,
-	PersistedEpic,
-	Workflow,
-	WorkflowIndexEntry,
-} from "../../src/types";
+import type { AppConfig, ConfigValidationError, ConfigWarning } from "../../src/config-types";
+import type { PersistedEpic, Workflow, WorkflowIndexEntry } from "../../src/types";
 import { type CallTracker, createCallTracker } from "./call-tracker";
 
 // ── Mock Workflow Store ──────────────────────────────────

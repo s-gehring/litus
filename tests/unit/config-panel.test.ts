@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_CONFIG, NUMERIC_SETTING_META, PROMPT_VARIABLES } from "../../src/config-store";
-import type { AppConfig } from "../../src/types";
+import type { AppConfig } from "../../src/config-types";
 
 // ── T013: Config panel metadata consistency ───────────────────────────
 

@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ServerMessage } from "../../src/protocol";
 import { broadcastPersistedWorkflowState } from "../../src/server/workflow-broadcaster";
-import type { ServerMessage, Workflow, WorkflowState } from "../../src/types";
+import type { Workflow, WorkflowState } from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
 import { makeWorkflow } from "../helpers";
 

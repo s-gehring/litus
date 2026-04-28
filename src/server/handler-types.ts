@@ -8,16 +8,10 @@ import type { EpicStore } from "../epic-store";
 import { logger } from "../logger";
 import type { ManagedRepoStore } from "../managed-repo-store";
 import type { PipelineOrchestrator } from "../pipeline-orchestrator";
+import type { Channel, ClientMessage, ServerMessage } from "../protocol";
 import type { Summarizer } from "../summarizer";
 import { validateTargetRepository } from "../target-repo-validator";
-import type {
-	Alert,
-	Channel,
-	ClientMessage,
-	ServerMessage,
-	Workflow,
-	WorkflowState,
-} from "../types";
+import type { Alert, Workflow, WorkflowState } from "../types";
 import type { WorkflowStore } from "../workflow-store";
 
 export type WsData = Record<string, never>;

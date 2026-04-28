@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { STEP } from "../../src/pipeline-steps";
 import { type RouteDecision, routeAfterStep, shouldLoopReview } from "../../src/step-router";
-import { STEP } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 
 // ── routeAfterStep ─────────────────────────────────────────

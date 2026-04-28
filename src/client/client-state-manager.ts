@@ -1,11 +1,9 @@
+import type { ServerMessage, StateChange, StateChangeListener } from "../protocol";
 import type {
 	Alert,
 	ClientMessage,
 	EpicAggregatedState,
 	EpicClientState,
-	ServerMessage,
-	StateChange,
-	StateChangeListener,
 	WorkflowClientState,
 	WorkflowState,
 } from "../types";

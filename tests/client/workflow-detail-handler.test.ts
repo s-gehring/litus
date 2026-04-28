@@ -3,7 +3,7 @@ import "../happydom";
 import { ClientStateManager } from "../../src/client/client-state-manager";
 import { createWorkflowDetailHandler } from "../../src/client/components/workflow-detail-handler";
 import { Router } from "../../src/client/router";
-import type { ClientMessage } from "../../src/types";
+import type { ClientMessage } from "../../src/protocol";
 import { makeWorkflowState } from "../helpers";
 
 const BASE_DOM = `

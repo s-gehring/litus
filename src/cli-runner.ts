@@ -3,12 +3,13 @@ import { join } from "node:path";
 import { spawnClaude } from "./claude-spawn";
 import { parseClaudeStream } from "./cli-stream-parser";
 import { configStore } from "./config-store";
+import type { EffortLevel } from "./config-types";
 import { toErrorMessage } from "./errors";
 import { auditDir } from "./litus-paths";
 import { logger } from "./logger";
 import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
 import { readStream, type SpawnLike } from "./spawn-utils";
-import type { EffortLevel, ToolUsage, Workflow } from "./types";
+import type { ToolUsage, Workflow } from "./types";
 
 export interface OneShotStreamResult {
 	exitCode: number;

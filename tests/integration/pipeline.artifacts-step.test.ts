@@ -4,10 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CLICallbacks, CLIRunner } from "../../src/cli-runner";
 import { configStore, DEFAULT_CONFIG } from "../../src/config-store";
-import type { PipelineCallbacks } from "../../src/pipeline-orchestrator";
+import type { EffortLevel } from "../../src/config-types";
 import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
-import type { EffortLevel, PipelineStepStatus, Workflow, WorkflowStatus } from "../../src/types";
-import { getStepDefinitionsForKind, STEP } from "../../src/types";
+import {
+	getStepDefinitionsForKind,
+	type PipelineStepStatus,
+	STEP,
+	type WorkflowStatus,
+} from "../../src/pipeline-steps";
+import type { PipelineCallbacks, Workflow } from "../../src/types";
 import { getArtifactsRoot, listArtifacts } from "../../src/workflow-artifacts";
 import type { WorkflowEngine } from "../../src/workflow-engine";
 import { WorkflowStore } from "../../src/workflow-store";

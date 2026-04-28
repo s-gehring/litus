@@ -19,6 +19,8 @@ import { setGitLogCallback } from "./git-logger";
 import { logger } from "./logger";
 import { createDefaultManagedRepoStore } from "./managed-repo-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
+import { type PipelineStepName, STEP } from "./pipeline-steps";
+import type { ServerMessage } from "./protocol";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
 import { createAlertBroadcasters } from "./server/alert-broadcast";
@@ -69,14 +71,7 @@ import {
 import { getMimeType, resolveStaticPath } from "./static-files";
 import { Summarizer } from "./summarizer";
 import { normalizePath } from "./target-repo-validator";
-import {
-	type PipelineStepName,
-	type ServerMessage,
-	STEP,
-	type ToolUsage,
-	type Workflow,
-	type WorkflowState,
-} from "./types";
+import type { ToolUsage, Workflow, WorkflowState } from "./types";
 import { WorkflowStore } from "./workflow-store";
 
 const BASE_PORT = parseInt(process.env.PORT || "3000", 10);

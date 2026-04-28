@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ManagedRepoStore } from "../../src/managed-repo-store";
-import { type PipelineCallbacks, PipelineOrchestrator } from "../../src/pipeline-orchestrator";
-import type { Workflow } from "../../src/types";
+import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
+import type { PipelineCallbacks, Workflow } from "../../src/types";
 import { WorkflowEngine } from "../../src/workflow-engine";
 import { makeWorkflow } from "../helpers";
 

@@ -1,4 +1,5 @@
-import type { PipelineStepStatus, Workflow, WorkflowStatus } from "../../src/types";
+import type { PipelineStepStatus, WorkflowStatus } from "../../src/pipeline-steps";
+import type { Workflow } from "../../src/types";
 
 /**
  * Assert a workflow has the expected status, with rich error messages

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { AutoArchiver } from "../../src/auto-archiver";
+import type { ServerMessage } from "../../src/protocol";
 import type { HandlerDeps } from "../../src/server/handler-types";
-import type { PersistedEpic, ServerMessage } from "../../src/types";
+import type { PersistedEpic } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockEpicStore, createMockWorkflowStore } from "../test-infra/mock-stores";

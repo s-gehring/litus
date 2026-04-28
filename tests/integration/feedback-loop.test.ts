@@ -4,16 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CLICallbacks } from "../../src/cli-runner";
 import { configStore, DEFAULT_CONFIG } from "../../src/config-store";
-import type { PipelineCallbacks } from "../../src/pipeline-orchestrator";
+import type { EffortLevel } from "../../src/config-types";
 import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
-import type {
-	EffortLevel,
-	ServerMessage,
-	ToolUsage,
-	Workflow,
-	WorkflowStatus,
-} from "../../src/types";
-import { getStepDefinitionsForKind, STEP } from "../../src/types";
+import { getStepDefinitionsForKind, STEP, type WorkflowStatus } from "../../src/pipeline-steps";
+import type { ServerMessage } from "../../src/protocol";
+import type { PipelineCallbacks, ToolUsage, Workflow } from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
 
 // ── Minimal fakes (similar to pipeline-orchestrator.test.ts but self-contained) ──

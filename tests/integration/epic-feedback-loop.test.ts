@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { ClientMessage, PersistedEpic, Workflow } from "../../src/types";
+import type { ClientMessage } from "../../src/protocol";
+import type { PersistedEpic, Workflow } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { makePersistedEpic } from "../test-infra/factories";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";

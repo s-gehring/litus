@@ -1,15 +1,8 @@
+import type { AppConfig, AutoMode } from "../config-types";
 import { looksLikeGitUrl } from "../git-url";
-import type {
-	Alert,
-	AppConfig,
-	ArtifactDescriptor,
-	ArtifactListResponse,
-	AutoMode,
-	ClientMessage,
-	PipelineStepName,
-	ServerMessage,
-	WorkflowState,
-} from "../types";
+import type { PipelineStepName } from "../pipeline-steps";
+import type { ClientMessage, ServerMessage } from "../protocol";
+import type { Alert, ArtifactDescriptor, ArtifactListResponse, WorkflowState } from "../types";
 import { ClientStateManager } from "./client-state-manager";
 import {
 	hideAlertList,

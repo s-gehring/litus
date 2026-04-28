@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ServerWebSocket } from "bun";
 import { AlertQueue } from "../../src/alert-queue";
 import { AlertStore } from "../../src/alert-store";
+import type { ClientMessage, ServerMessage } from "../../src/protocol";
 import { createAlertBroadcasters } from "../../src/server/alert-broadcast";
 import {
 	clearClientRouteOnClose,
@@ -10,7 +11,6 @@ import {
 	handleAlertRouteChanged,
 } from "../../src/server/alert-handlers";
 import type { HandlerDeps, WsData } from "../../src/server/handler-types";
-import type { ClientMessage, ServerMessage } from "../../src/types";
 import { withTempDir } from "../test-infra";
 
 function makeInput(over: Partial<{ workflowId: string | null; epicId: string | null }> = {}) {

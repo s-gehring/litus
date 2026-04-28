@@ -1,4 +1,4 @@
-import type { EffortLevel } from "../../types";
+import type { EffortLevel } from "../../config-types";
 
 export const EFFORT_LEVELS_ORDER: readonly EffortLevel[] = [
 	"low",

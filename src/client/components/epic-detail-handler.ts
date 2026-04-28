@@ -1,11 +1,10 @@
+import type { AppConfig } from "../../config-types";
 import { computeEligibleFirstLevelSpecs } from "../../epic-eligibility";
+import type { ClientMessage, ServerMessage } from "../../protocol";
 import type {
-	AppConfig,
-	ClientMessage,
 	EpicAggregatedState,
 	EpicClientState,
 	EpicFeedbackEntry,
-	ServerMessage,
 	WorkflowState,
 } from "../../types";
 import { isFeedbackEligible } from "../../types";

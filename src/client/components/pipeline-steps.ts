@@ -1,9 +1,5 @@
-import type {
-	ArtifactDescriptor,
-	PipelineStepName,
-	PipelineStepStatus,
-	WorkflowState,
-} from "../../types";
+import type { PipelineStepName, PipelineStepStatus } from "../../pipeline-steps";
+import type { ArtifactDescriptor, WorkflowState } from "../../types";
 import { $ } from "../dom";
 import { openArtifactViewer } from "./artifact-viewer";
 

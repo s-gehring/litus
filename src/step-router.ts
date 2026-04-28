@@ -1,5 +1,5 @@
+import { STEP } from "./pipeline-steps";
 import type { ReviewSeverity, Workflow } from "./types";
-import { STEP } from "./types";
 
 export type RouteDecision =
 	| { action: "advance-to-next" }

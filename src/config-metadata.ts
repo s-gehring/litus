@@ -1,4 +1,4 @@
-import type { NumericSettingMeta, PromptConfig, PromptVariableInfo } from "./types";
+import type { NumericSettingMeta, PromptConfig, PromptVariableInfo } from "./config-types";
 
 export const PROMPT_VARIABLES: Record<keyof PromptConfig, PromptVariableInfo[]> = {
 	questionDetection: [{ name: "text", description: "The text being analyzed for questions" }],
