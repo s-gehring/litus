@@ -1026,4 +1026,5 @@ export type ClientMessage =
 	| { type: "epic:unarchive"; epicId: string }
 	| { type: "auto-archive:stop" }
 	| { type: "auto-archive:start" }
-	| { type: "purge:all" };
+	| { type: "purge:all" }
+	| { type: "client:warning"; source: string; message: string };
