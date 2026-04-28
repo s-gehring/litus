@@ -456,8 +456,8 @@ describe("epic-detail-handler — batch run-controls", () => {
 		mount({
 			epicId: "e-1",
 			children: [
-				{ id: "wf-1", status: "paused", epicDependencies: [] },
-				{ id: "wf-2", status: "running", epicDependencies: [] },
+				{ id: "wf-1", status: "paused", epicDependencies: [], hasEverStarted: true },
+				{ id: "wf-2", status: "running", epicDependencies: [], hasEverStarted: true },
 			],
 		});
 		const slots = actionButtons().map((b) => b.getAttribute("data-slot") ?? "");

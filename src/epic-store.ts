@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { AsyncLock } from "./async-lock";
 import { atomicWrite } from "./atomic-write";
+import { workflowsDir } from "./litus-paths";
 import { logger } from "./logger";
 import type { PersistedEpic } from "./types";
 
@@ -23,7 +23,7 @@ export class EpicStore {
 	private writeLock = new AsyncLock();
 
 	constructor(baseDir?: string) {
-		this.baseDir = baseDir ?? join(homedir(), ".litus", "workflows");
+		this.baseDir = baseDir ?? workflowsDir();
 	}
 
 	private ensureDir(): void {

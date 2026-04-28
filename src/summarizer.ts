@@ -1,12 +1,13 @@
-import { runClaude } from "./claude-spawn";
+import { runConfiguredHelper } from "./claude-helper";
 import { configStore } from "./config-store";
-import { logger } from "./logger";
 
 // When the E2E harness is driving the server, summarizer spawns race the
 // pipeline-step claude spawns against a shared FIFO scenario counter. Skip
 // cosmetic summaries entirely in that mode so scenario authoring stays
 // deterministic per pipeline step.
 const SUMMARIZER_DISABLED = Boolean(process.env.LITUS_E2E_SCENARIO);
+
+const DISABLED_SPEC_SUMMARY = { summary: "", flavor: "" } as const;
 
 export class Summarizer {
 	private charCount: Map<string, number> = new Map();
@@ -56,21 +57,14 @@ export class Summarizer {
 				return;
 			}
 
-			this.generateSummary(recentText)
-				.then((summary) => {
-					// Only deliver if workflow hasn't been cleaned up while we were generating
-					if (!this.pendingSummary.has(workflowId)) return;
-					this.pendingSummary.set(workflowId, false);
-					if (summary) {
-						callback(summary);
-					}
-				})
-				.catch((err) => {
-					logger.warn("[summarizer] Activity summary failed:", err);
-					if (this.pendingSummary.has(workflowId)) {
-						this.pendingSummary.set(workflowId, false);
-					}
-				});
+			this.generateSummary(recentText).then((summary) => {
+				// Only deliver if workflow hasn't been cleaned up while we were generating
+				if (!this.pendingSummary.has(workflowId)) return;
+				this.pendingSummary.set(workflowId, false);
+				if (summary) {
+					callback(summary);
+				}
+			});
 		}
 	}
 
@@ -81,55 +75,43 @@ export class Summarizer {
 	}
 
 	private async generateSummary(text: string): Promise<string | null> {
-		try {
-			const config = configStore.get();
-			const promptTemplate = config.prompts.activitySummarization;
-			const prompt = promptTemplate.replaceAll("${text}", text);
-
-			const { ok, stdout } = await runClaude({
-				prompt,
+		return runConfiguredHelper<string | null>({
+			selector: (config) => ({
+				promptTemplate: config.prompts.activitySummarization,
 				model: config.models.activitySummarization,
 				effort: config.efforts.activitySummarization,
-				callerLabel: "summarizer:activity",
-				timeoutMs: 30_000,
-			});
-			if (!ok) return null;
-			return stdout.trim() || null;
-		} catch (err) {
-			logger.warn("[summarizer] generateSummary failed:", err);
-			return null;
-		}
+			}),
+			vars: { text },
+			parser: (stdout) => stdout.trim() || null,
+			fallback: null,
+			callerLabel: "summarizer:activity",
+		});
 	}
 
 	async generateSpecSummary(specification: string): Promise<{ summary: string; flavor: string }> {
-		if (SUMMARIZER_DISABLED) return { summary: "", flavor: "" };
-		try {
-			const config = configStore.get();
-			const promptTemplate = config.prompts.specSummarization;
-			const prompt = promptTemplate.replaceAll("${specification}", specification);
-
-			const { ok, stdout } = await runClaude({
-				prompt,
+		if (SUMMARIZER_DISABLED) return DISABLED_SPEC_SUMMARY;
+		return runConfiguredHelper<{ summary: string; flavor: string }>({
+			selector: (config) => ({
+				promptTemplate: config.prompts.specSummarization,
 				model: config.models.specSummarization,
 				effort: config.efforts.specSummarization,
-				callerLabel: "summarizer:spec",
-				timeoutMs: 60_000,
-			});
-			if (!ok) return { summary: "", flavor: "" };
-
-			const cleaned = stdout
-				.trim()
-				.replace(/^```(?:json)?\s*\n?/i, "")
-				.replace(/\n?```\s*$/, "");
-			const parsed = JSON.parse(cleaned);
-			return {
-				summary: String(parsed.summary ?? "").slice(0, 50),
-				flavor: String(parsed.flavor ?? "").slice(0, 100),
-			};
-		} catch (err) {
-			logger.warn("[summarizer] generateSpecSummary failed:", err);
-			return { summary: "", flavor: "" };
-		}
+			}),
+			vars: { specification },
+			parser: (stdout) => {
+				const cleaned = stdout
+					.trim()
+					.replace(/^```(?:json)?\s*\n?/i, "")
+					.replace(/\n?```\s*$/, "");
+				const parsed = JSON.parse(cleaned);
+				return {
+					summary: String(parsed.summary ?? "").slice(0, 50),
+					flavor: String(parsed.flavor ?? "").slice(0, 100),
+				};
+			},
+			fallback: DISABLED_SPEC_SUMMARY,
+			callerLabel: "summarizer:spec",
+			timeoutMs: 60_000,
+		});
 	}
 
 	cleanup(workflowId: string): void {

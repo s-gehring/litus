@@ -1,11 +1,9 @@
 import { appendFileSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AuditConfig } from "./config-types";
+import { auditDir as defaultAuditDir } from "./litus-paths";
 import { logger } from "./logger";
 import type { AuditEvent, AuditEventType, WorkflowResetAuditEvent } from "./types";
-
-const DEFAULT_AUDIT_DIR = join(homedir(), ".litus", "audit");
 
 interface RunState {
 	pipelineName: string;
@@ -19,7 +17,7 @@ export class AuditLogger {
 	private runs: Map<string, RunState> = new Map();
 
 	constructor(config?: AuditConfig) {
-		this.auditDir = config?.auditDir ?? DEFAULT_AUDIT_DIR;
+		this.auditDir = config?.auditDir ?? defaultAuditDir();
 		try {
 			mkdirSync(this.auditDir, { recursive: true });
 		} catch (err) {

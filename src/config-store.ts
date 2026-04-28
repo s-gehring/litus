@@ -6,8 +6,7 @@ import {
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "./config-metadata";
 import type {
 	AppConfig,
@@ -17,6 +16,7 @@ import type {
 	DeepPartial,
 	EffortLevel,
 } from "./config-types";
+import { configFile } from "./litus-paths";
 import { logger } from "./logger";
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -243,7 +243,7 @@ export class ConfigStore {
 	private savedConfig: Partial<AppConfig> | null = null;
 
 	constructor(configPath?: string) {
-		this.configPath = configPath ?? join(homedir(), ".litus", "config.json");
+		this.configPath = configPath ?? configFile();
 		this.load();
 	}
 

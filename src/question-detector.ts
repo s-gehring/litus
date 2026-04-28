@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { runClaude } from "./claude-spawn";
-import { configStore } from "./config-store";
-import { logger } from "./logger";
+import { runConfiguredHelper } from "./claude-helper";
 import type { Question } from "./types";
 
 // Positive indicators that text likely contains a question for the user
@@ -71,22 +69,17 @@ export class QuestionDetector {
 		this.pendingClassification = true;
 
 		try {
-			const config = configStore.get();
-			const promptTemplate = config.prompts.questionDetection;
-			const prompt = promptTemplate.replaceAll("${text}", text);
-
-			const { ok, stdout } = await runClaude({
-				prompt,
-				model: config.models.questionDetection,
-				effort: config.efforts.questionDetection,
+			return await runConfiguredHelper<boolean>({
+				selector: (config) => ({
+					promptTemplate: config.prompts.questionDetection,
+					model: config.models.questionDetection,
+					effort: config.efforts.questionDetection,
+				}),
+				vars: { text },
+				parser: (stdout) => stdout.trim().toLowerCase().startsWith("yes"),
+				fallback: false,
 				callerLabel: "question-detector",
-				timeoutMs: 30_000,
 			});
-			if (!ok) return false;
-			return stdout.trim().toLowerCase().startsWith("yes");
-		} catch (err) {
-			logger.warn("[question-detector] classifyWithHaiku failed:", err);
-			return false;
 		} finally {
 			this.pendingClassification = false;
 		}
