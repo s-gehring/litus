@@ -4,8 +4,8 @@ import type { PipelineStep, PipelineStepName, WorkflowStatus } from "./pipeline-
 // Re-exports for backward compatibility after the types.ts split.
 export type { AppConfig, EffortLevel } from "./config-types";
 export {
-	DELTA_FLUSH_TIMEOUT_MS,
 	type ClientMessage,
+	DELTA_FLUSH_TIMEOUT_MS,
 	type ServerMessage,
 	type StateChange,
 	type StateChangeAction,

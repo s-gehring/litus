@@ -8,7 +8,6 @@ import { toErrorMessage } from "./errors";
 import { auditDir } from "./litus-paths";
 import { logger } from "./logger";
 import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
-import { DELTA_FLUSH_TIMEOUT_MS } from "./protocol";
 import { readStream, type SpawnLike } from "./spawn-utils";
 import type { ToolUsage, Workflow } from "./types";
 

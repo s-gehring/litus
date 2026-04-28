@@ -4,7 +4,6 @@ import type {
 	ClientMessage,
 	EpicAggregatedState,
 	EpicClientState,
-	OutputEntry,
 	WorkflowClientState,
 	WorkflowState,
 } from "../types";

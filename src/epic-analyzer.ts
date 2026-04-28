@@ -3,7 +3,6 @@ import { parseClaudeStream } from "./cli-stream-parser";
 import { configStore } from "./config-store";
 import { buildGraph, detectCycles } from "./dependency-resolver";
 import { logger } from "./logger";
-import { DELTA_FLUSH_TIMEOUT_MS } from "./protocol";
 import type { EpicAnalysisResult, ToolUsage } from "./types";
 
 export function buildDecompositionPrompt(epicDescription: string): string {
