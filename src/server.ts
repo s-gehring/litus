@@ -31,6 +31,7 @@ import {
 	handleAlertList,
 	handleAlertRouteChanged,
 } from "./server/alert-handlers";
+import { handleClientWarning } from "./server/client-warning-handler";
 import { handleConfigGet, handleConfigReset, handleConfigSave } from "./server/config-handlers";
 import { createEmitText } from "./server/emit-text";
 import {
@@ -320,6 +321,7 @@ router.register("alert:list", handleAlertList);
 router.register("alert:dismiss", handleAlertDismiss);
 router.register("alert:clear-all", handleAlertClearAll);
 router.register("alert:route-changed", handleAlertRouteChanged);
+router.register("client:warning", handleClientWarning);
 
 // ── HTTP/WS server ──────────────────────────────────────
 async function listSubdirectories(parentDir: string): Promise<string[]> {

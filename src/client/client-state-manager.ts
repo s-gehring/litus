@@ -1,6 +1,7 @@
 import type { ServerMessage, StateChange, StateChangeListener } from "../protocol";
 import type {
 	Alert,
+	ClientMessage,
 	EpicAggregatedState,
 	EpicClientState,
 	OutputEntry,
@@ -8,32 +9,49 @@ import type {
 	WorkflowState,
 } from "../types";
 import { EPIC_CARD_PREFIX } from "./components/status-maps";
-import { computeEpicAggregatedState } from "./epic-aggregation";
+import * as alertReducer from "./state/alert-state";
+import { rebuildCardOrder } from "./state/card-order";
+import * as epicReducer from "./state/epic-state";
+import type { ReducerResult, SliceChange } from "./state/types";
+import * as workflowReducer from "./state/workflow-state";
+
+type SliceSource = "workflow" | "epic" | "alert";
+type Dispatched = {
+	stateChange: StateChange;
+	change: SliceChange;
+	warnings?: string[];
+	source: SliceSource | null;
+};
+
+const NOTIFY_NO_REORDER: SliceChange = { notify: true, affectsCardOrder: false };
+const NO_NOTIFY: SliceChange = { notify: false, affectsCardOrder: false };
+const NONE_UPDATED = (): Dispatched => ({
+	stateChange: { scope: { entity: "none" }, action: "updated" },
+	change: NOTIFY_NO_REORDER,
+	source: null,
+});
+const NONE_NOOP = (): Dispatched => ({
+	stateChange: { scope: { entity: "none" }, action: "updated" },
+	change: NO_NOTIFY,
+	source: null,
+});
 
 export class ClientStateManager {
-	private workflows = new Map<string, WorkflowClientState>();
-	private epics = new Map<string, EpicClientState>();
-	private alerts = new Map<string, Alert>();
-	private epicAggregates = new Map<string, EpicAggregatedState>();
+	private workflowState = workflowReducer.createState();
+	private epicState = epicReducer.createState();
+	private alertState = alertReducer.createState();
 	private cardOrder: string[] = [];
-	private expandedId: string | null = null;
-	private expandedEpicId: string | null = null;
-	private selectedChildId: string | null = null;
-	private selectedStepIndex: number | null = null;
-	// Which workflow the current `selectedStepIndex` belongs to. Lets the
-	// workflow-detail handler preserve a user's chosen step when they leave and
-	// come back to the same workflow, while still resetting when they switch to
-	// a different one.
-	private selectedStepWorkflowId: string | null = null;
-	private maxOutputLines = 5000;
 	private listener: StateChangeListener | null = null;
+	private sendToServer: (msg: ClientMessage) => void;
+
+	constructor(sendToServer: (msg: ClientMessage) => void = () => {}) {
+		this.sendToServer = sendToServer;
+	}
 
 	handleMessage(msg: ServerMessage): StateChange {
-		const change = this.processMessage(msg);
-		if (this.listener) {
-			this.listener(change, msg);
-		}
-		return change;
+		const result = this.dispatch(msg);
+		this.applyResult(result, msg);
+		return result.stateChange;
 	}
 
 	onStateChange(cb: StateChangeListener): void {
@@ -41,589 +59,168 @@ export class ClientStateManager {
 	}
 
 	getWorkflows(): ReadonlyMap<string, WorkflowClientState> {
-		return this.workflows;
+		return this.workflowState.workflows;
 	}
-
 	getEpics(): ReadonlyMap<string, EpicClientState> {
-		return this.epics;
+		return this.epicState.epics;
 	}
-
 	getEpicAggregates(): ReadonlyMap<string, EpicAggregatedState> {
-		return this.epicAggregates;
+		return this.epicState.epicAggregates;
 	}
-
 	getAlerts(): ReadonlyMap<string, Alert> {
-		return this.alerts;
+		return this.alertState.alerts;
 	}
-
 	getCardOrder(): readonly string[] {
 		return this.cardOrder;
 	}
-
 	getExpandedId(): string | null {
-		return this.expandedId;
+		return this.workflowState.expandedId;
 	}
-
 	getExpandedEpicId(): string | null {
-		return this.expandedEpicId;
+		return this.epicState.expandedEpicId;
 	}
-
 	getSelectedChildId(): string | null {
-		return this.selectedChildId;
+		return this.workflowState.selectedChildId;
 	}
-
 	getSelectedStepIndex(): number | null {
-		return this.selectedStepIndex;
+		return this.workflowState.selectedStepIndex;
 	}
-
-	/**
-	 * Returns the step index the user has most recently selected while viewing
-	 * `workflowId`, or `null` if the current selection is unset or belongs to a
-	 * different workflow. Callers use this to decide whether to restore a prior
-	 * selection on re-entry versus auto-selecting the live step.
-	 */
 	getSelectedStepIndexFor(workflowId: string): number | null {
-		if (this.selectedStepWorkflowId !== workflowId) return null;
-		return this.selectedStepIndex;
-	}
-
-	expandItem(id: string): void {
-		if (id.startsWith(EPIC_CARD_PREFIX)) {
-			const epicId = id.slice(EPIC_CARD_PREFIX.length);
-			if (this.expandedEpicId === epicId && !this.selectedChildId) {
-				this.expandedEpicId = null;
-				this.expandedId = null;
-				this.resetStepSelection();
-			} else {
-				this.expandedEpicId = epicId;
-				this.selectedChildId = null;
-				this.expandedId = id;
-				this.resetStepSelection();
-			}
-		} else {
-			if (this.expandedId === id) {
-				this.expandedId = null;
-				this.expandedEpicId = null;
-				this.selectedChildId = null;
-				this.resetStepSelection();
-			} else {
-				this.expandedId = id;
-				this.expandedEpicId = null;
-				this.selectedChildId = null;
-				this.resetStepSelection();
-			}
-		}
-	}
-
-	selectChild(workflowId: string): void {
-		if (this.selectedChildId === workflowId) {
-			this.selectedChildId = null;
-		} else {
-			this.selectedChildId = workflowId;
-		}
-		this.resetStepSelection();
-	}
-
-	private resetStepSelection(): void {
-		this.selectedStepIndex = null;
-		this.selectedStepWorkflowId = null;
-	}
-
-	selectStep(index: number): void {
-		this.selectedStepIndex = index;
-	}
-
-	/**
-	 * Record a step selection and bind it to the workflow the user is currently
-	 * viewing. Pair with `getSelectedStepIndexFor` to preserve the selection
-	 * across unmount/remount of the same workflow.
-	 */
-	selectStepFor(workflowId: string, index: number): void {
-		this.selectedStepIndex = index;
-		this.selectedStepWorkflowId = workflowId;
+		return this.workflowState.selectedStepWorkflowId === workflowId
+			? this.workflowState.selectedStepIndex
+			: null;
 	}
 
 	getLastTargetRepo(): string {
 		let latest: { repo: string; date: string } | null = null;
-		for (const [, entry] of this.workflows) {
+		for (const [, entry] of this.workflowState.workflows) {
 			const repo = entry.state.targetRepository;
-			if (repo) {
-				if (!latest || entry.state.createdAt > latest.date) {
-					latest = { repo, date: entry.state.createdAt };
-				}
+			if (repo && (!latest || entry.state.createdAt > latest.date)) {
+				latest = { repo, date: entry.state.createdAt };
 			}
 		}
 		return latest?.repo ?? "";
 	}
 
-	private processMessage(msg: ServerMessage): StateChange {
-		switch (msg.type) {
-			case "workflow:list":
-				return this.handleWorkflowList(msg);
-			case "workflow:created":
-				return this.handleWorkflowCreated(msg);
-			case "workflow:state":
-				return this.handleWorkflowState(msg);
-			case "workflow:removed":
-				return this.handleWorkflowRemoved(msg);
-			case "workflow:output":
-				return this.handleWorkflowOutput(msg);
-			case "console:output":
-				return this.handleConsoleOutput(msg);
-			case "workflow:tools":
-				return this.handleWorkflowTools(msg);
-			case "workflow:question":
-				return this.handleWorkflowQuestion(msg);
-			case "workflow:step-change":
-				return this.handleWorkflowStepChange(msg);
-			case "epic:list":
-				return this.handleEpicList(msg);
-			case "epic:created":
-				return this.handleEpicCreated(msg);
-			case "epic:summary":
-				return this.handleEpicSummary(msg);
-			case "epic:output":
-				return this.handleEpicOutput(msg);
-			case "epic:tools":
-				return this.handleEpicTools(msg);
-			case "epic:result":
-				return this.handleEpicResult(msg);
-			case "epic:infeasible":
-				return this.handleEpicInfeasible(msg);
-			case "epic:error":
-				return this.handleEpicError(msg);
-			case "epic:dependency-update":
-				return this.handleEpicDependencyUpdate(msg);
-			case "epic:feedback:accepted":
-				return this.handleEpicFeedbackAccepted(msg);
-			case "epic:feedback:rejected":
-				return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
-			case "epic:feedback:history":
-				return this.handleEpicFeedbackHistory(msg);
-			case "alert:list":
-				return this.handleAlertList(msg);
-			case "alert:created":
-				return this.handleAlertCreated(msg);
-			case "alert:dismissed":
-				return this.handleAlertDismissed(msg);
-			case "alert:seen":
-				return this.handleAlertSeen(msg);
-			case "purge:progress":
-				return { scope: { entity: "none" }, action: "updated" };
-			case "purge:complete":
-				return this.handlePurgeComplete();
-			case "purge:error":
-				return { scope: { entity: "none" }, action: "updated" };
-			case "config:state":
-				return this.handleConfigState(msg);
-			case "default-model:info":
-				return { scope: { entity: "none" }, action: "updated" };
-			case "config:error":
-				return { scope: { entity: "config" }, action: "updated" };
-			case "error":
-				return { scope: { entity: "none" }, action: "updated" };
-			case "repo:clone-start":
-			case "repo:clone-progress":
-			case "repo:clone-complete":
-			case "repo:clone-error":
-				return { scope: { entity: "none" }, action: "updated" };
-			case "workflow:archive-denied":
-				return { scope: { entity: "none" }, action: "updated" };
-			case "auto-archive:state":
-				return { scope: { entity: "none" }, action: "updated" };
-			case "epic:start-first-level:result":
-				return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
-			default: {
-				const _exhaustive: never = msg;
-				void _exhaustive;
-				return { scope: { entity: "none" }, action: "updated" };
-			}
-		}
-	}
-
-	private handleWorkflowList(msg: Extract<ServerMessage, { type: "workflow:list" }>): StateChange {
-		this.workflows.clear();
-		for (const wf of msg.workflows) {
-			this.addOrUpdateWorkflow(wf);
-		}
-		this.rebuildEpicAggregates();
-		this.rebuildCardOrder();
-		return { scope: { entity: "global" }, action: "updated" };
-	}
-
-	private handleWorkflowCreated(
-		msg: Extract<ServerMessage, { type: "workflow:created" }>,
-	): StateChange {
-		this.addOrUpdateWorkflow(msg.workflow);
-		if (msg.workflow.epicId) {
-			this.rebuildEpicAggregates();
-			this.rebuildCardOrder();
-		} else if (!this.cardOrder.includes(msg.workflow.id)) {
-			this.cardOrder.unshift(msg.workflow.id);
-		}
-		return { scope: { entity: "workflow", id: msg.workflow.id }, action: "added" };
-	}
-
-	private handleWorkflowState(
-		msg: Extract<ServerMessage, { type: "workflow:state" }>,
-	): StateChange {
-		if (!msg.workflow) return { scope: { entity: "none" }, action: "updated" };
-		const prev = this.workflows.get(msg.workflow.id)?.state.archived ?? false;
-		this.addOrUpdateWorkflow(msg.workflow);
-		if (msg.workflow.epicId) {
-			this.rebuildEpicAggregates();
-		}
-		if (prev !== msg.workflow.archived) {
-			this.rebuildCardOrder();
-		}
-		return { scope: { entity: "workflow", id: msg.workflow.id }, action: "updated" };
-	}
-
-	private handleWorkflowRemoved(
-		msg: Extract<ServerMessage, { type: "workflow:removed" }>,
-	): StateChange {
-		const existing = this.workflows.get(msg.workflowId);
-		if (!existing) return { scope: { entity: "none" }, action: "updated" };
-		this.workflows.delete(msg.workflowId);
-		const orderIdx = this.cardOrder.indexOf(msg.workflowId);
-		if (orderIdx >= 0) this.cardOrder.splice(orderIdx, 1);
-		if (existing.state.epicId) {
-			this.rebuildEpicAggregates();
-			this.rebuildCardOrder();
-		}
-		return { scope: { entity: "workflow", id: msg.workflowId }, action: "removed" };
-	}
-
-	private handleWorkflowOutput(
-		msg: Extract<ServerMessage, { type: "workflow:output" }>,
-	): StateChange {
-		const entry = this.workflows.get(msg.workflowId);
-		if (!entry) {
-			console.log(`[litus:unrouted workflow=${msg.workflowId}] ${msg.text}`);
-			return { scope: { entity: "none" }, action: "updated" };
-		}
-		const outputEntry: OutputEntry = { kind: "text", text: msg.text };
-		entry.outputLines.push(outputEntry);
-		this.trimOutput(entry.outputLines);
-		return { scope: { entity: "output", id: msg.workflowId }, action: "appended" };
-	}
-
-	private handleConsoleOutput(
-		msg: Extract<ServerMessage, { type: "console:output" }>,
-	): StateChange {
-		console.log(`[litus:console] ${msg.text}`);
-		return { scope: { entity: "none" }, action: "updated" };
-	}
-
-	private handleWorkflowTools(
-		msg: Extract<ServerMessage, { type: "workflow:tools" }>,
-	): StateChange {
-		const entry = this.workflows.get(msg.workflowId);
-		if (!entry) return { scope: { entity: "none" }, action: "updated" };
-		const outputEntry: OutputEntry = { kind: "tools", tools: msg.tools };
-		entry.outputLines.push(outputEntry);
-		this.trimOutput(entry.outputLines);
-		return { scope: { entity: "output", id: msg.workflowId }, action: "appended" };
-	}
-
-	private handleWorkflowQuestion(
-		msg: Extract<ServerMessage, { type: "workflow:question" }>,
-	): StateChange {
-		const entry = this.workflows.get(msg.workflowId);
-		if (!entry) return { scope: { entity: "none" }, action: "updated" };
-		entry.state.pendingQuestion = msg.question;
-		return { scope: { entity: "workflow", id: msg.workflowId }, action: "updated" };
-	}
-
-	private handleWorkflowStepChange(
-		msg: Extract<ServerMessage, { type: "workflow:step-change" }>,
-	): StateChange {
-		const entry = this.workflows.get(msg.workflowId);
-		if (!entry) return { scope: { entity: "none" }, action: "updated" };
-		entry.state.currentStepIndex = msg.currentStepIndex;
-		entry.state.reviewCycle.iteration = msg.reviewIteration;
-		const stepText = `\u2500\u2500 Step: ${msg.currentStep} \u2500\u2500`;
-		entry.outputLines = [{ kind: "text", text: stepText, type: "system" }];
-		return { scope: { entity: "workflow", id: msg.workflowId }, action: "updated" };
-	}
-
-	private handleEpicList(msg: Extract<ServerMessage, { type: "epic:list" }>): StateChange {
-		for (const pe of msg.epics) {
-			const existing = this.epics.get(pe.epicId);
-			if (!existing) {
-				this.epics.set(pe.epicId, { ...pe, outputLines: [] });
-				if (pe.workflowIds.length === 0 && !this.cardOrder.includes(pe.epicId)) {
-					this.cardOrder.unshift(pe.epicId);
-				}
-			} else {
-				existing.archived = pe.archived;
-				existing.archivedAt = pe.archivedAt;
-				existing.workflowIds = pe.workflowIds;
-				existing.title = pe.title;
-				existing.status = pe.status;
-				existing.completedAt = pe.completedAt;
-				existing.errorMessage = pe.errorMessage;
-				existing.infeasibleNotes = pe.infeasibleNotes;
-				existing.analysisSummary = pe.analysisSummary;
-			}
-		}
-		this.rebuildEpicAggregates();
-		this.rebuildCardOrder();
-		return { scope: { entity: "global" }, action: "updated" };
-	}
-
-	private handleEpicCreated(msg: Extract<ServerMessage, { type: "epic:created" }>): StateChange {
-		this.epics.set(msg.epicId, {
-			epicId: msg.epicId,
-			description: msg.description,
-			status: "analyzing",
-			title: null,
-			outputLines: [],
-			workflowIds: [],
-			startedAt: new Date().toISOString(),
-			completedAt: null,
-			errorMessage: null,
-			infeasibleNotes: null,
-			analysisSummary: null,
-			decompositionSessionId: null,
-			feedbackHistory: [],
-			sessionContextLost: false,
-			attemptCount: 1,
-			archived: false,
-			archivedAt: null,
-		});
-		this.cardOrder.unshift(msg.epicId);
-		return { scope: { entity: "epic", id: msg.epicId }, action: "added" };
-	}
-
-	private handleEpicSummary(msg: Extract<ServerMessage, { type: "epic:summary" }>): StateChange {
-		const epic = this.epics.get(msg.epicId);
-		if (!epic) return { scope: { entity: "none" }, action: "updated" };
-		epic.title = msg.summary;
-		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
-	}
-
-	private handleEpicOutput(msg: Extract<ServerMessage, { type: "epic:output" }>): StateChange {
-		const epic = this.epics.get(msg.epicId);
-		if (!epic) {
-			console.log(`[litus:unrouted epic=${msg.epicId}] ${msg.text}`);
-			return { scope: { entity: "none" }, action: "updated" };
-		}
-		epic.outputLines.push({ kind: "text", text: msg.text });
-		this.trimOutput(epic.outputLines);
-		return { scope: { entity: "output", id: msg.epicId }, action: "appended" };
-	}
-
-	private handleEpicTools(msg: Extract<ServerMessage, { type: "epic:tools" }>): StateChange {
-		const epic = this.epics.get(msg.epicId);
-		if (!epic) return { scope: { entity: "none" }, action: "updated" };
-		epic.outputLines.push({ kind: "tools", tools: msg.tools });
-		this.trimOutput(epic.outputLines);
-		return { scope: { entity: "output", id: msg.epicId }, action: "appended" };
-	}
-
-	private handleEpicResult(msg: Extract<ServerMessage, { type: "epic:result" }>): StateChange {
-		const epic = this.epics.get(msg.epicId);
-		if (!epic) return { scope: { entity: "none" }, action: "updated" };
-		epic.status = "completed";
-		epic.completedAt = new Date().toISOString();
-		epic.title = msg.title;
-		epic.workflowIds = msg.workflowIds;
-		epic.analysisSummary = msg.summary;
-		this.rebuildEpicAggregates();
-		this.rebuildCardOrder();
-		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
-	}
-
-	private handleEpicInfeasible(
-		msg: Extract<ServerMessage, { type: "epic:infeasible" }>,
-	): StateChange {
-		const epic = this.epics.get(msg.epicId);
-		if (!epic) return { scope: { entity: "none" }, action: "updated" };
-		epic.status = "infeasible";
-		epic.completedAt = new Date().toISOString();
-		epic.title = msg.title;
-		epic.infeasibleNotes = msg.infeasibleNotes;
-		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
-	}
-
-	private handleEpicError(msg: Extract<ServerMessage, { type: "epic:error" }>): StateChange {
-		const epic = this.epics.get(msg.epicId);
-		if (!epic) return { scope: { entity: "none" }, action: "updated" };
-		epic.status = "error";
-		epic.completedAt = new Date().toISOString();
-		epic.errorMessage = msg.message;
-		epic.outputLines.push({ kind: "text", text: `Error: ${msg.message}`, type: "error" });
-		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
-	}
-
-	private handleEpicFeedbackAccepted(
-		msg: Extract<ServerMessage, { type: "epic:feedback:accepted" }>,
-	): StateChange {
-		const epic = this.epics.get(msg.epicId);
-		if (!epic) return { scope: { entity: "none" }, action: "updated" };
-		if (!epic.feedbackHistory.some((e) => e.id === msg.entry.id)) {
-			epic.feedbackHistory = [...epic.feedbackHistory, msg.entry];
-		}
-		epic.attemptCount = Math.max(epic.attemptCount, epic.feedbackHistory.length + 1);
-		epic.status = "analyzing";
-		// Reset the timer so idle time between the prior completion and this
-		// feedback submission isn't billed to the new analysis attempt. Mirrors
-		// the server's reset in runFeedbackAttempt; the client renders the live
-		// `Date.now() - startedAt` timer from local state without waiting for
-		// the persisted epic to be re-broadcast.
-		epic.startedAt = new Date().toISOString();
-		epic.completedAt = null;
-		// Prior child workflows are being deleted server-side; clear the
-		// reference list so rebuildEpicAggregates does not hold on to them
-		// while new decomposition results stream in.
-		epic.workflowIds = [];
-		this.rebuildEpicAggregates();
-		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
-	}
-
-	private handleEpicFeedbackHistory(
-		msg: Extract<ServerMessage, { type: "epic:feedback:history" }>,
-	): StateChange {
-		const epic = this.epics.get(msg.epicId);
-		if (!epic) return { scope: { entity: "none" }, action: "updated" };
-		epic.feedbackHistory = msg.entries;
-		epic.sessionContextLost = msg.sessionContextLost;
-		return { scope: { entity: "epic", id: msg.epicId }, action: "updated" };
-	}
-
-	private handleEpicDependencyUpdate(
-		msg: Extract<ServerMessage, { type: "epic:dependency-update" }>,
-	): StateChange {
-		const entry = this.workflows.get(msg.workflowId);
-		if (!entry) return { scope: { entity: "none" }, action: "updated" };
-		entry.state.epicDependencyStatus = msg.epicDependencyStatus;
-		return { scope: { entity: "workflow", id: msg.workflowId }, action: "updated" };
-	}
-
-	private handleAlertList(msg: Extract<ServerMessage, { type: "alert:list" }>): StateChange {
-		this.alerts.clear();
-		for (const a of msg.alerts) this.alerts.set(a.id, a);
-		return { scope: { entity: "global" }, action: "updated" };
-	}
-
-	private handleAlertCreated(msg: Extract<ServerMessage, { type: "alert:created" }>): StateChange {
-		this.alerts.set(msg.alert.id, msg.alert);
-		return { scope: { entity: "global" }, action: "added" };
-	}
-
-	private handleAlertDismissed(
-		msg: Extract<ServerMessage, { type: "alert:dismissed" }>,
-	): StateChange {
-		for (const id of msg.alertIds) this.alerts.delete(id);
-		return { scope: { entity: "global" }, action: "removed" };
-	}
-
-	private handleAlertSeen(msg: Extract<ServerMessage, { type: "alert:seen" }>): StateChange {
-		for (const id of msg.alertIds) {
-			const a = this.alerts.get(id);
-			if (a && !a.seen) a.seen = true;
-		}
-		return { scope: { entity: "global" }, action: "updated" };
-	}
-
-	private handlePurgeComplete(): StateChange {
-		this.workflows.clear();
-		this.epics.clear();
-		this.epicAggregates.clear();
-		this.alerts.clear();
-		this.cardOrder.length = 0;
-		this.expandedId = null;
-		this.expandedEpicId = null;
-		this.selectedChildId = null;
-		this.resetStepSelection();
-		return { scope: { entity: "global" }, action: "cleared" };
-	}
-
-	private handleConfigState(msg: Extract<ServerMessage, { type: "config:state" }>): StateChange {
-		if (msg.config.timing?.maxClientOutputLines != null) {
-			this.maxOutputLines = msg.config.timing.maxClientOutputLines;
-		}
-		return { scope: { entity: "config" }, action: "updated" };
-	}
-
-	private addOrUpdateWorkflow(wfState: WorkflowState): void {
-		const existing = this.workflows.get(wfState.id);
-		if (existing) {
-			existing.state = wfState;
+	expandItem(id: string): void {
+		// Cross-slice: workflow + epic expansion mirror each other in lockstep.
+		const ws = this.workflowState;
+		const es = this.epicState;
+		if (id.startsWith(EPIC_CARD_PREFIX)) {
+			const epicId = id.slice(EPIC_CARD_PREFIX.length);
+			const close = es.expandedEpicId === epicId && !ws.selectedChildId;
+			epicReducer.setExpandedEpic(es, close ? null : epicId);
+			workflowReducer.setExpanded(ws, close ? null : id);
 		} else {
-			// Seed outputLines from the current step's persisted log so the output
-			// window shows full history (text + tool icons) right after page reload,
-			// before any incremental workflow:output/workflow:tools events arrive.
-			const currentStep = wfState.steps[wfState.currentStepIndex];
-			const seed = currentStep?.outputLog ? [...currentStep.outputLog] : [];
-			this.workflows.set(wfState.id, {
-				state: wfState,
-				outputLines: seed,
-			});
-			this.trimOutput(seed);
-			if (!this.cardOrder.includes(wfState.id)) {
-				this.cardOrder.unshift(wfState.id);
-			}
+			const close = ws.expandedId === id;
+			workflowReducer.setExpanded(ws, close ? null : id);
+			epicReducer.setExpandedEpic(es, null);
 		}
+		ws.selectedChildId = null;
+		workflowReducer.resetStepSelection(ws);
 	}
 
-	private rebuildEpicAggregates(): void {
-		this.epicAggregates.clear();
-		const epicGroups = new Map<string, WorkflowState[]>();
-		for (const [, entry] of this.workflows) {
-			const wf = entry.state;
-			if (wf.epicId) {
-				if (!epicGroups.has(wf.epicId)) epicGroups.set(wf.epicId, []);
-				epicGroups.get(wf.epicId)?.push(wf);
-			}
-		}
-		for (const [epicId, children] of epicGroups) {
-			const agg = computeEpicAggregatedState(children);
-			if (agg) this.epicAggregates.set(epicId, agg);
-		}
+	selectChild(workflowId: string): void {
+		workflowReducer.selectChild(this.workflowState, workflowId);
+	}
+	selectStep(index: number): void {
+		workflowReducer.selectStep(this.workflowState, index);
+	}
+	selectStepFor(workflowId: string, index: number): void {
+		workflowReducer.selectStepFor(this.workflowState, workflowId, index);
+	}
+	resetStepSelection(): void {
+		workflowReducer.resetStepSelection(this.workflowState);
 	}
 
-	private rebuildCardOrder(): void {
-		this.cardOrder.length = 0;
-		const seenEpics = new Set<string>();
-		const items: { key: string; sortDate: string }[] = [];
-
-		for (const [, entry] of this.workflows) {
-			const wf = entry.state;
-			if (wf.archived) continue;
-			if (wf.epicId) {
-				const parentEpic = this.epics.get(wf.epicId);
-				if (parentEpic?.archived) continue;
-				if (!seenEpics.has(wf.epicId)) {
-					seenEpics.add(wf.epicId);
-					const agg = this.epicAggregates.get(wf.epicId);
-					items.push({
-						key: `${EPIC_CARD_PREFIX}${wf.epicId}`,
-						sortDate: agg?.startDate ?? wf.createdAt,
-					});
-				}
-			} else {
-				items.push({ key: wf.id, sortDate: wf.createdAt });
-			}
-		}
-
-		for (const [epicId, epic] of this.epics) {
-			if (epic.archived) continue;
-			if (!seenEpics.has(epicId) && epic.workflowIds.length === 0) {
-				items.push({ key: epicId, sortDate: epic.startedAt });
-			}
-		}
-
-		items.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
-		for (const item of items) {
-			this.cardOrder.push(item.key);
-		}
+	addOrUpdateWorkflow(wfState: WorkflowState): void {
+		const result = workflowReducer.addOrUpdateWorkflow(this.workflowState, wfState);
+		if (result.change.affectsCardOrder) this.rebuild();
 	}
 
-	private trimOutput(lines: OutputEntry[]): void {
-		if (lines.length > this.maxOutputLines) {
-			lines.splice(0, lines.length - this.maxOutputLines);
+	private dispatch(msg: ServerMessage): Dispatched {
+		if (isWorkflowSliceMsg(msg)) {
+			return tagged(workflowReducer.reduce(this.workflowState, msg), "workflow");
 		}
+		if (isEpicSliceMsg(msg)) {
+			return tagged(epicReducer.reduce(this.epicState, msg), "epic");
+		}
+		if (isAlertSliceMsg(msg)) {
+			return tagged(alertReducer.reduce(this.alertState, msg), "alert");
+		}
+		if (msg.type === "purge:complete") {
+			workflowReducer.reset(this.workflowState);
+			epicReducer.reset(this.epicState);
+			alertReducer.reset(this.alertState);
+			return {
+				stateChange: { scope: { entity: "global" }, action: "cleared" },
+				change: { notify: true, affectsCardOrder: true },
+				source: null,
+			};
+		}
+		if (msg.type === "config:state") {
+			const max = msg.config.timing?.maxClientOutputLines;
+			if (max != null) {
+				workflowReducer.setMaxOutputLines(this.workflowState, max);
+				epicReducer.setMaxOutputLines(this.epicState, max);
+			}
+			return {
+				stateChange: { scope: { entity: "config" }, action: "updated" },
+				change: NOTIFY_NO_REORDER,
+				source: null,
+			};
+		}
+		if (msg.type === "config:error") {
+			return {
+				stateChange: { scope: { entity: "config" }, action: "updated" },
+				change: NOTIFY_NO_REORDER,
+				source: null,
+			};
+		}
+		if (msg.type === "console:output") {
+			// Pure side-effect: dev console only. No slice state to mutate.
+			console.log(`[litus:console] ${msg.text}`);
+			return NONE_NOOP();
+		}
+		// auto-archive:state, workflow:archive-denied, purge:progress, purge:error,
+		// default-model:info, error, repo:clone-* — façade-level no-ops that still
+		// notify subscribers (parity with master, scope=none).
+		return NONE_UPDATED();
 	}
+
+	private applyResult(result: Dispatched, msg: ServerMessage): void {
+		if (result.warnings && result.source) {
+			for (const w of result.warnings) {
+				this.sendToServer({ type: "client:warning", source: result.source, message: w });
+			}
+		}
+		if (result.change.affectsCardOrder) this.rebuild();
+		if (result.change.notify && this.listener) this.listener(result.stateChange, msg);
+	}
+
+	private rebuild(): void {
+		epicReducer.recomputeAggregates(this.epicState, this.workflowState.workflows);
+		rebuildCardOrder(this.cardOrder, this.workflowState, this.epicState);
+	}
+}
+
+function isWorkflowSliceMsg(msg: ServerMessage): msg is workflowReducer.WorkflowSliceMessage {
+	return (workflowReducer.OWNED_TYPES as ReadonlySet<string>).has(msg.type);
+}
+
+function isEpicSliceMsg(msg: ServerMessage): msg is epicReducer.EpicSliceMessage {
+	return (epicReducer.OWNED_TYPES as ReadonlySet<string>).has(msg.type);
+}
+
+function isAlertSliceMsg(msg: ServerMessage): msg is alertReducer.AlertSliceMessage {
+	return (alertReducer.OWNED_TYPES as ReadonlySet<string>).has(msg.type);
+}
+
+function tagged<S>(result: ReducerResult<S>, source: SliceSource): Dispatched {
+	return {
+		stateChange: result.stateChange,
+		change: result.change,
+		warnings: result.warnings,
+		source,
+	};
 }

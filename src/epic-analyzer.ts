@@ -1,4 +1,5 @@
 import { spawnClaude } from "./claude-spawn";
+import { parseClaudeStream } from "./cli-stream-parser";
 import { configStore } from "./config-store";
 import { buildGraph, detectCycles } from "./dependency-resolver";
 import { logger } from "./logger";
@@ -154,120 +155,32 @@ async function runCLIStream(
 	}
 
 	let timedOut = false;
-	let sessionIdReported = false;
 	const timeoutId = setTimeout(() => {
 		timedOut = true;
 		proc.kill();
 	}, timeoutMs);
 
-	const reader = (stdout as ReadableStream<Uint8Array>).getReader();
-	const decoder = new TextDecoder();
-	let buffer = "";
-	let deltaAccumulated = "";
-	let lastAssistantText = "";
-	let assistantSentLen = 0;
-	let sessionId: string | null = null;
-	let deltaBuffer = "";
-	let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null;
+	const { accumulatedText, sessionId } = await parseClaudeStream(
+		stdout as ReadableStream<Uint8Array>,
+		{
+			onText: (t) => callbacks?.onOutput?.(t),
+			onTools: (t) => callbacks?.onTools?.(t),
+			onSessionId: (id) => callbacks?.onSessionId?.(id),
+		},
+	);
 
-	function flushDeltaBuffer() {
-		if (deltaBuffer) {
-			callbacks?.onOutput?.(deltaBuffer);
-			deltaBuffer = "";
-		}
-		if (deltaFlushTimer) {
-			clearTimeout(deltaFlushTimer);
-			deltaFlushTimer = null;
-		}
-	}
-
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			buffer += decoder.decode(value, { stream: true });
-			const lines = buffer.split("\n");
-			buffer = lines.pop() || "";
-
-			for (const line of lines) {
-				if (!line.trim()) continue;
-				try {
-					const event = JSON.parse(line);
-					if (event.session_id && !sessionId) {
-						sessionId = event.session_id;
-					}
-					if (event.session_id && !sessionIdReported) {
-						sessionIdReported = true;
-						callbacks?.onSessionId?.(event.session_id as string);
-					}
-					if (event.type === "assistant" && event.message?.content) {
-						// Discard pending deltas — assistant event has authoritative text
-						deltaBuffer = "";
-						if (deltaFlushTimer) {
-							clearTimeout(deltaFlushTimer);
-							deltaFlushTimer = null;
-						}
-
-						let currentText = "";
-						const toolUsages: ToolUsage[] = [];
-						for (const block of event.message.content) {
-							if (block.type === "text" && block.text) {
-								currentText += block.text;
-							} else if (block.type === "tool_use" && block.name) {
-								toolUsages.push({
-									name: block.name,
-									input: block.input as Record<string, unknown> | undefined,
-								});
-							}
-						}
-						// Each assistant event has cumulative text for the current turn.
-						// On a new turn (text shorter than what we sent), reset.
-						if (currentText.length < assistantSentLen) {
-							assistantSentLen = 0;
-						}
-						const unsent = currentText.slice(assistantSentLen);
-						if (unsent) {
-							callbacks?.onOutput?.(unsent);
-							assistantSentLen = currentText.length;
-						}
-						lastAssistantText = currentText;
-
-						if (toolUsages.length > 0) {
-							callbacks?.onTools?.(toolUsages);
-						}
-					} else if (event.type === "content_block_delta" && event.delta?.text) {
-						deltaAccumulated += event.delta.text;
-						deltaBuffer += event.delta.text;
-						if (deltaFlushTimer) clearTimeout(deltaFlushTimer);
-						deltaFlushTimer = setTimeout(flushDeltaBuffer, DELTA_FLUSH_TIMEOUT_MS);
-					}
-				} catch {
-					callbacks?.onOutput?.(line);
-				}
-			}
-		}
-	} catch {
-		// Stream error
-	}
-
-	flushDeltaBuffer();
 	clearTimeout(timeoutId);
 	const exitCode = await proc.exited;
 	if (onKillRef) onKillRef.current = null;
 
-	const stderrStream = proc.stderr;
 	const stderr =
-		stderrStream && typeof stderrStream !== "number"
-			? await new Response(stderrStream as ReadableStream).text()
+		proc.stderr && typeof proc.stderr !== "number"
+			? (await new Response(proc.stderr as ReadableStream).text()).trim()
 			: "";
 
-	// Prefer assistant event text (authoritative); fall back to delta-accumulated text
-	const accumulatedText = lastAssistantText || deltaAccumulated;
-	logger.info(
-		`[epic] Stream done: assistantText=${lastAssistantText.length} chars, deltaText=${deltaAccumulated.length} chars`,
-	);
+	logger.info(`[epic] Stream done: accumulatedText=${accumulatedText.length} chars`);
 
-	return { accumulatedText, sessionId, exitCode, timedOut, stderr: stderr.trim() };
+	return { accumulatedText, sessionId, exitCode, timedOut, stderr };
 }
 
 const JSON_FIX_PROMPT =

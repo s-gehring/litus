@@ -1,6 +1,18 @@
 import type { EffortLevel } from "./config-types";
 import type { PipelineStep, PipelineStepName, WorkflowStatus } from "./pipeline-steps";
 
+// Re-exports for backward compatibility after the types.ts split.
+export type { AppConfig, EffortLevel } from "./config-types";
+export {
+	DELTA_FLUSH_TIMEOUT_MS,
+	type ClientMessage,
+	type ServerMessage,
+	type StateChange,
+	type StateChangeAction,
+	type StateChangeListener,
+	type StateChangeScope,
+} from "./protocol";
+
 // ── Audit event types ─────────────────────────────────────
 
 export type AuditEventType =

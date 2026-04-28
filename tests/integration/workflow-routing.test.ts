@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { ClientStateManager } from "../../src/client/client-state-manager";
+import type { ClientMessage } from "../../src/types";
 import { makeWorkflowState } from "../helpers";
 
 function withConsoleSpy<T>(fn: (logs: string[]) => T): T {
@@ -17,9 +18,11 @@ function withConsoleSpy<T>(fn: (logs: string[]) => T): T {
 
 describe("workflow routing — two workflows loaded", () => {
 	let mgr: ClientStateManager;
+	let sent: ClientMessage[];
 
 	beforeEach(() => {
-		mgr = new ClientStateManager();
+		sent = [];
+		mgr = new ClientStateManager((m) => sent.push(m));
 		mgr.handleMessage({
 			type: "workflow:created",
 			workflow: makeWorkflowState({ id: "wf-A" }),
@@ -44,22 +47,24 @@ describe("workflow routing — two workflows loaded", () => {
 		expect(b?.outputLines).toHaveLength(0);
 	});
 
-	test("workflow:output for unknown workflow logs unrouted diagnostic and renders nowhere (FR-009, edge case #1)", () => {
-		withConsoleSpy((logs) => {
-			const change = mgr.handleMessage({
-				type: "workflow:output",
-				workflowId: "wf-ghost",
-				text: "stray output",
-			});
-
-			expect(logs).toContain("[litus:unrouted workflow=wf-ghost] stray output");
-			expect(change.scope).toEqual({ entity: "none" });
-
-			const a = mgr.getWorkflows().get("wf-A");
-			const b = mgr.getWorkflows().get("wf-B");
-			expect(a?.outputLines).toHaveLength(0);
-			expect(b?.outputLines).toHaveLength(0);
+	test("workflow:output for unknown workflow forwards a client:warning to the server and renders nowhere (FR-009, FR-016, edge case #1)", () => {
+		const change = mgr.handleMessage({
+			type: "workflow:output",
+			workflowId: "wf-ghost",
+			text: "stray output",
 		});
+
+		expect(sent).toContainEqual({
+			type: "client:warning",
+			source: "workflow",
+			message: "workflow:output for unknown workflowId 'wf-ghost'",
+		});
+		expect(change.scope).toEqual({ entity: "none" });
+
+		const a = mgr.getWorkflows().get("wf-A");
+		const b = mgr.getWorkflows().get("wf-B");
+		expect(a?.outputLines).toHaveLength(0);
+		expect(b?.outputLines).toHaveLength(0);
 	});
 
 	test("SC-004: console:output renders in no UI surface and logs to dev console", () => {
@@ -79,21 +84,23 @@ describe("workflow routing — two workflows loaded", () => {
 		});
 	});
 
-	test("epic:output for unknown epic logs unrouted diagnostic and renders nowhere", () => {
+	test("epic:output for unknown epic forwards a client:warning and renders nowhere", () => {
 		mgr.handleMessage({ type: "epic:created", epicId: "ep-loaded", description: "Loaded" });
 
-		withConsoleSpy((logs) => {
-			const change = mgr.handleMessage({
-				type: "epic:output",
-				epicId: "ep-ghost",
-				text: "stray epic output",
-			});
-
-			expect(logs).toContain("[litus:unrouted epic=ep-ghost] stray epic output");
-			expect(change.scope).toEqual({ entity: "none" });
-
-			expect(mgr.getEpics().get("ep-loaded")?.outputLines).toHaveLength(0);
-			expect(mgr.getWorkflows().get("wf-A")?.outputLines).toHaveLength(0);
+		const change = mgr.handleMessage({
+			type: "epic:output",
+			epicId: "ep-ghost",
+			text: "stray epic output",
 		});
+
+		expect(sent).toContainEqual({
+			type: "client:warning",
+			source: "epic",
+			message: "epic:output for unknown epicId 'ep-ghost'",
+		});
+		expect(change.scope).toEqual({ entity: "none" });
+
+		expect(mgr.getEpics().get("ep-loaded")?.outputLines).toHaveLength(0);
+		expect(mgr.getWorkflows().get("wf-A")?.outputLines).toHaveLength(0);
 	});
 });

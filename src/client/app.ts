@@ -41,7 +41,7 @@ import { $ } from "./dom";
 import { attachFolderValidation } from "./folder-validation";
 import { Router } from "./router";
 
-const stateManager = new ClientStateManager();
+const stateManager = new ClientStateManager(send);
 
 // Per-workflow cache of artifacts grouped by step, populated by fetchWorkflowArtifacts.
 const artifactsByWorkflow = new Map<string, Map<PipelineStepName, ArtifactDescriptor[]>>();
