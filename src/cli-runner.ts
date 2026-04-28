@@ -1,13 +1,14 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawnClaude } from "./claude-spawn";
+import { parseClaudeStream } from "./cli-stream-parser";
 import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
 import { auditDir } from "./litus-paths";
 import { logger } from "./logger";
 import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
 import { readStream, type SpawnLike } from "./spawn-utils";
-import { DELTA_FLUSH_TIMEOUT_MS, type EffortLevel, type ToolUsage, type Workflow } from "./types";
+import type { EffortLevel, ToolUsage, Workflow } from "./types";
 
 export interface OneShotStreamResult {
 	exitCode: number;
@@ -37,69 +38,11 @@ export async function streamClaudeOneShot(
 
 	const stdout = proc.stdout;
 	if (stdout && typeof stdout !== "number") {
-		const reader = (stdout as ReadableStream<Uint8Array>).getReader();
-		const decoder = new TextDecoder();
-		let buffer = "";
-		let deltaBuffer = "";
-		let assistantSentLen = 0;
-		const flushDelta = () => {
-			if (deltaBuffer) {
-				onOutput(deltaBuffer);
-				deltaBuffer = "";
-			}
-		};
-		try {
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-				for (const line of lines) {
-					if (!line.trim()) continue;
-					try {
-						const event = JSON.parse(line) as CLIStreamEvent;
-						if (event.type === "assistant" && event.message?.content) {
-							flushDelta();
-							let currentText = "";
-							for (const block of event.message.content) {
-								if (block.type === "text" && block.text) currentText += block.text;
-							}
-							if (currentText.length < assistantSentLen) assistantSentLen = 0;
-							const unsent = currentText.slice(assistantSentLen);
-							if (unsent) {
-								onOutput(unsent);
-								assistantSentLen = currentText.length;
-							}
-						} else if (event.type === "content_block_delta" && event.delta?.text) {
-							deltaBuffer += event.delta.text;
-						} else if (event.type === "result" && typeof event.result === "string") {
-							flushDelta();
-							const trimmed = event.result.trim();
-							if (trimmed) onOutput(trimmed);
-						}
-					} catch {
-						// Non-JSON line — surface as raw output.
-						onOutput(line);
-					}
-				}
-			}
-			if (buffer.trim()) {
-				try {
-					const event = JSON.parse(buffer) as CLIStreamEvent;
-					if (event.type === "assistant" && event.message?.content) {
-						for (const block of event.message.content) {
-							if (block.type === "text" && block.text) onOutput(block.text);
-						}
-					}
-				} catch {
-					onOutput(buffer);
-				}
-			}
-		} catch (err) {
-			logger.warn(`[cli-runner] streamClaudeOneShot read error: ${toErrorMessage(err)}`);
-		}
-		flushDelta();
+		await parseClaudeStream(stdout as ReadableStream<Uint8Array>, {
+			onText: onOutput,
+			onTools: () => {},
+			onSessionId: () => {},
+		});
 	}
 
 	const exitCode = await proc.exited;
@@ -124,23 +67,6 @@ export function killProcess(pid: number): void {
 	}
 }
 
-// Claude Code CLI stream-json event shape (loosely typed — the CLI format is not formally documented)
-interface CLIStreamEvent {
-	type: string;
-	session_id?: string;
-	message?: {
-		content?: Array<{
-			type: string;
-			text?: string;
-			name?: string;
-			input?: Record<string, unknown>;
-		}>;
-	};
-	delta?: { text?: string };
-	result?: unknown;
-	[key: string]: unknown;
-}
-
 export interface CLICallbacks {
 	onOutput: (text: string) => void;
 	onTools: (tools: ToolUsage[]) => void;
@@ -163,18 +89,7 @@ interface RunningProcess {
 	callbacks: CLICallbacks;
 	stale: boolean;
 	timedOut: boolean;
-	deltaBuffer: string;
-	deltaFlushTimer: ReturnType<typeof setTimeout> | null;
 	idleTimer: ReturnType<typeof setTimeout> | null;
-	// Tracks how many characters of the current assistant message text have
-	// already been emitted via `onOutput` (either through flushed deltas or a
-	// prior `assistant` event). When the CLI emits both `content_block_delta`
-	// fragments AND a final cumulative `assistant` message, the frontend would
-	// otherwise receive the text twice — once as streaming partials, then again
-	// as the full finalized block. Only the unsent tail is forwarded.
-	// Mirrors the deduplication pattern already in place for the one-shot
-	// streaming helper (streamClaudeOneShot) and the question detector.
-	assistantSentLen: number;
 }
 
 export class CLIRunner {
@@ -204,7 +119,6 @@ export class CLIRunner {
 				`[cli-runner] Killing existing process (pid=${existing.process.pid}) for workflow ${workflow.id} before starting new one`,
 			);
 			existing.stale = true;
-			if (existing.deltaFlushTimer) clearTimeout(existing.deltaFlushTimer);
 			if (existing.idleTimer) clearTimeout(existing.idleTimer);
 			existing.process.kill();
 			this.running.delete(workflow.id);
@@ -260,10 +174,7 @@ export class CLIRunner {
 			callbacks,
 			stale: false,
 			timedOut: false,
-			deltaBuffer: "",
-			deltaFlushTimer: null,
 			idleTimer: null,
-			assistantSentLen: 0,
 		};
 
 		this.running.set(workflow.id, entry);
@@ -289,7 +200,6 @@ export class CLIRunner {
 				`[cli-runner] Killing existing process (pid=${existing.process.pid}) for workflow ${workflowId} before resuming`,
 			);
 			existing.stale = true;
-			if (existing.deltaFlushTimer) clearTimeout(existing.deltaFlushTimer);
 			if (existing.idleTimer) clearTimeout(existing.idleTimer);
 			existing.process.kill();
 			this.running.delete(workflowId);
@@ -344,10 +254,7 @@ export class CLIRunner {
 			callbacks,
 			stale: false,
 			timedOut: false,
-			deltaBuffer: "",
-			deltaFlushTimer: null,
 			idleTimer: null,
-			assistantSentLen: 0,
 		};
 
 		this.running.set(workflowId, entry);
@@ -359,7 +266,6 @@ export class CLIRunner {
 		const entry = this.running.get(workflowId);
 		if (entry) {
 			entry.stale = true;
-			if (entry.deltaFlushTimer) clearTimeout(entry.deltaFlushTimer);
 			if (entry.idleTimer) clearTimeout(entry.idleTimer);
 			entry.process.kill();
 			this.running.delete(workflowId);
@@ -369,7 +275,6 @@ export class CLIRunner {
 	killAll(): void {
 		for (const entry of this.running.values()) {
 			entry.stale = true;
-			if (entry.deltaFlushTimer) clearTimeout(entry.deltaFlushTimer);
 			if (entry.idleTimer) clearTimeout(entry.idleTimer);
 			entry.process.kill();
 		}
@@ -401,45 +306,53 @@ export class CLIRunner {
 			);
 			return;
 		}
-		const reader = (stdout as ReadableStream<Uint8Array>).getReader();
-		const decoder = new TextDecoder();
-		let buffer = "";
-		let receivedAnyData = false;
 
 		this.resetIdleTimer(entry);
 
+		const eventsDir = auditDir();
+		const eventsFile = join(eventsDir, "events.jsonl");
 		try {
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
+			mkdirSync(eventsDir, { recursive: true });
+		} catch (err) {
+			logger.warn("[cli-runner] Failed to ensure audit directory:", err);
+		}
 
-				if (!receivedAnyData) receivedAnyData = true;
-				this.resetIdleTimer(entry);
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-
-				for (const line of lines) {
-					if (!line.trim() || entry.stale) continue;
+		try {
+			await parseClaudeStream(stdout as ReadableStream<Uint8Array>, {
+				onEvent: (event) => {
+					this.resetIdleTimer(entry);
+					if (entry.stale) return;
 					try {
-						const event = JSON.parse(line);
-						this.handleStreamEvent(entry, event);
-					} catch {
-						// Non-JSON line, treat as raw output
-						if (!entry.stale) callbacks.onOutput(line);
+						appendFileSync(eventsFile, `${JSON.stringify(event)}\n`);
+					} catch (err) {
+						logger.warn("[cli-runner] Failed to write audit event:", err);
 					}
-				}
-			}
-
-			// Process remaining buffer
-			if (buffer.trim()) {
-				try {
-					const event = JSON.parse(buffer);
-					this.handleStreamEvent(entry, event);
-				} catch {
-					callbacks.onOutput(buffer);
-				}
-			}
+				},
+				onText: (text) => {
+					// Reset idle timer here too: the parser's onText fallback for
+					// malformed-JSON lines bypasses onEvent, so without this a long
+					// burst of malformed JSON would let the workflow time out even
+					// though data is arriving.
+					this.resetIdleTimer(entry);
+					if (entry.stale) return;
+					callbacks.onOutput(text);
+				},
+				onTools: (tools) => {
+					if (entry.stale) return;
+					callbacks.onTools(tools);
+				},
+				onSessionId: (id) => {
+					if (entry.stale) return;
+					if (!entry.sessionId) {
+						entry.sessionId = id;
+					}
+					callbacks.onSessionId(id);
+				},
+				onAssistantMessage: (text) => {
+					if (entry.stale) return;
+					callbacks.onAssistantMessage?.(text);
+				},
+			});
 		} catch (err) {
 			logger.error(`[cli-runner] Stream read error for workflow ${workflowId}: ${err}`);
 		}
@@ -449,15 +362,12 @@ export class CLIRunner {
 			entry.idleTimer = null;
 		}
 
-		// Flush any remaining batched delta text
-		this.flushDeltaBuffer(entry);
-
 		const exitCode = await proc.exited;
 		const elapsedMs = Date.now() - startTime;
 		// Always read stderr for diagnostics
 		const stderr = await readStream(proc.stderr);
 		logger.info(
-			`[cli-runner] pid=${proc.pid} workflow=${workflowId} exited code=${exitCode} elapsed=${elapsedMs}ms receivedData=${receivedAnyData} session=${entry.sessionId ?? "none"}${stderr ? ` stderr=${stderr.slice(0, 300)}` : ""}`,
+			`[cli-runner] pid=${proc.pid} workflow=${workflowId} exited code=${exitCode} elapsed=${elapsedMs}ms session=${entry.sessionId ?? "none"}${stderr ? ` stderr=${stderr.slice(0, 300)}` : ""}`,
 		);
 
 		const currentEntry = this.running.get(workflowId);
@@ -472,89 +382,6 @@ export class CLIRunner {
 				callbacks.onComplete();
 			} else {
 				callbacks.onError(stderr.trim() || `CLI process exited with code ${exitCode}`);
-			}
-		}
-	}
-
-	private flushDeltaBuffer(entry: RunningProcess): void {
-		if (entry.deltaFlushTimer) {
-			clearTimeout(entry.deltaFlushTimer);
-			entry.deltaFlushTimer = null;
-		}
-		if (entry.deltaBuffer && !entry.stale) {
-			entry.callbacks.onOutput(entry.deltaBuffer);
-			entry.assistantSentLen += entry.deltaBuffer.length;
-			entry.deltaBuffer = "";
-		}
-	}
-
-	private handleStreamEvent(entry: RunningProcess, event: CLIStreamEvent): void {
-		if (entry.stale) return;
-		try {
-			const eventsDir = auditDir();
-			mkdirSync(eventsDir, { recursive: true });
-			appendFileSync(join(eventsDir, "events.jsonl"), `${JSON.stringify(event)}\n`);
-		} catch (err) {
-			logger.warn("[cli-runner] Failed to write audit event:", err);
-		}
-		// Extract session ID from the stream
-		if (event.session_id && !entry.sessionId) {
-			entry.sessionId = event.session_id;
-			entry.callbacks.onSessionId(event.session_id);
-		}
-
-		// Handle different event types from stream-json format
-		if (event.type === "assistant" && event.message?.content) {
-			this.flushDeltaBuffer(entry);
-			const toolUsages: ToolUsage[] = [];
-			// Concatenate text blocks so we can compare against what has already
-			// been streamed via `content_block_delta` fragments. Without this,
-			// the frontend would see every character twice: once as partials,
-			// then again as the final cumulative assistant message.
-			let currentText = "";
-			for (const block of event.message.content) {
-				if (block.type === "text" && block.text) {
-					currentText += block.text;
-				} else if (block.type === "tool_use" && block.name) {
-					toolUsages.push({ name: block.name, input: block.input });
-				}
-			}
-			if (currentText) {
-				// Only forward the tail that deltas have not already emitted.
-				// If assistantSentLen exceeds currentText.length (fresh/shorter
-				// message), slice() returns "" and we skip the emit, which is
-				// safe — we'd rather drop a rare duplicate than print twice.
-				const unsent = currentText.slice(entry.assistantSentLen);
-				if (unsent) {
-					entry.callbacks.onOutput(unsent);
-				}
-				// The finalized-message callback always fires with the full
-				// text — question detection depends on seeing the whole
-				// message regardless of what was already streamed as partials.
-				entry.callbacks.onAssistantMessage?.(currentText);
-			}
-			// An `assistant` event marks end-of-message: reset the counter so
-			// the next message's deltas / assistant events start fresh.
-			entry.assistantSentLen = 0;
-			if (toolUsages.length > 0) {
-				entry.callbacks.onTools(toolUsages);
-			}
-		} else if (event.type === "content_block_delta" && event.delta?.text) {
-			// Batch delta fragments to reduce DOM element count (CR3-010)
-			entry.deltaBuffer += event.delta.text;
-			if (entry.deltaFlushTimer) clearTimeout(entry.deltaFlushTimer);
-			entry.deltaFlushTimer = setTimeout(
-				() => this.flushDeltaBuffer(entry),
-				DELTA_FLUSH_TIMEOUT_MS,
-			);
-		} else if (event.type === "result" && event.result !== undefined) {
-			this.flushDeltaBuffer(entry);
-			// Surface result text as output so errors like "Unknown skill" are visible
-			if (typeof event.result === "string" && event.result.trim()) {
-				entry.callbacks.onOutput(event.result);
-			}
-			if (event.session_id) {
-				entry.sessionId = event.session_id;
 			}
 		}
 	}
