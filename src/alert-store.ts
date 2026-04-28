@@ -1,7 +1,7 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { AsyncLock } from "./async-lock";
 import { atomicWrite } from "./atomic-write";
+import { alertsDir } from "./litus-paths";
 import { logger } from "./logger";
 import type { Alert, AlertType } from "./types";
 
@@ -58,7 +58,7 @@ export class AlertStore {
 	private writeLock = new AsyncLock();
 
 	constructor(baseDir?: string) {
-		this.baseDir = baseDir ?? join(homedir(), ".litus", "alerts");
+		this.baseDir = baseDir ?? alertsDir();
 	}
 
 	private filePath(): string {

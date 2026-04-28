@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { AsyncLock } from "./async-lock";
 import { atomicWrite } from "./atomic-write";
+import { workflowsDir } from "./litus-paths";
 import { logger } from "./logger";
 import type { Workflow, WorkflowIndexEntry } from "./types";
 
@@ -12,7 +12,7 @@ export class WorkflowStore {
 	private writeLocks: Map<string, Promise<void>> = new Map();
 
 	constructor(baseDir?: string) {
-		this.baseDir = baseDir ?? join(homedir(), ".litus", "workflows");
+		this.baseDir = baseDir ?? workflowsDir();
 	}
 
 	private ensureDir(): void {

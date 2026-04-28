@@ -1,9 +1,9 @@
 import { rm as fsRm, stat as fsStat } from "node:fs/promises";
-import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { AsyncLock } from "./async-lock";
 import { gitSpawn } from "./git-logger";
 import { canonicalKey, parseGitHubUrl } from "./git-url";
+import { reposDir } from "./litus-paths";
 import { logger } from "./logger";
 import type { Workflow } from "./types";
 
@@ -499,7 +499,7 @@ function isTerminalStatus(status: Workflow["status"]): boolean {
 
 /** Production default — spawns via gitSpawn and handles real fs. */
 export function createDefaultManagedRepoStore(): ManagedRepoStore {
-	const baseDir = join(homedir(), ".litus", "repos");
+	const baseDir = reposDir();
 	return new ManagedRepoStore({
 		baseDir,
 		async runCmd(cmd, cwd) {
