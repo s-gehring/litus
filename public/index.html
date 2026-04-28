@@ -67,6 +67,9 @@
         <!-- Feedback iteration history (manual-mode merge-pr) -->
         <div id="workflow-feedback-section" class="workflow-feedback-section hidden"></div>
 
+        <!-- Epic feedback history (rendered between user-input and analysis summary) -->
+        <div id="epic-feedback-section" class="epic-feedback-section hidden"></div>
+
         <!-- Specification / description text (collapsible, for longer specs) -->
         <details id="spec-details" class="spec-details hidden">
           <summary class="spec-details-summary">Specification</summary>
@@ -117,6 +120,21 @@
             <div class="question-buttons">
               <button id="btn-submit-feedback" class="btn btn-primary">Submit</button>
               <button id="btn-cancel-feedback" class="btn btn-secondary">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Epic feedback panel (decomposition feedback) -->
+        <div id="epic-feedback-panel" class="question-panel feedback-panel hidden">
+          <div class="question-header">
+            <span class="question-label">Provide Feedback</span>
+          </div>
+          <div class="question-actions">
+            <textarea id="epic-feedback-input" class="answer-input" placeholder="Describe what should change about the decomposition…" rows="3"></textarea>
+            <div id="epic-feedback-error" class="epic-feedback-error hidden"></div>
+            <div class="question-buttons">
+              <button id="btn-submit-epic-feedback" class="btn btn-primary">Submit</button>
+              <button id="btn-cancel-epic-feedback" class="btn btn-secondary">Cancel</button>
             </div>
           </div>
         </div>

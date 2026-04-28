@@ -296,12 +296,16 @@ async function findChildWorkflowsOfEpic(
 	return results;
 }
 
-async function deleteChildWorkflows(epic: PersistedEpic, deps: HandlerDeps): Promise<void> {
+async function deleteChildWorkflows(
+	epic: PersistedEpic,
+	deps: HandlerDeps,
+	opts: { suppressEpicFinishedAlert?: boolean } = {},
+): Promise<void> {
 	for (const wfId of epic.workflowIds) {
 		const orch = deps.orchestrators.get(wfId);
 		if (orch) {
 			try {
-				orch.abortPipeline(wfId);
+				orch.abortPipeline(wfId, opts);
 			} catch (err) {
 				logger.warn(`[epic-feedback] abort orchestrator ${wfId} failed: ${err}`);
 			}
@@ -494,7 +498,9 @@ async function runFeedbackAttempt(
 	// (possibly incomplete) prior set until save completes, and
 	// `deleteChildWorkflows` is idempotent per-ID — a retry after a crash
 	// picks up any survivors via the same loop over `initialEpic.workflowIds`.
-	await deleteChildWorkflows(initialEpic, deps);
+	// Suppress `epic-finished`: the cascade aborts already-terminal siblings,
+	// which would otherwise re-trigger the alert mid-feedback (FR-001).
+	await deleteChildWorkflows(initialEpic, deps, { suppressEpicFinishedAlert: true });
 
 	epic = {
 		...epic,

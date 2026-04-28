@@ -1,10 +1,10 @@
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawnClaude } from "./claude-spawn";
 import { parseClaudeStream } from "./cli-stream-parser";
 import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
+import { auditDir } from "./litus-paths";
 import { logger } from "./logger";
 import { CLAUDE_MD_CONTRACT_HEADER } from "./prompt-header";
 import { readStream, type SpawnLike } from "./spawn-utils";
@@ -91,9 +91,6 @@ interface RunningProcess {
 	timedOut: boolean;
 	idleTimer: ReturnType<typeof setTimeout> | null;
 }
-
-const EVENTS_DIR = join(homedir(), ".litus", "audit");
-const EVENTS_FILE = join(EVENTS_DIR, "events.jsonl");
 
 export class CLIRunner {
 	private running: Map<string, RunningProcess> = new Map();
@@ -312,8 +309,10 @@ export class CLIRunner {
 
 		this.resetIdleTimer(entry);
 
+		const eventsDir = auditDir();
+		const eventsFile = join(eventsDir, "events.jsonl");
 		try {
-			mkdirSync(EVENTS_DIR, { recursive: true });
+			mkdirSync(eventsDir, { recursive: true });
 		} catch (err) {
 			logger.warn("[cli-runner] Failed to ensure audit directory:", err);
 		}
@@ -324,7 +323,7 @@ export class CLIRunner {
 					this.resetIdleTimer(entry);
 					if (entry.stale) return;
 					try {
-						appendFileSync(EVENTS_FILE, `${JSON.stringify(event)}\n`);
+						appendFileSync(eventsFile, `${JSON.stringify(event)}\n`);
 					} catch (err) {
 						logger.warn("[cli-runner] Failed to write audit event:", err);
 					}
