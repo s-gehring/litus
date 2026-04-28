@@ -1,3 +1,4 @@
+import { hideEpicFeedbackPanel } from "./epic-feedback-panel";
 import { hideFeedbackPanel } from "./feedback-panel";
 import { hideQuestion } from "./question-panel";
 
@@ -37,6 +38,7 @@ export function hideDetailLayout(): void {
 	if (outputArea) outputArea.classList.remove("epic-tree-fullsize");
 	hideQuestion();
 	hideFeedbackPanel();
+	hideEpicFeedbackPanel();
 }
 
 /**
