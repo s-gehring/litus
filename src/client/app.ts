@@ -329,6 +329,29 @@ function handleMessage(msg: ServerMessage): void {
 			break;
 		}
 
+		case "workflow:feedback:ok": {
+			if (msg.warning === "prompt-injection-failed") {
+				appendOutput(
+					`Feedback recorded, but prompt delivery failed — workflow is now ${msg.workflowStatusAfter ?? "error"}.`,
+					"error",
+				);
+			}
+			renderCards();
+			break;
+		}
+
+		case "workflow:feedback:rejected": {
+			const reasonMessages: Record<typeof msg.reason, string> = {
+				"workflow-not-paused": "Workflow is no longer paused — feedback was discarded.",
+				"step-not-resumable": "Current step does not support feedback resume.",
+				"text-length": "Feedback text is empty or exceeds 10,000 characters.",
+				"workflow-not-found": "Workflow not found.",
+			};
+			appendOutput(`Feedback rejected: ${reasonMessages[msg.reason]}`, "error");
+			renderCards();
+			break;
+		}
+
 		case "workflow:archive-denied": {
 			showAlertToast({
 				id: `archive-denied-${Date.now()}`,

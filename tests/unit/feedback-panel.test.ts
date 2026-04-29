@@ -114,6 +114,9 @@ describe("feedback-panel", () => {
 
 		const input = document.querySelector("#feedback-input") as HTMLTextAreaElement;
 		input.value = "  rename x to count  ";
+		// FR-006/FR-014: dispatch input event so updateSubmitState re-evaluates length
+		// caps and enables the submit button.
+		input.dispatchEvent(new Event("input"));
 		const submitBtn = document.querySelector("#btn-submit-feedback") as HTMLButtonElement;
 		submitBtn.click();
 
@@ -129,7 +132,7 @@ describe("feedback-panel", () => {
 		expect(submitBtn.disabled).toBe(true);
 	});
 
-	test("empty-text Submit still invokes the callback (server handles empty→resume)", () => {
+	test("empty-after-trim disables Submit (FR-006)", () => {
 		const wf = makeWorkflowState();
 		wf.feedbackEntries = [];
 		const submitted: string[] = [];
@@ -139,10 +142,28 @@ describe("feedback-panel", () => {
 
 		const input = document.querySelector("#feedback-input") as HTMLTextAreaElement;
 		input.value = "   ";
+		input.dispatchEvent(new Event("input"));
 		const submitBtn = document.querySelector("#btn-submit-feedback") as HTMLButtonElement;
+		expect(submitBtn.disabled).toBe(true);
 		submitBtn.click();
+		expect(submitted).toEqual([]);
+	});
 
-		expect(submitted).toEqual([""]);
+	test("over-10000-character text disables Submit (FR-014)", () => {
+		const wf = makeWorkflowState();
+		wf.feedbackEntries = [];
+		const submitted: string[] = [];
+		showFeedbackPanel(wf, (text) => {
+			submitted.push(text);
+		});
+
+		const input = document.querySelector("#feedback-input") as HTMLTextAreaElement;
+		input.value = "a".repeat(10001);
+		input.dispatchEvent(new Event("input"));
+		const submitBtn = document.querySelector("#btn-submit-feedback") as HTMLButtonElement;
+		expect(submitBtn.disabled).toBe(true);
+		submitBtn.click();
+		expect(submitted).toEqual([]);
 	});
 
 	test("Cancel hides panel without invoking submit callback", () => {

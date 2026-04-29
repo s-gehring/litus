@@ -1,0 +1,72 @@
+{
+	"name": "resume-with-feedback",
+	"claude": [
+		{
+			"events": [
+				{
+					"type": "system",
+					"subtype": "init",
+					"session_id": "sess-specify",
+					"delayMs": 4000
+				},
+				{
+					"type": "assistant",
+					"session_id": "sess-specify",
+					"message": {
+						"content": [{ "type": "text", "text": "Drafting specification…" }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-specify",
+					"result": "Specification drafted."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-specify-resumed" },
+				{
+					"type": "assistant",
+					"session_id": "sess-specify-resumed",
+					"message": {
+						"content": [
+							{ "type": "text", "text": "Resumed with feedback. Continuing specification." }
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-specify-resumed",
+					"result": "Resumed with feedback. Continuing specification."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-clarify" },
+				{
+					"type": "assistant",
+					"session_id": "sess-clarify",
+					"message": {
+						"content": [
+							{ "type": "text", "text": "Question 1: Should the feature support dark mode?" }
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-clarify",
+					"result": "Question 1: Should the feature support dark mode?"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" }
+	}
+}

@@ -31,12 +31,16 @@ import {
 	handleStartExisting,
 } from "../../src/server/workflow-handlers";
 
-function setup(workflow?: Partial<Workflow>) {
+function setup(workflow?: Partial<Workflow>, opts?: { submitResumeWithFeedbackResult?: unknown }) {
 	const { mock: ws } = createMockWebSocket();
 	const mockWs = ws as unknown as Parameters<typeof handleAnswer>[0];
 
 	const wf = makeWorkflow(workflow);
 	const calls: { method: string; args: unknown[] }[] = [];
+	const rwfResult = opts?.submitResumeWithFeedbackResult ?? {
+		ok: true,
+		feedbackEntryId: "rwf-entry-1",
+	};
 	const mockOrch = {
 		getEngine() {
 			return {
@@ -69,6 +73,10 @@ function setup(workflow?: Partial<Workflow>) {
 		},
 		submitFeedback(...args: unknown[]) {
 			calls.push({ method: "submitFeedback", args });
+		},
+		submitResumeWithFeedback(...args: unknown[]) {
+			calls.push({ method: "submitResumeWithFeedback", args });
+			return rwfResult;
 		},
 	} as unknown as PipelineOrchestrator;
 
@@ -768,16 +776,18 @@ describe("workflow-handlers", () => {
 			);
 
 			const msgs = sentMessages.get(ws) ?? [];
-			expect(
-				msgs.some(
-					(m) =>
-						m.type === "error" &&
-						m.message === "Workflow is not paused at a feedback-eligible step",
-				),
-			).toBe(true);
+			const rejection = msgs.find((m) => m.type === "workflow:feedback:rejected");
+			expect(rejection).toBeDefined();
+			if (!rejection || rejection.type !== "workflow:feedback:rejected") return;
+			expect(rejection.reason).toBe("workflow-not-paused");
+			expect(rejection.workflowId).toBe(wf.id);
+			expect(rejection.currentState).toEqual({
+				status: wf.status,
+				currentStepIndex: wf.currentStepIndex,
+			});
 		});
 
-		test("rejects when current step is not merge-pr", () => {
+		test("rejects when current step is not merge-pr (and has no resumable session)", () => {
 			const { ws, deps, sentMessages, wf } = feedbackSetup({ step: "implement" });
 
 			handleFeedback(
@@ -793,14 +803,12 @@ describe("workflow-handlers", () => {
 			const msgs = sentMessages.get(ws) ?? [];
 			expect(
 				msgs.some(
-					(m) =>
-						m.type === "error" &&
-						m.message === "Workflow is not paused at a feedback-eligible step",
+					(m) => m.type === "workflow:feedback:rejected" && m.reason === "step-not-resumable",
 				),
 			).toBe(true);
 		});
 
-		test("rejects when autoMode is not manual", () => {
+		test("rejects when autoMode is not manual (and step has no resumable session)", () => {
 			const { ws, deps, sentMessages, wf } = feedbackSetup({ autoMode: "normal" });
 
 			handleFeedback(
@@ -816,9 +824,7 @@ describe("workflow-handlers", () => {
 			const msgs = sentMessages.get(ws) ?? [];
 			expect(
 				msgs.some(
-					(m) =>
-						m.type === "error" &&
-						m.message === "Workflow is not paused at a feedback-eligible step",
+					(m) => m.type === "workflow:feedback:rejected" && m.reason === "step-not-resumable",
 				),
 			).toBe(true);
 		});
@@ -844,7 +850,7 @@ describe("workflow-handlers", () => {
 			).toBe(true);
 		});
 
-		test("rejects empty feedback when current step is not merge-pr", () => {
+		test("rejects empty feedback when current step is not merge-pr (no resumable session)", () => {
 			const { ws, deps, sentMessages, calls, wf } = feedbackSetup({ step: "implement" });
 
 			handleFeedback(
@@ -861,14 +867,12 @@ describe("workflow-handlers", () => {
 			const msgs = sentMessages.get(ws) ?? [];
 			expect(
 				msgs.some(
-					(m) =>
-						m.type === "error" &&
-						m.message === "Workflow is not paused at a feedback-eligible step",
+					(m) => m.type === "workflow:feedback:rejected" && m.reason === "step-not-resumable",
 				),
 			).toBe(true);
 		});
 
-		test("rejects empty feedback when autoMode is not manual", () => {
+		test("rejects empty feedback when autoMode is not manual (no resumable session)", () => {
 			const { ws, deps, sentMessages, calls, wf } = feedbackSetup({ autoMode: "normal" });
 
 			handleFeedback(
@@ -885,9 +889,7 @@ describe("workflow-handlers", () => {
 			const msgs = sentMessages.get(ws) ?? [];
 			expect(
 				msgs.some(
-					(m) =>
-						m.type === "error" &&
-						m.message === "Workflow is not paused at a feedback-eligible step",
+					(m) => m.type === "workflow:feedback:rejected" && m.reason === "step-not-resumable",
 				),
 			).toBe(true);
 		});
@@ -1020,7 +1022,7 @@ describe("workflow-handlers", () => {
 			).toBe(true);
 		});
 
-		test("does not accept non-error status on fix-implement (falls through to normal guards)", () => {
+		test("does not accept non-error status on fix-implement (falls through to dispatch row 4)", () => {
 			// A running quick-fix at fix-implement must NOT be treated as
 			// feedback-eligible — only the error + fix-implement combo is FR-016.
 			const { ws, deps, sentMessages, calls, wf } = quickFixSetup("running");
@@ -1039,11 +1041,154 @@ describe("workflow-handlers", () => {
 			const msgs = sentMessages.get(ws) ?? [];
 			expect(
 				msgs.some(
-					(m) =>
-						m.type === "error" &&
-						m.message === "Workflow is not paused at a feedback-eligible step",
+					(m) => m.type === "workflow:feedback:rejected" && m.reason === "workflow-not-paused",
 				),
 			).toBe(true);
+		});
+	});
+
+	describe("handleFeedback — dispatch precedence (FR-011, US3)", () => {
+		test("T027: paused + merge-pr + manual + sessionId set still routes to merge-pr-iteration (row 1 wins over row 3)", () => {
+			const s = setup({ status: "paused" });
+			const mergeIdx = s.wf.steps.findIndex((st) => st.name === "merge-pr");
+			s.wf.currentStepIndex = mergeIdx;
+			s.wf.steps[mergeIdx].status = "paused";
+			// Set a sessionId so the resume-with-feedback predicate WOULD match
+			// if not for the merge-pr-iteration row taking precedence.
+			s.wf.steps[mergeIdx].sessionId = "sess-merge-pr-active";
+			// biome-ignore lint/suspicious/noExplicitAny: mock save
+			(s.deps.configStore.save as any)({ autoMode: "manual" });
+
+			handleFeedback(
+				s.ws,
+				{
+					type: "workflow:feedback",
+					workflowId: s.wf.id,
+					text: "iteration text",
+				} as ClientMessage,
+				s.deps,
+			);
+
+			// Row 1 (existing manual-mode merge-PR iteration) MUST win — the
+			// existing `submitFeedback` is called, not the new
+			// `submitResumeWithFeedback`.
+			expect(s.calls).toHaveLength(1);
+			expect(s.calls[0].method).toBe("submitFeedback");
+		});
+
+		test("T028: error + fix-implement still routes to fix-implement-retry (row 2)", () => {
+			const quickFixSteps: Workflow["steps"] = getStepDefinitionsForKind("quick-fix").map(
+				(def) => ({
+					name: def.name,
+					displayName: def.displayName,
+					status: "pending",
+					prompt: def.prompt,
+					sessionId: null,
+					output: "",
+					outputLog: [],
+					error: null,
+					startedAt: null,
+					completedAt: null,
+					pid: null,
+					history: [],
+				}),
+			);
+			const fixIdx = quickFixSteps.findIndex((st) => st.name === "fix-implement");
+			quickFixSteps[fixIdx].status = "error";
+			// Even with a sessionId set, the workflow is `error` not `paused`,
+			// so row 3 cannot match — row 2 owns this case (FR-016).
+			quickFixSteps[fixIdx].sessionId = "sess-fix-implement";
+			const s = setup({
+				workflowKind: "quick-fix",
+				steps: quickFixSteps,
+				currentStepIndex: fixIdx,
+				status: "error",
+			});
+			// biome-ignore lint/suspicious/noExplicitAny: mock save
+			(s.deps.configStore.save as any)({ autoMode: "normal" });
+
+			handleFeedback(
+				s.ws,
+				{
+					type: "workflow:feedback",
+					workflowId: s.wf.id,
+					text: "retry context",
+				} as ClientMessage,
+				s.deps,
+			);
+
+			expect(s.calls).toHaveLength(1);
+			expect(s.calls[0].method).toBe("submitFeedback");
+		});
+
+		test("row 3 success: emits workflow:feedback:ok with kind and feedbackEntryId", () => {
+			const s = setup({ status: "paused" });
+			const implIdx = s.wf.steps.findIndex((st) => st.name === "implement");
+			s.wf.currentStepIndex = implIdx;
+			s.wf.steps[implIdx].status = "paused";
+			s.wf.steps[implIdx].sessionId = "sess-rwf-active";
+			// biome-ignore lint/suspicious/noExplicitAny: mock save
+			(s.deps.configStore.save as any)({ autoMode: "normal" });
+
+			handleFeedback(
+				s.ws,
+				{
+					type: "workflow:feedback",
+					workflowId: s.wf.id,
+					text: "please refactor the parser",
+				} as ClientMessage,
+				s.deps,
+			);
+
+			expect(s.calls).toHaveLength(1);
+			expect(s.calls[0].method).toBe("submitResumeWithFeedback");
+			const msgs = s.sentMessages.get(s.ws) ?? [];
+			const ok = msgs.find((m) => m.type === "workflow:feedback:ok");
+			expect(ok).toBeDefined();
+			if (!ok || ok.type !== "workflow:feedback:ok") return;
+			expect(ok.kind).toBe("resume-with-feedback");
+			expect(ok.workflowId).toBe(s.wf.id);
+			expect(ok.feedbackEntryId).toBe("rwf-entry-1");
+			expect(ok.warning).toBeUndefined();
+		});
+
+		test("row 3 sync spawn failure: emits workflow:feedback:ok with prompt-injection-failed warning", () => {
+			const s = setup(
+				{ status: "paused" },
+				{
+					submitResumeWithFeedbackResult: {
+						ok: true,
+						feedbackEntryId: "rwf-entry-warn",
+						warning: "prompt-injection-failed",
+						workflowStatusAfter: "error",
+					},
+				},
+			);
+			const implIdx = s.wf.steps.findIndex((st) => st.name === "implement");
+			s.wf.currentStepIndex = implIdx;
+			s.wf.steps[implIdx].status = "paused";
+			s.wf.steps[implIdx].sessionId = "sess-rwf-fail";
+			// biome-ignore lint/suspicious/noExplicitAny: mock save
+			(s.deps.configStore.save as any)({ autoMode: "normal" });
+
+			handleFeedback(
+				s.ws,
+				{
+					type: "workflow:feedback",
+					workflowId: s.wf.id,
+					text: "x",
+				} as ClientMessage,
+				s.deps,
+			);
+
+			const msgs = s.sentMessages.get(s.ws) ?? [];
+			const ok = msgs.find((m) => m.type === "workflow:feedback:ok");
+			expect(ok).toBeDefined();
+			if (!ok || ok.type !== "workflow:feedback:ok") return;
+			expect(ok.kind).toBe("resume-with-feedback");
+			expect(ok.feedbackEntryId).toBe("rwf-entry-warn");
+			expect(ok.warning).toBe("prompt-injection-failed");
+			expect(ok.workflowStatusAfter).toBe("error");
 		});
 	});
 

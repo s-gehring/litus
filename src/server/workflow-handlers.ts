@@ -293,7 +293,6 @@ export const handleStartExisting: MessageHandler = withOrchestrator((ws, data, d
 	deps.broadcastWorkflowState(msg.workflowId);
 });
 
-const FEEDBACK_INELIGIBLE_MSG = "Workflow is not paused at a feedback-eligible step";
 const FEEDBACK_MAX_LENGTH = 100_000;
 
 export const handleFeedback: MessageHandler = withOrchestrator((ws, data, deps, orch) => {
@@ -320,59 +319,104 @@ export const handleFeedback: MessageHandler = withOrchestrator((ws, data, deps, 
 
 	const step = workflow.steps[workflow.currentStepIndex];
 
-	// FR-016: an errored fix-implement step accepts appended feedback regardless
-	// of autoMode — the appended text is treated as retry guidance for the next
-	// fix-implement run.
-	const isErroredFixImplement = workflow.status === "error" && step?.name === STEP.FIX_IMPLEMENT;
+	// Dispatch table (top-down; first match wins; FR-011 precedence rule).
+	// The order of these checks is the contract: the new resume-with-feedback
+	// flow (row 3) MUST NOT pre-empt the two existing specialized flows that
+	// the spec promises will keep working unchanged (SC-002, SC-003).
+	// Row 1: paused + merge-pr + manual → existing manual-mode merge-PR iteration loop.
+	// Row 2: error + fix-implement → existing fix-implement retry-context append.
+	// Row 3: paused + currentStep.sessionId non-empty (and not row 1) → resume-with-feedback (NEW).
+	// Row 4: anything else → reject with `workflow:feedback:rejected`.
+	const autoMode = deps.configStore.get().autoMode;
+	const isMergePrIteration =
+		workflow.status === "paused" && step?.name === STEP.MERGE_PR && autoMode === "manual";
+	const isFixImplementRetry = workflow.status === "error" && step?.name === STEP.FIX_IMPLEMENT;
+	const isResumeWithFeedback =
+		!isMergePrIteration &&
+		workflow.status === "paused" &&
+		step?.sessionId !== undefined &&
+		step?.sessionId !== null &&
+		step.sessionId !== "";
 
-	if (!isErroredFixImplement) {
-		// Contract: feedback (including the empty-resume path) is only valid at the
-		// manual-mode merge-pr pause. Validate uniformly before branching on text.
-		if (workflow.status !== "paused") {
-			deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
+	if (isMergePrIteration || isFixImplementRetry) {
+		// Empty text routes to plain resume on row 1 (existing semantics); empty
+		// text on row 2 (errored fix-implement) is not a valid retry trigger.
+		if (text.trim() === "") {
+			if (isFixImplementRetry) {
+				deps.sendTo(ws, {
+					type: "error",
+					message: "Feedback text is required to retry fix-implement with context",
+				});
+				return;
+			}
+			orch.resume(workflowId);
 			return;
 		}
-		if (step?.name !== STEP.MERGE_PR) {
-			deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
-			return;
-		}
-		if (deps.configStore.get().autoMode !== "manual") {
-			deps.sendTo(ws, { type: "error", message: FEEDBACK_INELIGIBLE_MSG });
-			return;
-		}
-	}
-
-	// Empty → Resume for the paused/merge-pr path. For an errored fix-implement,
-	// empty feedback is not a valid retry trigger.
-	if (text.trim() === "") {
-		if (isErroredFixImplement) {
+		// Only the merge-PR iteration loop and fix-implement retry loop track
+		// outcomes — a resume-with-feedback entry has no follow-up step that
+		// would set its outcome, so it is excluded from this in-flight guard.
+		if (
+			workflow.feedbackEntries.some((e) => e.outcome === null && e.kind !== "resume-with-feedback")
+		) {
 			deps.sendTo(ws, {
 				type: "error",
-				message: "Feedback text is required to retry fix-implement with context",
+				message: "A feedback iteration is already in progress",
 			});
 			return;
 		}
-		orch.resume(workflowId);
+
+		try {
+			orch.submitFeedback(workflowId, text);
+		} catch (err) {
+			logger.error("[ws] workflow:feedback failed:", err);
+			deps.sendTo(ws, {
+				type: "error",
+				message: `Failed to submit feedback: ${toErrorMessage(err)}`,
+			});
+		}
 		return;
 	}
 
-	if (workflow.feedbackEntries.some((e) => e.outcome === null)) {
-		deps.sendTo(ws, {
-			type: "error",
-			message: "A feedback iteration is already in progress",
-		});
+	if (isResumeWithFeedback) {
+		const result = orch.submitResumeWithFeedback(workflowId, text);
+		if (!result.ok) {
+			deps.sendTo(ws, {
+				type: "workflow:feedback:rejected",
+				workflowId,
+				reason: result.reason,
+				currentState: result.currentState,
+			});
+			return;
+		}
+		if (result.warning) {
+			deps.sendTo(ws, {
+				type: "workflow:feedback:ok",
+				workflowId,
+				kind: "resume-with-feedback",
+				feedbackEntryId: result.feedbackEntryId,
+				warning: result.warning,
+				workflowStatusAfter: result.workflowStatusAfter,
+			});
+		} else {
+			deps.sendTo(ws, {
+				type: "workflow:feedback:ok",
+				workflowId,
+				kind: "resume-with-feedback",
+				feedbackEntryId: result.feedbackEntryId,
+			});
+		}
 		return;
 	}
 
-	try {
-		orch.submitFeedback(workflowId, text);
-	} catch (err) {
-		logger.error("[ws] workflow:feedback failed:", err);
-		deps.sendTo(ws, {
-			type: "error",
-			message: `Failed to submit feedback: ${toErrorMessage(err)}`,
-		});
-	}
+	// Row 4: reject — no specialized flow matched. Pick the most specific reason.
+	const row4Reason: "workflow-not-paused" | "step-not-resumable" =
+		workflow.status !== "paused" ? "workflow-not-paused" : "step-not-resumable";
+	deps.sendTo(ws, {
+		type: "workflow:feedback:rejected",
+		workflowId,
+		reason: row4Reason,
+		currentState: { status: workflow.status, currentStepIndex: workflow.currentStepIndex },
+	});
 });
 
 // ── HTTP artifact handlers ──────────────────────────────

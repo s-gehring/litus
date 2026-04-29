@@ -144,7 +144,8 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 	function buildActionButtons(wf: WorkflowState): ActionSpec[] {
 		const actions: ActionSpec[] = [];
 		const autoMode = deps.getAutoMode();
-		const currentStepName = wf.steps[wf.currentStepIndex]?.name;
+		const currentStep = wf.steps[wf.currentStepIndex];
+		const currentStepName = currentStep?.name;
 
 		if (wf.status === "running") {
 			actions.push({
@@ -157,7 +158,15 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 				key: "resume",
 				onClick: () => deps.send({ type: "workflow:resume", workflowId: wf.id }),
 			});
-			if (autoMode === "manual" && currentStepName === STEP.MERGE_PR) {
+			// Show "provide feedback" for either the manual-mode merge-PR
+			// iteration loop (existing) or any paused step with a captured CLI
+			// session (FR-009/FR-010/FR-011 resume-with-feedback). Server is
+			// authoritative; this predicate only avoids offering the button on
+			// non-resumable paused steps.
+			const showFeedback =
+				(autoMode === "manual" && currentStepName === STEP.MERGE_PR) ||
+				currentStep?.hasResumableSession;
+			if (showFeedback) {
 				actions.push({ key: "provide-feedback", onClick: () => deps.openFeedbackPanel(wf) });
 			}
 			actions.push({

@@ -373,6 +373,7 @@ describe("AuditEventType exhaustiveness", () => {
 			"artifacts.step.start": true,
 			"artifacts.step.end": true,
 			feedback_submitted: true,
+			feedback_submitted_resume: true,
 			decomposition_resumed: true,
 		};
 		const values = Object.keys(coverage) as AuditEventType[];
