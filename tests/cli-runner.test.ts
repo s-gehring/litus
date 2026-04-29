@@ -391,6 +391,57 @@ describe("CLIRunner", () => {
 			expect(sessionId).toBe("sess-abc-123");
 		});
 
+		test("resume() does not propagate stream session_id (regression: fix/018)", async () => {
+			// Each --resume <id> call streams a session_id that is NOT a stable
+			// resume target (the persisted id is the one we passed in). Forwarding
+			// the stream's id to step.sessionId breaks the next answerQuestion →
+			// resume with "No conversation found with session ID: …" once the
+			// user answers the second question.
+			const observed: string[] = [];
+			const { promise: completePromise, resolve: resolveComplete } = createDeferredPromise();
+
+			const streamContent = [
+				JSON.stringify({ session_id: "sess-transient", type: "system", message: {} }),
+				JSON.stringify({
+					type: "result",
+					subtype: "success",
+					session_id: "sess-result",
+					result: "ok",
+				}),
+				"",
+			].join("\n");
+
+			BunGlobal.Bun.spawn = () => ({
+				stdout: new ReadableStream({
+					start(controller) {
+						controller.enqueue(new TextEncoder().encode(streamContent));
+						controller.close();
+					},
+				}),
+				stderr: new ReadableStream({
+					start(c) {
+						c.close();
+					},
+				}),
+				exited: Promise.resolve(0),
+				kill: () => {},
+				pid: 1,
+			});
+
+			runner.resume(
+				"w-resume-stable",
+				"sess-stable",
+				WORKTREE_DIR,
+				makeCallbacks({
+					onSessionId: (id) => observed.push(id),
+					onComplete: () => resolveComplete(),
+				}),
+			);
+
+			await completePromise;
+			expect(observed).toEqual([]);
+		});
+
 		test("emits text content from assistant messages", async () => {
 			const outputs: string[] = [];
 			const toolCalls: ToolUsage[][] = [];

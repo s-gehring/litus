@@ -193,7 +193,10 @@ function stripInternalFields(w: Workflow): WorkflowState {
 	const { steps, feedbackPreRunHead: _fph, ...rest } = w;
 	return {
 		...rest,
-		steps: steps.map(({ sessionId: _sid, prompt: _p, pid: _pid, ...step }) => step),
+		steps: steps.map(({ sessionId, prompt: _p, pid: _pid, ...step }) => ({
+			...step,
+			hasResumableSession: typeof sessionId === "string" && sessionId !== "",
+		})),
 	};
 }
 

@@ -280,8 +280,18 @@ async function main() {
 				`claude invocation ${idx} was called with --output-format stream-json but scenario entry has no \`events\` (argv=${JSON.stringify(argv)})`,
 			);
 		}
+		// Per-event delay (`delayMs`, optional, ms): emits the event, then waits
+		// before the next. Lets a scenario set up a "running" window where the
+		// session_id has already been captured (init fired) but the step has
+		// not yet completed — required for paused-with-sessionId E2Es. Capped
+		// at MAX_EVENT_DELAY_MS so a stray scenario can't blow the e2e budget.
+		const MAX_EVENT_DELAY_MS = 5000;
 		for (const event of script.events) {
+			const rawDelay = (event as { delayMs?: number }).delayMs;
 			process.stdout.write(`${JSON.stringify(event)}\n`);
+			if (typeof rawDelay === "number" && rawDelay > 0) {
+				await new Promise((r) => setTimeout(r, Math.min(rawDelay, MAX_EVENT_DELAY_MS)));
+			}
 		}
 	} else if (outputFormat === "text") {
 		if (script.text === undefined) {

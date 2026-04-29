@@ -344,10 +344,18 @@ export class CLIRunner {
 				},
 				onSessionId: (id) => {
 					if (entry.stale) return;
+					// Only propagate on a fresh start (entry.sessionId starts null
+					// from start(); resume() seeds it with the resumed id). On a
+					// resumed stream, the first session_id event can carry a
+					// transient/non-persisted id that Claude does NOT accept as
+					// a future --resume target; overwriting step.sessionId with
+					// it leaves the next answerQuestion → resume erroring with
+					// "No conversation found with session ID". Keep the persisted
+					// id stable across question/answer cycles.
 					if (!entry.sessionId) {
 						entry.sessionId = id;
+						callbacks.onSessionId(id);
 					}
-					callbacks.onSessionId(id);
 				},
 				onAssistantMessage: (text) => {
 					if (entry.stale) return;

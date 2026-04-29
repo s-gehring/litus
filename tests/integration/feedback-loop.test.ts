@@ -242,6 +242,7 @@ describe("Manual-mode feedback loop — integration", () => {
 		// After submission: entry appended, workflow running, step = feedback-implementer
 		expect(wf.feedbackEntries).toHaveLength(1);
 		expect(wf.feedbackEntries[0].outcome).toBeNull();
+		expect(wf.feedbackEntries[0].kind).toBe("merge-pr-iteration");
 		expect(wf.status).toBe("running");
 		expect(wf.steps[wf.currentStepIndex].name).toBe(STEP.FEEDBACK_IMPLEMENTER);
 
