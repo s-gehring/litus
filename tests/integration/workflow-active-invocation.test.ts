@@ -14,6 +14,7 @@ import type {
 	WorkflowState,
 } from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
+import { WorktreeBranchManager } from "../../src/worktree-branch-manager";
 
 function stripInternalFields(w: Workflow): WorkflowState {
 	const { steps, feedbackPreRunHead: _fph, ...rest } = w;
@@ -189,8 +190,9 @@ describe("workflow-active-invocation integration", () => {
 			},
 		};
 
+		const typedEngine = engine as unknown as import("../../src/workflow-engine").WorkflowEngine;
 		const orch = new PipelineOrchestrator(callbacks, {
-			engine: engine as unknown as import("../../src/workflow-engine").WorkflowEngine,
+			engine: typedEngine,
 			cliRunner: cli as unknown as import("../../src/cli-runner").CLIRunner,
 			workflowStore: store,
 			runSetupChecks: async () => ({
@@ -199,12 +201,14 @@ describe("workflow-active-invocation integration", () => {
 				requiredFailures: [],
 				optionalWarnings: [],
 			}),
-			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
-			appendProjectClaudeMd: async () => ({ outcome: "no-project" as const }),
-			markClaudeMdSkipWorktree: async () => ({ outcome: "not-tracked" as const }),
-			checkoutMaster: async () => ({ code: 0, stderr: "" }),
-			getGitHead: async () => "pre-head",
-			detectNewCommits: async () => [],
+			worktreeManager: new WorktreeBranchManager(typedEngine, {
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				appendProjectClaudeMd: async () => ({ outcome: "no-project" as const }),
+				markClaudeMdSkipWorktree: async () => ({ outcome: "not-tracked" as const }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: async () => "pre-head",
+				detectNewCommits: async () => [],
+			}),
 		});
 
 		return { orch, engine, cli, broadcasts };
