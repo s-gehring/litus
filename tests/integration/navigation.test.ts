@@ -13,7 +13,12 @@ import { makeWorkflowState } from "../helpers";
 // Reproduces the #app-content children from public/index.html.
 const BASE_DOM = `
 	<div id="app">
-		<header></header>
+		<header>
+			<a href="/" id="btn-home" class="header-home">
+				<img src="/logo.svg" alt="Litus" class="header-logo">
+				<h1>Litus</h1>
+			</a>
+		</header>
 		<div id="app-content">
 			<div id="card-strip" class="card-strip"></div>
 			<div id="welcome-area" class="welcome-area"></div>
@@ -414,5 +419,52 @@ describe("back-to-epic click navigates to /epic/:id", () => {
 		// After unmount, the workflow-detail's breadcrumb must be gone — proves
 		// the previous handler actually unmounted.
 		expect(document.getElementById("epic-breadcrumb")).toBeNull();
+	});
+});
+
+describe("header logo + title link to /", () => {
+	let sendSpy: ReturnType<typeof mock>;
+	let activeRouter: TestRouter | null = null;
+
+	beforeEach(() => {
+		document.body.innerHTML = BASE_DOM;
+		sendSpy = mock(() => {});
+	});
+
+	afterEach(() => {
+		activeRouter?.destroy();
+		activeRouter = null;
+		document.body.innerHTML = "";
+	});
+
+	test("logo+title is wrapped in an anchor pointing at /", () => {
+		const home = document.getElementById("btn-home") as HTMLAnchorElement | null;
+		expect(home).not.toBeNull();
+		expect(home?.tagName).toBe("A");
+		expect(home?.getAttribute("href")).toBe("/");
+		expect(home?.querySelector("img.header-logo")).not.toBeNull();
+		expect(home?.querySelector("h1")?.textContent).toBe("Litus");
+	});
+
+	test("clicking the home link routes back to /", () => {
+		const { router } = makeRouter(sendSpy);
+		activeRouter = router;
+		router.setTestPath("/workflow/abc");
+		router.start();
+
+		// Reproduce the click handler app.ts wires up at startup.
+		const home = document.getElementById("btn-home");
+		home?.addEventListener("click", (e) => {
+			e.preventDefault();
+			router.navigate("/");
+		});
+
+		expect(router.currentPath).toBe("/workflow/abc");
+
+		(home as HTMLElement).click();
+
+		expect(router.currentPath).toBe("/");
+		expect(isVisible("welcome-area")).toBe(true);
+		expect(isVisible("detail-area")).toBe(false);
 	});
 });

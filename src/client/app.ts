@@ -1065,6 +1065,14 @@ document.addEventListener("DOMContentLoaded", () => {
 		},
 	});
 
+	const btnHome = document.getElementById("btn-home");
+	if (btnHome) {
+		btnHome.addEventListener("click", (e) => {
+			e.preventDefault();
+			appRouter?.navigate("/");
+		});
+	}
+
 	const btnArchive = document.getElementById("btn-archive");
 	if (btnArchive) {
 		btnArchive.addEventListener("click", (e) => {
