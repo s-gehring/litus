@@ -8,6 +8,7 @@ import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import { getStepDefinitionsForKind, STEP, type WorkflowStatus } from "../../src/pipeline-steps";
 import type { PipelineCallbacks, Workflow } from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
+import { WorktreeBranchManager } from "../../src/worktree-branch-manager";
 
 const GIT_ENV = {
 	...process.env,
@@ -270,13 +271,16 @@ describe("pipeline commit-push-pr CLAUDE.md guard — integration", () => {
 			onStateChange: () => {},
 		};
 		const fakeCli = new FakeCliRunner();
+		const engine = makeFakeEngine(
+			workflow,
+		) as unknown as import("../../src/workflow-engine").WorkflowEngine;
 		const orch = new PipelineOrchestrator(cb, {
-			engine: makeFakeEngine(
-				workflow,
-			) as unknown as import("../../src/workflow-engine").WorkflowEngine,
+			engine,
 			cliRunner: fakeCli as unknown as CLIRunner,
 			workflowStore: store,
-			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+			worktreeManager: new WorktreeBranchManager(engine, {
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+			}),
 			gitPushFeatureBranch: async (cwd, branch) => {
 				pushed.push({ cwd, branch });
 				return { code: 0, stderr: "" };

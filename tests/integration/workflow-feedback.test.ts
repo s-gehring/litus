@@ -10,6 +10,7 @@ import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import { getStepDefinitionsForKind, STEP, type WorkflowStatus } from "../../src/pipeline-steps";
 import type { PipelineCallbacks, ToolUsage, Workflow } from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
+import { WorktreeBranchManager } from "../../src/worktree-branch-manager";
 
 type FakeCli = {
 	start: (
@@ -205,9 +206,10 @@ describe("Resume-with-feedback — integration", () => {
 
 		const engine = createFakeEngine();
 		const cli = createFakeCli();
+		const typedEngine = engine as unknown as import("../../src/workflow-engine").WorkflowEngine;
 
 		const orch = new PipelineOrchestrator(callbacks, {
-			engine: engine as unknown as import("../../src/workflow-engine").WorkflowEngine,
+			engine: typedEngine,
 			cliRunner: cli as unknown as import("../../src/cli-runner").CLIRunner,
 			workflowStore: store,
 			auditLogger,
@@ -217,10 +219,12 @@ describe("Resume-with-feedback — integration", () => {
 				requiredFailures: [],
 				optionalWarnings: [],
 			}),
-			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
-			checkoutMaster: async () => ({ code: 0, stderr: "" }),
-			getGitHead: async () => "head-sha",
-			detectNewCommits: async () => [],
+			worktreeManager: new WorktreeBranchManager(typedEngine, {
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: async () => "head-sha",
+				detectNewCommits: async () => [],
+			}),
 		});
 
 		return { orch, engine, cli, broadcasts };
