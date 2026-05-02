@@ -29,6 +29,7 @@ export type AuditEventType =
 	| "artifacts.step.start"
 	| "artifacts.step.end"
 	| "feedback_submitted"
+	| "feedback_submitted_resume"
 	| "decomposition_resumed";
 
 // Payload persisted as a JSONL record when a workflow is reset via the retry-
@@ -214,6 +215,11 @@ export interface ReviewCycle {
 // server-side validation so the two cannot drift.
 export const EPIC_FEEDBACK_MAX_LENGTH = 10_000;
 
+// Maximum trimmed text length for the resume-with-feedback flow (FR-014).
+// Shared between the orchestrator's authoritative validation and the
+// handler-level early-rejection so the two cannot drift.
+export const RESUME_WITH_FEEDBACK_MAX_LENGTH = 10_000;
+
 // Manual-mode feedback loop: per-iteration outcome of a feedback-implementer run
 export type FeedbackOutcomeValue = "success" | "no changes" | "failed" | "aborted";
 
@@ -229,6 +235,8 @@ export interface FeedbackOutcome {
 	warnings: FeedbackOutcomeWarning[];
 }
 
+export type FeedbackKind = "resume-with-feedback" | "merge-pr-iteration" | "fix-implement-retry";
+
 export interface FeedbackEntry {
 	id: string;
 	iteration: number;
@@ -236,6 +244,7 @@ export interface FeedbackEntry {
 	submittedAt: string;
 	submittedAtStepName: PipelineStepName;
 	outcome: FeedbackOutcome | null;
+	kind?: FeedbackKind;
 }
 
 // AI invocation role — "main" is substantive step work; "helper" is admin/classification
@@ -322,7 +331,7 @@ export interface Workflow {
 
 // Serializable workflow state for WebSocket messages (strips internal fields from workflow and steps)
 export type WorkflowState = Omit<Workflow, "steps" | "feedbackPreRunHead"> & {
-	steps: Omit<PipelineStep, "sessionId" | "prompt" | "pid">[];
+	steps: (Omit<PipelineStep, "sessionId" | "prompt" | "pid"> & { hasResumableSession?: boolean })[];
 };
 
 // ── Artifact types ───────────────────────────────────────

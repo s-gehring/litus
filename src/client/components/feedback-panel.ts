@@ -29,10 +29,27 @@ export function showFeedbackPanel(workflow: WorkflowState, onSubmit: (text: stri
 	renderFeedbackHistory(workflow.feedbackEntries);
 
 	const hasInFlight = workflow.feedbackEntries.some((e) => e.outcome === null);
-	submitBtn.disabled = hasInFlight;
-	submitBtn.title = hasInFlight ? "A feedback iteration is already in progress" : "";
+
+	const updateSubmitState = () => {
+		const trimmedLength = input.value.trim().length;
+		// FR-006: empty-after-trim disables submit. FR-014: > 10000 chars disables submit.
+		const overLength = trimmedLength > 10000;
+		const isEmpty = trimmedLength === 0;
+		const disabled = hasInFlight || isEmpty || overLength;
+		submitBtn.disabled = disabled;
+		if (hasInFlight) {
+			submitBtn.title = "A feedback iteration is already in progress";
+		} else if (overLength) {
+			submitBtn.title = `Feedback exceeds 10,000 characters (currently ${trimmedLength})`;
+		} else if (isEmpty) {
+			submitBtn.title = "Enter feedback text to submit";
+		} else {
+			submitBtn.title = "";
+		}
+	};
 
 	input.value = "";
+	updateSubmitState();
 	panel.dataset.workflowId = workflow.id;
 	panel.classList.remove("hidden");
 	input.focus();
@@ -50,6 +67,7 @@ export function showFeedbackPanel(workflow: WorkflowState, onSubmit: (text: stri
 	// Replace handlers to avoid duplicate bindings
 	submitBtn.onclick = submitHandler;
 	cancelBtn.onclick = cancelHandler;
+	input.oninput = updateSubmitState;
 	input.onkeydown = (e) => {
 		if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
 			e.preventDefault();

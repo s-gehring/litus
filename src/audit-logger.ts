@@ -153,6 +153,21 @@ export class AuditLogger {
 		});
 	}
 
+	logFeedbackSubmittedResume(
+		runId: string,
+		stepName: string | null,
+		stepIndex: number,
+		feedbackLengthChars: number,
+	): void {
+		this.writeEvent(runId, {
+			eventType: "feedback_submitted_resume",
+			content: null,
+			stepName,
+			commitHash: null,
+			metadata: { stepIndex, feedbackLengthChars },
+		});
+	}
+
 	/**
 	 * Append a `workflow.reset` audit line to the pipeline-scoped JSONL file.
 	 * Standalone event — not tied to an in-flight run (no runId/sequence), so it

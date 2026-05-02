@@ -376,4 +376,37 @@ describe("T015: fix-implement empty-diff routes to error and blocks advance", ()
 		expect(wf.steps[originalIdx].error).toBe("no changes produced");
 		expect(wf.currentStepIndex).toBe(originalIdx);
 	});
+
+	test("submitFeedback on errored fix-implement persists kind: fix-implement-retry (FR-012, VR-003)", async () => {
+		const wf = seedFixImplement();
+		wf.status = "error";
+		const fixIdx = wf.currentStepIndex;
+		wf.steps[fixIdx].status = "error";
+
+		const callbacks: PipelineCallbacks = {
+			onStepChange: () => {},
+			onOutput: () => {},
+			onTools: () => {},
+			onComplete: () => {},
+			onError: () => {},
+			onStateChange: () => {},
+		};
+		const cli = makeFakeCli();
+		const engine = makeFakeEngine(wf);
+		const orch = new PipelineOrchestrator(callbacks, {
+			engine: engine as unknown as WorkflowEngine,
+			cliRunner: cli as unknown as import("../../src/cli-runner").CLIRunner,
+			workflowStore: store,
+			getGitHead: async () => "same-sha",
+			detectNewCommits: async () => [],
+		});
+
+		orch.submitFeedback(wf.id, "retry with extra context");
+		await new Promise((r) => setTimeout(r, 10));
+
+		expect(wf.feedbackEntries).toHaveLength(1);
+		expect(wf.feedbackEntries[0].kind).toBe("fix-implement-retry");
+		expect(wf.feedbackEntries[0].text).toBe("retry with extra context");
+		expect(wf.feedbackEntries[0].submittedAtStepName).toBe(STEP.FIX_IMPLEMENT);
+	});
 });

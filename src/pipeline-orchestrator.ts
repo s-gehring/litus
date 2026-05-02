@@ -60,15 +60,16 @@ import {
 } from "./setup-checker";
 import { routeAfterStep as computeRoute, shouldLoopReview } from "./step-router";
 import { Summarizer } from "./summarizer";
-import type {
-	AlertType,
-	FeedbackEntry,
-	OutputEntry,
-	PipelineCallbacks,
-	Question,
-	SetupResult,
-	ToolUsage,
-	Workflow,
+import {
+	type AlertType,
+	type FeedbackEntry,
+	type OutputEntry,
+	type PipelineCallbacks,
+	type Question,
+	RESUME_WITH_FEEDBACK_MAX_LENGTH,
+	type SetupResult,
+	type ToolUsage,
+	type Workflow,
 } from "./types";
 
 export type { PipelineCallbacks } from "./types";
@@ -96,6 +97,19 @@ const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {
 	[STEP.ARTIFACTS]: "artifacts",
 	[STEP.COMMIT_PUSH_PR]: "commitPushPr",
 };
+
+export type SubmitResumeWithFeedbackResult =
+	| {
+			ok: true;
+			feedbackEntryId: string;
+			warning?: "prompt-injection-failed";
+			workflowStatusAfter?: "error";
+	  }
+	| {
+			ok: false;
+			reason: "workflow-not-paused" | "step-not-resumable" | "text-length" | "workflow-not-found";
+			currentState: { status: WorkflowStatus; currentStepIndex: number };
+	  };
 
 // Per-workflow state for the artifacts step's wall-clock timeout enforcement.
 // The CLI runner has only an idle timer; the artifacts step spec requires a
@@ -874,6 +888,7 @@ export class PipelineOrchestrator {
 					submittedAt: now,
 					submittedAtStepName: STEP.FIX_IMPLEMENT,
 					outcome: null,
+					kind: "fix-implement-retry",
 				};
 				workflow.feedbackEntries.push(entry);
 				workflow.updatedAt = now;
@@ -924,6 +939,7 @@ export class PipelineOrchestrator {
 				submittedAt: now,
 				submittedAtStepName: STEP.MERGE_PR,
 				outcome: null,
+				kind: "merge-pr-iteration",
 			};
 			workflow.feedbackEntries.push(entry);
 			workflow.updatedAt = now;
@@ -940,6 +956,120 @@ export class PipelineOrchestrator {
 
 			this.engine.transition(workflowId, "running");
 			this.startStep(workflow);
+		});
+	}
+
+	/**
+	 * Resume a paused workflow with injected feedback. Order of operations
+	 * (research.md Decision 6, FR-013): trim+validate → re-check eligibility
+	 * → persist FeedbackEntry → transition paused→running → emit audit
+	 * → spawn `claude --resume <sessionId>` with the literal initial user
+	 * message `Resume what you just did. Also consider this: <text>`. On
+	 * spawn failure post-transition, transition running→errored and KEEP
+	 * the persisted entry.
+	 */
+	submitResumeWithFeedback(workflowId: string, text: string): SubmitResumeWithFeedbackResult {
+		return runInWorkflowContext(workflowId, () => {
+			const workflow = this.getActiveWorkflow(workflowId);
+			if (!workflow) {
+				return {
+					ok: false,
+					reason: "workflow-not-found",
+					currentState: { status: "idle" as WorkflowStatus, currentStepIndex: 0 },
+				};
+			}
+
+			const trimmed = text.trim();
+			const currentState = {
+				status: workflow.status,
+				currentStepIndex: workflow.currentStepIndex,
+			};
+
+			if (trimmed.length === 0 || trimmed.length > RESUME_WITH_FEEDBACK_MAX_LENGTH) {
+				return { ok: false, reason: "text-length", currentState };
+			}
+			if (workflow.status !== "paused") {
+				return { ok: false, reason: "workflow-not-paused", currentState };
+			}
+			const step = workflow.steps[workflow.currentStepIndex];
+			if (!step?.sessionId) {
+				return { ok: false, reason: "step-not-resumable", currentState };
+			}
+
+			// FR-013 / ER-002 ordering: persist entry → transition paused→running
+			// → emit audit → broadcast state-change → spawn. Persisting first
+			// guarantees the entry survives a post-transition spawn failure.
+			const now = new Date().toISOString();
+			const entry: FeedbackEntry = {
+				id: randomUUID(),
+				iteration: workflow.feedbackEntries.length + 1,
+				text: trimmed,
+				submittedAt: now,
+				submittedAtStepName: step.name,
+				outcome: null,
+				kind: "resume-with-feedback",
+			};
+			workflow.feedbackEntries.push(entry);
+			workflow.updatedAt = now;
+			step.status = "running";
+
+			this.engine.transition(workflowId, "running");
+			this.flushPersistDebounce();
+			this.persistWorkflow(workflow);
+
+			// Workflows loaded from disk in `paused` state have no associated
+			// audit run yet (currentAuditRunId is per-instance, reset on restart).
+			// Lazily start one so FR-015's MUST-emit guarantee survives restarts
+			// — mirrors what `resumeStep`/`retryStep` already do.
+			if (!this.currentAuditRunId) {
+				this.currentAuditRunId = this.auditLogger.startRun(
+					this.pipelineName ?? "resume-with-feedback",
+					workflow.worktreeBranch,
+				);
+			}
+			this.auditLogger.logFeedbackSubmittedResume(
+				this.currentAuditRunId,
+				step.name,
+				workflow.currentStepIndex,
+				trimmed.length,
+			);
+
+			this.callbacks.onStateChange(workflowId);
+
+			try {
+				const cwd = requireWorktreePath(workflow);
+				const config = configStore.get();
+				const configKey = STEP_CONFIG_KEY[step.name];
+				const permit = prepareLlmDispatch(
+					workflow,
+					step,
+					configKey ? config.models[configKey] : undefined,
+					configKey ? config.efforts[configKey] : undefined,
+				);
+				const injectedPrompt = `Resume what you just did. Also consider this: ${trimmed}`;
+				this.stepRunner.resumeStep(
+					workflowId,
+					step.sessionId,
+					cwd,
+					permit,
+					this.buildStepCallbacks(workflowId),
+					this.buildStepEnv(workflow),
+					injectedPrompt,
+				);
+				return { ok: true, feedbackEntryId: entry.id };
+			} catch (err) {
+				const errorMsg = toErrorMessage(err);
+				logger.error(
+					`[pipeline] submitResumeWithFeedback spawn failed for workflow ${workflowId}: ${errorMsg}`,
+				);
+				this.handleStepError(workflowId, errorMsg);
+				return {
+					ok: true,
+					feedbackEntryId: entry.id,
+					warning: "prompt-injection-failed",
+					workflowStatusAfter: "error",
+				};
+			}
 		});
 	}
 

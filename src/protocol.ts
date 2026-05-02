@@ -5,7 +5,7 @@
 // without exposing server-internal domain shapes (notably `Workflow`).
 
 import type { AppConfig, ConfigValidationError, ConfigWarning, DeepPartial } from "./config-types";
-import type { PipelineStepName } from "./pipeline-steps";
+import type { PipelineStepName, WorkflowStatus } from "./pipeline-steps";
 import type {
 	Alert,
 	EpicDependencyStatus,
@@ -157,6 +157,20 @@ export type ServerMessage =
 			message: string;
 	  }
 	| { type: "auto-archive:state"; active: boolean }
+	| {
+			type: "workflow:feedback:ok";
+			workflowId: string;
+			kind: "resume-with-feedback";
+			feedbackEntryId: string;
+			warning?: "prompt-injection-failed";
+			workflowStatusAfter?: "error";
+	  }
+	| {
+			type: "workflow:feedback:rejected";
+			workflowId: string;
+			reason: "workflow-not-paused" | "step-not-resumable" | "text-length" | "workflow-not-found";
+			currentState: { status: WorkflowStatus; currentStepIndex: number };
+	  }
 	| {
 			type: "error";
 			message: string;
