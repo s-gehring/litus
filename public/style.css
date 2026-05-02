@@ -63,6 +63,14 @@ header h1 {
   color: var(--accent);
 }
 
+.header-home {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: inherit;
+}
+
 .header-logo {
   width: 28px;
   height: 28px;
