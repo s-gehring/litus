@@ -15,6 +15,9 @@ type ControllerOverrides = {
 	syncRepo?: ControllerOptions["syncRepo"];
 	discoverPrUrl?: ControllerOptions["discoverPrUrl"];
 	stepOutput?: ControllerOptions["stepOutput"];
+	stepTools?: ControllerOptions["stepTools"];
+	mergeConflictDispatchStart?: ControllerOptions["mergeConflictDispatchStart"];
+	mergeConflictDispatchEnd?: ControllerOptions["mergeConflictDispatchEnd"];
 };
 
 function makeController(overrides: ControllerOverrides = {}): CiMergeFlowController {
@@ -46,6 +49,9 @@ function makeController(overrides: ControllerOverrides = {}): CiMergeFlowControl
 		discoverPrUrl: overrides.discoverPrUrl ?? (async () => null),
 		stepOutput: overrides.stepOutput ?? (() => {}),
 		engine: new WorkflowEngine(),
+		stepTools: overrides.stepTools,
+		mergeConflictDispatchStart: overrides.mergeConflictDispatchStart,
+		mergeConflictDispatchEnd: overrides.mergeConflictDispatchEnd,
 	});
 }
 
@@ -301,6 +307,44 @@ describe("CiMergeFlowController", () => {
 			error: null,
 		});
 		expect(outcome).toEqual({ kind: "routeBackToMonitor", incrementMergeAttempt: true });
+	});
+
+	test("handleMergeResult: conflict path threads dispatch callbacks into resolveConflicts", async () => {
+		// Regression: previously, when the merge-conflict resolver dispatched
+		// Claude, the orchestrator was never told which model was being used and
+		// no tool usages were forwarded. The controller must now plumb tool +
+		// dispatch hooks through to `resolveConflicts` so the UI can light up.
+		const workflow = makeWorkflow({
+			worktreePath: "/tmp/wt",
+			mergeCycle: { attempt: 1, maxAttempts: 3 },
+		});
+		const toolEvents: Array<{ id: string; names: string[] }> = [];
+		const startEvents: Array<{ id: string; model: string; effort: string }> = [];
+		const endEvents: string[] = [];
+
+		const controller = makeController({
+			resolveConflicts: async (_cwd, _summary, _onOutput, _runner, dispatchCallbacks) => {
+				// Mimic pr-merger's invocation order: start → tools → end.
+				dispatchCallbacks?.onClaudeStart?.({ model: "claude-opus-4-7", effort: "medium" });
+				dispatchCallbacks?.onTools?.([{ name: "Edit", input: { file_path: "/tmp/foo.ts" } }]);
+				dispatchCallbacks?.onClaudeEnd?.();
+				return { kind: "resolved" };
+			},
+			stepTools: (id, tools) => toolEvents.push({ id, names: tools.map((t) => t.name) }),
+			mergeConflictDispatchStart: (id, info) => startEvents.push({ id, ...info }),
+			mergeConflictDispatchEnd: (id) => endEvents.push(id),
+		});
+
+		await controller.handleMergeResult(workflow, {
+			merged: false,
+			alreadyMerged: false,
+			conflict: true,
+			error: null,
+		});
+
+		expect(startEvents).toEqual([{ id: workflow.id, model: "claude-opus-4-7", effort: "medium" }]);
+		expect(toolEvents).toEqual([{ id: workflow.id, names: ["Edit"] }]);
+		expect(endEvents).toEqual([workflow.id]);
 	});
 
 	// --- retryMergeAfterAlreadyUpToDate branches ---

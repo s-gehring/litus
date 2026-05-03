@@ -16,12 +16,19 @@ export interface OneShotStreamResult {
 	stderr: string;
 }
 
+export interface OneShotStreamCallbacks {
+	onOutput: (msg: string) => void;
+	onTools?: (tools: ToolUsage[]) => void;
+}
+
 /**
  * Run Claude with `--output-format stream-json` and forward human-readable
  * text (assistant text blocks and content_block_delta events) through
- * `onOutput` as it streams. Intended for fire-and-forget invocations that are
- * not bound to a workflow lifecycle (e.g. the conflict-resolution dispatch in
- * `pr-merger.ts`).
+ * `onOutput` as it streams. Tool usages observed mid-stream are forwarded via
+ * `onTools` when provided, mirroring the shape used by `CLIRunner.start` so
+ * the UI can render them with the same affordances. Intended for fire-and-
+ * forget invocations that are not bound to a workflow lifecycle (e.g. the
+ * conflict-resolution dispatch in `pr-merger.ts`).
  *
  * The heavyweight `CLIRunner.start` path is tied to a `Workflow` — it tracks
  * sessions, audits events, and maintains an idle-timeout registry. This helper
@@ -32,7 +39,7 @@ export interface OneShotStreamResult {
 export async function streamClaudeOneShot(
 	args: string[],
 	cwd: string,
-	onOutput: (msg: string) => void,
+	callbacks: OneShotStreamCallbacks,
 	spawn?: SpawnLike["spawn"],
 ): Promise<OneShotStreamResult> {
 	const proc = spawnClaude(args, { cwd, spawn });
@@ -40,8 +47,8 @@ export async function streamClaudeOneShot(
 	const stdout = proc.stdout;
 	if (stdout && typeof stdout !== "number") {
 		await parseClaudeStream(stdout as ReadableStream<Uint8Array>, {
-			onText: onOutput,
-			onTools: () => {},
+			onText: callbacks.onOutput,
+			onTools: callbacks.onTools ?? (() => {}),
 			onSessionId: () => {},
 		});
 	}

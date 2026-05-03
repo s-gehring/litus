@@ -434,5 +434,83 @@ describe("pr-merger", () => {
 			});
 			expect(promise).rejects.toThrow("Conflict resolution failed");
 		});
+
+		test("invokes onClaudeStart with model+effort and onClaudeEnd around Claude dispatch", async () => {
+			const { spawn } = makeSpawn({
+				2: { exit: 1, stdout: "CONFLICT (content): Merge conflict in file.ts\n" },
+				3: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+				7: { stdout: "bbbbbbb0000000000000000000000000000000000\n" },
+			});
+			const startCalls: Array<{ model: string; effort: string }> = [];
+			let endCalls = 0;
+			await resolveConflicts(
+				"/tmp/worktree",
+				"feature summary",
+				() => {},
+				{ spawn },
+				{
+					onClaudeStart: (info) => startCalls.push(info),
+					onClaudeEnd: () => {
+						endCalls++;
+					},
+				},
+			);
+			expect(startCalls.length).toBe(1);
+			// Default config: empty model string, "medium" effort.
+			expect(startCalls[0].model).toBe("");
+			expect(startCalls[0].effort).toBe("medium");
+			expect(endCalls).toBe(1);
+		});
+
+		test("invokes onClaudeEnd even when Claude exits with non-zero code", async () => {
+			const { spawn } = makeSpawn({
+				2: { exit: 1, stdout: "CONFLICT (content): Merge conflict in file.ts\n" },
+				3: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+				4: { exit: 1, stderr: "Claude error output" },
+			});
+			let endCalls = 0;
+			const promise = resolveConflicts(
+				"/tmp/worktree",
+				"feature summary",
+				() => {},
+				{ spawn },
+				{
+					onClaudeEnd: () => {
+						endCalls++;
+					},
+				},
+			);
+			await expect(promise).rejects.toThrow("Conflict resolution failed");
+			expect(endCalls).toBe(1);
+		});
+
+		test("forwards tool usages observed in the Claude stream through onTools", async () => {
+			const assistantWithTool = JSON.stringify({
+				type: "assistant",
+				message: {
+					content: [
+						{ type: "text", text: "Looking at the conflict\n" },
+						{ type: "tool_use", name: "Edit", input: { file_path: "/tmp/foo.ts" } },
+					],
+				},
+			});
+			const { spawn } = makeSpawn({
+				2: { exit: 1, stdout: "CONFLICT (content): Merge conflict in file.ts\n" },
+				3: { stdout: "aaaaaaa0000000000000000000000000000000000\n" },
+				4: { exit: 0, stdout: `${assistantWithTool}\n` },
+				7: { stdout: "bbbbbbb0000000000000000000000000000000000\n" },
+			});
+			const toolCalls: Array<Array<{ name: string }>> = [];
+			await resolveConflicts(
+				"/tmp/worktree",
+				"feature summary",
+				() => {},
+				{ spawn },
+				{
+					onTools: (tools) => toolCalls.push(tools.map((t) => ({ name: t.name }))),
+				},
+			);
+			expect(toolCalls).toEqual([[{ name: "Edit" }]]);
+		});
 	});
 });

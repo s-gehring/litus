@@ -5,11 +5,19 @@ import { configStore } from "./config-store";
 import { toErrorMessage } from "./errors";
 import { gitSpawn } from "./git-logger";
 import type {
+	ConflictDispatchCallbacks,
 	mergePr as defaultMergePr,
 	resolveConflicts as defaultResolveConflicts,
 } from "./pr-merger";
 import type { syncRepo as defaultSyncRepo } from "./repo-syncer";
-import type { CiFailureLog, EffortLevel, MergeResult, Question, Workflow } from "./types";
+import type {
+	CiFailureLog,
+	EffortLevel,
+	MergeResult,
+	Question,
+	ToolUsage,
+	Workflow,
+} from "./types";
 import type { WorkflowEngine } from "./workflow-engine";
 import { requireTargetRepository, requireWorktreePath } from "./workflow-paths";
 
@@ -39,6 +47,19 @@ export interface CiMergeFlowControllerOptions {
 	discoverPrUrl: (workflow: Workflow) => Promise<string | null>;
 	stepOutput: (workflowId: string, msg: string) => void;
 	engine: WorkflowEngine;
+	/**
+	 * Optional hooks for the merge-conflict Claude dispatch. The orchestrator
+	 * wires these so tool usages render in the workflow's tool log and the
+	 * active-model panel shows the model+effort actually being used while the
+	 * resolver is running. When omitted (e.g. unit tests for this controller),
+	 * the dispatch still works — it just doesn't surface tools/model.
+	 */
+	stepTools?: (workflowId: string, tools: ToolUsage[]) => void;
+	mergeConflictDispatchStart?: (
+		workflowId: string,
+		info: { model: string; effort: EffortLevel },
+	) => void;
+	mergeConflictDispatchEnd?: (workflowId: string) => void;
 }
 
 export class CiMergeFlowController {
@@ -49,6 +70,12 @@ export class CiMergeFlowController {
 	private readonly discoverPrUrlFn: (workflow: Workflow) => Promise<string | null>;
 	private readonly stepOutput: (workflowId: string, msg: string) => void;
 	private readonly engine: WorkflowEngine;
+	private readonly stepTools?: (workflowId: string, tools: ToolUsage[]) => void;
+	private readonly mergeConflictDispatchStart?: (
+		workflowId: string,
+		info: { model: string; effort: EffortLevel },
+	) => void;
+	private readonly mergeConflictDispatchEnd?: (workflowId: string) => void;
 
 	constructor(options: CiMergeFlowControllerOptions) {
 		this.ciMonitor = options.ciMonitor;
@@ -58,6 +85,9 @@ export class CiMergeFlowController {
 		this.discoverPrUrlFn = options.discoverPrUrl;
 		this.stepOutput = options.stepOutput;
 		this.engine = options.engine;
+		this.stepTools = options.stepTools;
+		this.mergeConflictDispatchStart = options.mergeConflictDispatchStart;
+		this.mergeConflictDispatchEnd = options.mergeConflictDispatchEnd;
 	}
 
 	async runMonitorCi(workflow: Workflow): Promise<CiFlowOutcome> {
@@ -225,10 +255,21 @@ export class CiMergeFlowController {
 			}
 
 			const cwd = requireWorktreePath(workflow);
+			const dispatchCallbacks: ConflictDispatchCallbacks = {
+				onTools: this.stepTools ? (tools) => this.stepTools?.(workflow.id, tools) : undefined,
+				onClaudeStart: this.mergeConflictDispatchStart
+					? (info) => this.mergeConflictDispatchStart?.(workflow.id, info)
+					: undefined,
+				onClaudeEnd: this.mergeConflictDispatchEnd
+					? () => this.mergeConflictDispatchEnd?.(workflow.id)
+					: undefined,
+			};
 			const resolution = await this.resolveConflictsFn(
 				cwd,
 				workflow.summary || workflow.specification,
 				(msg) => this.stepOutput(workflow.id, msg),
+				undefined,
+				dispatchCallbacks,
 			);
 
 			if (resolution?.kind === "already-up-to-date") {
