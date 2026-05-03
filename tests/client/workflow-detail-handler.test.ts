@@ -309,6 +309,73 @@ describe("workflow-detail-handler action buttons", () => {
 		expect(testids).not.toContain("action-provide-feedback");
 	});
 
+	test("ask-question paused at the answer step exposes Finalize + Provide feedback in the action bar", () => {
+		mountForWorkflow({
+			id: "wf-ask",
+			workflowKind: "ask-question",
+			status: "waiting_for_input",
+			steps: [
+				{
+					name: "answer",
+					displayName: "Answer",
+					status: "running",
+					output: "",
+					outputLog: [],
+					error: null,
+					startedAt: null,
+					completedAt: null,
+					history: [],
+					outcome: null,
+				},
+			],
+			currentStepIndex: 0,
+			synthesizedAnswer: {
+				markdown: "Done.",
+				updatedAt: new Date().toISOString(),
+				sourceFileName: "answer.md",
+			},
+		});
+		const testids = actionTestIds();
+		expect(testids).toContain("action-finalize");
+		expect(testids).toContain("action-provide-feedback");
+		expect(testids).toContain("action-abort");
+	});
+
+	test("ask-question Finalize button dispatches workflow:finalize", async () => {
+		mountForWorkflow({
+			id: "wf-ask",
+			workflowKind: "ask-question",
+			status: "waiting_for_input",
+			steps: [
+				{
+					name: "answer",
+					displayName: "Answer",
+					status: "running",
+					output: "",
+					outputLog: [],
+					error: null,
+					startedAt: null,
+					completedAt: null,
+					history: [],
+					outcome: null,
+				},
+			],
+			currentStepIndex: 0,
+			synthesizedAnswer: {
+				markdown: "Done.",
+				updatedAt: new Date().toISOString(),
+				sourceFileName: "answer.md",
+			},
+		});
+		const finalizeBtn = document.querySelector<HTMLButtonElement>(
+			'#detail-actions [data-testid="action-finalize"]',
+		);
+		expect(finalizeBtn).not.toBeNull();
+		finalizeBtn?.click();
+		await Promise.resolve();
+		expect(sendSpy).toHaveBeenCalledWith({ type: "workflow:finalize", workflowId: "wf-ask" });
+	});
+
 	test("button order respects slot contract: primary → secondary → destructive → finalize", () => {
 		// Use `aborted` to exercise all three relevant slots in one render:
 		// errored shows secondary+destructive but no finalize (Archive is

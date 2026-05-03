@@ -2606,44 +2606,6 @@ body.artifact-modal-open { overflow: hidden; }
   overflow-x: auto;
 }
 
-.ask-answer-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding-top: 12px;
-  border-top: 1px dashed var(--border-color, #2a2a2a);
-}
-
-.ask-answer-feedback {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.ask-answer-feedback label {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.ask-answer-feedback textarea {
-  width: 100%;
-  min-height: 64px;
-  padding: 8px;
-  font-family: inherit;
-  font-size: 0.95rem;
-  background: var(--surface, #1a1a1a);
-  color: inherit;
-  border: 1px solid var(--border-color, #2a2a2a);
-  border-radius: 4px;
-  box-sizing: border-box;
-  resize: vertical;
-}
-
-.ask-answer-finalize {
-  display: flex;
-  justify-content: flex-end;
-}
-
 .ask-aspect-error {
   display: flex;
   flex-direction: column;

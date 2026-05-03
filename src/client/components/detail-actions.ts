@@ -17,6 +17,7 @@ export type ActionKey =
 	| "abort-all"
 	| "retry-workflow"
 	| "abort"
+	| "finalize"
 	| "archive"
 	| "view-archive";
 
@@ -84,6 +85,7 @@ export const ACTION_REGISTRY: Record<ActionKey, ActionRegistryEntry> = {
 		className: "btn-danger",
 		confirm: ABORT_CONFIRM,
 	},
+	finalize: { label: "Finalize", slot: "primary", className: "btn-primary" },
 	archive: { label: "Archive", slot: "finalize", className: "btn-secondary" },
 	"view-archive": { label: "Open in archive", slot: "finalize", className: "btn-secondary" },
 };
