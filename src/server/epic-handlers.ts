@@ -65,6 +65,33 @@ export const handleEpicStart: MessageHandler = async (ws, data, deps) => {
 
 	deps.broadcast({ type: "epic:created", epicId, description: trimmedDesc });
 
+	// Persist a placeholder "analyzing" record before the (potentially
+	// minutes-long) `analyzeEpic` call. Without this, a client that reloads
+	// mid-analysis receives an `epic:list` on WS open that omits the
+	// in-progress epic, and the user sees their just-started epic vanish.
+	try {
+		await deps.sharedEpicStore.save({
+			epicId,
+			description: trimmedDesc,
+			status: "analyzing",
+			title: null,
+			workflowIds: [],
+			startedAt: new Date(analysisStartedAt).toISOString(),
+			completedAt: null,
+			errorMessage: null,
+			infeasibleNotes: null,
+			analysisSummary: null,
+			decompositionSessionId: null,
+			feedbackHistory: [],
+			sessionContextLost: false,
+			attemptCount: 1,
+			archived: false,
+			archivedAt: null,
+		});
+	} catch (saveErr) {
+		logger.warn(`[epic] Failed to persist analyzing placeholder: ${saveErr}`);
+	}
+
 	// Generate summary async (non-blocking)
 	deps.sharedSummarizer
 		.generateSpecSummary(trimmedDesc)

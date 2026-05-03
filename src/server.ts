@@ -528,6 +528,17 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 	});
 }
 
+// Drop any epic stuck in `analyzing` from a prior process — its in-memory
+// analyzer task did not survive the restart, so the persisted placeholder
+// (written by handleEpicStart before the slow analyze call) would otherwise
+// linger forever as a ghost row. Must complete before Bun.serve accepts WS
+// connections so the first `epic:list` reflects the cleaned-up file.
+try {
+	await sharedEpicStore.dropAnalyzing();
+} catch (err) {
+	logger.error(`[startup] Failed to drop stale analyzing epics: ${err}`);
+}
+
 let server!: ReturnType<typeof Bun.serve<WsData>>;
 for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 	const port = BASE_PORT + i;
