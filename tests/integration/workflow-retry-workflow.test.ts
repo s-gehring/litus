@@ -34,18 +34,49 @@ interface SentMessage {
 	msg: ServerMessage;
 }
 
-function makeDeps(workflow: Workflow | null) {
+interface MockOrchestrator {
+	getEngine: () => {
+		setWorkflow: (w: Workflow) => void;
+		getWorkflow: () => Workflow | null;
+	};
+	startPipelineFromWorkflow: (w: Workflow) => void;
+	startCalls: Workflow[];
+}
+
+function createMockOrchestrator(
+	opts: { startThrows?: boolean; liveWorkflow?: Workflow | null } = {},
+): MockOrchestrator {
+	const startCalls: Workflow[] = [];
+	let live: Workflow | null = opts.liveWorkflow ?? null;
+	return {
+		getEngine: () => ({
+			setWorkflow: (w: Workflow) => {
+				live = w;
+			},
+			getWorkflow: () => live,
+		}),
+		startPipelineFromWorkflow: (w: Workflow) => {
+			if (opts.startThrows) throw new Error("simulated start failure");
+			startCalls.push(w);
+		},
+		startCalls,
+	};
+}
+
+function makeDeps(
+	workflow: Workflow | null,
+	options: { startThrows?: boolean; existingOrch?: MockOrchestrator } = {},
+) {
 	const sent: SentMessage[] = [];
 	const broadcasts: string[] = [];
 	const saved: Workflow[] = [];
 	const auditEvents: Record<string, unknown>[] = [];
-	const createdOrchestrators: Array<{ getEngine: () => { setWorkflow: (w: Workflow) => void } }> =
-		[];
+	const createdOrchestrators: MockOrchestrator[] = [];
 
-	const orchestrators = new Map<
-		string,
-		{ getEngine: () => { setWorkflow: (w: Workflow) => void } }
-	>();
+	const orchestrators = new Map<string, MockOrchestrator>();
+	if (options.existingOrch && workflow) {
+		orchestrators.set(workflow.id, options.existingOrch);
+	}
 
 	const deps = {
 		orchestrators,
@@ -69,11 +100,7 @@ function makeDeps(workflow: Workflow | null) {
 			broadcasts.push(id);
 		},
 		createOrchestrator: () => {
-			const orch = {
-				getEngine: () => ({
-					setWorkflow: (_w: Workflow) => {},
-				}),
-			};
+			const orch = createMockOrchestrator({ startThrows: options.startThrows });
 			createdOrchestrators.push(orch);
 			return orch;
 		},
@@ -138,6 +165,7 @@ describe("handleRetryWorkflow", () => {
 			worktreePath: "/tmp/p",
 			worktreeBranch: "tmp-ok",
 			targetRepository: "/tmp/repo",
+			epicId: "epic-1",
 		});
 		const { deps, sent, saved, auditEvents, broadcasts } = makeDeps(wf);
 
@@ -166,6 +194,7 @@ describe("handleRetryWorkflow", () => {
 			worktreePath: null,
 			worktreeBranch: "tmp-reg",
 			targetRepository: "/tmp/repo",
+			epicId: "epic-1",
 		});
 		const { deps, orchestrators, createdOrchestrators } = makeDeps(wf);
 
@@ -193,6 +222,7 @@ describe("handleRetryWorkflow", () => {
 			worktreePath: "/tmp/p",
 			worktreeBranch: "tmp-partial",
 			targetRepository: "/tmp/repo",
+			epicId: "epic-1",
 		});
 		const { deps, orchestrators, createdOrchestrators, auditEvents } = makeDeps(wf);
 
@@ -206,6 +236,145 @@ describe("handleRetryWorkflow", () => {
 		expect(auditEvents[0].partialFailure).toBe(true);
 		expect(createdOrchestrators).toHaveLength(1);
 		expect(orchestrators.get("wf-partial")).toBe(createdOrchestrators[0]);
+	});
+
+	test("standalone (non-epic) workflow auto-starts after restart", async () => {
+		// Regression for fix/022: a standalone workflow (typically ask-question
+		// or a Quick Fix outside an epic) has no Start button in the detail
+		// action bar — `buildActionButtons` only emits one when `wf.epicId` is
+		// set. Without auto-start, the operator's "Restart" click strands the
+		// workflow at idle with no UI control to launch it.
+		const wf = makeWorkflow({
+			id: "wf-standalone",
+			workflowKind: "ask-question",
+			status: "error",
+			worktreePath: null,
+			worktreeBranch: "tmp-aq",
+			targetRepository: "/tmp/repo",
+			epicId: null,
+		});
+		const { deps, createdOrchestrators, broadcasts, saved } = makeDeps(wf);
+
+		await handleRetryWorkflow(
+			{} as never,
+			{ type: "workflow:retry-workflow", workflowId: "wf-standalone" },
+			deps,
+		);
+
+		expect(saved).toHaveLength(1);
+		expect(saved[0].status).toBe("idle");
+		expect(createdOrchestrators).toHaveLength(1);
+		expect(createdOrchestrators[0].startCalls).toHaveLength(1);
+		expect(createdOrchestrators[0].startCalls[0].id).toBe("wf-standalone");
+		expect(broadcasts).toEqual(["wf-standalone"]);
+	});
+
+	test("standalone workflow with existing orchestrator also auto-starts after restart", async () => {
+		// `error`-state workflows keep their orchestrator registered, so the
+		// retry path takes the "reuse existing orch" branch. Auto-start must
+		// fire on that branch too, otherwise standalone errored workflows
+		// that were never aborted get stranded the same way.
+		const existingOrch = createMockOrchestrator();
+		const wf = makeWorkflow({
+			id: "wf-existing-orch",
+			workflowKind: "ask-question",
+			status: "error",
+			worktreePath: null,
+			worktreeBranch: "tmp-eo",
+			targetRepository: "/tmp/repo",
+			epicId: null,
+		});
+		const { deps } = makeDeps(wf, { existingOrch });
+
+		await handleRetryWorkflow(
+			{} as never,
+			{ type: "workflow:retry-workflow", workflowId: "wf-existing-orch" },
+			deps,
+		);
+
+		expect(existingOrch.startCalls).toHaveLength(1);
+		expect(existingOrch.startCalls[0].id).toBe("wf-existing-orch");
+	});
+
+	test("epic-attached workflow does NOT auto-start after restart", async () => {
+		// Epic-bound child specs may be gated by sibling dependencies; the
+		// existing UX is to leave them at idle so the operator can decide when
+		// to start. Auto-starting them would bypass that gate. The Start
+		// button (rendered when `wf.epicId` is set) is the launch surface for
+		// these workflows.
+		const wf = makeWorkflow({
+			id: "wf-epic",
+			status: "aborted",
+			worktreePath: null,
+			worktreeBranch: "tmp-epic",
+			targetRepository: "/tmp/repo",
+			epicId: "epic-parent",
+		});
+		const { deps, createdOrchestrators } = makeDeps(wf);
+
+		await handleRetryWorkflow(
+			{} as never,
+			{ type: "workflow:retry-workflow", workflowId: "wf-epic" },
+			deps,
+		);
+
+		expect(createdOrchestrators).toHaveLength(1);
+		expect(createdOrchestrators[0].startCalls).toHaveLength(0);
+	});
+
+	test("standalone workflow with partial cleanup failure does NOT auto-start", async () => {
+		// On partial cleanup failure resetWorkflow leaves the workflow in
+		// `error` state, not `idle`. Auto-starting on top of a half-cleaned
+		// worktree would compound the problem; the operator should re-issue
+		// Restart to converge before the workflow runs again.
+		mockGitSpawn(1, "fatal: could not remove worktree");
+		const wf = makeWorkflow({
+			id: "wf-standalone-partial",
+			workflowKind: "ask-question",
+			status: "aborted",
+			worktreePath: "/tmp/p",
+			worktreeBranch: "tmp-sp",
+			targetRepository: "/tmp/repo",
+			epicId: null,
+		});
+		const { deps, createdOrchestrators, saved } = makeDeps(wf);
+
+		await handleRetryWorkflow(
+			{} as never,
+			{ type: "workflow:retry-workflow", workflowId: "wf-standalone-partial" },
+			deps,
+		);
+
+		expect(saved).toHaveLength(1);
+		expect(saved[0].status).toBe("error");
+		expect(createdOrchestrators[0].startCalls).toHaveLength(0);
+	});
+
+	test("auto-start failure is logged but does not break the broadcast", async () => {
+		// If `startPipelineFromWorkflow` throws (e.g. a transient git-state
+		// hiccup), the workflow is already persisted as idle and audited.
+		// The handler must still broadcast so the client reflects the reset
+		// — otherwise the operator sees a stale `error` card.
+		const wf = makeWorkflow({
+			id: "wf-start-throws",
+			workflowKind: "ask-question",
+			status: "error",
+			worktreePath: null,
+			worktreeBranch: "tmp-th",
+			targetRepository: "/tmp/repo",
+			epicId: null,
+		});
+		const { deps, broadcasts, saved } = makeDeps(wf, { startThrows: true });
+
+		await handleRetryWorkflow(
+			{} as never,
+			{ type: "workflow:retry-workflow", workflowId: "wf-start-throws" },
+			deps,
+		);
+
+		expect(saved).toHaveLength(1);
+		expect(saved[0].status).toBe("idle");
+		expect(broadcasts).toEqual(["wf-start-throws"]);
 	});
 
 	test("dedupe: second call while first in flight is a no-op", async () => {
