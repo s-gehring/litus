@@ -176,7 +176,25 @@ export async function parseClaudeStream(
 			if (typeof event.result === "string") {
 				const trimmed = event.result.trim();
 				if (trimmed) {
-					await safeInvoke(callbacks.onText, trimmed);
+					// De-dup against the last assistant message. The real Claude CLI
+					// (and the e2e fake) routinely echo the final assistant text in
+					// the `result` event, which would otherwise cause every step's
+					// output to render twice in the UI. Three cases:
+					//   1. Pure echo of the assistant text → drop entirely.
+					//   2. Result extends the assistant text → emit only the tail.
+					//   3. Result is independent (e.g. a server-side summary) →
+					//      emit it as-is.
+					const lastTrimmed = lastAssistantText.trim();
+					if (lastTrimmed && trimmed === lastTrimmed) {
+						// case 1
+					} else if (lastTrimmed && trimmed.startsWith(lastTrimmed)) {
+						const tail = trimmed.slice(lastTrimmed.length).replace(/^\s+/, "");
+						if (tail) {
+							await safeInvoke(callbacks.onText, tail);
+						}
+					} else {
+						await safeInvoke(callbacks.onText, trimmed);
+					}
 				}
 			}
 		}
