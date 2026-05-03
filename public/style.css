@@ -1948,6 +1948,7 @@ body::-webkit-scrollbar-track {
 
 .header-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-left: auto;
 }
