@@ -4,6 +4,7 @@ import type { ClientMessage, ServerMessage } from "../../protocol";
 import type { WorkflowClientState, WorkflowState } from "../../types";
 import type { ClientStateManager } from "../client-state-manager";
 import type { RouteHandler, RouteMatch } from "../router";
+import { shortenSummary } from "../short-summary";
 import { hideAskAnswerPanel, renderAskAnswerPanel } from "./ask-answer-panel";
 import {
 	applyAspectOutputDelta,
@@ -75,7 +76,7 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 			return;
 		}
 		if (entry.state.archived) {
-			const summary = entry.state.summary || entry.state.specification;
+			const summary = entry.state.summary || shortenSummary(entry.state.specification);
 			hideNotFoundPanel();
 			deps.navigate("/archive");
 			import("./alert-toast").then(({ showAlertToast }) => {
@@ -111,9 +112,9 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 			deps.fetchArtifacts(wf.id);
 		}
 		// Always update — when summary is empty (e.g. summarizer agent errored) fall
-		// back to the raw specification so the title doesn't keep showing the previous
-		// detail's text. Matches the card's `wf.summary || wf.specification` fallback.
-		updateSummary(wf.summary || wf.specification);
+		// back to a shortened specification so the title doesn't keep showing the
+		// previous detail's text. Matches the card fallback.
+		updateSummary(wf.summary || shortenSummary(wf.specification));
 		updateStepSummary(wf.stepSummary ?? "");
 		updateFlavor(wf.flavor ?? "");
 		updateUserInput(wf.specification);

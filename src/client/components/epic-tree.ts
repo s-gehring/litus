@@ -1,5 +1,6 @@
 import type { EpicAggregatedState, WorkflowState } from "../../types";
 import { createTimerElement } from "../dom";
+import { shortenSummary } from "../short-summary";
 import { STATUS_CLASSES, STATUS_LABELS } from "./status-maps";
 import { formatTimer } from "./workflow-cards";
 
@@ -172,7 +173,7 @@ function buildTreeNodeChildren(workflow: WorkflowState): Node[] {
 
 	const title = document.createElement("span");
 	title.className = "tree-node-title";
-	const titleText = workflow.summary || workflow.specification;
+	const titleText = workflow.summary || shortenSummary(workflow.specification);
 	title.textContent = titleText;
 	title.title = titleText;
 	children.push(title);

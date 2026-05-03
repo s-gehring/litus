@@ -6,6 +6,7 @@ import type {
 	WorkflowState,
 } from "../../types";
 import { $, createTimerElement } from "../dom";
+import { shortenSummary } from "../short-summary";
 import {
 	EPIC_AGG_STATUS_CLASSES,
 	EPIC_CARD_PREFIX,
@@ -124,7 +125,7 @@ function createCompactCard(
 	// Summary (full text, no truncation)
 	const summary = document.createElement("span");
 	summary.className = "card-summary";
-	summary.textContent = wf.summary || wf.specification;
+	summary.textContent = wf.summary || shortenSummary(wf.specification);
 	card.appendChild(summary);
 
 	// Dependency text
