@@ -58,6 +58,18 @@ export class EpicStore {
 		}
 	}
 
+	async dropAnalyzing(): Promise<number> {
+		return await this.writeLock.run(async () => {
+			const all = await this.loadAll();
+			const kept = all.filter((e) => e.status !== "analyzing");
+			const dropped = all.length - kept.length;
+			if (dropped === 0) return 0;
+			this.ensureDir();
+			await atomicWrite(this.filePath(), JSON.stringify(kept, null, 2));
+			return dropped;
+		});
+	}
+
 	async save(epic: PersistedEpic): Promise<void> {
 		await this.writeLock.run(async () => {
 			this.ensureDir();
