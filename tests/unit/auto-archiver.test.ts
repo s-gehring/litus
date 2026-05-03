@@ -44,13 +44,23 @@ function setupHarness() {
 }
 
 describe("AutoArchiver.sweep — standalone workflows", () => {
-	test("archives terminal standalone workflows older than threshold", async () => {
+	test("archives completed standalone workflows older than threshold", async () => {
 		const { workflowStore, deps } = setupHarness();
 		const oldDone = makeWorkflow({
 			id: "old-done",
 			status: "completed",
 			updatedAt: OLD_TIMESTAMP,
 		});
+		workflowStore.seedWorkflow(oldDone);
+
+		const archiver = new AutoArchiver(deps, THRESHOLD_MS);
+		await archiver.sweep();
+
+		expect(oldDone.archived).toBe(true);
+	});
+
+	test("does not archive aborted or errored standalone workflows (only Done)", async () => {
+		const { workflowStore, deps, archiveEvents } = setupHarness();
 		const oldAborted = makeWorkflow({
 			id: "old-aborted",
 			status: "aborted",
@@ -61,16 +71,40 @@ describe("AutoArchiver.sweep — standalone workflows", () => {
 			status: "error",
 			updatedAt: OLD_TIMESTAMP,
 		});
-		workflowStore.seedWorkflow(oldDone);
 		workflowStore.seedWorkflow(oldAborted);
 		workflowStore.seedWorkflow(oldError);
 
 		const archiver = new AutoArchiver(deps, THRESHOLD_MS);
 		await archiver.sweep();
 
-		expect(oldDone.archived).toBe(true);
-		expect(oldAborted.archived).toBe(true);
-		expect(oldError.archived).toBe(true);
+		expect(oldAborted.archived).toBe(false);
+		expect(oldError.archived).toBe(false);
+		expect(archiveEvents).toHaveLength(0);
+	});
+
+	test("never archives ask-question workflows even when completed", async () => {
+		const { workflowStore, deps, archiveEvents } = setupHarness();
+		const completedQuestion = makeWorkflow({
+			id: "old-question-done",
+			workflowKind: "ask-question",
+			status: "completed",
+			updatedAt: OLD_TIMESTAMP,
+		});
+		const erroredQuestion = makeWorkflow({
+			id: "old-question-error",
+			workflowKind: "ask-question",
+			status: "error",
+			updatedAt: OLD_TIMESTAMP,
+		});
+		workflowStore.seedWorkflow(completedQuestion);
+		workflowStore.seedWorkflow(erroredQuestion);
+
+		const archiver = new AutoArchiver(deps, THRESHOLD_MS);
+		await archiver.sweep();
+
+		expect(completedQuestion.archived).toBe(false);
+		expect(erroredQuestion.archived).toBe(false);
+		expect(archiveEvents).toHaveLength(0);
 	});
 
 	test("does not archive terminal workflows younger than threshold", async () => {
@@ -171,7 +205,7 @@ describe("AutoArchiver.sweep — standalone workflows", () => {
 });
 
 describe("AutoArchiver.sweep — epics", () => {
-	test("archives terminal epic + cascades when all children are terminal", async () => {
+	test("archives completed epic + cascades when all children are completed", async () => {
 		const { workflowStore, epicStore, deps, broadcastedMessages, archiveEvents } = setupHarness();
 		const epic = makeEpic({
 			epicId: "e1",
@@ -188,7 +222,7 @@ describe("AutoArchiver.sweep — epics", () => {
 		});
 		const c2 = makeWorkflow({
 			id: "c2",
-			status: "aborted",
+			status: "completed",
 			epicId: "e1",
 			updatedAt: FRESH_TIMESTAMP,
 		});
@@ -212,6 +246,39 @@ describe("AutoArchiver.sweep — epics", () => {
 		);
 		const stateBroadcasts = broadcastedMessages.filter((m) => m.type === "workflow:state");
 		expect(stateBroadcasts).toHaveLength(2);
+	});
+
+	test("does not archive epic when any child is errored or aborted", async () => {
+		const { workflowStore, epicStore, deps, archiveEvents } = setupHarness();
+		const epic = makeEpic({
+			epicId: "e1",
+			status: "completed",
+			workflowIds: ["c1", "c2"],
+			completedAt: OLD_TIMESTAMP,
+		});
+		await epicStore.mock.save(epic);
+		const completed = makeWorkflow({
+			id: "c1",
+			status: "completed",
+			epicId: "e1",
+			updatedAt: OLD_TIMESTAMP,
+		});
+		const errored = makeWorkflow({
+			id: "c2",
+			status: "error",
+			epicId: "e1",
+			updatedAt: OLD_TIMESTAMP,
+		});
+		workflowStore.seedWorkflow(completed);
+		workflowStore.seedWorkflow(errored);
+
+		const archiver = new AutoArchiver(deps, THRESHOLD_MS);
+		await archiver.sweep();
+
+		expect(epic.archived).toBe(false);
+		expect(completed.archived).toBe(false);
+		expect(errored.archived).toBe(false);
+		expect(archiveEvents).toHaveLength(0);
 	});
 
 	test("does not archive epic with idle children (decomposed but not yet started)", async () => {
@@ -283,8 +350,8 @@ describe("AutoArchiver.sweep — epics", () => {
 		expect(waiting.archived).toBe(false);
 	});
 
-	test("archives epics in error and infeasible states", async () => {
-		const { epicStore, deps } = setupHarness();
+	test("does not archive errored or infeasible epics (only Done)", async () => {
+		const { epicStore, deps, archiveEvents } = setupHarness();
 		const errored = makeEpic({
 			epicId: "e-err",
 			status: "error",
@@ -301,8 +368,9 @@ describe("AutoArchiver.sweep — epics", () => {
 		const archiver = new AutoArchiver(deps, THRESHOLD_MS);
 		await archiver.sweep();
 
-		expect(errored.archived).toBe(true);
-		expect(infeasible.archived).toBe(true);
+		expect(errored.archived).toBe(false);
+		expect(infeasible.archived).toBe(false);
+		expect(archiveEvents).toHaveLength(0);
 	});
 
 	test("does not archive analyzing epic", async () => {

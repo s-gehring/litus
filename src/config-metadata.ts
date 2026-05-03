@@ -50,7 +50,8 @@ export const PROMPT_VARIABLES: Record<keyof PromptConfig, PromptVariableInfo[]> 
 		{ name: "question", description: "The user's submitted question text (trimmed)" },
 		{
 			name: "aspectFindings",
-			description: "Concatenation of every per-aspect findings file, prefaced by its aspect title",
+			description:
+				"Bullet list of per-aspect findings files (title + relative file name) the synthesizer must read from its working directory",
 		},
 		{ name: "answerFileName", description: "File name the synthesizer must write the answer to" },
 	],

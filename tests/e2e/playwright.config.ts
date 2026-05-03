@@ -12,9 +12,9 @@ export default defineConfig({
 	reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
 	globalSetup: "./harness/global-setup.ts",
 	use: {
-		trace: "retain-on-failure",
-		screenshot: "only-on-failure",
-		video: "retain-on-failure",
+		trace: process.env.CI ? "retain-on-failure" : "on",
+		screenshot: process.env.CI ? "only-on-failure" : "on",
+		video: process.env.CI ? "retain-on-failure" : "on",
 	},
 	projects: [
 		{

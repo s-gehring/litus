@@ -259,14 +259,15 @@ INSTRUCTIONS:
 USER'S QUESTION:
 \${question}
 
-PER-ASPECT FINDINGS:
+PER-ASPECT FINDINGS FILES (in the working directory):
 \${aspectFindings}
 
 INSTRUCTIONS:
-- Produce a single markdown answer that draws on the findings above and directly answers the user's question.
+- Read each per-aspect findings file listed above using your file-reading tools. The files live at the listed paths in the current working directory.
+- Produce a single markdown answer that draws on the findings and directly answers the user's question.
 - Prefer structure (headings, bullet lists, code blocks) where it aids reading.
 - Cite specific sources only if the findings already cite them; do not invent citations.
-- Write the answer to \`\${answerFileName}\` as a single markdown file. Do not modify any other files. Once the answer is written, exit.`,
+- Write the answer to \`\${answerFileName}\` as a single markdown file. Do not modify the per-aspect findings files or any other files. Once the answer is written, exit.`,
 	},
 	autoMode: "normal",
 	limits: {

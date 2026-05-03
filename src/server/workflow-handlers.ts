@@ -257,12 +257,10 @@ export const handleRetryWorkflow: MessageHandler = async (ws, data, deps) => {
 		// issue the next retry (otherwise the retry itself would then create
 		// one, but any UI path that reaches `withOrchestrator` in between —
 		// e.g. state reads — would misleadingly report "not found").
-		if (orch) {
-			orch.getEngine().setWorkflow(workflow);
-		} else {
-			const newOrch = deps.createOrchestrator();
-			newOrch.getEngine().setWorkflow(workflow);
-			deps.orchestrators.set(workflow.id, newOrch);
+		const liveOrch = orch ?? deps.createOrchestrator();
+		liveOrch.getEngine().setWorkflow(workflow);
+		if (!orch) {
+			deps.orchestrators.set(workflow.id, liveOrch);
 		}
 
 		// Audit event — pipeline name follows the existing convention (feature
@@ -277,6 +275,23 @@ export const handleRetryWorkflow: MessageHandler = async (ws, data, deps) => {
 			artifactCount: outcome.artifacts.removed,
 			partialFailure: outcome.partialFailure,
 		});
+
+		// Auto-relaunch standalone workflows after a clean reset. Without this
+		// step a non-epic workflow (e.g. ask-question) lands in `idle` with no
+		// UI control to leave it: the Start button only renders for
+		// epic-attached workflows, since epic children may be gated by sibling
+		// dependencies. A standalone workflow has no such gate, so the user's
+		// "Restart" click would otherwise silently strand the workflow at idle.
+		// Skip on partial cleanup (resetWorkflow leaves status === "error")
+		// so the operator can re-issue Restart instead of immediately
+		// re-running atop a half-cleaned worktree.
+		if (!outcome.partialFailure && workflow.epicId === null) {
+			try {
+				liveOrch.startPipelineFromWorkflow(workflow);
+			} catch (err) {
+				logger.error(`[ws] workflow:retry-workflow auto-start failed: ${err}`);
+			}
+		}
 
 		deps.broadcastWorkflowState(workflowId);
 	} finally {

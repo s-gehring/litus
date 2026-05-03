@@ -111,7 +111,7 @@ export async function seedAutoArchiveState(
 				buildSeedWorkflow(childId, {
 					epicId,
 					epicTitle: "Seeded auto-archive epic",
-					status: i === 1 ? "completed" : "aborted",
+					status: "completed",
 				}),
 			);
 		}

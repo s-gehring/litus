@@ -203,32 +203,22 @@ describe("buildAspectFindingsBlock", () => {
 		{ id: "a2", title: "Second aspect", researchPrompt: "p", fileName: "second.md" },
 	];
 
-	test("concatenates per-aspect files separated by `---` and prefixed with the title", () => {
-		const dir = mkdtempSync(join(tmpdir(), "litus-aspect-"));
-		try {
-			writeFileSync(join(dir, "first.md"), "Body 1\n");
-			writeFileSync(join(dir, "second.md"), "Body 2\n");
-			const block = buildAspectFindingsBlock(dir, manifest);
-			expect(block).toContain("## First aspect");
-			expect(block).toContain("_(file: first.md)_");
-			expect(block).toContain("Body 1");
-			expect(block).toContain("## Second aspect");
-			expect(block).toContain("Body 2");
-			expect(block).toContain("\n\n---\n\n");
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
+	test("emits a bullet list of `<title> — <fileName>` references", () => {
+		const block = buildAspectFindingsBlock(manifest);
+		expect(block).toBe("- First aspect — `first.md`\n- Second aspect — `second.md`");
 	});
 
-	test("uses an empty body for missing per-aspect files", () => {
-		const dir = mkdtempSync(join(tmpdir(), "litus-aspect-"));
-		try {
-			writeFileSync(join(dir, "first.md"), "Body 1\n");
-			const block = buildAspectFindingsBlock(dir, manifest);
-			expect(block).toContain("## Second aspect");
-			expect(block.trim().endsWith("_(file: second.md)_")).toBe(true);
-		} finally {
-			rmSync(dir, { recursive: true, force: true });
-		}
+	test("does NOT inline the per-aspect file bodies (avoids ENAMETOOLONG when passed via argv)", () => {
+		const block = buildAspectFindingsBlock(manifest);
+		// Body content from large research files must never reach the prompt
+		// string — the synthesizer reads the files via its own tools instead.
+		expect(block).not.toContain("Body 1");
+		expect(block).not.toContain("Body 2");
+		// The block size scales with the number of aspects, not their findings.
+		expect(block.length).toBeLessThan(200);
+	});
+
+	test("returns an empty string for an empty manifest", () => {
+		expect(buildAspectFindingsBlock([])).toBe("");
 	});
 });
