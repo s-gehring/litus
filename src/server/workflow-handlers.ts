@@ -4,7 +4,7 @@ import { logger } from "../logger";
 import { STEP } from "../pipeline-steps";
 import type { ClientMessage } from "../protocol";
 import { getMimeType } from "../static-files";
-import type { Workflow } from "../types";
+import { ASK_QUESTION_MAX_LENGTH, type Workflow } from "../types";
 import {
 	getArtifactSnapshotPath,
 	getWorkflowBranch,
@@ -29,12 +29,15 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 		// Distinct from the empty-string case: the input is missing or of the wrong
 		// type, not merely blank. `validateTextInput` assumes a string, so we can't
 		// delegate this branch to it without changing its signature.
+		const requiredLabel =
+			workflowKind === "quick-fix"
+				? "Quick Fix description"
+				: workflowKind === "ask-question"
+					? "Question"
+					: "Specification";
 		deps.sendTo(ws, {
 			type: "error",
-			message:
-				workflowKind === "quick-fix"
-					? "Quick Fix description is required"
-					: "Specification is required",
+			message: `${requiredLabel} is required`,
 		});
 		return;
 	}
@@ -43,7 +46,13 @@ export const handleStart: MessageHandler = async (ws, data, deps) => {
 			? validateTextInput(specification, "Quick Fix description", {
 					emptyMessage: "Quick Fix description must not be empty.",
 				})
-			: validateTextInput(specification, "Specification");
+			: workflowKind === "ask-question"
+				? validateTextInput(specification, "Question", {
+						emptyMessage: "Please enter a question.",
+						maxLength: ASK_QUESTION_MAX_LENGTH,
+						overLimitMessage: `Question is too long. The maximum allowed length is ${ASK_QUESTION_MAX_LENGTH.toLocaleString("en-US")} characters; this is a guardrail against the LLM token budget.`,
+					})
+				: validateTextInput(specification, "Specification");
 	if (inputError) {
 		deps.sendTo(ws, { type: "error", message: inputError });
 		return;
@@ -408,6 +417,31 @@ export const handleFeedback: MessageHandler = withOrchestrator((ws, data, deps, 
 		return;
 	}
 
+	// Ask-question iteration: paused at the `answer` step on an ask-question
+	// workflow. Reuses the `workflow:feedback` channel and routes through the
+	// orchestrator's dedicated submitAskQuestionFeedback entry point.
+	if (
+		workflow.workflowKind === "ask-question" &&
+		workflow.status === "waiting_for_input" &&
+		step?.name === STEP.ANSWER
+	) {
+		if (text.trim() === "") {
+			deps.sendTo(ws, { type: "error", message: "Feedback text is required" });
+			return;
+		}
+		const result = orch.submitAskQuestionFeedback(workflowId, text.trim());
+		if (!result.ok) {
+			deps.sendTo(ws, {
+				type: "error",
+				message: result.reason,
+			});
+			return;
+		}
+		// No specialized ack message; the workflow:state broadcast carries the
+		// new feedback entry + answer when synthesis completes.
+		return;
+	}
+
 	// Row 4: reject — no specialized flow matched. Pick the most specific reason.
 	const row4Reason: "workflow-not-paused" | "step-not-resumable" =
 		workflow.status !== "paused" ? "workflow-not-paused" : "step-not-resumable";
@@ -417,6 +451,19 @@ export const handleFeedback: MessageHandler = withOrchestrator((ws, data, deps, 
 		reason: row4Reason,
 		currentState: { status: workflow.status, currentStepIndex: workflow.currentStepIndex },
 	});
+});
+
+export const handleFinalize: MessageHandler = withOrchestrator((ws, data, deps, orch) => {
+	const msg = data as ClientMessage & { type: "workflow:finalize" };
+	const { workflowId } = msg;
+	const result = orch.submitFinalize(workflowId);
+	if (!result.ok) {
+		deps.sendTo(ws, {
+			type: "error",
+			message: result.reason,
+			code: result.reason === "not_found" ? "not_found" : "invalid_state",
+		});
+	}
 });
 
 // ── HTTP artifact handlers ──────────────────────────────

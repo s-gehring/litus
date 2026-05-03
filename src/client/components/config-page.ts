@@ -169,6 +169,21 @@ function buildModelsSection(): HTMLElement {
 			label: "Merge Conflict Resolution",
 			description: "Resolves git merge conflicts automatically",
 		},
+		{
+			key: "askQuestionDecomposition",
+			label: "Ask Question — Decomposition",
+			description: "Decomposes a question into independent research aspects",
+		},
+		{
+			key: "askQuestionResearch",
+			label: "Ask Question — Research",
+			description: "Researches a single aspect of the question",
+		},
+		{
+			key: "askQuestionSynthesis",
+			label: "Ask Question — Synthesis",
+			description: "Synthesizes per-aspect findings into a single answer",
+		},
 	];
 
 	for (const { key, label, description } of workflowFields) {

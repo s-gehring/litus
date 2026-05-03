@@ -74,11 +74,14 @@ describe("T024: ModelConfig fields are all strings in defaults", () => {
 		"implementReview",
 		"artifacts",
 		"commitPushPr",
+		"askQuestionDecomposition",
+		"askQuestionResearch",
+		"askQuestionSynthesis",
 	] as const;
 
-	test("all 16 model fields exist in defaults", () => {
+	test("all 19 model fields exist in defaults", () => {
 		const modelKeys = Object.keys(DEFAULT_CONFIG.models) as (keyof AppConfig["models"])[];
-		expect(modelKeys).toHaveLength(16);
+		expect(modelKeys).toHaveLength(19);
 	});
 
 	test("required model fields have non-empty default values", () => {
@@ -122,9 +125,9 @@ describe("T030: PROMPT_VARIABLES covers all PromptConfig keys", () => {
 		}
 	});
 
-	test("all 8 prompt fields have non-empty default values", () => {
+	test("all 11 prompt fields have non-empty default values", () => {
 		const promptKeys = Object.keys(DEFAULT_CONFIG.prompts) as (keyof AppConfig["prompts"])[];
-		expect(promptKeys).toHaveLength(8);
+		expect(promptKeys).toHaveLength(11);
 		for (const key of promptKeys) {
 			expect(typeof DEFAULT_CONFIG.prompts[key]).toBe("string");
 			expect(DEFAULT_CONFIG.prompts[key].length).toBeGreaterThan(0);

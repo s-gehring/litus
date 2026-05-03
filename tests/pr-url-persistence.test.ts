@@ -68,6 +68,9 @@ function makeWorkflow(overrides: Partial<Workflow> = {}): Workflow {
 		updatedAt: new Date().toISOString(),
 		archived: false,
 		archivedAt: null,
+		aspectManifest: null,
+		aspects: null,
+		synthesizedAnswer: null,
 		...overrides,
 	};
 }

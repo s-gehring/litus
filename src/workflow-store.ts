@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { normaliseAspectsOnLoad } from "./aspect-researcher";
 import { AsyncLock } from "./async-lock";
 import { atomicWrite } from "./atomic-write";
 import { workflowsDir } from "./litus-paths";
@@ -110,8 +111,23 @@ export class WorkflowStore {
 			if (data.activeInvocation === undefined) data.activeInvocation = null;
 			if (data.managedRepo === undefined) data.managedRepo = null;
 			// Migration: default missing workflowKind to "spec" for pre-quick-fix workflows
-			if (data.workflowKind !== "spec" && data.workflowKind !== "quick-fix") {
+			if (
+				data.workflowKind !== "spec" &&
+				data.workflowKind !== "quick-fix" &&
+				data.workflowKind !== "ask-question"
+			) {
 				data.workflowKind = "spec";
+			}
+			// Migration: backfill ask-question fields for pre-ask-question workflows.
+			if (data.aspectManifest === undefined) data.aspectManifest = null;
+			if (data.aspects === undefined) data.aspects = null;
+			if (data.synthesizedAnswer === undefined) data.synthesizedAnswer = null;
+			// Restart recovery: any aspect persisted as `in_progress` represents a
+			// CLI process that was killed by the server restart. Flip it back to
+			// `pending` so the user's next retry/resume picks it up cleanly. See
+			// contracts/aspect-retry.md ("Persistence guarantees").
+			if (Array.isArray(data.aspects)) {
+				normaliseAspectsOnLoad(data.aspects);
 			}
 			// Migration: backfill workflow-level error field for pre-reset workflows.
 			if (data.error === undefined) data.error = null;
@@ -175,7 +191,11 @@ export class WorkflowStore {
 			const content = await Bun.file(indexFile).text();
 			const entries = JSON.parse(content) as WorkflowIndexEntry[];
 			for (const e of entries) {
-				if (e.workflowKind !== "spec" && e.workflowKind !== "quick-fix") {
+				if (
+					e.workflowKind !== "spec" &&
+					e.workflowKind !== "quick-fix" &&
+					e.workflowKind !== "ask-question"
+				) {
 					e.workflowKind = "spec";
 				}
 				if (typeof (e as { archived?: unknown }).archived !== "boolean") {

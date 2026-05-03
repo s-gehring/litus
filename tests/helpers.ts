@@ -69,6 +69,9 @@ export function makeWorkflow(overrides?: Partial<Workflow>): Workflow {
 		updatedAt: now,
 		archived: false,
 		archivedAt: null,
+		aspectManifest: null,
+		aspects: null,
+		synthesizedAnswer: null,
 		...overrides,
 	};
 }
@@ -120,6 +123,9 @@ export function makeWorkflowState(overrides?: Partial<WorkflowState>): WorkflowS
 		updatedAt: new Date().toISOString(),
 		archived: false,
 		archivedAt: null,
+		aspectManifest: null,
+		aspects: null,
+		synthesizedAnswer: null,
 		...overrides,
 	};
 }

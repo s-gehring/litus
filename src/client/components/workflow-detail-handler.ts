@@ -4,6 +4,7 @@ import type { ClientMessage, ServerMessage } from "../../protocol";
 import type { WorkflowClientState, WorkflowState } from "../../types";
 import type { ClientStateManager } from "../client-state-manager";
 import type { RouteHandler, RouteMatch } from "../router";
+import { hideAskAnswerPanel, renderAskAnswerPanel } from "./ask-answer-panel";
 import { BACK_TO_EPIC_PREFIX, backToEpicLabel } from "./back-to-epic-label";
 import { type ActionSpec, renderDetailActions } from "./detail-actions";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
@@ -139,6 +140,21 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		}
 
 		hideFeedbackPanelUnlessFor(wf.id);
+
+		// Ask-question detail surface: rendered above the output area when the
+		// workflow has produced an answer or is paused at the answer step. The
+		// panel handles its own feedback/finalize/retry controls.
+		const detailArea = document.getElementById("detail-area");
+		if (wf.workflowKind === "ask-question" && detailArea) {
+			renderAskAnswerPanel(detailArea, wf, {
+				onFinalize: (workflowId) => deps.send({ type: "workflow:finalize", workflowId }),
+				onSubmitFeedback: (workflowId, text) =>
+					deps.send({ type: "workflow:feedback", workflowId, text }),
+				onRetryAspect: (workflowId) => deps.send({ type: "workflow:retry", workflowId }),
+			});
+		} else if (detailArea) {
+			hideAskAnswerPanel(detailArea);
+		}
 	}
 
 	function buildActionButtons(wf: WorkflowState): ActionSpec[] {

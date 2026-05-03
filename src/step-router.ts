@@ -34,6 +34,9 @@ export function routeAfterStep(workflow: Workflow): RouteDecision {
 		case STEP.SYNC_REPO:
 			return { action: "complete" };
 
+		case STEP.FINALIZE:
+			return { action: "complete" };
+
 		case STEP.REVIEW:
 			return { action: "route-to-implement-review" };
 

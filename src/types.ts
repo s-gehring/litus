@@ -30,6 +30,7 @@ export type AuditEventType =
 	| "artifacts.step.end"
 	| "feedback_submitted"
 	| "feedback_submitted_resume"
+	| "feedback_submitted_ask_question"
 	| "decomposition_resumed";
 
 // Payload persisted as a JSONL record when a workflow is reset via the retry-
@@ -115,8 +116,47 @@ export interface Question {
 }
 
 // Workflow kind: "spec" is the existing Speckit pipeline; "quick-fix" is the
-// direct-implementation pipeline driven by the user's fix description.
-export type WorkflowKind = "spec" | "quick-fix";
+// direct-implementation pipeline driven by the user's fix description;
+// "ask-question" is the research/synthesis pipeline that produces a
+// markdown answer to a free-form user question.
+export type WorkflowKind = "spec" | "quick-fix" | "ask-question";
+
+// ── Ask-question types ───────────────────────────────────
+
+export interface AspectManifestEntry {
+	id: string;
+	title: string;
+	researchPrompt: string;
+	fileName: string;
+}
+
+export interface AspectManifest {
+	version: 1;
+	aspects: AspectManifestEntry[];
+}
+
+export type AspectStatus = "pending" | "in_progress" | "completed" | "errored";
+
+export interface AspectState {
+	id: string;
+	fileName: string;
+	status: AspectStatus;
+	sessionId: string | null;
+	startedAt: string | null;
+	completedAt: string | null;
+	errorMessage: string | null;
+}
+
+export interface SynthesizedAnswer {
+	markdown: string;
+	updatedAt: string;
+	sourceFileName: string;
+}
+
+// Server-side guardrail on the user's submitted question text. Trimmed
+// length must be ≤ this value before workflow creation; the client
+// repeats the same check pre-send (defense-in-depth).
+export const ASK_QUESTION_MAX_LENGTH = 300_000;
 
 // Lightweight metadata for fast workflow listing without loading full state
 export interface WorkflowIndexEntry {
@@ -220,6 +260,11 @@ export const EPIC_FEEDBACK_MAX_LENGTH = 10_000;
 // handler-level early-rejection so the two cannot drift.
 export const RESUME_WITH_FEEDBACK_MAX_LENGTH = 10_000;
 
+// Maximum trimmed feedback length for the ask-question iteration flow.
+// Shared between the WS handler and the orchestrator's authoritative
+// validation so the two cannot drift.
+export const ASK_QUESTION_FEEDBACK_MAX_LENGTH = 100_000;
+
 // Manual-mode feedback loop: per-iteration outcome of a feedback-implementer run
 export type FeedbackOutcomeValue = "success" | "no changes" | "failed" | "aborted";
 
@@ -235,7 +280,11 @@ export interface FeedbackOutcome {
 	warnings: FeedbackOutcomeWarning[];
 }
 
-export type FeedbackKind = "resume-with-feedback" | "merge-pr-iteration" | "fix-implement-retry";
+export type FeedbackKind =
+	| "resume-with-feedback"
+	| "merge-pr-iteration"
+	| "fix-implement-retry"
+	| "ask-question-iteration";
 
 export interface FeedbackEntry {
 	id: string;
@@ -327,6 +376,24 @@ export interface Workflow {
 	 * immediately undone on the next sweep.
 	 */
 	autoArchiveExempt?: boolean;
+	/**
+	 * Parsed aspect manifest produced by the `decompose` step on an ask-question
+	 * workflow. Null until decompose succeeds; null for non-ask-question kinds.
+	 * Preserved across feedback iterations and server restarts.
+	 */
+	aspectManifest: AspectManifest | null;
+	/**
+	 * Per-aspect runtime state, mirroring `aspectManifest.aspects` order. Null
+	 * until decompose succeeds; null for non-ask-question kinds.
+	 */
+	aspects: AspectState[] | null;
+	/**
+	 * Most-recent synthesized answer text, mirrored from the worktree's answer
+	 * file so the detail panel can render it after a server restart or after
+	 * the worktree has been removed at finalize. Null until the first
+	 * successful synthesize; null for non-ask-question kinds.
+	 */
+	synthesizedAnswer: SynthesizedAnswer | null;
 }
 
 // Serializable workflow state for WebSocket messages (strips internal fields from workflow and steps)

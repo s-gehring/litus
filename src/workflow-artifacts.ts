@@ -222,6 +222,7 @@ const ARTIFACT_PRODUCING_STEPS: PipelineStepName[] = [
 	"review",
 	"implement-review",
 	"artifacts",
+	"synthesize",
 ];
 
 // Filename used for the descriptions sidecar persisted next to artifacts-step
@@ -609,6 +610,38 @@ export function snapshotStepArtifacts(
 	}
 }
 
+/**
+ * Snapshot every produced markdown artifact for an ask-question workflow:
+ * one file per `aspectManifest.aspects[i].fileName` plus the synthesized
+ * answer file (`synthesizedAnswer.sourceFileName`). Artifacts are sourced
+ * from the worktree root (NOT `specs/<branch>`) and filed under the
+ * `synthesize` partition (idempotent re-snapshot — a later call overwrites
+ * earlier contents).
+ *
+ * No-op if `aspectManifest` or `synthesizedAnswer` are null, or if the
+ * worktree path is gone.
+ */
+export function snapshotAskQuestionArtifacts(
+	workflow: Pick<Workflow, "id" | "worktreePath" | "aspectManifest" | "synthesizedAnswer">,
+): void {
+	const worktreePath = workflow.worktreePath;
+	if (!worktreePath || !existsSync(worktreePath)) return;
+	const manifest = workflow.aspectManifest;
+	const answer = workflow.synthesizedAnswer;
+	if (!manifest && !answer) return;
+
+	const step: PipelineStepName = "synthesize";
+
+	if (manifest) {
+		for (const a of manifest.aspects) {
+			snapshotFile(workflow.id, step, null, worktreePath, a.fileName);
+		}
+	}
+	if (answer) {
+		snapshotFile(workflow.id, step, null, worktreePath, answer.sourceFileName);
+	}
+}
+
 function listFilesInStepDir(
 	stepDir: string,
 	accept: (name: string) => boolean = (n) => n.endsWith(".md"),
@@ -791,6 +824,29 @@ export function listArtifacts(workflow: Workflow): ArtifactListResponse {
 					const label = step === "implement-review" ? `${rel} (after fixes)` : rel;
 					push(step, rel, label, ord);
 				}
+			}
+		} else if (step === "synthesize") {
+			// Ask-question artifacts: aspect findings + answer.md, all under
+			// the `synthesize` partition with a null run ordinal. Descriptions
+			// come from the in-memory aspectManifest (no on-disk sidecar) so
+			// finalized/archived workflows that have lost their worktree still
+			// surface useful labels.
+			const aspectMeta = new Map<string, string>();
+			if (workflow.aspectManifest) {
+				for (const a of workflow.aspectManifest.aspects) {
+					aspectMeta.set(a.fileName.toLowerCase(), `Research findings: ${a.title}`);
+				}
+			}
+			const answerName = workflow.synthesizedAnswer?.sourceFileName.toLowerCase() ?? null;
+			const sorted = [...direct].sort();
+			for (const rel of sorted) {
+				const lower = rel.toLowerCase();
+				const description =
+					aspectMeta.get(lower) ?? (lower === answerName ? "Synthesized answer" : undefined);
+				push(step, rel, rel, null, {
+					description,
+					contentType: "text/markdown",
+				});
 			}
 		}
 	}
