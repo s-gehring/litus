@@ -36,18 +36,17 @@ merge — so you can focus on the parts that actually need a human brain.
 - [Quick start](#quick-start)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
-  - [From source](#from-source)
-  - [Docker](#docker)
+    - [From source](#from-source)
+    - [Docker](#docker)
 - [Workflow kinds](#workflow-kinds)
-  - [Spec workflow](#spec-workflow-the-default)
-  - [Quick Fix](#quick-fix)
-  - [Epic](#epic)
-  - [Ask Question](#ask-question)
+    - [Spec workflow](#spec-workflow-the-default)
+    - [Quick Fix](#quick-fix)
+    - [Epic](#epic)
+    - [Ask Question](#ask-question)
 - [Pipeline reference](#pipeline-reference)
 - [Manual-mode feedback loop](#manual-mode-feedback-loop)
 - [Configuration](#configuration)
 - [Data storage](#data-storage)
-- [Tech stack](#tech-stack)
 - [Related tools](#related-tools)
 - [Development](#development)
 - [License](#license)
@@ -131,10 +130,6 @@ the loop returns to the same merge-pause for another round.
 </tr>
 </table>
 
-> [!NOTE]
-> GitHub renders the `<video>` tag inline on the rendered README. If you're reading this in a viewer that doesn't
-> render HTML, the fallback link inside each tag downloads the file directly.
-
 ## Screenshots
 
 <table>
@@ -173,12 +168,12 @@ docker run -d \
   -e ANTHROPIC_API_KEY \
   -e GH_TOKEN \
   -v litus-data:/home/litus/.litus \
-  -v "$(pwd)":/home/litus/repos/my-project \
   ghcr.io/s-gehring/litus:latest
 ```
 
-Open <http://localhost:3000>. The full Docker recipe (with bind-mounts for multiple repos, credential mounting,
-volumes, env vars) is in [Installation → Docker](#docker) below.
+Open <http://localhost:3000> and submit a workflow against any GitHub URL — Litus clones the repo into the container
+automatically. The full Docker recipe (credential mounting, env vars, optional local-repo bind-mounts) is in
+[Installation → Docker](#docker) below.
 
 > [!CAUTION]
 > Litus runs Claude Code with `--dangerously-skip-permissions`, meaning the agent can read, write, and delete files
@@ -188,22 +183,22 @@ volumes, env vars) is in [Installation → Docker](#docker) below.
 
 ## Prerequisites
 
-| Tool                                                          | Why                                                                                                              |
-|---------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------|
-| [Bun](https://bun.sh) >= 1.3.11                               | Runtime. Fast, TypeScript-native, no transpilation ceremony.                                                     |
-| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | The CLI agent that does the actual work. Must be installed and authenticated.                                    |
-| [GitHub CLI (`gh`)](https://cli.github.com/)                  | PR creation, CI monitoring, merge operations. Must be authenticated with permission to merge PRs without reviews. |
+| Tool                                                          | Why                                                                                                                                                                                           |
+|---------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [Bun](https://bun.sh) >= 1.3.11                               | Runtime. Fast, TypeScript-native, no transpilation ceremony.                                                                                                                                  |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | The CLI agent that does the actual work. Must be installed and authenticated.                                                                                                                 |
+| [GitHub CLI (`gh`)](https://cli.github.com/)                  | PR creation, CI monitoring, merge operations. Must be authenticated with permission to merge PRs without reviews.                                                                             |
 | [uv](https://docs.astral.sh/uv/)                              | Python package runner. Required so Litus can auto-install [speckit](https://github.com/github/spec-kit) skills into target repos that don't have them yet. Pre-installed in the Docker image. |
 
 ### Prepare the target repository
 
-Litus runs Claude Code agents against a **target repository** — the repo where code changes happen. Before starting
-your first workflow:
+Litus runs Claude Code agents against a **target repository** — the repo where code changes happen. The recommended
+path is to submit a GitHub URL in the workflow modal: Litus clones the repo into a managed working directory and
+keeps it isolated from anything else on disk.
 
-1. **Authenticate `gh`** — run `gh auth login`. The CLI must have access to the target repo for PR creation, CI
-   polling, and merge.
-2. **Authenticate Claude Code** — run `claude` once in the target repo to ensure the CLI is authenticated.
-3. **Verify git access** — Litus creates worktrees inside the target repo. Ensure push access and a non-shallow clone.
+For URL-sourced workflows you only need to make sure `gh` is authenticated for the target — the CLI is what creates
+the PR, polls CI, and merges. If you'd rather point Litus at an existing local clone, ensure it has push access to
+its upstream and is not a shallow clone (worktrees can't branch off a shallow clone).
 
 > [!NOTE]
 > Litus relies on [speckit](https://github.com/github/spec-kit) skills in the target repo. If they're missing, Litus
@@ -232,7 +227,9 @@ Override the listen port via `PORT`. Default: `3000`.
 ### Docker
 
 A pre-built image is published to the
-[GitHub Container Registry](https://github.com/s-gehring/litus/pkgs/container/litus) on every release.
+[GitHub Container Registry](https://github.com/s-gehring/litus/pkgs/container/litus) on every release. The default
+recipe runs Litus against repositories you submit by **GitHub URL** — Litus handles the clone inside the container,
+so there's nothing host-side to mount beyond persistent state.
 
 ```bash
 docker run -d \
@@ -240,25 +237,13 @@ docker run -d \
   -e ANTHROPIC_API_KEY \
   -e GH_TOKEN \
   -v litus-data:/home/litus/.litus \
-  -v /path/to/your/repo:/home/litus/repos/my-project \
   ghcr.io/s-gehring/litus:latest
 ```
 
-#### Mounting target repositories
-
-Each target repo must be bind-mounted into the container so the agent can access it:
-
-```bash
--v /path/to/your/repo:/home/litus/repos/my-project
-```
-
-The container path you choose (e.g. `/home/litus/repos/my-project`) is what you'll select in the Litus UI when starting
-a workflow. Mount as many repositories as you need:
-
-```bash
--v ~/projects/frontend:/home/litus/repos/frontend \
--v ~/projects/backend:/home/litus/repos/backend
-```
+`litus-data` is a named volume holding workflow state, epics, config, audit logs, the archive, and managed clones —
+so the container can be replaced or upgraded without losing history. Open <http://localhost:3000>, click
+**New Specification** (or **Quick Fix**, **New Epic**, **Ask Question**), paste a GitHub URL like
+`https://github.com/owner/repo`, and go.
 
 #### Claude Code authentication
 
@@ -267,15 +252,7 @@ installed globally. It needs valid credentials to call the Anthropic API.
 
 **Option A — API key (recommended for containers)**
 
-```bash
-docker run -d \
-  -e ANTHROPIC_API_KEY="sk-ant-..." \
-  -e GH_TOKEN="ghp_..." \
-  -p 3000:3000 \
-  -v litus-data:/home/litus/.litus \
-  -v /path/to/your/repo:/home/litus/repos/my-project \
-  ghcr.io/s-gehring/litus:latest
-```
+Pass `ANTHROPIC_API_KEY` via env, exactly as in the recipe above.
 
 **Option B — Mount an existing Claude session**
 
@@ -284,11 +261,10 @@ If you've already authenticated with `claude` on the host, bind-mount the creden
 
 ```bash
 docker run -d \
-  -e GH_TOKEN="ghp_..." \
+  -e GH_TOKEN \
   -v ~/.claude:/home/litus/.claude \
   -p 3000:3000 \
   -v litus-data:/home/litus/.litus \
-  -v /path/to/your/repo:/home/litus/repos/my-project \
   ghcr.io/s-gehring/litus:latest
 ```
 
@@ -296,31 +272,52 @@ docker run -d \
 > Mounting `~/.config/gh` does **not** work for GitHub CLI authentication — most `gh` installations store the token in
 > the OS keyring rather than in config files. Always use the `GH_TOKEN` environment variable.
 
+#### Optional: working with a local clone
+
+If you'd rather drive a workflow against a clone that already exists on the host (e.g. you want commits to land on
+your live working tree, or the repo isn't on GitHub) instead of letting Litus manage one via URL, bind-mount it
+under `/home/litus/repos/<name>` and reference that container path in the workflow modal. The named `litus-data`
+volume still keeps history; the additional `-v` just exposes the local clone to the agent.
+
+```bash
+docker run -d \
+  -p 3000:3000 \
+  -e ANTHROPIC_API_KEY \
+  -e GH_TOKEN \
+  -v litus-data:/home/litus/.litus \
+  -v ~/projects/my-app:/home/litus/repos/my-app \
+  ghcr.io/s-gehring/litus:latest
+```
+
+You can stack as many `-v ~/projects/X:/home/litus/repos/X` flags as you need; the repo picker in the modal lists
+whatever you've made visible.
+
 #### Environment variables
 
-| Variable            | Default | Description                                                                              |
-|---------------------|---------|------------------------------------------------------------------------------------------|
-| `ANTHROPIC_API_KEY` | —       | API key for Claude Code CLI (required unless you mount `~/.claude`)                      |
-| `GH_TOKEN`          | —       | GitHub personal access token for `gh` CLI (required). `GITHUB_TOKEN` is also accepted.   |
-| `PORT`              | `3000`  | HTTP server listen port (inside the container)                                           |
+| Variable            | Default | Description                                                                            |
+|---------------------|---------|----------------------------------------------------------------------------------------|
+| `ANTHROPIC_API_KEY` | —       | API key for Claude Code CLI (required unless you mount `~/.claude`)                    |
+| `GH_TOKEN`          | —       | GitHub personal access token for `gh` CLI (required). `GITHUB_TOKEN` is also accepted. |
+| `PORT`              | `3000`  | HTTP server listen port (inside the container)                                         |
 
 #### Volumes
 
-| Path                       | Purpose                                                                                                                     |
-|----------------------------|-----------------------------------------------------------------------------------------------------------------------------|
-| `/home/litus/.litus`       | Workflow state, epic definitions, app config, audit logs, archive. Mount a named or bind volume to persist across restarts. |
-| `/home/litus/repos/<name>` | Target repository bind mounts. Mount one or more so the agent has something to work on.                                     |
-| `/home/litus/.claude`      | Optional. Bind-mount an existing Claude Code session directory instead of using `ANTHROPIC_API_KEY`.                        |
+| Path                       | Purpose                                                                                                                                              |
+|----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `/home/litus/.litus`       | Workflow state, epic definitions, app config, audit logs, archive, and managed-repo clones. Mount a named or bind volume to persist across restarts. |
+| `/home/litus/.claude`      | Optional. Bind-mount an existing Claude Code session directory instead of using `ANTHROPIC_API_KEY`.                                                 |
+| `/home/litus/repos/<name>` | Optional. Bind-mount a local clone here to drive workflows against an existing host-side checkout instead of a GitHub URL.                           |
 
-The entrypoint creates the required subdirectories (`workflows/`, `audit/`, `archive/`) and fixes ownership on bind
-mounts. The container runs as a non-root user (`litus`, UID 1001); `gosu` drops privileges after the chown — no manual
-work needed.
+The entrypoint creates the required subdirectories (`workflows/`, `audit/`, `archive/`, `repos/`) and fixes ownership
+on bind mounts.
 
 ## Workflow kinds
 
 Litus supports four workflow kinds, each tuned for a different size of task.
 
 ### Spec workflow (the default)
+
+![Spec pipeline steps](docs/screenshots/pipeline-spec.png)
 
 The full pipeline: setup → specify → clarify → plan → tasks → implement → review → fix-review → artifacts →
 commit-push-pr → monitor-ci → fix-ci → merge-pr → sync-repo.
@@ -329,7 +326,14 @@ Use this when you want a complete, structured implementation: the agent formalis
 asks clarifying questions, plans the work, generates a task list, implements it, self-reviews, captures artifacts
 (test logs, screenshots, design notes), opens a PR, monitors CI, and merges. Submit via **New Specification**.
 
+The specify → clarify → plan → tasks → implement → review → fix-review steps are powered by GitHub's
+[speckit](https://github.com/github/spec-kit) skills (auto-installed into the target repo via `uvx` if missing).
+Litus extends speckit with the surrounding lifecycle: a setup gate, an implementation-artifacts capture step, the
+PR / CI / merge / sync steps, and a feedback loop that lets you nudge the agent at the merge pause.
+
 ### Quick Fix
+
+![Quick Fix pipeline steps](docs/screenshots/pipeline-quick-fix.png)
 
 A lightweight pipeline for small scoped changes: setup → fix-implement → commit-push-pr → monitor-ci → fix-ci →
 merge-pr → sync-repo. Skips specify/clarify/plan/tasks/implement/review.
@@ -339,6 +343,8 @@ overkill. Submit via **Quick Fix**. Provide Feedback works on errored fix-implem
 with your guidance.
 
 ### Epic
+
+![Epic decomposition with child specs](docs/screenshots/pipeline-epic.png)
 
 Decomposition of a high-level feature into individual spec workflows with dependency tracking. Submit a multi-spec
 goal via **New Epic**; the analyzer breaks it into self-contained, independently verifiable specs and produces a
@@ -353,39 +359,14 @@ child spec has started.
 
 ### Ask Question
 
+![Ask Question modal](docs/screenshots/pipeline-ask-question.png)
+
 A research workflow: submit a question against a target repository and Litus decomposes it into research aspects,
 runs them as parallel research streams that each dig into one aspect, and synthesizes a single answer.
 
 Per-aspect output streams live into a grid panel. Partial findings are saved as artifacts even if synthesis later
 fails. Configurable decomposition / research / synthesis models and prompts; the per-workflow concurrency cap is
 `askQuestionConcurrentAspects` (default 10). Submit via **Ask Question**.
-
-## Pipeline reference
-
-Each step is either handled by Litus itself or delegated to a Claude Code agent.
-
-| Step                          | Actor          | What happens                                                                  |
-|-------------------------------|----------------|-------------------------------------------------------------------------------|
-| **Setup**                     | Litus          | Validates repo, git, GitHub CLI, auth, speckit skills                         |
-| **Specify**                   | Claude         | Formalizes your description into a structured spec                            |
-| **Clarify**                   | Claude + Human | Resolves ambiguities in the spec                                              |
-| **Plan**                      | Claude         | Creates a technical design                                                    |
-| **Tasks**                     | Claude         | Generates a task checklist                                                    |
-| **Implement**                 | Claude         | Writes the code                                                               |
-| **Review**                    | Claude         | Self-critiques the implementation                                             |
-| **Fix Review**                | Claude         | Addresses review findings (loops if critical/major)                           |
-| **Implementation artifacts**  | Claude         | Captures arbitrary files (logs, diffstats, screenshots) into the workflow    |
-| **Fix Implement** (Quick Fix) | Claude         | Applies a targeted code fix from the user description                         |
-| **Commit, Push, PR**          | Claude         | Commits, pushes, opens a GitHub PR                                            |
-| **Monitor CI**                | Litus          | Polls GitHub Actions with exponential backoff                                 |
-| **Fix CI**                    | Claude + Litus | Reads failure logs, attempts fixes (configurable retries)                     |
-| **Applying Feedback**         | Claude         | Applies user-provided feedback (manual mode only, on-demand)                  |
-| **Merge PR**                  | Litus          | Squash-merges the PR (pauses for review in manual mode)                       |
-| **Sync Repo**                 | Litus          | Pulls changes and cleans up the worktree                                      |
-
-Every running step appears in the UI with its current status, the active model and effort level, live agent output,
-and tool-use icons. Completed steps expose their artifacts (`spec.md`, `plan.md`, `tasks.md`, `code-review.md`, the
-implementation artifacts) via a dropdown on the step card.
 
 ## Manual-mode feedback loop
 
@@ -395,26 +376,9 @@ In **Manual** automation mode, Litus pauses before merging so you can review the
 - **Provide Feedback** — type free-form feedback. Litus spins up a dedicated `feedback-implementer` agent that reads
   your feedback, makes the requested changes, commits with Conventional Commit messages, and pushes. When the change
   is materially relevant to the PR outcome, the agent also losslessly augments the PR description on GitHub.
-- **Abort** — stop the workflow entirely.
 
 After a feedback iteration lands commits, CI re-runs, and you return to the same merge-pause with the same choices —
 iterate as many times as you need. The **Provide Feedback** button only appears in Manual mode.
-
-**How feedback is applied to later agents.** Every submitted feedback entry is persisted alongside the workflow and
-injected as an authoritative *"USER FEEDBACK (overrides spec/plan on any conflict)"* block into every subsequent
-agent prompt (including `fix-ci` and `review` iterations). If a later agent could otherwise undo your change to match
-the original spec, the feedback block tells it to preserve your preference.
-
-**Semantics.**
-
-- Empty or whitespace-only feedback acts as Resume — no entry is created, the iteration counter does not advance.
-- Only one feedback iteration can run at a time per workflow.
-- Pausing then aborting during a feedback run records the iteration as `aborted` and terminates the workflow.
-- Restarting the server during a feedback run records the iteration as `aborted` and rewinds to the merge-PR pause,
-  so you can retry with the same or different feedback.
-
-Iteration history — text, timestamp, outcome badge, and any non-fatal warnings (e.g., PR description update failed) —
-is always visible on the workflow detail view.
 
 ## Configuration
 
@@ -450,21 +414,8 @@ All data lives under `~/.litus/`:
   artifacts/{workflow-id}/     # Captured implementation artifacts
 ```
 
-In-memory state resets on server restart; on-disk state survives. URL-sourced workflows share a single managed
+Litus handles application crashes and unexpected restarts gracefully. URL-sourced workflows share a single managed
 clone via refcount — the clone is cleaned up when the last consumer terminates.
-
-## Tech stack
-
-| Layer    | Technology                                                                                                                     |
-|----------|--------------------------------------------------------------------------------------------------------------------------------|
-| Runtime  | [Bun](https://bun.sh)                                                                                                          |
-| Server   | `Bun.serve()` — built-in HTTP + WebSocket, no framework                                                                        |
-| Agent    | [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) via `Bun.spawn` — no API key needed beyond what the CLI uses |
-| Frontend | Vanilla TypeScript — no React, no Vue, no regrets                                                                              |
-| Markdown | [marked](https://github.com/markedjs/marked) + [DOMPurify](https://github.com/cure53/DOMPurify)                                |
-| Linting  | [Biome](https://biomejs.dev)                                                                                                   |
-| Testing  | Bun test runner + [happy-dom](https://github.com/capricorn86/happy-dom) for unit/client; Playwright for e2e                    |
-| CI       | GitHub Actions (CI, CodeQL, Trivy, e2e, container build with cosign attestations)                                              |
 
 ## Related tools
 
@@ -522,17 +473,12 @@ cp tests/e2e/test-results/happy-path.e2e.ts-*chromium/video.webm docs/demos/happ
 
 Current mapping:
 
-| Demo                    | Source test                                            |
-|-------------------------|--------------------------------------------------------|
-| `happy-path.webm`       | `tests/e2e/tests/happy-path.e2e.ts`                    |
+| Demo                    | Source test                                             |
+|-------------------------|---------------------------------------------------------|
+| `happy-path.webm`       | `tests/e2e/tests/happy-path.e2e.ts`                     |
 | `mid-run-question.webm` | `tests/e2e/tests/mid-run-question.e2e.ts` (manual mode) |
-| `quick-fix.webm`        | `tests/e2e/tests/quick-fix.e2e.ts`                     |
-| `review-feedback.webm`  | `tests/e2e/tests/review-feedback-loop.e2e.ts`          |
-
-> [!NOTE]
-> On Windows, `bun run test:e2e` builds the fake CLI shims to native `.exe` first (via `tests/e2e/build-fakes.ts`)
-> because the legacy `.cmd` shim drops multi-line arguments — see
-> [`tests/e2e/README.md`](tests/e2e/README.md#fake-cli-shims-windows-vs-posix) for the full rationale.
+| `quick-fix.webm`        | `tests/e2e/tests/quick-fix.e2e.ts`                      |
+| `review-feedback.webm`  | `tests/e2e/tests/review-feedback-loop.e2e.ts`           |
 
 ### Contributing
 
