@@ -151,8 +151,12 @@ test.describe("quick fix screenshots", () => {
 // Epic — epic-tree + pipeline-epic (the dependency view IS the epic pipeline).
 // ---------------------------------------------------------------------------
 test.describe("epic screenshots", () => {
+	// Use the screenshot-only `epic-screenshot` scenario, which scripts an
+	// 8-spec / 4-layer dependency graph for the horse-matchmaking sample epic
+	// — much more representative of what an Epic decomposition actually looks
+	// like than the 2-spec sibling fixtures used by the e2e suite.
 	test.use({
-		scenarioName: "epic-happy",
+		scenarioName: "epic-screenshot",
 		autoMode: "manual",
 		configOverrides: {
 			prompts: {
@@ -178,9 +182,10 @@ test.describe("epic screenshots", () => {
 
 		const tree = new EpicTree(page);
 		await expect(tree.container()).toBeVisible({ timeout: 30_000 });
-		// Wait until at least one child node has rendered so the tree isn't
-		// captured mid-decomposition.
-		await expect(tree.allChildRows().first()).toBeVisible({ timeout: 30_000 });
+		// Wait until every child node has rendered so the dependency edges
+		// aren't captured mid-paint. The screenshot scenario scripts 8 specs.
+		await expect(tree.allChildRows()).toHaveCount(8, { timeout: 30_000 });
+		await hideAlertToasts(page);
 
 		await page.screenshot({ path: shotPath("epic-tree"), fullPage: false });
 		await page.screenshot({ path: shotPath("pipeline-epic"), fullPage: false });

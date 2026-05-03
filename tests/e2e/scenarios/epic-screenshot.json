@@ -1,0 +1,33 @@
+{
+	"name": "epic-screenshot",
+	"description": "Screenshot-only fixture: a richly layered horse-matchmaking epic so the README's Workflow Kinds → Epic image actually demonstrates dependencies. Eight specs across four layers. Not used by the e2e suite.",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "epic-screenshot-analyzer" },
+				{
+					"type": "assistant",
+					"session_id": "epic-screenshot-analyzer",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "```json\n{\"title\":\"Horse matchmaking platform\",\"summary\":\"Eight specs across four dependency layers — schema and design system feed model + auth + components, which feed the profile and login UIs, which feed the swipe and notifications experience.\",\"specs\":[{\"id\":\"db\",\"title\":\"Database schema\",\"description\":\"Postgres schema for horses, owners, profiles, swipes, and matches.\",\"dependencies\":[]},{\"id\":\"design\",\"title\":\"Design system & Tailwind setup\",\"description\":\"Configure Tailwind, color tokens, typography scale, and shared utility classes.\",\"dependencies\":[]},{\"id\":\"auth\",\"title\":\"Auth & session module\",\"description\":\"Email/password auth, password hashing, session cookies.\",\"dependencies\":[\"db\"]},{\"id\":\"profile-model\",\"title\":\"Horse profile model\",\"description\":\"Profile CRUD endpoints with photo upload to object storage.\",\"dependencies\":[\"db\"]},{\"id\":\"components\",\"title\":\"Component library\",\"description\":\"Card, Button, Avatar, Modal, Toast.\",\"dependencies\":[\"design\"]},{\"id\":\"profile-page\",\"title\":\"Profile page UI\",\"description\":\"Edit-your-horse and view-other-horse pages.\",\"dependencies\":[\"profile-model\",\"components\"]},{\"id\":\"login-page\",\"title\":\"Login & signup pages\",\"description\":\"Login, signup, and password-reset flows.\",\"dependencies\":[\"auth\",\"components\"]},{\"id\":\"swipe\",\"title\":\"Swipe & match UI\",\"description\":\"Tinder-style swipe view, match modal, and persistent match list.\",\"dependencies\":[\"profile-page\",\"login-page\"]}]}\n```"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "epic-screenshot-analyzer",
+					"result": "```json\n{\"title\":\"Horse matchmaking platform\",\"summary\":\"Eight specs across four dependency layers.\",\"specs\":[]}\n```"
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" }
+	}
+}
