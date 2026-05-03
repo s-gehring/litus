@@ -6,11 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Ask Question workflow — a new workflow kind. Submit a question (with optional repository context) and Litus
-  decomposes it into research aspects, runs them as parallel research streams that each dig into one aspect, and
-  synthesises a single answer. Per-aspect output streams live into a grid panel; partial findings are saved as
-  artifacts even if synthesis later fails. Supports a Provide-Feedback loop on the answer, configurable
-  decomposition / research / synthesis models and prompts, and an `askQuestionConcurrentAspects` cap (default 10).
+- Ask Question workflow — a new workflow kind. Submit a question against a target repository (local path or
+  GitHub URL) and Litus decomposes it into research aspects, runs them as parallel research streams that each
+  dig into one aspect, and synthesises a single answer. Per-aspect output streams live into a grid panel;
+  partial findings are saved as artifacts even if synthesis later fails. Supports a Provide-Feedback loop on
+  the answer, configurable decomposition / research / synthesis models and prompts, and an
+  `askQuestionConcurrentAspects` cap (default 10).
 - Quick Fix pipeline — a lightweight workflow kind that skips spec / clarify / plan and runs
   setup → fix-implement → commit-push-pr → monitor-ci → fix-ci → feedback → merge-pr → sync-repo. Useful for
   small, scoped fixes. Per-step model, effort, and prompt configuration. Provide Feedback works on errored
