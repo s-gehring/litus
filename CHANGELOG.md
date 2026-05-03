@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] — 2026-05-03
+
+### Fixed
+
+- Long user-supplied prompts (specification, epic description, quick-fix description, ask-question, every feedback
+  variant) no longer fail with an opaque `spawn failed` once they exceed the OS argv length cap (~32 KB on Windows
+  cmd, 128 KB per arg on Linux). Prompts are now written to the Claude CLI over stdin instead of riding in the
+  positional `-p <text>` argv slot, and a unified `MAX_LLM_INPUT_LENGTH` of 300,000 characters applies across every
+  entry point so a paste accepted in one panel can't be silently rejected from another.
+- Epics created via the new-epic modal are now persisted with `status="analyzing"` immediately after the
+  `epic:created` broadcast, so a client reload during decomposition still sees the in-progress epic in `epic:list`
+  instead of having it vanish until `analyzeEpic` resolves minutes later. Stale analyzing epics from a previous
+  process are dropped on server startup.
+- Epic detail view shows the thinking indicator while decomposition is running, matching the rest of the pipeline.
+- Workflow cards, the epic tree, archive list, and the detail title no longer render the full raw spec / question
+  text when no summary has been generated yet — the fallback is capped at 10 words / 80 characters with an ellipsis.
+- Navigating from an ask-question workflow's synthesized answer to an epic detail page no longer leaves the answer
+  panel visible underneath the new view; it is hidden alongside the other detail panels on tear-down.
+- Tool icons in researcher aspect panels render inline with the surrounding text deltas instead of being forced
+  onto their own line, matching the main output-log convention.
+
 ## [1.4.0] — 2026-05-03
 
 ### Added
