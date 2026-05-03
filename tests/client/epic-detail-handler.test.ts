@@ -590,3 +590,79 @@ describe("epic-detail-handler — action bar refresh on workflow:state", () => {
 		expect(archiveAfter?.disabled).toBe(false);
 	});
 });
+
+describe("epic-detail-handler — thinking indicator during decomposition", () => {
+	let router: TestRouter | null = null;
+	let state: ClientStateManager;
+	let routeHandler: ReturnType<typeof createEpicDetailHandler>;
+
+	beforeEach(() => {
+		document.body.innerHTML = BASE_DOM;
+		state = new ClientStateManager();
+	});
+
+	afterEach(() => {
+		router?.destroy();
+		router = null;
+		document.body.innerHTML = "";
+	});
+
+	function mountAnalyzing(epicId: string): void {
+		const epic = makePersistedEpic({
+			epicId,
+			status: "analyzing",
+			title: null,
+			workflowIds: [],
+		});
+		state.handleMessage({ type: "epic:list", epics: [epic] });
+		const container = document.getElementById("app-content") as HTMLElement;
+		router = new TestRouter(container, "/");
+		router.register("/", { mount: () => {}, unmount: () => {}, onMessage: () => {} });
+		routeHandler = createEpicDetailHandler({
+			getState: () => state,
+			getConfig: () => null,
+			send: () => {},
+			navigate: (p) => router?.navigate(p),
+		});
+		router.register("/epic/:id", routeHandler);
+		router.setTestPath(`/epic/${epicId}`);
+		router.start();
+	}
+
+	function dispatch(msg: ServerMessage): void {
+		routeHandler.onMessage?.(msg);
+	}
+
+	test("renders a thinking indicator while the epic is analyzing", () => {
+		// Regression guard: parity with workflow detail's per-step dots — every
+		// LLM use must show a thinking indicator, including epic decomposition.
+		mountAnalyzing("e-analyzing");
+		const log = document.getElementById("output-log");
+		const indicator = log?.querySelector(".thinking-indicator");
+		expect(indicator).not.toBeNull();
+		expect(indicator?.classList.contains("visible")).toBe(true);
+		expect(indicator?.querySelectorAll(".thinking-dot").length).toBe(3);
+	});
+
+	test("indicator is removed once the epic settles into infeasible", () => {
+		mountAnalyzing("e-soon-infeasible");
+		expect(document.querySelector(".thinking-indicator")).not.toBeNull();
+
+		const settled = makePersistedEpic({
+			epicId: "e-soon-infeasible",
+			status: "infeasible",
+			title: null,
+			infeasibleNotes: "Cannot decompose this epic.",
+			workflowIds: [],
+		});
+		state.handleMessage({ type: "epic:list", epics: [settled] });
+		dispatch({
+			type: "epic:infeasible",
+			epicId: "e-soon-infeasible",
+			title: "",
+			infeasibleNotes: "Cannot decompose this epic.",
+		});
+
+		expect(document.querySelector(".thinking-indicator")).toBeNull();
+	});
+});

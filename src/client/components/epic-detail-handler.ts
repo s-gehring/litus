@@ -30,6 +30,7 @@ import {
 	appendToolIcons,
 	clearOutput,
 	renderOutputEntries,
+	syncThinkingIndicator,
 	updateActiveModelPanel,
 	updateBranchInfo,
 	updateEpicStatus,
@@ -220,6 +221,12 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		} else if (epic.outputLines.length > 0) {
 			renderOutputEntries(epic.outputLines);
 		}
+
+		// Match the per-step indicator on workflow detail: pin the dots at the
+		// tail of the output while the LLM is decomposing the epic. Visibility
+		// is state-driven, so the dots appear during silent thinking before the
+		// first token and stay pinned through tool-only streaks.
+		syncThinkingIndicator(epic.status === "analyzing");
 
 		renderEpicFeedbackUi(epic);
 	}
