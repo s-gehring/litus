@@ -194,6 +194,52 @@ describe("epic-handlers", () => {
 			expect(startCalls).toHaveLength(1);
 		});
 
+		test("persists analyzing placeholder before analysis so reloads see in-progress epic", async () => {
+			const { ws, deps } = setup();
+			mockValidationResult = { valid: true, effectivePath: "/mock/repo" };
+
+			// Hold analyzeEpic open so we can observe the on-disk state mid-analysis
+			// (the bug: epic was only persisted *after* analysis completed, so a
+			// browser reload during analysis received an empty epic:list).
+			const { resolve: resolveAnalyze, promise: analyzePromise } = Promise.withResolvers<{
+				title: string;
+				specs: never[];
+				infeasibleNotes: string;
+			}>();
+			mock.module("../../src/epic-analyzer", () => ({
+				analyzeEpic: async () => analyzePromise,
+				UnrecoverableSessionError: MockUnrecoverableSessionError,
+			}));
+			const { handleEpicStart: freshHandler } = await import("../../src/server/epic-handlers");
+
+			const startPromise = freshHandler(
+				ws,
+				{
+					type: "epic:start",
+					description: "A valid long description for placeholder",
+					targetRepository: "/mock/repo",
+					autoStart: false,
+				} as ClientMessage,
+				deps,
+			);
+
+			// Yield so handleEpicStart reaches the awaited save().
+			await new Promise((r) => setTimeout(r, 0));
+
+			const inFlight = await deps.sharedEpicStore.loadAll();
+			expect(inFlight).toHaveLength(1);
+			expect(inFlight[0].status).toBe("analyzing");
+			expect(inFlight[0].description).toBe("A valid long description for placeholder");
+
+			resolveAnalyze({ title: "Done", specs: [], infeasibleNotes: "n/a" });
+			await startPromise;
+
+			mock.module("../../src/epic-analyzer", () => ({
+				analyzeEpic: async () => mockAnalyzeResult,
+				UnrecoverableSessionError: MockUnrecoverableSessionError,
+			}));
+		});
+
 		test("broadcasts error when analysis throws", async () => {
 			const { ws, deps, broadcastedMessages } = setup();
 			mockValidationResult = { valid: true, effectivePath: "/mock/repo" };
