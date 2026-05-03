@@ -1457,7 +1457,7 @@ export class PipelineOrchestrator {
 		}
 		const cwd = requireWorktreePath(workflow);
 		const config = configStore.get();
-		const findingsBlock = buildAspectFindingsBlock(cwd, manifest.aspects);
+		const findingsBlock = buildAspectFindingsBlock(manifest.aspects);
 		const answerFileName = workflow.synthesizedAnswer?.sourceFileName ?? DEFAULT_ANSWER_FILE_NAME;
 		const basePrompt = buildSynthesisPrompt(config.prompts.askQuestionSynthesis, {
 			question: workflow.specification.trim(),
