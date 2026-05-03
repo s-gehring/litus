@@ -31,10 +31,11 @@ describe("STEP constant drift detection", () => {
 		}
 	});
 
-	test("every defined step appears in SPEC_ORDER or QUICK_FIX_ORDER", () => {
+	test("every defined step appears in SPEC_ORDER, QUICK_FIX_ORDER, or ASK_QUESTION_ORDER", () => {
 		const reachable = new Set<PipelineStepName>([
 			...getStepDefinitionsForKind("spec").map((d) => d.name),
 			...getStepDefinitionsForKind("quick-fix").map((d) => d.name),
+			...getStepDefinitionsForKind("ask-question").map((d) => d.name),
 		]);
 		for (const def of PIPELINE_STEP_DEFINITIONS) {
 			expect(reachable.has(def.name)).toBe(true);

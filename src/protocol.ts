@@ -194,6 +194,7 @@ export type ClientMessage =
 	| { type: "workflow:abort"; workflowId: string }
 	| { type: "workflow:retry"; workflowId: string }
 	| { type: "workflow:retry-workflow"; workflowId: string }
+	| { type: "workflow:finalize"; workflowId: string }
 	| {
 			type: "epic:start";
 			description: string;
