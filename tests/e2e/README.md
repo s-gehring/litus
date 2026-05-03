@@ -75,6 +75,18 @@ On a failing test:
 - `tests/e2e/test-results/<test>/video.webm`
 - `server.log` attached to the test — the captured server stdout/stderr
 
+## Local recordings
+
+Local (non-CI) runs of `bun run test:e2e` always produce the full set of recordings for **every** test, passing or failing, under `tests/e2e/test-results/<test>/`:
+
+- `video.webm` — full browser-session video (`use.video: "on"`)
+- `*.png` — final-state screenshot (`use.screenshot: "on"`)
+- `trace.zip` — Playwright trace, viewable with `bunx playwright show-trace <path>` (`use.trace: "on"`)
+
+The toggle is `process.env.CI` in `playwright.config.ts`: when `CI` is unset (the default on a developer workstation), all three keys resolve to `"on"`. When `CI` is truthy (GitHub Actions sets `CI=true` automatically), they resolve to the CI values described in **Failure artifacts** above — `screenshot: only-on-failure`, `video: retain-on-failure`, `trace: retain-on-failure` — so CI keeps artifacts only for failing tests, exactly as before.
+
+The output directory (`tests/e2e/test-results/`) is gitignored, so local recordings never leak into commits.
+
 ## CI
 
 A dedicated GitHub Actions workflow (`.github/workflows/e2e.yml`) runs the suite on pull requests. It is configured as a **required status check** on the default branch (`master`); this is a repo-admin setting and lives outside this repo's tree.
