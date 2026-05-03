@@ -174,6 +174,9 @@ function makeWorkflow(kind: WorkflowKind, worktreePath: string): Workflow {
 		updatedAt: now,
 		archived: false,
 		archivedAt: null,
+		aspectManifest: null,
+		aspects: null,
+		synthesizedAnswer: null,
 	};
 }
 

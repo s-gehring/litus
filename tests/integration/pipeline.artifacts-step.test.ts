@@ -104,6 +104,9 @@ function makeSpecWorkflow(id: string, worktreePath: string, branch: string): Wor
 		updatedAt: now,
 		archived: false,
 		archivedAt: null,
+		aspectManifest: null,
+		aspects: null,
+		synthesizedAnswer: null,
 	};
 }
 

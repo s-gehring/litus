@@ -124,6 +124,9 @@ function createFakeEngine() {
 				updatedAt: now,
 				archived: false,
 				archivedAt: null,
+				aspectManifest: null,
+				aspects: null,
+				synthesizedAnswer: null,
 			};
 			return workflow as Workflow;
 		},
