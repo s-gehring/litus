@@ -94,7 +94,9 @@ export function applyAspectOutputDelta(
 	scrollToBottom(out);
 }
 
-/** Append a tool-usage row to the targeted aspect's panel. */
+/** Append tool-usage icons to the targeted aspect's panel. Rendered inline so
+ * they sit alongside surrounding text deltas rather than each occupying their
+ * own line — matching the main output-log convention. */
 export function applyAspectToolsDelta(
 	container: HTMLElement,
 	aspectId: string,
@@ -102,10 +104,7 @@ export function applyAspectToolsDelta(
 ): void {
 	const out = container.querySelector<HTMLElement>(`#${PANEL_OUTPUT_PREFIX}${cssId(aspectId)}`);
 	if (!out) return;
-	const row = document.createElement("div");
-	row.className = "aspect-tool-row";
-	row.appendChild(renderToolIcons(tools));
-	out.appendChild(row);
+	out.appendChild(renderToolIcons(tools));
 	scrollToBottom(out);
 }
 
@@ -208,10 +207,7 @@ function renderEntries(out: HTMLElement, entries: OutputEntry[]): void {
 			span.textContent = entry.text;
 			out.appendChild(span);
 		} else {
-			const row = document.createElement("div");
-			row.className = "aspect-tool-row";
-			row.appendChild(renderToolIcons(entry.tools));
-			out.appendChild(row);
+			out.appendChild(renderToolIcons(entry.tools));
 		}
 	}
 	scrollToBottom(out);
