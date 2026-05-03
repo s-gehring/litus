@@ -3,9 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	aggregateStepStatus,
 	buildAspectFindingsBlock,
 	buildResearchPrompt,
+	computeAspectProgress,
 	formatAspectHeadline,
+	formatAspectProgressLine,
 	inspectAspectFindings,
 	normaliseAspectsOnLoad,
 	pickNextAspect,
@@ -21,6 +24,8 @@ function aspect(overrides: Partial<AspectState> = {}): AspectState {
 		startedAt: overrides.startedAt ?? null,
 		completedAt: overrides.completedAt ?? null,
 		errorMessage: overrides.errorMessage ?? null,
+		output: overrides.output ?? "",
+		outputLog: overrides.outputLog ?? [],
 	};
 }
 
@@ -80,6 +85,83 @@ describe("formatAspectHeadline", () => {
 	test("formats `Researching aspect N of M: <title>`", () => {
 		expect(formatAspectHeadline(2, 5, "How does X work")).toBe(
 			"Researching aspect 3 of 5: How does X work",
+		);
+	});
+});
+
+describe("aggregateStepStatus", () => {
+	test("all completed → completed", () => {
+		expect(
+			aggregateStepStatus([
+				aspect({ id: "a", status: "completed" }),
+				aspect({ id: "b", status: "completed" }),
+			]),
+		).toBe("completed");
+	});
+
+	test("any pending or in_progress → running (no errors)", () => {
+		expect(
+			aggregateStepStatus([
+				aspect({ id: "a", status: "completed" }),
+				aspect({ id: "b", status: "pending" }),
+			]),
+		).toBe("running");
+		expect(
+			aggregateStepStatus([
+				aspect({ id: "a", status: "in_progress" }),
+				aspect({ id: "b", status: "pending" }),
+			]),
+		).toBe("running");
+	});
+
+	test("any pending or in_progress → running even with errored siblings", () => {
+		expect(
+			aggregateStepStatus([
+				aspect({ id: "a", status: "errored", errorMessage: "x" }),
+				aspect({ id: "b", status: "in_progress" }),
+			]),
+		).toBe("running");
+	});
+
+	test("≥1 errored AND none pending/in_progress → error", () => {
+		expect(
+			aggregateStepStatus([
+				aspect({ id: "a", status: "completed" }),
+				aspect({ id: "b", status: "errored", errorMessage: "x" }),
+			]),
+		).toBe("error");
+	});
+
+	test("empty input → completed", () => {
+		expect(aggregateStepStatus([])).toBe("completed");
+	});
+});
+
+describe("computeAspectProgress / formatAspectProgressLine", () => {
+	test("counts every status correctly", () => {
+		const aspects = [
+			aspect({ id: "a", status: "completed" }),
+			aspect({ id: "b", status: "in_progress" }),
+			aspect({ id: "c", status: "errored", errorMessage: "x" }),
+			aspect({ id: "d", status: "pending" }),
+		];
+		expect(computeAspectProgress(aspects)).toEqual({
+			pending: 1,
+			running: 1,
+			completed: 1,
+			errored: 1,
+			total: 4,
+		});
+	});
+
+	test("formats the progress line per FR-006", () => {
+		const aspects = [
+			aspect({ id: "a", status: "completed" }),
+			aspect({ id: "b", status: "in_progress" }),
+			aspect({ id: "c", status: "pending" }),
+		];
+		expect(formatAspectProgressLine(computeAspectProgress(aspects))).toBe(
+			"Research: 1 of 3 complete (1 in progress, 0 errored)",
 		);
 	});
 });

@@ -8,6 +8,7 @@ import type { AppConfig, ConfigValidationError, ConfigWarning, DeepPartial } fro
 import type { PipelineStepName, WorkflowStatus } from "./pipeline-steps";
 import type {
 	Alert,
+	AspectState,
 	EpicDependencyStatus,
 	EpicFeedbackEntry,
 	PersistedEpic,
@@ -43,6 +44,14 @@ export type ServerMessage =
 	| { type: "workflow:created"; workflow: WorkflowState }
 	| { type: "workflow:output"; workflowId: string; text: string }
 	| { type: "workflow:tools"; workflowId: string; tools: ToolUsage[] }
+	| { type: "workflow:aspect:output"; workflowId: string; aspectId: string; text: string }
+	| { type: "workflow:aspect:tools"; workflowId: string; aspectId: string; tools: ToolUsage[] }
+	| {
+			type: "workflow:aspect:state";
+			workflowId: string;
+			aspectId: string;
+			state: AspectState;
+	  }
 	| { type: "workflow:question"; workflowId: string; question: Question }
 	| {
 			type: "workflow:step-change";

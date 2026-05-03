@@ -215,5 +215,7 @@ export function buildInitialAspectStates(manifest: AspectManifest): AspectState[
 		startedAt: null,
 		completedAt: null,
 		errorMessage: null,
+		output: "",
+		outputLog: [],
 	}));
 }

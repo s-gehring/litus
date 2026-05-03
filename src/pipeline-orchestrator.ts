@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { buildArtifactsPrompt } from "./artifacts-prompt";
+import { type AspectDispatchEnv, AspectRunner } from "./aspect-runner";
 import { AuditLogger } from "./audit-logger";
 import { type CiFlowOutcome, CiMergeFlowController } from "./ci-merge-flow-controller";
 import { startMonitoring } from "./ci-monitor";
@@ -68,11 +69,10 @@ import {
 } from "./answer-synthesizer";
 import { removeWorktree } from "./ask-question-finalizer";
 import {
+	aggregateStepStatus,
 	buildAspectFindingsBlock,
-	buildResearchPrompt,
 	formatAspectHeadline,
 	inspectAspectFindings,
-	pickNextAspect,
 } from "./aspect-researcher";
 import {
 	buildDecompositionPrompt,
@@ -170,6 +170,40 @@ const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
 export const MAX_STEP_OUTPUT_CHARS = 1_000_000;
 
 /**
+ * Per-aspect output cap. Set to MAX_STEP_OUTPUT_CHARS so a long-running aspect
+ * occupies at most as much workflow-JSON real estate as a single non-parallel
+ * step would. With 10 aspects at the cap this implies a 10 MB worst-case
+ * workflow JSON file, well within atomic-write limits.
+ */
+export const MAX_ASPECT_OUTPUT_CHARS = MAX_STEP_OUTPUT_CHARS;
+
+/**
+ * Enforce the per-aspect output cap. Mirrors `enforceStepOutputCap` semantics:
+ * head-trim oldest text entries until total text length is at or under the
+ * cap; tool entries are kept regardless (they are tiny and carry icon
+ * metadata). Mutates the aspect in place.
+ */
+export function enforceAspectOutputCap(
+	aspect: Pick<AspectState, "output" | "outputLog">,
+	cap: number = MAX_ASPECT_OUTPUT_CHARS,
+): void {
+	if (aspect.output.length > cap) {
+		aspect.output = aspect.output.slice(aspect.output.length - cap);
+	}
+	let textLen = 0;
+	for (const entry of aspect.outputLog) {
+		if (entry.kind === "text") textLen += entry.text.length;
+	}
+	while (textLen > cap) {
+		const idx = aspect.outputLog.findIndex((e) => e.kind === "text");
+		if (idx < 0) break;
+		const dropped = aspect.outputLog[idx];
+		if (dropped.kind === "text") textLen -= dropped.text.length;
+		aspect.outputLog.splice(idx, 1);
+	}
+}
+
+/**
  * Enforce the per-step output cap across `step.history[*].output` + `step.output`.
  * Mutates `step` in place. Exported for unit testing; orchestrator calls this
  * after each output append.
@@ -224,6 +258,7 @@ export class PipelineOrchestrator {
 	private worktreeManager: WorktreeBranchManager;
 	private cliRunner: CLIRunner;
 	private stepRunner: CLIStepRunner;
+	private aspectRunner: AspectRunner;
 	private ciMonitor: CIMonitorCoordinator;
 	// Initialized after this.ciMonitor in the constructor — discoverPrUrlFn
 	// captures `this.ciMergeFlow` lazily, so the field is `!`-asserted because
@@ -251,6 +286,7 @@ export class PipelineOrchestrator {
 		this.worktreeManager = deps?.worktreeManager ?? new WorktreeBranchManager(this.engine);
 		this.cliRunner = deps?.cliRunner ?? new CLIRunner();
 		this.stepRunner = new CLIStepRunner(this.cliRunner);
+		this.aspectRunner = new AspectRunner(this.cliRunner);
 		const discoverPrUrlFn =
 			deps?.discoverPrUrl ?? ((w: Workflow) => this.ciMergeFlow.discoverPrUrl(w));
 		this.ciMonitor = new CIMonitorCoordinator(startMonitoring, discoverPrUrlFn);
@@ -597,13 +633,22 @@ export class PipelineOrchestrator {
 				return;
 			}
 			if (step.name === STEP.RESEARCH_ASPECT) {
-				// Reset the errored aspect to pending so pickNextAspect picks it up
-				// first. Already-completed aspects keep their state (per FR-009).
+				// Per US-3 / clarification Q2: only retry the errored aspects;
+				// already-completed aspects keep their state and their panel content
+				// (FR-008). Each retried aspect's panel wipes (output/outputLog reset)
+				// and re-streams from scratch.
 				if (workflow.aspects) {
 					for (const a of workflow.aspects) {
 						if (a.status === "errored") {
 							a.status = "pending";
 							a.errorMessage = null;
+							a.startedAt = null;
+							a.completedAt = null;
+							a.sessionId = null;
+							a.output = "";
+							a.outputLog = [];
+							// Broadcast the wiped state so the panel resets BEFORE new deltas arrive.
+							this.callbacks.onAspectState?.(workflow.id, a.id, a);
 						}
 					}
 				}
@@ -638,26 +683,33 @@ export class PipelineOrchestrator {
 			if (!workflow || workflow.status !== "running") return;
 
 			this.clearArtifactsTimer(workflowId);
-			this.stepRunner.killProcess(workflowId);
-			this.ciMonitor.abort();
-
 			const step = workflow.steps[workflow.currentStepIndex];
+			// research-aspect uses aspect-keyed CLI processes (killed below); the
+			// workflow-keyed kill is a no-op there, so skip it to keep the path clean.
+			if (step.name !== STEP.RESEARCH_ASPECT) {
+				this.stepRunner.killProcess(workflowId);
+			}
+			this.ciMonitor.abort();
 			step.status = "paused";
 			step.pid = null;
 			workflow.updatedAt = new Date().toISOString();
 
-			// Per `aspect-retry.md` "Pause / abort interaction": pausing during a
-			// per-aspect run resets the active aspect to `pending` so resume retries
-			// it from scratch. Without this the aspect stays `in_progress` and
-			// neither the resume path nor the retry path can re-dispatch it cleanly.
+			// Pause during a parallel research-aspect step: kill every in-flight
+			// aspect process and normalise each in_progress aspect back to pending
+			// (output/outputLog are preserved per contracts/aspect-state-shape.md
+			// §3.7; dispatch will wipe them on resume to avoid mixing stale + fresh
+			// tokens).
 			if (step.name === STEP.RESEARCH_ASPECT && workflow.aspects) {
-				const active = workflow.aspects.find((a) => a.status === "in_progress");
-				if (active) {
-					active.status = "pending";
-					active.startedAt = null;
-					active.completedAt = null;
-					active.errorMessage = null;
-					active.sessionId = null;
+				this.aspectRunner.killAllForWorkflow(workflow.id);
+				for (const a of workflow.aspects) {
+					if (a.status === "in_progress") {
+						a.status = "pending";
+						a.startedAt = null;
+						a.completedAt = null;
+						a.errorMessage = null;
+						a.sessionId = null;
+						this.callbacks.onAspectState?.(workflow.id, a.id, a);
+					}
 				}
 			}
 
@@ -790,6 +842,8 @@ export class PipelineOrchestrator {
 
 			this.clearArtifactsTimer(workflowId);
 			this.stepRunner.killProcess(workflowId);
+			// Also kill any in-flight per-aspect processes for this workflow.
+			this.aspectRunner.killAllForWorkflow(workflowId);
 			this.ciMonitor.abort();
 			this.summarizer.cleanup(workflowId);
 			this.resetStepState();
@@ -1338,123 +1392,268 @@ export class PipelineOrchestrator {
 			);
 			return;
 		}
-		const next = pickNextAspect(aspects);
-		if (!next) {
-			// All aspects already completed (e.g. resume after a stale persist).
-			this.handleStepOutput(workflow.id, "All aspects already completed — advancing to synthesis", {
-				type: "system",
-			});
-			this.advanceAfterStep(workflow.id);
-			return;
+		const pendingAspects = aspects.filter((a) => a.status === "pending");
+		if (pendingAspects.length === 0) {
+			// All aspects already completed (e.g. resume after a stale persist) or
+			// every aspect that needed to run has already errored — but the step
+			// shouldn't have reached this branch in the errored case.
+			const everyDone = aspects.every((a) => a.status === "completed");
+			if (everyDone) {
+				this.handleStepOutput(
+					workflow.id,
+					"All aspects already completed — advancing to synthesis",
+					{ type: "system" },
+				);
+				this.advanceAfterStep(workflow.id);
+				return;
+			}
+			// Some errored, none pending → step already settled errored
+			const errored = aspects.filter((a) => a.status === "errored");
+			if (errored.length > 0) {
+				const message = `Research step has ${errored.length} errored aspect(s) and no pending work to do`;
+				this.handleStepError(workflow.id, message);
+				return;
+			}
 		}
-		const entry = workflow.aspectManifest?.aspects.find((a) => a.id === next.id);
-		if (!entry) {
-			// Surface the inconsistency in the step's client output (FR-034)
-			// rather than letting it bubble up to the server log.
-			this.handleStepError(
-				workflow.id,
-				`Inconsistent aspect state — no manifest entry for id ${next.id}`,
-			);
-			return;
-		}
-		const idx = aspects.indexOf(next);
+
 		const cwd = requireWorktreePath(workflow);
 		const config = configStore.get();
 
-		next.status = "in_progress";
-		next.startedAt = new Date().toISOString();
-		next.errorMessage = null;
-		workflow.updatedAt = next.startedAt;
-		this.persistWorkflow(workflow);
-
-		const headline = formatAspectHeadline(idx, aspects.length, entry.title);
-		this.handleStepOutput(workflow.id, headline, { type: "system" });
-
-		const prompt = buildResearchPrompt(config.prompts.askQuestionResearch, {
-			aspectTitle: entry.title,
-			aspectResearchPrompt: entry.researchPrompt,
-			aspectFileName: entry.fileName,
-		});
-		this.runStep(
-			workflow,
-			prompt,
-			cwd,
-			config.models.askQuestionResearch,
-			config.efforts.askQuestionResearch,
-		);
-	}
-
-	private completeResearchAspectStep(workflow: Workflow): void {
-		const aspects = workflow.aspects;
-		if (!aspects) {
-			this.handleStepError(workflow.id, "Inconsistent aspect state — aspects array missing");
-			return;
+		// Wipe each pending aspect's output buffer just before dispatch (per
+		// data-model.md §3.7 dispatch decision). This handles the resume-after-pause
+		// path where stale partial output would otherwise mix with fresh tokens.
+		for (const aspect of pendingAspects) {
+			aspect.output = "";
+			aspect.outputLog = [];
 		}
-		const active = aspects.find((a) => a.status === "in_progress");
-		if (!active) {
-			this.handleStepError(workflow.id, "Inconsistent aspect state — no aspect was in progress");
-			return;
-		}
-		const cwd = requireWorktreePath(workflow);
-		const findings = inspectAspectFindings(cwd, active.fileName);
+
+		// Read the cap at step entry; clamp to [1, manifest size].
+		const cap = Math.max(1, Math.min(config.limits.askQuestionConcurrentAspects, aspects.length));
+
+		// Step-level startedAt: stamp on first dispatch, otherwise leave alone (retry path)
+		const step = workflow.steps[workflow.currentStepIndex];
 		const now = new Date().toISOString();
-		if (findings.kind === "missing") {
-			this.failResearchAspect(
-				workflow,
-				active,
-				"Per-aspect agent declined to write findings (file not found at expected path)",
-			);
-			return;
-		}
-		if (findings.kind === "empty") {
-			this.failResearchAspect(workflow, active, "Per-aspect agent wrote an empty findings file");
-			return;
-		}
-		active.status = "completed";
-		active.completedAt = now;
-		active.errorMessage = null;
+		if (!step.startedAt) step.startedAt = now;
+		step.status = "running";
 		workflow.updatedAt = now;
 
-		const step = workflow.steps[workflow.currentStepIndex];
-		step.sessionId = active.sessionId; // keep most-recent for diagnostics
+		// Stamp activeInvocation so the UI's active-model panel reflects research
+		// (the cli-runner spawns directly; there's no prepareLlmDispatch on this path).
+		workflow.activeInvocation = {
+			model: config.models.askQuestionResearch ?? "",
+			effort: config.efforts.askQuestionResearch,
+			stepName: step.name,
+			startedAt: now,
+			role: "main",
+		};
 
-		// Snapshot per-aspect findings as soon as they're produced so the user
-		// can view/download them as artifacts even if synthesis later fails.
-		try {
-			snapshotAskQuestionArtifacts(workflow);
-		} catch (err) {
-			logger.warn(`[ask-question] per-aspect snapshot failed: ${toErrorMessage(err)}`);
+		// Per-aspect headline lines stay on the step-level channel for diagnostic continuity.
+		for (const aspect of pendingAspects) {
+			const idx = aspects.indexOf(aspect);
+			const entry = manifest.aspects[idx];
+			if (!entry) continue;
+			this.handleStepOutput(workflow.id, formatAspectHeadline(idx, aspects.length, entry.title), {
+				type: "system",
+			});
 		}
 
-		// More aspects to do — re-enter the research loop without advancing the
-		// step index. Otherwise advance to synthesize.
-		const remaining = pickNextAspect(aspects);
-		if (remaining) {
-			// Mark the just-finished per-aspect run as completed before the
-			// archive/reset, so the archived `PipelineStepRun` carries
-			// `status: "completed"` and a non-null `completedAt` (rather than
-			// the `archivedStatusFor("running")` → `"paused"` fallback).
-			step.status = "completed";
-			step.completedAt = now;
-			this.persistWorkflow(workflow);
-			// Reset the step record (archive prior run, fresh output) before the
-			// next per-aspect run.
-			this.stepRunner.resetStep(step);
-			this.runResearchAspectStep(workflow);
-			return;
-		}
 		this.persistWorkflow(workflow);
-		this.advanceAfterStep(workflow.id);
+		this.callbacks.onStateChange(workflow.id);
+
+		const env: AspectDispatchEnv = {
+			cwd,
+			promptTemplate: config.prompts.askQuestionResearch,
+			model: config.models.askQuestionResearch,
+			effort: config.efforts.askQuestionResearch,
+			extraEnv: this.buildStepEnv(workflow),
+		};
+		const callbacks = this.buildAspectRunnerCallbacks(workflow.id, env);
+
+		this.aspectRunner.dispatch(workflow, pendingAspects, cap, env, callbacks);
 	}
 
-	private failResearchAspect(workflow: Workflow, aspect: AspectState, message: string): void {
+	private buildAspectRunnerCallbacks(workflowId: string, env: AspectDispatchEnv) {
+		return {
+			onAspectStart: (aspectId: string) => this.handleAspectStart(workflowId, aspectId),
+			onAspectOutput: (aspectId: string, text: string) =>
+				this.handleAspectOutput(workflowId, aspectId, text),
+			onAspectTools: (aspectId: string, tools: ToolUsage[]) =>
+				this.handleAspectTools(workflowId, aspectId, tools),
+			onAspectSessionId: (aspectId: string, sessionId: string) =>
+				this.handleAspectSessionId(workflowId, aspectId, sessionId),
+			onAspectComplete: (aspectId: string) => this.handleAspectComplete(workflowId, aspectId, env),
+			onAspectError: (aspectId: string, message: string) =>
+				this.handleAspectError(workflowId, aspectId, message, env),
+		};
+	}
+
+	private getAspect(workflow: Workflow, aspectId: string): AspectState | null {
+		return workflow.aspects?.find((a) => a.id === aspectId) ?? null;
+	}
+
+	private broadcastAspectState(workflowId: string, aspect: AspectState): void {
+		this.callbacks.onAspectState?.(workflowId, aspect.id, aspect);
+	}
+
+	private handleAspectStart(workflowId: string, aspectId: string): void {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
+		const aspect = this.getAspect(workflow, aspectId);
+		if (!aspect) return;
+		const now = new Date().toISOString();
+		aspect.status = "in_progress";
+		aspect.startedAt = now;
+		aspect.completedAt = null;
+		aspect.errorMessage = null;
+		aspect.sessionId = null;
+		// runResearchAspectStep wiped output/outputLog at dispatch entry
+		// (data-model.md §3.7) — no second wipe needed here.
+		workflow.updatedAt = now;
+		this.persistDebounced(workflow);
+		this.broadcastAspectState(workflowId, aspect);
+	}
+
+	private handleAspectOutput(workflowId: string, aspectId: string, text: string): void {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
+		const aspect = this.getAspect(workflow, aspectId);
+		if (!aspect) return;
+		aspect.output += text;
+		aspect.outputLog.push({ kind: "text", text });
+		enforceAspectOutputCap(aspect);
+		workflow.updatedAt = new Date().toISOString();
+		this.persistDebounced(workflow);
+		this.callbacks.onAspectOutput?.(workflowId, aspectId, text);
+	}
+
+	private handleAspectTools(workflowId: string, aspectId: string, tools: ToolUsage[]): void {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
+		const aspect = this.getAspect(workflow, aspectId);
+		if (!aspect) return;
+		aspect.outputLog.push({ kind: "tools", tools });
+		workflow.updatedAt = new Date().toISOString();
+		this.persistDebounced(workflow);
+		this.callbacks.onAspectTools?.(workflowId, aspectId, tools);
+	}
+
+	private handleAspectSessionId(workflowId: string, aspectId: string, sessionId: string): void {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
+		const aspect = this.getAspect(workflow, aspectId);
+		if (!aspect) return;
+		aspect.sessionId = sessionId;
+		this.persistDebounced(workflow);
+	}
+
+	private handleAspectComplete(workflowId: string, aspectId: string, env: AspectDispatchEnv): void {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
+		const aspect = this.getAspect(workflow, aspectId);
+		if (!aspect) return;
+		const now = new Date().toISOString();
+		// Re-resolve worktree path live rather than trusting the captured env.cwd,
+		// so a future caller that mutates worktreePath mid-step cannot misroute the
+		// findings inspection.
+		const findings = inspectAspectFindings(requireWorktreePath(workflow), aspect.fileName);
+		if (findings.kind !== "ok") {
+			const reason =
+				findings.kind === "missing"
+					? "Per-aspect agent declined to write findings (file not found at expected path)"
+					: "Per-aspect agent wrote an empty findings file";
+			aspect.status = "errored";
+			aspect.completedAt = now;
+			aspect.errorMessage = reason;
+			workflow.updatedAt = now;
+			this.persistWorkflow(workflow);
+			this.broadcastAspectState(workflowId, aspect);
+			this.afterAspectSettled(workflow, env);
+			return;
+		}
+		aspect.status = "completed";
+		aspect.completedAt = now;
+		// Defensive: an aspect can only reach `in_progress` via `pending`, and the
+		// retry path already nulls errorMessage when flipping back to pending. This
+		// clears any residual message a future state machine change might leak.
+		aspect.errorMessage = null;
+		workflow.updatedAt = now;
+		this.persistWorkflow(workflow);
+		this.broadcastAspectState(workflowId, aspect);
+		this.afterAspectSettled(workflow, env);
+	}
+
+	private handleAspectError(
+		workflowId: string,
+		aspectId: string,
+		message: string,
+		env: AspectDispatchEnv,
+	): void {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
+		const aspect = this.getAspect(workflow, aspectId);
+		if (!aspect) return;
 		const now = new Date().toISOString();
 		aspect.status = "errored";
+		// Stamp startedAt defensively: aspect-runner can fire onAspectError
+		// without a paired onAspectStart on early-error paths (e.g. missing
+		// manifest entry). The contract requires both timestamps when status
+		// is "errored" (contracts/aspect-state-shape.md §2).
+		if (!aspect.startedAt) aspect.startedAt = now;
 		aspect.completedAt = now;
 		aspect.errorMessage = message;
 		workflow.updatedAt = now;
 		this.persistWorkflow(workflow);
-		this.handleStepError(workflow.id, message);
+		this.broadcastAspectState(workflowId, aspect);
+		this.afterAspectSettled(workflow, env);
+	}
+
+	/**
+	 * After any aspect terminates: promote the next pending aspect into the
+	 * freed slot, or — if the pool is empty — settle the step. Re-reads the cap
+	 * on every promotion so a mid-step config change takes effect on the next
+	 * slot opening (data-model.md §4).
+	 */
+	private afterAspectSettled(workflow: Workflow, env: AspectDispatchEnv): void {
+		const aspects = workflow.aspects ?? [];
+
+		// Re-read the cap on every slot-promote opportunity (data-model.md §4):
+		// a user lowering it mid-step takes effect on the next slot opening.
+		const config = configStore.get();
+		const cap = Math.max(1, Math.min(config.limits.askQuestionConcurrentAspects, aspects.length));
+
+		// Try to promote the next pending aspect (in manifest order) — under cap
+		// constraint. The runner enforces the cap; we just supply the candidate set.
+		const stillPending = aspects.filter((a) => a.status === "pending");
+		if (stillPending.length > 0 && this.aspectRunner.inFlightCount(workflow.id) < cap) {
+			const callbacks = this.buildAspectRunnerCallbacks(workflow.id, env);
+			this.aspectRunner.promoteNext(workflow, stillPending, cap, env, callbacks);
+			return;
+		}
+
+		// Pool empty AND no pending → step has settled. Aggregate to step status.
+		if (this.aspectRunner.inFlightCount(workflow.id) > 0) return; // wait for siblings
+		if (stillPending.length > 0) return; // shouldn't reach here
+
+		const aggregated = aggregateStepStatus(aspects);
+		const step = workflow.steps[workflow.currentStepIndex];
+		// Clear active-invocation now that no aspect is running.
+		workflow.activeInvocation = null;
+
+		if (aggregated === "completed") {
+			step.status = "running"; // advanceAfterStep will set completed + completedAt
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflow.id);
+			this.advanceAfterStep(workflow.id);
+			return;
+		}
+		if (aggregated === "error") {
+			const errored = aspects.filter((a) => a.status === "errored");
+			const summary = `Research step failed: ${errored.length} of ${aspects.length} aspect(s) errored — ${errored.map((a) => a.id).join(", ")}`;
+			this.handleStepError(workflow.id, summary);
+			return;
+		}
+		// "running" or "paused" should not be reached when in-flight count == 0
+		// and no pending aspects remain. Defensive: leave the step running.
 	}
 
 	private runSynthesizeStep(workflow: Workflow, opts?: { feedback?: string }): void {
@@ -2396,7 +2595,15 @@ export class PipelineOrchestrator {
 			return;
 		}
 		if (step.name === STEP.RESEARCH_ASPECT) {
-			this.completeResearchAspectStep(workflow);
+			// Parallel-research path: per-aspect processes (owned by AspectRunner)
+			// drive completion via their own callbacks. The orchestrator's
+			// step-level CLI process is not spawned for this step, so this branch
+			// is reached only on a legacy single-process path that no longer
+			// exists. Logging surfaces any future regression that re-routes
+			// through `runStep` for the research-aspect step.
+			logger.warn(
+				`[pipeline] Unexpected step-level completion for research-aspect on workflow ${workflow.id}`,
+			);
 			return;
 		}
 		if (step.name === STEP.SYNTHESIZE) {

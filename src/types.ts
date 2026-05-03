@@ -145,6 +145,19 @@ export interface AspectState {
 	startedAt: string | null;
 	completedAt: string | null;
 	errorMessage: string | null;
+	/**
+	 * Live + persisted text mirror of `outputLog`'s text entries. Capped to
+	 * `MAX_ASPECT_OUTPUT_CHARS` via `enforceAspectOutputCap`. Reset to "" on
+	 * dispatch (and on retry — clarification Q2: panel wipes on retry).
+	 */
+	output: string;
+	/**
+	 * Structured per-aspect log entries (text + tool icons interleaved) used
+	 * by the per-aspect grid panel during the research-aspect step. Same
+	 * `OutputEntry` union as `PipelineStep.outputLog`. Reset to [] on dispatch
+	 * and on retry.
+	 */
+	outputLog: OutputEntry[];
 }
 
 export interface SynthesizedAnswer {
@@ -552,6 +565,17 @@ export interface PipelineCallbacks {
 	onComplete: (workflowId: string) => void;
 	onError: (workflowId: string, error: string) => void;
 	onStateChange: (workflowId: string) => void;
+	/**
+	 * Per-aspect output during a parallel research-aspect step. Routed to a
+	 * dedicated wire channel (`workflow:aspect:output`) so the per-aspect grid
+	 * can attribute deltas without parsing free text. Step-level meta-text
+	 * still flows through `onOutput`.
+	 */
+	onAspectOutput?: (workflowId: string, aspectId: string, text: string) => void;
+	/** Per-aspect tool usage during a parallel research-aspect step. */
+	onAspectTools?: (workflowId: string, aspectId: string, tools: ToolUsage[]) => void;
+	/** Per-aspect full-state snapshot on every aspect status transition. */
+	onAspectState?: (workflowId: string, aspectId: string, state: AspectState) => void;
 	onEpicDependencyUpdate?: (
 		dependentWorkflowId: string,
 		status: EpicDependencyStatus,

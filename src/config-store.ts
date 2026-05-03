@@ -278,6 +278,7 @@ INSTRUCTIONS:
 		artifactsPerFileMaxBytes: 104_857_600,
 		artifactsPerStepMaxBytes: 1_073_741_824,
 		askQuestionMaxAspects: 10,
+		askQuestionConcurrentAspects: 10,
 	},
 	timing: {
 		ciGlobalTimeoutMs: 1_800_000,

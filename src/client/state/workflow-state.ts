@@ -8,6 +8,9 @@ const WORKFLOW_OWNED = [
 	"workflow:removed",
 	"workflow:output",
 	"workflow:tools",
+	"workflow:aspect:output",
+	"workflow:aspect:tools",
+	"workflow:aspect:state",
 	"workflow:question",
 	"workflow:step-change",
 	"epic:dependency-update",
@@ -60,6 +63,18 @@ export function reduce(state: WorkflowSliceState, message: WorkflowSliceMessage)
 				{ kind: "tools", tools: message.tools },
 				"tools",
 			);
+		case "workflow:aspect:output":
+			return appendAspectEntry(state, message.workflowId, message.aspectId, {
+				kind: "text",
+				text: message.text,
+			});
+		case "workflow:aspect:tools":
+			return appendAspectEntry(state, message.workflowId, message.aspectId, {
+				kind: "tools",
+				tools: message.tools,
+			});
+		case "workflow:aspect:state":
+			return handleAspectState(state, message);
 		case "workflow:question":
 			return mutateWorkflow(state, message.workflowId, "workflow:question", (entry) => {
 				entry.state.pendingQuestion = message.question;
@@ -123,6 +138,72 @@ function appendOutput(
 		state,
 		change: { notify: true, affectsCardOrder: false },
 		stateChange: { scope: { entity: "output", id: workflowId }, action: "appended" },
+	};
+}
+
+function appendAspectEntry(
+	state: WorkflowSliceState,
+	workflowId: string,
+	aspectId: string,
+	entry: OutputEntry,
+): Result {
+	const wfEntry = state.workflows.get(workflowId);
+	if (!wfEntry) return unknownId(state, "workflow:aspect:*", workflowId);
+	const aspect = wfEntry.state.aspects?.find((a) => a.id === aspectId);
+	if (!aspect) {
+		return {
+			state,
+			change: { notify: false, affectsCardOrder: false },
+			stateChange: { scope: { entity: "none" }, action: "updated" },
+			warnings: [
+				`workflow:aspect:* for unknown aspectId '${aspectId}' on workflow '${workflowId}'`,
+			],
+		};
+	}
+	if (entry.kind === "text") aspect.output += entry.text;
+	aspect.outputLog.push(entry);
+	return {
+		state,
+		change: { notify: true, affectsCardOrder: false },
+		stateChange: { scope: { entity: "workflow", id: workflowId }, action: "appended" },
+	};
+}
+
+function handleAspectState(state: WorkflowSliceState, msg: Msg<"workflow:aspect:state">): Result {
+	const entry = state.workflows.get(msg.workflowId);
+	if (!entry) return unknownId(state, "workflow:aspect:state", msg.workflowId);
+	const aspects = entry.state.aspects;
+	if (!aspects) return unknownId(state, "workflow:aspect:state", msg.workflowId);
+	const idx = aspects.findIndex((a) => a.id === msg.aspectId);
+	if (idx < 0) {
+		return {
+			state,
+			change: { notify: false, affectsCardOrder: false },
+			stateChange: { scope: { entity: "none" }, action: "updated" },
+			warnings: [
+				`workflow:aspect:state for unknown aspectId '${msg.aspectId}' on workflow '${msg.workflowId}'`,
+			],
+		};
+	}
+	const local = aspects[idx];
+	// Per contract §1.3: if state.outputLog is non-empty, replace the local
+	// mirror (handles late-joiner / server-restart). If empty AND the local
+	// mirror has data, preserve it and only update structural fields.
+	if (msg.state.outputLog.length > 0) {
+		aspects[idx] = msg.state;
+	} else if (local.outputLog.length > 0) {
+		aspects[idx] = {
+			...msg.state,
+			output: local.output,
+			outputLog: local.outputLog,
+		};
+	} else {
+		aspects[idx] = msg.state;
+	}
+	return {
+		state,
+		change: { notify: true, affectsCardOrder: false },
+		stateChange: { scope: { entity: "workflow", id: msg.workflowId }, action: "updated" },
 	};
 }
 

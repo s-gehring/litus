@@ -96,6 +96,55 @@ export function formatAspectHeadline(
 	return `Researching aspect ${aspectIndex + 1} of ${totalAspects}: ${title}`;
 }
 
+/** Aggregate the step-level status across an aspect set. See data-model.md §2. */
+export type AggregatedStepStatus = "running" | "completed" | "error" | "paused";
+
+export function aggregateStepStatus(aspects: AspectState[]): AggregatedStepStatus {
+	if (aspects.length === 0) return "completed";
+	let pendingOrRunning = 0;
+	let errored = 0;
+	let completed = 0;
+	for (const a of aspects) {
+		if (a.status === "completed") completed++;
+		else if (a.status === "errored") errored++;
+		else pendingOrRunning++; // pending or in_progress
+	}
+	if (pendingOrRunning > 0) return "running";
+	if (errored > 0) return "error";
+	if (completed === aspects.length) return "completed";
+	return "running";
+}
+
+/** Counts used to render the progress header above the per-aspect grid (FR-006). */
+export interface AspectProgressSummary {
+	pending: number;
+	running: number;
+	completed: number;
+	errored: number;
+	total: number;
+}
+
+export function computeAspectProgress(aspects: AspectState[]): AspectProgressSummary {
+	const summary: AspectProgressSummary = {
+		pending: 0,
+		running: 0,
+		completed: 0,
+		errored: 0,
+		total: aspects.length,
+	};
+	for (const a of aspects) {
+		if (a.status === "pending") summary.pending++;
+		else if (a.status === "in_progress") summary.running++;
+		else if (a.status === "completed") summary.completed++;
+		else if (a.status === "errored") summary.errored++;
+	}
+	return summary;
+}
+
+export function formatAspectProgressLine(s: AspectProgressSummary): string {
+	return `Research: ${s.completed} of ${s.total} complete (${s.running} in progress, ${s.errored} errored)`;
+}
+
 /**
  * Build a manifest of per-aspect findings files for the `${aspectFindings}`
  * block in the synthesis prompt. The block lists each aspect's title and the

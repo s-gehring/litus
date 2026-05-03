@@ -158,6 +158,237 @@ describe("ClientStateManager façade — single-notification invariant", () => {
 	});
 });
 
+describe("ClientStateManager façade — workflow:aspect:* reducer", () => {
+	function workflowWithAspects() {
+		return makeWorkflowState({
+			id: "wf-1",
+			workflowKind: "ask-question",
+			aspectManifest: {
+				version: 1,
+				aspects: [
+					{ id: "a", title: "A", researchPrompt: "p", fileName: "a.md" },
+					{ id: "b", title: "B", researchPrompt: "p", fileName: "b.md" },
+				],
+			},
+			aspects: [
+				{
+					id: "a",
+					fileName: "a.md",
+					status: "in_progress",
+					sessionId: null,
+					startedAt: "2026-05-03T00:00:00Z",
+					completedAt: null,
+					errorMessage: null,
+					output: "",
+					outputLog: [],
+				},
+				{
+					id: "b",
+					fileName: "b.md",
+					status: "pending",
+					sessionId: null,
+					startedAt: null,
+					completedAt: null,
+					errorMessage: null,
+					output: "",
+					outputLog: [],
+				},
+			],
+		});
+	}
+
+	test("workflow:aspect:output appends to the targeted aspect's output + outputLog", () => {
+		const { mgr } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		mgr.handleMessage({
+			type: "workflow:aspect:output",
+			workflowId: "wf-1",
+			aspectId: "a",
+			text: "Hello ",
+		});
+		mgr.handleMessage({
+			type: "workflow:aspect:output",
+			workflowId: "wf-1",
+			aspectId: "a",
+			text: "world",
+		});
+		const wf = mgr.getWorkflows().get("wf-1")?.state;
+		const aspect = wf?.aspects?.find((a) => a.id === "a");
+		expect(aspect?.output).toBe("Hello world");
+		expect(aspect?.outputLog.length).toBe(2);
+		// Sibling aspect untouched
+		const sibling = wf?.aspects?.find((a) => a.id === "b");
+		expect(sibling?.output).toBe("");
+	});
+
+	test("workflow:aspect:tools appends a tools entry to the targeted aspect's outputLog", () => {
+		const { mgr } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		mgr.handleMessage({
+			type: "workflow:aspect:tools",
+			workflowId: "wf-1",
+			aspectId: "a",
+			tools: [{ name: "Read" }],
+		});
+		const wf = mgr.getWorkflows().get("wf-1")?.state;
+		const aspect = wf?.aspects?.find((a) => a.id === "a");
+		expect(aspect?.outputLog.length).toBe(1);
+		expect(aspect?.outputLog[0].kind).toBe("tools");
+	});
+
+	test("workflow:aspect:state replaces the local aspect with the snapshot", () => {
+		const { mgr } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		mgr.handleMessage({
+			type: "workflow:aspect:state",
+			workflowId: "wf-1",
+			aspectId: "a",
+			state: {
+				id: "a",
+				fileName: "a.md",
+				status: "completed",
+				sessionId: "sess-a",
+				startedAt: "2026-05-03T00:00:00Z",
+				completedAt: "2026-05-03T00:01:00Z",
+				errorMessage: null,
+				output: "done",
+				outputLog: [{ kind: "text", text: "done" }],
+			},
+		});
+		const wf = mgr.getWorkflows().get("wf-1")?.state;
+		const aspect = wf?.aspects?.find((a) => a.id === "a");
+		expect(aspect?.status).toBe("completed");
+		expect(aspect?.output).toBe("done");
+	});
+
+	test("workflow:aspect:state with empty outputLog preserves a non-empty local mirror", () => {
+		const { mgr } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		// Stream some text first
+		mgr.handleMessage({
+			type: "workflow:aspect:output",
+			workflowId: "wf-1",
+			aspectId: "a",
+			text: "partial",
+		});
+		// Pure-status flip: snapshot has no output content
+		mgr.handleMessage({
+			type: "workflow:aspect:state",
+			workflowId: "wf-1",
+			aspectId: "a",
+			state: {
+				id: "a",
+				fileName: "a.md",
+				status: "completed",
+				sessionId: "sess-a",
+				startedAt: "2026-05-03T00:00:00Z",
+				completedAt: "2026-05-03T00:01:00Z",
+				errorMessage: null,
+				output: "",
+				outputLog: [],
+			},
+		});
+		const wf = mgr.getWorkflows().get("wf-1")?.state;
+		const aspect = wf?.aspects?.find((a) => a.id === "a");
+		expect(aspect?.status).toBe("completed");
+		expect(aspect?.output).toBe("partial");
+	});
+
+	test("unknown aspectId on workflow:aspect:output emits a client:warning, not a crash", () => {
+		const { mgr, sent } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		mgr.handleMessage({
+			type: "workflow:aspect:output",
+			workflowId: "wf-1",
+			aspectId: "ghost",
+			text: "x",
+		});
+		expect(sent.some((m) => m.type === "client:warning")).toBe(true);
+	});
+
+	test("unknown aspectId on workflow:aspect:state emits a client:warning, not a crash", () => {
+		const { mgr, sent } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		mgr.handleMessage({
+			type: "workflow:aspect:state",
+			workflowId: "wf-1",
+			aspectId: "ghost",
+			state: {
+				id: "ghost",
+				fileName: "ghost.md",
+				status: "completed",
+				sessionId: null,
+				startedAt: "2026-05-03T00:00:00Z",
+				completedAt: "2026-05-03T00:01:00Z",
+				errorMessage: null,
+				output: "x",
+				outputLog: [{ kind: "text", text: "x" }],
+			},
+		});
+		expect(sent.some((m) => m.type === "client:warning")).toBe(true);
+		// Sibling aspects untouched
+		const wf = mgr.getWorkflows().get("wf-1")?.state;
+		expect(wf?.aspects?.length).toBe(2);
+	});
+
+	test("late joiner: workflow:aspect:state with non-empty outputLog fully replaces local state", () => {
+		const { mgr } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		// Late-joiner snapshot arriving BEFORE any incremental output deltas.
+		mgr.handleMessage({
+			type: "workflow:aspect:state",
+			workflowId: "wf-1",
+			aspectId: "a",
+			state: {
+				id: "a",
+				fileName: "a.md",
+				status: "completed",
+				sessionId: "sess-a",
+				startedAt: "2026-05-03T00:00:00Z",
+				completedAt: "2026-05-03T00:01:00Z",
+				errorMessage: null,
+				output: "full snapshot body",
+				outputLog: [{ kind: "text", text: "full snapshot body" }],
+			},
+		});
+		const wf = mgr.getWorkflows().get("wf-1")?.state;
+		const aspect = wf?.aspects?.find((a) => a.id === "a");
+		expect(aspect?.status).toBe("completed");
+		expect(aspect?.output).toBe("full snapshot body");
+		expect(aspect?.outputLog.length).toBe(1);
+		expect(aspect?.sessionId).toBe("sess-a");
+	});
+
+	test("pure-flip case: workflow:aspect:state with empty outputLog when local mirror is also empty replaces (status flip)", () => {
+		const { mgr } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		// Aspect 'b' starts pending with empty output. Send a status-only flip
+		// snapshot — both incoming and local outputLog are empty, so the local
+		// mirror is replaced (status goes pending → completed).
+		mgr.handleMessage({
+			type: "workflow:aspect:state",
+			workflowId: "wf-1",
+			aspectId: "b",
+			state: {
+				id: "b",
+				fileName: "b.md",
+				status: "completed",
+				sessionId: "sess-b",
+				startedAt: "2026-05-03T00:00:00Z",
+				completedAt: "2026-05-03T00:01:00Z",
+				errorMessage: null,
+				output: "",
+				outputLog: [],
+			},
+		});
+		const wf = mgr.getWorkflows().get("wf-1")?.state;
+		const aspect = wf?.aspects?.find((a) => a.id === "b");
+		expect(aspect?.status).toBe("completed");
+		expect(aspect?.sessionId).toBe("sess-b");
+		expect(aspect?.completedAt).toBe("2026-05-03T00:01:00Z");
+	});
+});
+
 describe("ClientStateManager façade — client:warning forwarding (FR-016)", () => {
 	test("forwards an unknown-workflow output message as a client:warning to the server", () => {
 		const { mgr, sent } = setup();
