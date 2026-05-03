@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import type { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import { getStepDefinitionsForKind } from "../../src/pipeline-steps";
 import type { ClientMessage } from "../../src/protocol";
-import type { Workflow } from "../../src/types";
+import { MAX_LLM_INPUT_LENGTH, type Workflow } from "../../src/types";
 import { makeWorkflow } from "../helpers";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
 import { createMockWebSocket } from "../test-infra/mock-websocket";
@@ -241,7 +241,7 @@ describe("workflow-handlers", () => {
 				mockWs,
 				{
 					type: "workflow:start",
-					specification: "x".repeat(100_001),
+					specification: "x".repeat(MAX_LLM_INPUT_LENGTH + 1),
 					targetRepository: "/mock/repo",
 					workflowKind: "quick-fix",
 				} as ClientMessage,
@@ -744,7 +744,7 @@ describe("workflow-handlers", () => {
 
 		test("rejects text over max length", () => {
 			const { ws, deps, sentMessages, wf } = feedbackSetup();
-			const oversize = "x".repeat(100_001);
+			const oversize = "x".repeat(MAX_LLM_INPUT_LENGTH + 1);
 
 			handleFeedback(
 				ws,
@@ -973,7 +973,7 @@ describe("workflow-handlers", () => {
 
 		test("rejects text over max length", () => {
 			const { ws, deps, sentMessages, wf } = quickFixSetup();
-			const oversize = "x".repeat(100_001);
+			const oversize = "x".repeat(MAX_LLM_INPUT_LENGTH + 1);
 
 			handleFeedback(
 				ws,

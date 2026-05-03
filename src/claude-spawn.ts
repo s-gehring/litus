@@ -25,6 +25,14 @@ export interface SpawnClaudeOptions {
 	 * Production callers leave this unset.
 	 */
 	spawn?: SpawnLike["spawn"];
+	/**
+	 * Prompt text to feed to the CLI via stdin. When set, the caller MUST NOT
+	 * also pass the prompt as a positional argv entry — the Claude CLI reads
+	 * stdin as the prompt when `-p` (print mode) is given without a positional
+	 * prompt. This is the only safe channel for very large prompts: argv has
+	 * an OS-level length cap and exceeds it on long user inputs.
+	 */
+	promptStdin?: string;
 }
 
 /**
@@ -32,26 +40,61 @@ export interface SpawnClaudeOptions {
  *
  * `args` is the argv passed to the binary, WITHOUT the leading `"claude"` —
  * that is prepended here so no caller can forget it.
+ *
+ * Pass user-supplied prompts via `options.promptStdin` rather than embedding
+ * them in `args`: argv length caps cause unrelated "spawn failed" errors at a
+ * few hundred kB on Windows and Linux, while stdin has no such limit.
  */
 export function spawnClaude(
 	args: string[],
 	options: SpawnClaudeOptions = {},
 ): ReturnType<typeof Bun.spawn> {
 	const fullArgs = ["claude", ...args];
+	const usesStdinPrompt = options.promptStdin !== undefined;
 	const spawnOpts = {
 		cwd: options.cwd,
+		stdin: usesStdinPrompt ? "pipe" : undefined,
 		stdout: options.stdout ?? "pipe",
 		stderr: options.stderr ?? "pipe",
 		env: cleanEnv(options.extraEnv),
 		windowsHide: true,
 	} as Parameters<typeof Bun.spawn>[1];
 
-	if (options.spawn) {
-		return options.spawn(fullArgs, spawnOpts as unknown as Record<string, unknown>) as ReturnType<
-			typeof Bun.spawn
-		>;
+	const proc = options.spawn
+		? (options.spawn(fullArgs, spawnOpts as unknown as Record<string, unknown>) as ReturnType<
+				typeof Bun.spawn
+			>)
+		: Bun.spawn(fullArgs, spawnOpts);
+
+	if (usesStdinPrompt) {
+		writePromptToStdin(proc, options.promptStdin ?? "");
 	}
-	return Bun.spawn(fullArgs, spawnOpts);
+
+	return proc;
+}
+
+/**
+ * Write the prompt to the spawned process's stdin and close it. Doing this
+ * synchronously (no await) preserves the existing fire-and-forget shape of
+ * `spawnClaude`. Pipe-write errors are surfaced as stream errors that the
+ * caller's stdout/stderr drain will observe — same path as a malformed CLI
+ * exit, so no extra error-routing is needed here.
+ */
+function writePromptToStdin(proc: ReturnType<typeof Bun.spawn>, prompt: string): void {
+	const stdin = (proc as unknown as { stdin?: unknown }).stdin;
+	if (!stdin) return;
+	// Bun.spawn returns a FileSink-like writer; node:child_process tests inject
+	// a Writable. Both expose `write` + `end` with the same string-friendly
+	// signatures, so a duck-typed call is enough.
+	const sink = stdin as {
+		write?: (chunk: string) => unknown;
+		end?: () => unknown;
+	};
+	try {
+		sink.write?.(prompt);
+	} finally {
+		sink.end?.();
+	}
 }
 
 export interface RunClaudeOptions {
@@ -74,7 +117,7 @@ export interface RunClaudeResult {
 }
 
 export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeResult> {
-	const args: string[] = ["-p", options.prompt];
+	const args: string[] = ["-p"];
 
 	if (options.model?.trim()) {
 		args.push("--model", options.model.trim());
@@ -91,7 +134,10 @@ export async function runClaude(options: RunClaudeOptions): Promise<RunClaudeRes
 	}
 
 	try {
-		const proc = spawnClaude(args, { cwd: options.cwd ?? tmpdir() });
+		const proc = spawnClaude(args, {
+			cwd: options.cwd ?? tmpdir(),
+			promptStdin: options.prompt,
+		});
 
 		let timedOut = false;
 		let timeoutId: ReturnType<typeof setTimeout> | undefined;

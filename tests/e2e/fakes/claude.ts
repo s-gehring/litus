@@ -137,6 +137,18 @@ function writeScenarioFiles(files: ScenarioFile[] | undefined, idx: number): voi
 	}
 }
 
+async function readStdin(): Promise<string> {
+	// Real stdin is piped only when the parent attached one — for `--version`,
+	// `--help`, and similar probe calls there is no piped stdin to read. Bail
+	// fast on a TTY so this never blocks.
+	if (process.stdin.isTTY) return "";
+	const chunks: Buffer[] = [];
+	for await (const chunk of process.stdin) {
+		chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+	}
+	return Buffer.concat(chunks).toString("utf8");
+}
+
 async function main() {
 	const argv = process.argv.slice(2);
 
@@ -152,13 +164,23 @@ async function main() {
 		process.exit(0);
 	}
 
-	// Short-circuit the default-model detection probe. The server runs
-	// `claude -p "Respond with ONLY a single JSON object..."` at startup to
-	// identify which Claude model is currently active. This is a side-channel
-	// call, not part of the scripted pipeline sequence, and must not consume
-	// a scenario slot.
+	// Read the prompt: prefer the positional `-p <text>` form for back-compat
+	// with any non-piped caller, but fall through to stdin for the post-fix
+	// pipe-via-stdin path that all production callers now use.
 	const pIdx = argv.indexOf("-p");
-	const promptArg = pIdx >= 0 ? (argv[pIdx + 1] ?? "") : "";
+	let promptArg =
+		pIdx >= 0 && pIdx + 1 < argv.length && !argv[pIdx + 1].startsWith("-") ? argv[pIdx + 1] : "";
+	let stdinPrompt = "";
+	if (pIdx >= 0 && promptArg === "") {
+		stdinPrompt = await readStdin();
+		promptArg = stdinPrompt;
+	}
+
+	// Short-circuit the default-model detection probe. The server runs
+	// `claude -p` at startup with "Respond with ONLY a single JSON object..."
+	// as the prompt to identify which Claude model is currently active. This
+	// is a side-channel call, not part of the scripted pipeline sequence,
+	// and must not consume a scenario slot.
 	if (promptArg.startsWith("Respond with ONLY a single JSON object")) {
 		process.stdout.write(
 			`${JSON.stringify({ modelId: "claude-e2e-fake", displayName: "E2E Fake" })}\n`,
@@ -238,13 +260,14 @@ async function main() {
 	if (!counterFile) die("missing env LITUS_E2E_COUNTER");
 	const idx = nextIndex(counterFile as string);
 
-	// Record scripted invocations (argv + output format) so tests can assert
-	// on resume-call payloads etc. Probe invocations short-circuit above and
-	// are not captured. One JSON object per line, appended in FIFO order.
+	// Record scripted invocations (argv + output format + stdin prompt) so
+	// tests can assert on resume-call payloads, stdin-piped prompts, etc.
+	// Probe invocations short-circuit above and are not captured. One JSON
+	// object per line, appended in FIFO order.
 	try {
 		appendFileSync(
 			`${counterFile}.argv.jsonl`,
-			`${JSON.stringify({ index: idx, outputFormat, argv })}\n`,
+			`${JSON.stringify({ index: idx, outputFormat, argv, stdin: stdinPrompt })}\n`,
 		);
 	} catch {
 		// best-effort: never fail a scenario because capture IO hiccupped

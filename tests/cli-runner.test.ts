@@ -304,11 +304,18 @@ describe("CLIRunner", () => {
 		//
 		// Fix: pass the header through `--append-system-prompt` so it stays in
 		// system context while the user prompt remains pristine.
-		function captureArgs(): { args: Promise<string[]> } {
+		function captureArgs(): { args: Promise<string[]>; stdinChunks: string[] } {
 			const { promise, resolve } = createDeferredPromise<string[]>();
+			const stdinChunks: string[] = [];
 			BunGlobal.Bun.spawn = (args: string[]) => {
 				queueMicrotask(() => resolve(args));
 				return {
+					stdin: {
+						write: (chunk: string) => {
+							stdinChunks.push(chunk);
+						},
+						end: () => {},
+					},
 					stdout: new ReadableStream({
 						start(c) {
 							c.close();
@@ -324,7 +331,7 @@ describe("CLIRunner", () => {
 					pid: 1,
 				};
 			};
-			return { args: promise };
+			return { args: promise, stdinChunks };
 		}
 
 		test("start() passes --append-system-prompt with the CLAUDE.md contract phrase", async () => {
@@ -348,16 +355,16 @@ describe("CLIRunner", () => {
 		});
 
 		test("bare slash-command step prompt reaches the CLI unwrapped (starts with /)", async () => {
-			const { args } = captureArgs();
+			const { args, stdinChunks } = captureArgs();
 			runner.start(makeWorkflow("w-slash", { specification: "/speckit-specify" }), makeCallbacks());
 
 			const captured = await args;
-			// `-p` is followed by the user prompt; the first character must be `/`
-			// so Claude Code intercepts the slash command.
-			const pIdx = captured.indexOf("-p");
-			expect(pIdx).toBeGreaterThanOrEqual(0);
-			expect(captured[pIdx + 1]).toBe("/speckit-specify");
-			expect(captured[pIdx + 1].startsWith("/")).toBe(true);
+			// `-p` enables print mode; the prompt is piped via stdin (not in argv)
+			// so very large prompts don't blow the OS argv length cap. The first
+			// character must be `/` so Claude Code intercepts the slash command.
+			expect(captured).toContain("-p");
+			expect(stdinChunks.join("")).toBe("/speckit-specify");
+			expect(stdinChunks.join("").startsWith("/")).toBe(true);
 		});
 	});
 

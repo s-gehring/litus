@@ -4,6 +4,13 @@ export interface CapturedClaudeCall {
 	index: number;
 	outputFormat: string;
 	argv: string[];
+	/**
+	 * Prompt content fed to the CLI via stdin. Production code pipes user
+	 * input here rather than embedding it in argv so very large prompts
+	 * cannot blow the OS argv length cap. Empty string when nothing was
+	 * piped (e.g. `--version`-style probes).
+	 */
+	stdin: string;
 }
 
 /**
@@ -12,7 +19,7 @@ export interface CapturedClaudeCall {
  * counter file under the sandbox (`<counterFile>.argv.jsonl`).
  *
  * Tests use this to assert on args passed to claude — for example, the
- * answer text carried in the `-p` prompt of a Full Auto resume call.
+ * answer text carried in the prompt of a Full Auto resume call.
  */
 export function readCapturedClaudeCalls(counterFile: string): CapturedClaudeCall[] {
 	const path = `${counterFile}.argv.jsonl`;
@@ -31,15 +38,28 @@ export function readCapturedClaudeCalls(counterFile: string): CapturedClaudeCall
 	return raw
 		.split("\n")
 		.filter((l) => l.length > 0)
-		.map((l) => JSON.parse(l) as CapturedClaudeCall);
+		.map((l) => {
+			const parsed = JSON.parse(l) as Partial<CapturedClaudeCall> & {
+				index: number;
+				outputFormat: string;
+				argv: string[];
+			};
+			// Older capture lines (pre stdin-pipe) lack `stdin`; default to "".
+			return { ...parsed, stdin: parsed.stdin ?? "" } as CapturedClaudeCall;
+		});
 }
 
 /**
- * Extract the `-p` prompt argument from a captured invocation, or null if
- * the call had no `-p` flag.
+ * Extract the prompt for a captured invocation. Production callers pipe the
+ * prompt via stdin (the `stdin` field), so that's the primary source. Falls
+ * back to a positional `-p <text>` arg for back-compat with any non-piped
+ * caller, and returns null when neither is present.
  */
 export function promptOf(call: CapturedClaudeCall): string | null {
+	if (call.stdin && call.stdin.length > 0) return call.stdin;
 	const i = call.argv.indexOf("-p");
 	if (i < 0 || i + 1 >= call.argv.length) return null;
-	return call.argv[i + 1];
+	const next = call.argv[i + 1];
+	if (next.startsWith("-")) return null;
+	return next;
 }

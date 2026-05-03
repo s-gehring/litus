@@ -4,7 +4,7 @@ import { logger } from "../logger";
 import { STEP } from "../pipeline-steps";
 import type { ClientMessage } from "../protocol";
 import { getMimeType } from "../static-files";
-import { ASK_QUESTION_MAX_LENGTH, type Workflow } from "../types";
+import { ASK_QUESTION_MAX_LENGTH, MAX_LLM_INPUT_LENGTH, type Workflow } from "../types";
 import {
 	getArtifactSnapshotPath,
 	getWorkflowBranch,
@@ -317,7 +317,7 @@ export const handleStartExisting: MessageHandler = withOrchestrator((ws, data, d
 	deps.broadcastWorkflowState(msg.workflowId);
 });
 
-const FEEDBACK_MAX_LENGTH = 100_000;
+const FEEDBACK_MAX_LENGTH = MAX_LLM_INPUT_LENGTH;
 
 export const handleFeedback: MessageHandler = withOrchestrator((ws, data, deps, orch) => {
 	const msg = data as ClientMessage & { type: "workflow:feedback" };

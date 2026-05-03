@@ -3,6 +3,10 @@ import { ReviewClassifier } from "../src/review-classifier";
 
 const originalSpawn = Bun.spawn;
 
+// Captures the prompt that production code now pipes via stdin so the
+// per-test assertions can read it back without round-tripping through argv.
+const capturedStdin: string[] = [];
+
 function mockSpawnResponse(text: string, exitCode = 0) {
 	const stream = new ReadableStream({
 		start(controller) {
@@ -11,6 +15,12 @@ function mockSpawnResponse(text: string, exitCode = 0) {
 		},
 	});
 	return {
+		stdin: {
+			write: (chunk: string) => {
+				capturedStdin.push(chunk);
+			},
+			end: () => {},
+		},
 		stdout: stream,
 		stderr: new ReadableStream({
 			start(c) {
@@ -29,6 +39,7 @@ describe("ReviewClassifier", () => {
 
 	afterEach(() => {
 		Bun.spawn = originalSpawn;
+		capturedStdin.length = 0;
 	});
 
 	test("classifies review output as minor", async () => {
@@ -87,7 +98,7 @@ describe("ReviewClassifier", () => {
 		expect(result).toBe("major");
 	});
 
-	test("passes review output to claude CLI with haiku model", async () => {
+	test("passes review output to claude CLI with haiku model via stdin", async () => {
 		spawnMock = mock(() => mockSpawnResponse("minor"));
 		Bun.spawn = spawnMock as typeof Bun.spawn;
 		classifier = new ReviewClassifier();
@@ -98,6 +109,8 @@ describe("ReviewClassifier", () => {
 		expect(args).toContain("claude");
 		expect(args).toContain("--model");
 		expect(args).toContain("claude-haiku-4-5-20251001");
-		expect(args[2]).toContain("Test review output");
+		// Prompt is piped via stdin (not argv) so very large inputs cannot blow
+		// the OS argv length cap.
+		expect(capturedStdin.join("")).toContain("Test review output");
 	});
 });

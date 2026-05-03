@@ -166,10 +166,24 @@ export interface SynthesizedAnswer {
 	sourceFileName: string;
 }
 
+/**
+ * Shared maximum for every user-supplied LLM prompt input — specification,
+ * epic description, quick-fix description, question, answer, and every
+ * feedback variant. Aligned across all entry points so a piece of text
+ * accepted in one panel cannot be silently rejected from another.
+ *
+ * Sized to fit comfortably below the LLM context window while still
+ * allowing operators to paste large stack traces, full files, or whole
+ * design docs as input. The internal CLI bridge pipes this text through
+ * stdin (not argv) precisely so the OS argv length cap can never become
+ * the binding constraint here.
+ */
+export const MAX_LLM_INPUT_LENGTH = 300_000;
+
 // Server-side guardrail on the user's submitted question text. Trimmed
 // length must be ≤ this value before workflow creation; the client
 // repeats the same check pre-send (defense-in-depth).
-export const ASK_QUESTION_MAX_LENGTH = 300_000;
+export const ASK_QUESTION_MAX_LENGTH = MAX_LLM_INPUT_LENGTH;
 
 // Lightweight metadata for fast workflow listing without loading full state
 export interface WorkflowIndexEntry {
@@ -266,17 +280,17 @@ export interface ReviewCycle {
 // Maximum trimmed feedback length accepted by the epic-decomposition feedback
 // endpoint (FR-005). Shared between the client-side counter/panel and the
 // server-side validation so the two cannot drift.
-export const EPIC_FEEDBACK_MAX_LENGTH = 10_000;
+export const EPIC_FEEDBACK_MAX_LENGTH = MAX_LLM_INPUT_LENGTH;
 
 // Maximum trimmed text length for the resume-with-feedback flow (FR-014).
 // Shared between the orchestrator's authoritative validation and the
 // handler-level early-rejection so the two cannot drift.
-export const RESUME_WITH_FEEDBACK_MAX_LENGTH = 10_000;
+export const RESUME_WITH_FEEDBACK_MAX_LENGTH = MAX_LLM_INPUT_LENGTH;
 
 // Maximum trimmed feedback length for the ask-question iteration flow.
 // Shared between the WS handler and the orchestrator's authoritative
 // validation so the two cannot drift.
-export const ASK_QUESTION_FEEDBACK_MAX_LENGTH = 100_000;
+export const ASK_QUESTION_FEEDBACK_MAX_LENGTH = MAX_LLM_INPUT_LENGTH;
 
 // Manual-mode feedback loop: per-iteration outcome of a feedback-implementer run
 export type FeedbackOutcomeValue = "success" | "no changes" | "failed" | "aborted";

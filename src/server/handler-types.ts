@@ -12,6 +12,7 @@ import type { Channel, ClientMessage, ServerMessage } from "../protocol";
 import type { Summarizer } from "../summarizer";
 import { validateTargetRepository } from "../target-repo-validator";
 import type { Alert, Workflow, WorkflowState } from "../types";
+import { MAX_LLM_INPUT_LENGTH } from "../types";
 import type { WorkflowStore } from "../workflow-store";
 
 export type WsData = Record<string, never>;
@@ -76,7 +77,7 @@ export function withOrchestrator(
 	};
 }
 
-const MAX_INPUT_LENGTH = 100_000;
+const MAX_INPUT_LENGTH = MAX_LLM_INPUT_LENGTH;
 
 /** Validate a text input is non-empty and under the max length. Returns an error message or null. */
 export function validateTextInput(

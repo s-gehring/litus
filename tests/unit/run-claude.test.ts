@@ -4,8 +4,19 @@ import { runClaude } from "../../src/claude-spawn";
 const originalSpawn = Bun.spawn;
 const originalWarn = console.warn;
 
+// Production code pipes the prompt via stdin (post-stdin migration), so
+// per-test prompt assertions read the captured chunks rather than scraping
+// argv. Cleared in `beforeEach`.
+const stdinChunks: string[] = [];
+
 function mockSpawnResponse(stdout: string, stderr = "", exitCode = 0) {
 	return {
+		stdin: {
+			write: (chunk: string) => {
+				stdinChunks.push(chunk);
+			},
+			end: () => {},
+		},
 		stdout: new ReadableStream({
 			start(c) {
 				c.enqueue(new TextEncoder().encode(stdout));
@@ -28,6 +39,7 @@ describe("runClaude", () => {
 	let spawnMock: ReturnType<typeof mock>;
 
 	beforeEach(() => {
+		stdinChunks.length = 0;
 		spawnMock = mock(() => mockSpawnResponse("output"));
 		Bun.spawn = spawnMock as typeof Bun.spawn;
 		console.warn = originalWarn;
@@ -39,12 +51,15 @@ describe("runClaude", () => {
 	});
 
 	describe("argument building", () => {
-		test("prompt-only call builds correct args", async () => {
+		test("prompt-only call builds correct args (prompt via stdin, not argv)", async () => {
 			await runClaude({ prompt: "hello" });
 			const args = spawnMock.mock.calls[0][0] as string[];
 			expect(args).toContain("claude");
 			expect(args).toContain("-p");
-			expect(args).toContain("hello");
+			// Prompt is piped via stdin (not argv) so very large inputs cannot
+			// blow the OS argv length cap.
+			expect(args).not.toContain("hello");
+			expect(stdinChunks.join("")).toBe("hello");
 			expect(args).toContain("--output-format");
 			expect(args).toContain("text");
 		});

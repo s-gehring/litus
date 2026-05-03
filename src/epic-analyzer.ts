@@ -141,8 +141,9 @@ async function runCLIStream(
 	timeoutMs: number,
 	onKillRef?: { current: EpicAnalysisProcess | null },
 	callbacks?: EpicAnalysisCallbacks,
+	promptStdin?: string,
 ): Promise<StreamResult> {
-	const proc = spawnClaude(args, { cwd });
+	const proc = spawnClaude(args, { cwd, promptStdin });
 
 	if (onKillRef) {
 		onKillRef.current = { kill: () => proc.kill() };
@@ -201,7 +202,6 @@ export async function analyzeEpic(
 	const maxJsonRetries = config.limits.maxJsonRetries;
 	const args = [
 		"-p",
-		prompt,
 		"--output-format",
 		"stream-json",
 		"--verbose",
@@ -217,7 +217,14 @@ export async function analyzeEpic(
 		args.push("--model", model);
 	}
 
-	const result = await runCLIStream(args, targetRepoDir, effectiveTimeout, onKillRef, callbacks);
+	const result = await runCLIStream(
+		args,
+		targetRepoDir,
+		effectiveTimeout,
+		onKillRef,
+		callbacks,
+		prompt,
+	);
 
 	if (result.timedOut) throw new Error("Epic analysis timed out");
 	if (result.exitCode !== 0) {
@@ -251,7 +258,6 @@ export async function analyzeEpic(
 
 			const retryArgs = [
 				"-p",
-				JSON_FIX_PROMPT,
 				"--resume",
 				sessionId,
 				"--output-format",
@@ -272,6 +278,7 @@ export async function analyzeEpic(
 				effectiveTimeout,
 				onKillRef,
 				callbacks,
+				JSON_FIX_PROMPT,
 			);
 
 			if (retryResult.timedOut) throw new Error("Epic analysis timed out during retry");

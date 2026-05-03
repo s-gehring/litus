@@ -1,5 +1,12 @@
-import type { FeedbackEntry, FeedbackOutcomeValue, WorkflowState } from "../../types";
+import {
+	type FeedbackEntry,
+	type FeedbackOutcomeValue,
+	MAX_LLM_INPUT_LENGTH,
+	type WorkflowState,
+} from "../../types";
 import { $ } from "../dom";
+
+const MAX_LENGTH = MAX_LLM_INPUT_LENGTH;
 
 const OUTCOME_LABELS: Record<FeedbackOutcomeValue, string> = {
 	success: "success",
@@ -32,15 +39,15 @@ export function showFeedbackPanel(workflow: WorkflowState, onSubmit: (text: stri
 
 	const updateSubmitState = () => {
 		const trimmedLength = input.value.trim().length;
-		// FR-006: empty-after-trim disables submit. FR-014: > 10000 chars disables submit.
-		const overLength = trimmedLength > 10000;
+		// FR-006: empty-after-trim disables submit. Over-limit also disables.
+		const overLength = trimmedLength > MAX_LENGTH;
 		const isEmpty = trimmedLength === 0;
 		const disabled = hasInFlight || isEmpty || overLength;
 		submitBtn.disabled = disabled;
 		if (hasInFlight) {
 			submitBtn.title = "A feedback iteration is already in progress";
 		} else if (overLength) {
-			submitBtn.title = `Feedback exceeds 10,000 characters (currently ${trimmedLength})`;
+			submitBtn.title = `Feedback exceeds ${MAX_LENGTH.toLocaleString("en-US")} characters (currently ${trimmedLength})`;
 		} else if (isEmpty) {
 			submitBtn.title = "Enter feedback text to submit";
 		} else {
