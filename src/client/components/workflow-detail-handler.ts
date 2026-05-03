@@ -141,7 +141,12 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 				deps.getAutoMode() === "manual" &&
 				currentStepName === STEP.MERGE_PR) ||
 			// FR-016: errored fix-implement accepts appended retry context.
-			(wf.status === "error" && currentStepName === STEP.FIX_IMPLEMENT);
+			(wf.status === "error" && currentStepName === STEP.FIX_IMPLEMENT) ||
+			// Ask-question answer iteration: paused at the answer step accepts
+			// feedback via the same panel used elsewhere.
+			(wf.workflowKind === "ask-question" &&
+				wf.status === "waiting_for_input" &&
+				currentStepName === STEP.ANSWER);
 		if (!feedbackEligible) {
 			hideFeedbackPanel();
 		} else if (isFeedbackPanelVisible()) {
@@ -150,15 +155,12 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 
 		hideFeedbackPanelUnlessFor(wf.id);
 
-		// Ask-question detail surface: rendered above the output area when the
-		// workflow has produced an answer or is paused at the answer step. The
-		// panel handles its own feedback/finalize/retry controls.
+		// Ask-question detail surface: renders the synthesized answer (and a
+		// retry-aspect error banner). Finalize / Provide feedback live in the
+		// standard detail-actions bar, not in this panel.
 		const detailArea = document.getElementById("detail-area");
 		if (wf.workflowKind === "ask-question" && detailArea) {
 			renderAskAnswerPanel(detailArea, wf, {
-				onFinalize: (workflowId) => deps.send({ type: "workflow:finalize", workflowId }),
-				onSubmitFeedback: (workflowId, text) =>
-					deps.send({ type: "workflow:feedback", workflowId, text }),
 				onRetryAspect: (workflowId) => deps.send({ type: "workflow:retry", workflowId }),
 			});
 		} else if (detailArea) {
@@ -200,6 +202,19 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 			});
 		}
 		if (wf.status === "waiting_for_input" || wf.status === "waiting_for_dependencies") {
+			// Ask-question paused at the `answer` step: surface Finalize +
+			// Provide feedback alongside Abort so every action stays in the
+			// standard detail-actions bar (instead of a bespoke panel).
+			if (wf.workflowKind === "ask-question" && currentStepName === STEP.ANSWER) {
+				actions.push({
+					key: "finalize",
+					onClick: () => deps.send({ type: "workflow:finalize", workflowId: wf.id }),
+				});
+				actions.push({
+					key: "provide-feedback",
+					onClick: () => deps.openFeedbackPanel(wf),
+				});
+			}
 			actions.push({
 				key: "abort",
 				onClick: () => deps.send({ type: "workflow:abort", workflowId: wf.id }),

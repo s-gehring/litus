@@ -5,18 +5,18 @@ import { renderMarkdown } from "../render-markdown";
 const PANEL_ID = "ask-answer-panel";
 
 interface AskAnswerPanelHandlers {
-	onFinalize: (workflowId: string) => void;
-	onSubmitFeedback: (workflowId: string, text: string) => void;
 	onRetryAspect?: (workflowId: string) => void;
 }
 
 /**
- * Render the synthesized answer + finalize control + feedback panel for an
- * ask-question workflow. The panel is only mounted when the workflow is paused
- * at the `answer` step, with a separate variant for the `error` state on the
- * `research-aspect` step (offering a retry button).
+ * Render the synthesized answer for an ask-question workflow (and an error
+ * banner with a retry control when an aspect failed). Finalize + Provide
+ * feedback live in the standard detail-actions bar — this panel is purely the
+ * answer / aspect-error surface.
  *
  * Idempotent: re-rendering replaces the previous panel contents in place.
+ * When the panel has nothing to render it is hidden so it doesn't claim
+ * vertical space.
  */
 export function renderAskAnswerPanel(
 	parent: HTMLElement,
@@ -37,7 +37,6 @@ export function renderAskAnswerPanel(
 	}
 
 	const step = workflow.steps[workflow.currentStepIndex];
-	const isPausedAtAnswer = workflow.status === "waiting_for_input" && step?.name === STEP.ANSWER;
 	const erroredAspect = workflow.aspects?.find((a) => a.status === "errored") ?? null;
 
 	if (erroredAspect && workflow.status === "error" && step?.name === STEP.RESEARCH_ASPECT) {
@@ -58,46 +57,17 @@ export function renderAskAnswerPanel(
 		panel.appendChild(banner);
 	}
 
-	if (isPausedAtAnswer) {
-		const actions = document.createElement("div");
-		actions.className = "ask-answer-actions";
+	const hasContent = panel.childElementCount > 0;
+	panel.classList.toggle("hidden", !hasContent);
 
-		const feedbackForm = document.createElement("div");
-		feedbackForm.className = "ask-answer-feedback";
-		const feedbackLabel = document.createElement("label");
-		feedbackLabel.textContent = "Refine the answer with feedback";
-		const feedbackInput = document.createElement("textarea");
-		feedbackInput.rows = 3;
-		feedbackInput.placeholder = "What should change about the answer?";
-		const feedbackBtn = document.createElement("button");
-		feedbackBtn.className = "btn btn-primary";
-		feedbackBtn.textContent = "Submit feedback";
-		feedbackBtn.disabled = true;
-		feedbackInput.addEventListener("input", () => {
-			feedbackBtn.disabled = feedbackInput.value.trim() === "";
-		});
-		feedbackBtn.addEventListener("click", () => {
-			const text = feedbackInput.value.trim();
-			if (!text) return;
-			handlers.onSubmitFeedback(workflow.id, text);
-			feedbackInput.value = "";
-			feedbackBtn.disabled = true;
-		});
-		feedbackForm.appendChild(feedbackLabel);
-		feedbackForm.appendChild(feedbackInput);
-		feedbackForm.appendChild(feedbackBtn);
-		actions.appendChild(feedbackForm);
-
-		const finalizeRow = document.createElement("div");
-		finalizeRow.className = "ask-answer-finalize";
-		const finalizeBtn = document.createElement("button");
-		finalizeBtn.className = "btn btn-secondary";
-		finalizeBtn.textContent = "Finalize";
-		finalizeBtn.addEventListener("click", () => handlers.onFinalize(workflow.id));
-		finalizeRow.appendChild(finalizeBtn);
-		actions.appendChild(finalizeRow);
-
-		panel.appendChild(actions);
+	// When the panel is showing the synthesized answer, the standard output-log
+	// has nothing useful to add for the ANSWER / FINALIZE steps and would
+	// otherwise render as an empty bordered box that pushes the answer to the
+	// bottom of the viewport. Hide it while the answer is on screen.
+	const outputArea = parent.querySelector<HTMLElement>("#output-area");
+	if (outputArea) {
+		const hideOutput = Boolean(workflow.synthesizedAnswer);
+		outputArea.classList.toggle("hidden", hideOutput);
 	}
 
 	if (!existing) parent.appendChild(panel);
@@ -106,4 +76,6 @@ export function renderAskAnswerPanel(
 export function hideAskAnswerPanel(parent: HTMLElement): void {
 	const panel = parent.querySelector<HTMLDivElement>(`#${PANEL_ID}`);
 	if (panel) panel.remove();
+	const outputArea = parent.querySelector<HTMLElement>("#output-area");
+	if (outputArea) outputArea.classList.remove("hidden");
 }
