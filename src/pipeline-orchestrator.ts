@@ -170,6 +170,40 @@ const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
 export const MAX_STEP_OUTPUT_CHARS = 1_000_000;
 
 /**
+ * Per-aspect output cap. Set to MAX_STEP_OUTPUT_CHARS so a long-running aspect
+ * occupies at most as much workflow-JSON real estate as a single non-parallel
+ * step would. With 10 aspects at the cap this implies a 10 MB worst-case
+ * workflow JSON file, well within atomic-write limits.
+ */
+export const MAX_ASPECT_OUTPUT_CHARS = MAX_STEP_OUTPUT_CHARS;
+
+/**
+ * Enforce the per-aspect output cap. Mirrors `enforceStepOutputCap` semantics:
+ * head-trim oldest text entries until total text length is at or under the
+ * cap; tool entries are kept regardless (they are tiny and carry icon
+ * metadata). Mutates the aspect in place.
+ */
+export function enforceAspectOutputCap(
+	aspect: Pick<AspectState, "output" | "outputLog">,
+	cap: number = MAX_ASPECT_OUTPUT_CHARS,
+): void {
+	if (aspect.output.length > cap) {
+		aspect.output = aspect.output.slice(aspect.output.length - cap);
+	}
+	let textLen = 0;
+	for (const entry of aspect.outputLog) {
+		if (entry.kind === "text") textLen += entry.text.length;
+	}
+	while (textLen > cap) {
+		const idx = aspect.outputLog.findIndex((e) => e.kind === "text");
+		if (idx < 0) break;
+		const dropped = aspect.outputLog[idx];
+		if (dropped.kind === "text") textLen -= dropped.text.length;
+		aspect.outputLog.splice(idx, 1);
+	}
+}
+
+/**
  * Enforce the per-step output cap across `step.history[*].output` + `step.output`.
  * Mutates `step` in place. Exported for unit testing; orchestrator calls this
  * after each output append.

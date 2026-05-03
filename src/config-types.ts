@@ -90,6 +90,14 @@ export interface LimitConfig {
 	 * truncated to this length in document order.
 	 */
 	askQuestionMaxAspects: number;
+	/**
+	 * Upper bound on the number of aspect research processes running
+	 * concurrently within one ask-question workflow's research-aspect step.
+	 * Min: 1. Defaults to `askQuestionMaxAspects` so the out-of-the-box
+	 * experience is fully parallel. The orchestrator additionally clamps the
+	 * effective cap to `Math.min(value, aspects.length)` at runtime.
+	 */
+	askQuestionConcurrentAspects: number;
 }
 
 export interface TimingConfig {

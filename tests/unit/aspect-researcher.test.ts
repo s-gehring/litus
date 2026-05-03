@@ -21,6 +21,8 @@ function aspect(overrides: Partial<AspectState> = {}): AspectState {
 		startedAt: overrides.startedAt ?? null,
 		completedAt: overrides.completedAt ?? null,
 		errorMessage: overrides.errorMessage ?? null,
+		output: overrides.output ?? "",
+		outputLog: overrides.outputLog ?? [],
 	};
 }
 

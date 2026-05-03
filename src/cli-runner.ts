@@ -85,12 +85,25 @@ export interface CLICallbacks {
 interface RunningProcess {
 	process: ReturnType<typeof Bun.spawn>;
 	workflowId: string;
+	processKey: string;
+	aspectId: string | null;
 	sessionId: string | null;
 	cwd: string;
 	callbacks: CLICallbacks;
 	stale: boolean;
 	timedOut: boolean;
 	idleTimer: ReturnType<typeof setTimeout> | null;
+}
+
+/**
+ * Composite process key shape used when multiple processes run concurrently
+ * for the same workflow (e.g. parallel research aspects). Not transmitted
+ * over the wire — purely an in-memory `Map` key. Aspect ids are constrained
+ * to `^[a-zA-Z0-9_-]+$` by `validateAspectManifest`, so the segments are
+ * always safe identifiers.
+ */
+export function aspectProcessKey(workflowId: string, aspectId: string): string {
+	return `${workflowId}::aspect::${aspectId}`;
 }
 
 export class CLIRunner {
@@ -102,6 +115,7 @@ export class CLIRunner {
 		extraEnv?: Record<string, string>,
 		model?: string,
 		effort?: EffortLevel,
+		opts?: { processKey?: string; aspectId?: string },
 	): void {
 		if (!workflow.worktreePath) {
 			// Async error: start() is void-returning so callers can't catch a throw
@@ -113,16 +127,21 @@ export class CLIRunner {
 			return;
 		}
 
-		// Guard: kill any lingering process for this workflow before starting a new one
-		const existing = this.running.get(workflow.id);
+		const processKey = opts?.processKey ?? workflow.id;
+		const aspectId = opts?.aspectId ?? null;
+
+		// Guard: kill any lingering process under the same key before starting a new one.
+		// For aspect-keyed processes this lets concurrent aspects coexist; for the
+		// default workflow-keyed path it preserves the prior single-process invariant.
+		const existing = this.running.get(processKey);
 		if (existing) {
 			logger.warn(
-				`[cli-runner] Killing existing process (pid=${existing.process.pid}) for workflow ${workflow.id} before starting new one`,
+				`[cli-runner] Killing existing process (pid=${existing.process.pid}) for key ${processKey} before starting new one`,
 			);
 			existing.stale = true;
 			if (existing.idleTimer) clearTimeout(existing.idleTimer);
 			existing.process.kill();
-			this.running.delete(workflow.id);
+			this.running.delete(processKey);
 		}
 
 		const cwd = workflow.worktreePath;
@@ -158,7 +177,7 @@ export class CLIRunner {
 
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
-			logger.info(`[cli-runner] Starting CLI for workflow ${workflow.id} | cwd=${cwd}`);
+			logger.info(`[cli-runner] Starting CLI for key ${processKey} | cwd=${cwd}`);
 			proc = spawnClaude(args, { cwd, extraEnv });
 		} catch (err) {
 			const msg = toErrorMessage(err);
@@ -170,6 +189,8 @@ export class CLIRunner {
 		const entry: RunningProcess = {
 			process: proc,
 			workflowId: workflow.id,
+			processKey,
+			aspectId,
 			sessionId: null,
 			cwd,
 			callbacks,
@@ -178,8 +199,8 @@ export class CLIRunner {
 			idleTimer: null,
 		};
 
-		this.running.set(workflow.id, entry);
-		logger.info(`[cli-runner] Spawned pid=${proc.pid} for workflow ${workflow.id}`);
+		this.running.set(processKey, entry);
+		logger.info(`[cli-runner] Spawned pid=${proc.pid} for key ${processKey}`);
 		callbacks.onPid?.(proc.pid);
 		this.streamOutput(entry);
 	}
@@ -193,17 +214,21 @@ export class CLIRunner {
 		prompt?: string,
 		model?: string,
 		effort?: EffortLevel,
+		opts?: { processKey?: string; aspectId?: string },
 	): void {
-		// Guard: kill any lingering process for this workflow
-		const existing = this.running.get(workflowId);
+		const processKey = opts?.processKey ?? workflowId;
+		const aspectId = opts?.aspectId ?? null;
+
+		// Guard: kill any lingering process under the same key before resuming.
+		const existing = this.running.get(processKey);
 		if (existing) {
 			logger.warn(
-				`[cli-runner] Killing existing process (pid=${existing.process.pid}) for workflow ${workflowId} before resuming`,
+				`[cli-runner] Killing existing process (pid=${existing.process.pid}) for key ${processKey} before resuming`,
 			);
 			existing.stale = true;
 			if (existing.idleTimer) clearTimeout(existing.idleTimer);
 			existing.process.kill();
-			this.running.delete(workflowId);
+			this.running.delete(processKey);
 		}
 
 		const defaultPrompt =
@@ -250,6 +275,8 @@ export class CLIRunner {
 		const entry: RunningProcess = {
 			process: proc,
 			workflowId,
+			processKey,
+			aspectId,
 			sessionId,
 			cwd,
 			callbacks,
@@ -258,18 +285,33 @@ export class CLIRunner {
 			idleTimer: null,
 		};
 
-		this.running.set(workflowId, entry);
+		this.running.set(processKey, entry);
 		callbacks.onPid?.(proc.pid);
 		this.streamOutput(entry);
 	}
 
-	kill(workflowId: string): void {
-		const entry = this.running.get(workflowId);
+	kill(workflowIdOrKey: string): void {
+		const entry = this.running.get(workflowIdOrKey);
 		if (entry) {
 			entry.stale = true;
 			if (entry.idleTimer) clearTimeout(entry.idleTimer);
 			entry.process.kill();
-			this.running.delete(workflowId);
+			this.running.delete(workflowIdOrKey);
+		}
+	}
+
+	/**
+	 * Kill every running process owned by a given workflow id, including
+	 * aspect-keyed processes. Used by the orchestrator on pause/abort/retry
+	 * paths during a parallel research-aspect step.
+	 */
+	killAllForWorkflow(workflowId: string): void {
+		for (const [key, entry] of this.running.entries()) {
+			if (entry.workflowId !== workflowId) continue;
+			entry.stale = true;
+			if (entry.idleTimer) clearTimeout(entry.idleTimer);
+			entry.process.kill();
+			this.running.delete(key);
 		}
 	}
 
@@ -289,7 +331,7 @@ export class CLIRunner {
 		entry.idleTimer = setTimeout(() => {
 			if (entry.stale) return;
 			logger.error(
-				`[cli-runner] Idle timeout (${timeoutMs}ms) for workflow ${entry.workflowId} — killing process`,
+				`[cli-runner] Idle timeout (${timeoutMs}ms) for key ${entry.processKey} — killing process`,
 			);
 			entry.stale = true;
 			entry.timedOut = true;
@@ -298,12 +340,12 @@ export class CLIRunner {
 	}
 
 	private async streamOutput(entry: RunningProcess): Promise<void> {
-		const { process: proc, callbacks, workflowId } = entry;
+		const { process: proc, callbacks, workflowId, processKey, aspectId } = entry;
 		const startTime = Date.now();
 		const stdout = proc.stdout;
 		if (!stdout || typeof stdout === "number") {
 			logger.warn(
-				`[cli-runner] No stdout pipe for workflow ${workflowId} (stdout=${typeof stdout})`,
+				`[cli-runner] No stdout pipe for key ${processKey} (stdout=${typeof stdout})`,
 			);
 			return;
 		}
@@ -324,7 +366,13 @@ export class CLIRunner {
 					this.resetIdleTimer(entry);
 					if (entry.stale) return;
 					try {
-						appendFileSync(eventsFile, `${JSON.stringify(event)}\n`);
+						// Wrap with workflow + aspect attribution only for aspect-keyed
+						// processes; non-aspect rows keep their pre-spec wire shape so
+						// existing audit consumers continue to parse them unchanged.
+						const row = aspectId
+							? { workflowId, aspectId, event }
+							: event;
+						appendFileSync(eventsFile, `${JSON.stringify(row)}\n`);
 					} catch (err) {
 						logger.warn("[cli-runner] Failed to write audit event:", err);
 					}
@@ -376,15 +424,15 @@ export class CLIRunner {
 		// Always read stderr for diagnostics
 		const stderr = await readStream(proc.stderr);
 		logger.info(
-			`[cli-runner] pid=${proc.pid} workflow=${workflowId} exited code=${exitCode} elapsed=${elapsedMs}ms session=${entry.sessionId ?? "none"}${stderr ? ` stderr=${stderr.slice(0, 300)}` : ""}`,
+			`[cli-runner] pid=${proc.pid} key=${processKey} exited code=${exitCode} elapsed=${elapsedMs}ms session=${entry.sessionId ?? "none"}${stderr ? ` stderr=${stderr.slice(0, 300)}` : ""}`,
 		);
 
-		const currentEntry = this.running.get(workflowId);
+		const currentEntry = this.running.get(processKey);
 
 		// Only handle completion if this is still the active process
 		if (currentEntry && currentEntry.process === proc) {
 			const timedOut = entry.timedOut;
-			this.running.delete(workflowId);
+			this.running.delete(processKey);
 			if (timedOut) {
 				callbacks.onError("CLI process killed — no output received within idle timeout");
 			} else if (exitCode === 0) {

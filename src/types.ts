@@ -145,6 +145,19 @@ export interface AspectState {
 	startedAt: string | null;
 	completedAt: string | null;
 	errorMessage: string | null;
+	/**
+	 * Live + persisted text mirror of `outputLog`'s text entries. Capped to
+	 * `MAX_ASPECT_OUTPUT_CHARS` via `enforceAspectOutputCap`. Reset to "" on
+	 * dispatch (and on retry — clarification Q2: panel wipes on retry).
+	 */
+	output: string;
+	/**
+	 * Structured per-aspect log entries (text + tool icons interleaved) used
+	 * by the per-aspect grid panel during the research-aspect step. Same
+	 * `OutputEntry` union as `PipelineStep.outputLog`. Reset to [] on dispatch
+	 * and on retry.
+	 */
+	outputLog: OutputEntry[];
 }
 
 export interface SynthesizedAnswer {

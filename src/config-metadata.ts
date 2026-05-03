@@ -189,4 +189,14 @@ export const NUMERIC_SETTING_META: NumericSettingMeta[] = [
 		unit: "aspects",
 		inputKind: "scalar",
 	},
+	{
+		key: "limits.askQuestionConcurrentAspects",
+		label: "Ask Question — Concurrent Aspects",
+		description:
+			"Max aspect research processes running at once in an ask-question workflow's research step. Defaults to the max-aspects limit (no extra cap). Lower this if your machine struggles with many parallel Claude CLI runs.",
+		min: 1,
+		defaultValue: 10,
+		unit: "aspects",
+		inputKind: "scalar",
+	},
 ];

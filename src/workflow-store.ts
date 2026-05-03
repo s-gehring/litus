@@ -122,6 +122,14 @@ export class WorkflowStore {
 			if (data.aspectManifest === undefined) data.aspectManifest = null;
 			if (data.aspects === undefined) data.aspects = null;
 			if (data.synthesizedAnswer === undefined) data.synthesizedAnswer = null;
+			// Migration: backfill per-aspect output/outputLog for pre-parallel-research
+			// workflows. Idempotent: re-running on already-migrated data is a no-op.
+			if (Array.isArray(data.aspects)) {
+				for (const aspect of data.aspects) {
+					if (typeof aspect.output !== "string") aspect.output = "";
+					if (!Array.isArray(aspect.outputLog)) aspect.outputLog = [];
+				}
+			}
 			// Restart recovery: any aspect persisted as `in_progress` represents a
 			// CLI process that was killed by the server restart. Flip it back to
 			// `pending` so the user's next retry/resume picks it up cleanly. See

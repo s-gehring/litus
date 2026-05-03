@@ -120,6 +120,7 @@ function makeAppConfig(): AppConfig {
 			artifactsPerFileMaxBytes: 104_857_600,
 			artifactsPerStepMaxBytes: 1_073_741_824,
 			askQuestionMaxAspects: 10,
+			askQuestionConcurrentAspects: 10,
 		},
 		timing: {
 			ciGlobalTimeoutMs: 600000,
@@ -1073,8 +1074,9 @@ describe("Config types", () => {
 			artifactsPerFileMaxBytes: 104_857_600,
 			artifactsPerStepMaxBytes: 1_073_741_824,
 			askQuestionMaxAspects: 10,
+			askQuestionConcurrentAspects: 10,
 		};
-		expect(Object.keys(config)).toHaveLength(7);
+		expect(Object.keys(config)).toHaveLength(8);
 	});
 
 	test("TimingConfig shape (9 fields)", () => {

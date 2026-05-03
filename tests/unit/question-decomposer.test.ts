@@ -177,6 +177,8 @@ describe("buildInitialAspectStates", () => {
 			startedAt: null,
 			completedAt: null,
 			errorMessage: null,
+			output: "",
+			outputLog: [],
 		});
 		expect(states[1].id).toBe("b");
 	});
