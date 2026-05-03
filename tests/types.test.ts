@@ -74,6 +74,9 @@ function makeAppConfig(): AppConfig {
 			implementReview: "",
 			artifacts: "",
 			commitPushPr: "",
+			askQuestionDecomposition: "",
+			askQuestionResearch: "",
+			askQuestionSynthesis: "",
 		},
 		efforts: {
 			questionDetection: "low",
@@ -92,6 +95,9 @@ function makeAppConfig(): AppConfig {
 			implementReview: "medium",
 			artifacts: "medium",
 			commitPushPr: "medium",
+			askQuestionDecomposition: "medium",
+			askQuestionResearch: "medium",
+			askQuestionSynthesis: "medium",
 		},
 		prompts: {
 			questionDetection: "",
@@ -102,6 +108,9 @@ function makeAppConfig(): AppConfig {
 			ciFixInstruction: "",
 			epicDecomposition: "",
 			feedbackImplementerInstruction: "",
+			askQuestionDecomposition: "",
+			askQuestionResearch: "",
+			askQuestionSynthesis: "",
 		},
 		limits: {
 			reviewCycleMaxIterations: 16,
@@ -110,6 +119,7 @@ function makeAppConfig(): AppConfig {
 			maxJsonRetries: 3,
 			artifactsPerFileMaxBytes: 104_857_600,
 			artifactsPerStepMaxBytes: 1_073_741_824,
+			askQuestionMaxAspects: 10,
 		},
 		timing: {
 			ciGlobalTimeoutMs: 600000,
@@ -374,6 +384,7 @@ describe("AuditEventType exhaustiveness", () => {
 			"artifacts.step.end": true,
 			feedback_submitted: true,
 			feedback_submitted_resume: true,
+			feedback_submitted_ask_question: true,
 			decomposition_resumed: true,
 		};
 		const values = Object.keys(coverage) as AuditEventType[];
@@ -447,7 +458,7 @@ describe("Workflow Lifecycle", () => {
 		expect(q.detectedAt).toBe("2026-04-06T12:00:00Z");
 	});
 
-	test("Workflow shape with all 34 fields", () => {
+	test("Workflow shape with all 39 fields", () => {
 		const w: Workflow = {
 			id: "w-1",
 			workflowKind: "spec",
@@ -492,8 +503,11 @@ describe("Workflow Lifecycle", () => {
 			updatedAt: "2026-04-06T00:00:00Z",
 			archived: false,
 			archivedAt: null,
+			aspectManifest: null,
+			aspects: null,
+			synthesizedAnswer: null,
 		};
-		expect(Object.keys(w)).toHaveLength(36);
+		expect(Object.keys(w)).toHaveLength(39);
 		expect(w.status).toBe("idle");
 	});
 
@@ -694,6 +708,9 @@ describe("ServerMessage variants", () => {
 					updatedAt: "",
 					archived: false,
 					archivedAt: null,
+					aspectManifest: null,
+					aspects: null,
+					synthesizedAnswer: null,
 				},
 			},
 			{ type: "workflow:output", workflowId: "w-1", text: "hello" },
@@ -998,8 +1015,11 @@ describe("Config types", () => {
 			implementReview: "",
 			artifacts: "",
 			commitPushPr: "",
+			askQuestionDecomposition: "",
+			askQuestionResearch: "",
+			askQuestionSynthesis: "",
 		};
-		expect(Object.keys(config)).toHaveLength(16);
+		expect(Object.keys(config)).toHaveLength(19);
 	});
 
 	test("EffortConfig shape (16 fields)", () => {
@@ -1020,8 +1040,11 @@ describe("Config types", () => {
 			implementReview: "medium",
 			artifacts: "medium",
 			commitPushPr: "medium",
+			askQuestionDecomposition: "medium",
+			askQuestionResearch: "medium",
+			askQuestionSynthesis: "medium",
 		};
-		expect(Object.keys(config)).toHaveLength(16);
+		expect(Object.keys(config)).toHaveLength(19);
 	});
 
 	test("PromptConfig shape (7 fields)", () => {
@@ -1034,8 +1057,11 @@ describe("Config types", () => {
 			ciFixInstruction: "",
 			epicDecomposition: "",
 			feedbackImplementerInstruction: "",
+			askQuestionDecomposition: "",
+			askQuestionResearch: "",
+			askQuestionSynthesis: "",
 		};
-		expect(Object.keys(config)).toHaveLength(8);
+		expect(Object.keys(config)).toHaveLength(11);
 	});
 
 	test("LimitConfig shape (6 fields)", () => {
@@ -1046,8 +1072,9 @@ describe("Config types", () => {
 			maxJsonRetries: 3,
 			artifactsPerFileMaxBytes: 104_857_600,
 			artifactsPerStepMaxBytes: 1_073_741_824,
+			askQuestionMaxAspects: 10,
 		};
-		expect(Object.keys(config)).toHaveLength(6);
+		expect(Object.keys(config)).toHaveLength(7);
 	});
 
 	test("TimingConfig shape (9 fields)", () => {
@@ -1068,7 +1095,7 @@ describe("Config types", () => {
 	test("AppConfig shape (6 fields)", () => {
 		const config: AppConfig = makeAppConfig();
 		expect(Object.keys(config)).toHaveLength(6);
-		expect(Object.keys(config.models)).toHaveLength(16);
+		expect(Object.keys(config.models)).toHaveLength(19);
 	});
 
 	test("ConfigValidationError shape", () => {
@@ -1310,6 +1337,9 @@ describe("WorkflowClientState shape", () => {
 				updatedAt: "",
 				archived: false,
 				archivedAt: null,
+				aspectManifest: null,
+				aspects: null,
+				synthesizedAnswer: null,
 			},
 			outputLines: [
 				{ kind: "text", text: "hello" },

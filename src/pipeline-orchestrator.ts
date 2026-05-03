@@ -62,6 +62,7 @@ import { routeAfterStep as computeRoute, shouldLoopReview } from "./step-router"
 import { Summarizer } from "./summarizer";
 import {
 	type AlertType,
+	ASK_QUESTION_FEEDBACK_MAX_LENGTH,
 	type AspectState,
 	type FeedbackEntry,
 	type OutputEntry,
@@ -898,6 +899,22 @@ export class PipelineOrchestrator {
 				workflow.feedbackPreRunHead = null;
 			}
 
+			// Settle an in-flight ask-question-iteration entry so consumers don't
+			// see a stale `outcome: null` after an abort that skips
+			// `resetWorkflow`. The synthesize re-run is the only step that would
+			// have closed it — aborting it leaves no other path that does.
+			if (step.name === STEP.SYNTHESIZE) {
+				const latest = workflow.feedbackEntries[workflow.feedbackEntries.length - 1];
+				if (latest && latest.outcome === null && latest.kind === "ask-question-iteration") {
+					latest.outcome = {
+						value: "aborted",
+						summary: "Aborted by user",
+						commitRefs: [],
+						warnings: [],
+					};
+				}
+			}
+
 			if (
 				step.status === "running" ||
 				step.status === "waiting_for_input" ||
@@ -1384,14 +1401,16 @@ export class PipelineOrchestrator {
 		const next = pickNextAspect(aspects);
 		if (!next) {
 			// All aspects already completed (e.g. resume after a stale persist).
+			this.handleStepOutput(workflow.id, "All aspects already completed — advancing to synthesis", {
+				type: "system",
+			});
 			this.advanceAfterStep(workflow.id);
 			return;
 		}
 		const entry = workflow.aspectManifest?.aspects.find((a) => a.id === next.id);
 		if (!entry) {
-			// Mirror the explicit handleStepError pattern used elsewhere in this file
-			// instead of letting `lookupAspectEntry`'s throw bubble up — this surfaces
-			// the failure in the step's client output (FR-034) rather than the server log.
+			// Surface the inconsistency in the step's client output (FR-034)
+			// rather than letting it bubble up to the server log.
 			this.handleStepError(
 				workflow.id,
 				`Inconsistent aspect state — no manifest entry for id ${next.id}`,
@@ -1663,7 +1682,10 @@ export class PipelineOrchestrator {
 			}
 			const step = workflow.steps[workflow.currentStepIndex];
 			if (workflow.status === "completed") {
-				return { ok: true } as const; // idempotent no-op
+				// Idempotent no-op: per protocol-extensions.md the server replies
+				// with the current state so a reconnected client converges.
+				this.callbacks.onStateChange(workflow.id);
+				return { ok: true } as const;
 			}
 			if (step.name === STEP.FINALIZE && step.status === "running") {
 				return { ok: false, reason: "Finalize is already in progress" } as const;
@@ -1697,6 +1719,16 @@ export class PipelineOrchestrator {
 			if (workflow.workflowKind !== "ask-question") {
 				return { ok: false, reason: "Not an ask-question workflow" } as const;
 			}
+			const trimmed = text.trim();
+			if (trimmed.length === 0) {
+				return { ok: false, reason: "Feedback text is required" } as const;
+			}
+			if (trimmed.length > ASK_QUESTION_FEEDBACK_MAX_LENGTH) {
+				return {
+					ok: false,
+					reason: `Feedback exceeds maximum length (${ASK_QUESTION_FEEDBACK_MAX_LENGTH.toLocaleString()} characters)`,
+				} as const;
+			}
 			const step = workflow.steps[workflow.currentStepIndex];
 			if (workflow.status !== "waiting_for_input" || step.name !== STEP.ANSWER) {
 				return { ok: false, reason: "Workflow is not paused at the answer step" } as const;
@@ -1719,7 +1751,7 @@ export class PipelineOrchestrator {
 			const entry: FeedbackEntry = {
 				id: randomUUID(),
 				iteration: workflow.feedbackEntries.length + 1,
-				text,
+				text: trimmed,
 				submittedAt: new Date().toISOString(),
 				submittedAtStepName: STEP.ANSWER,
 				outcome: null,
@@ -1736,9 +1768,23 @@ export class PipelineOrchestrator {
 			this.stepRunner.resetStep(synthStep);
 
 			this.engine.transition(workflow.id, "running");
+			if (!this.currentAuditRunId) {
+				this.currentAuditRunId = this.auditLogger.startRun(
+					this.pipelineName ?? "ask-question-feedback",
+					workflow.worktreeBranch,
+				);
+			}
+			this.auditLogger.logFeedbackSubmittedAskQuestion(
+				this.currentAuditRunId,
+				STEP.SYNTHESIZE,
+				workflow.currentStepIndex,
+				entry.id,
+				trimmed.length,
+				entry.iteration,
+			);
 			this.persistWorkflow(workflow);
 			this.callbacks.onStateChange(workflow.id);
-			this.runSynthesizeStep(workflow, { feedback: text });
+			this.runSynthesizeStep(workflow, { feedback: trimmed });
 			return { ok: true, feedbackEntryId: entry.id } as const;
 		});
 	}
@@ -2369,7 +2415,18 @@ export class PipelineOrchestrator {
 			);
 		}
 		let finalPrompt = prompt;
-		if (step.name !== STEP.FEEDBACK_IMPLEMENTER && step.name !== STEP.FIX_IMPLEMENT) {
+		// Ask-question steps build their own feedback channel
+		// (`buildFeedbackPreamble` in `runSynthesizeStep`), so prepending the
+		// generic feedback-context block here would duplicate the same text and
+		// also push spec/quick-fix feedback into decompose/research prompts that
+		// can't act on it.
+		if (
+			step.name !== STEP.FEEDBACK_IMPLEMENTER &&
+			step.name !== STEP.FIX_IMPLEMENT &&
+			step.name !== STEP.DECOMPOSE &&
+			step.name !== STEP.RESEARCH_ASPECT &&
+			step.name !== STEP.SYNTHESIZE
+		) {
 			const feedbackCtx = buildFeedbackContext(workflow);
 			if (feedbackCtx) finalPrompt = `${feedbackCtx}\n\n---\n\n${prompt}`;
 		}

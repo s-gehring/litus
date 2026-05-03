@@ -58,6 +58,7 @@ import {
 	handleArtifactDownload,
 	handleArtifactList,
 	handleFeedback,
+	handleFinalize,
 	handleForceStart,
 	handlePause,
 	handleResume,
@@ -296,6 +297,7 @@ router.register("workflow:retry-workflow", handleRetryWorkflow);
 router.register("workflow:start-existing", handleStartExisting);
 router.register("workflow:force-start", handleForceStart);
 router.register("workflow:feedback", handleFeedback);
+router.register("workflow:finalize", handleFinalize);
 router.register("workflow:archive", handleArchiveWorkflow);
 router.register("workflow:unarchive", handleUnarchiveWorkflow);
 router.register("config:get", handleConfigGet);
@@ -656,6 +658,25 @@ sharedAlertQueue.loadFromDisk().catch((err) => {
 					logger.info(
 						`[startup] Aborted interrupted feedback-implementer for workflow ${workflow.id} and rewound to merge-pr pause`,
 					);
+				} else if (
+					workflow.workflowKind === "ask-question" &&
+					runningStep &&
+					(runningStep.name === STEP.DECOMPOSE ||
+						runningStep.name === STEP.RESEARCH_ASPECT ||
+						runningStep.name === STEP.SYNTHESIZE ||
+						runningStep.name === STEP.FINALIZE)
+				) {
+					// Ask-question steps are file-based: a captured CLI sessionId is
+					// gone after restart and `claude --resume` will not produce the
+					// expected artifacts. Force the step to `error` so the user can
+					// hit Retry, which re-dispatches through the dedicated runners.
+					workflow.activeWorkStartedAt = null;
+					runningStep.status = "error";
+					runningStep.error = "Server restarted — ask-question step needs re-dispatch";
+					runningStep.pid = null;
+					workflow.status = "error";
+					workflow.updatedAt = new Date().toISOString();
+					await sharedStore.save(workflow);
 				} else if (runningStep?.sessionId) {
 					logger.info(
 						`[startup] Resuming workflow ${workflow.id} step "${runningStep.name}" (session: ${runningStep.sessionId})`,
