@@ -2,7 +2,78 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## [1.4.0] — 2026-05-03
+
+### Added
+
+- Ask Question workflow — a new workflow kind. Submit a question against a target repository (local path or
+  GitHub URL) and Litus decomposes it into research aspects, runs them as parallel research streams that each
+  dig into one aspect, and synthesizes a single answer. Per-aspect output streams live into a grid panel;
+  partial findings are saved as artifacts even if synthesis later fails. Supports a Provide-Feedback loop on
+  the answer, configurable decomposition / research / synthesis models and prompts, and an
+  `askQuestionConcurrentAspects` cap (default 10).
+- Quick Fix pipeline — a lightweight workflow kind that skips spec / clarify / plan and runs
+  setup → fix-implement → commit-push-pr → monitor-ci → fix-ci → feedback → merge-pr → sync-repo. Useful for
+  small, scoped fixes. Per-step model, effort, and prompt configuration. Provide Feedback works on errored
+  fix-implement steps and re-enters the step with your guidance. The fix-implement step routes
+  `AskUserQuestion` tool_use to `waiting_for_input`, so quick-fix flows can ask clarifying questions and be
+  answered the same way as spec workflows.
+- Implementation artifacts step — a new pipeline step (spec workflows only) inserted between implement-review
+  and commit-push-pr. Runs the configured LLM with a manifest contract and captures arbitrary files (test logs,
+  diffstats, screenshots, design notes…). Files are listed in the artifact dropdown with the LLM's description and
+  previewed in-browser for images, plain text, JSON, and markdown; everything else falls back to download. Size and
+  timeout caps are configurable from the UI with unit-aware inputs (MB / GB, min / hour). When the agent forgets
+  `manifest.json` entirely, the output directory is scanned and every regular file is auto-collected. If the CLI is
+  killed mid-step (idle / wall-clock timeout, non-zero exit), already-written `manifest.json` and listed files are
+  salvaged so the pipeline advances instead of looping on a "manifest missing" retry.
+- Workflow archive — workflows and epics in a terminal state can be archived from the action bar; archived items
+  move to a dedicated archive page reachable from the header. Archiving an epic cascades to its children with a
+  count-aware confirmation; running children block the cascade with a per-child list of offenders.
+- Auto-archive — background sweeper auto-archives `completed` workflows and epics 30 seconds after they reach a
+  terminal state. Errored / aborted / infeasible items and ask-question workflows are exempt; epics with
+  non-terminal children are skipped so idle work waiting for a Start click is never archived. Runs an immediate
+  pass on server start so a backlog drains on first launch. Manually unarchived items are exempt from the next sweep.
+- Epic decomposition feedback — once a decomposition completes (including with infeasible notes), a Provide Feedback
+  panel mirrors the spec feedback form. Submitting feedback resumes the decomposition agent from the prior session,
+  applies your guidance, and re-runs the analysis. The epic detail page shows a feedback timeline below the
+  description and a dismissible "prior context was lost" notice when the agent had to start fresh. Feedback is
+  blocked once any child spec has started.
+- Bulk-start specs from epic detail — a `Start N specs` button on the epic detail page launches every idle,
+  dependency-free child spec in parallel. Singular / plural label tracks the count. Visible even before the epic
+  record itself has finished loading.
+- Workflow Restart — a destructive `Restart` action on a finished, aborted, or errored workflow resets it back to
+  setup, clearing summary, flavor, feedback entries, active-work timer, and dependency overrides so the pipeline
+  re-runs from scratch. Standalone (non-epic) workflows auto-relaunch on click. Errored workflows now also surface
+  their error message in a dedicated banner on the detail pane instead of leaving it buried in the output log.
+- Workflow cards — per-kind visual styling (Spec, Quick Fix, Epic, Ask Question) with type badges and accent
+  colours; running epics now have a glow-pulse border. New cards are prepended on creation so the newest appear first.
+- Folder validation — the spec / quick-fix / epic creation modals now show a green `✓ Valid git repository`
+  indicator on successful blur-time validation. Non-git folders are rejected at modal-time, matching the stricter
+  check applied at submit. Quick Fix runs the same blur-time validation as spec / epic. Submit awaits any in-flight
+  probe instead of silently aborting; a 5 s timeout on `/api/folder-exists` keeps a stuck probe from pinning the
+  form open. Paths outside the user's home directory are reported as `permission_denied` without leaking whether
+  the path exists.
+- Auto-seen alerts — the bell badge counts only unseen alerts. Answering a question, navigating to a finished
+  workflow / epic, or emitting an alert while you are already on its target route flips the alert to seen; the
+  row remains in the list, dimmed. Clicking an alert row removes it entirely. Seen state persists across server
+  restarts. Workflow-error alerts are excluded from auto-seen and require explicit dismissal.
+- Clear all alerts — button in the alerts panel.
+- Project CLAUDE.md in spec worktrees — the main worktree's `CLAUDE.md` is appended to the speckit-generated
+  `CLAUDE.md` so project conventions reach the agent. Re-runs are idempotent. Quick-fix workflows are unchanged.
+- CLAUDE.md push guard — before `git push` and `gh pr create`, the assembled local `CLAUDE.md` is restored to its
+  pre-branch state via a standalone `chore:` commit so PRs never carry Litus-assembled content. The assembled file
+  is also marked `skip-worktree` so it can never be staged accidentally. The Litus-managed contract header is
+  passed via `--append-system-prompt` rather than prepended to the user prompt, so leading-slash step prompts
+  (`/speckit-specify`, `/speckit-plan`, …) continue to be recognised as slash commands instead of forwarded as
+  literal text.
+- Unified detail action bar — a single slot-based action bar on workflow and epic detail views. Pause is now the
+  primary action; `Reset and retry` becomes `Restart`; `Force start` moves to the primary slot when waiting on
+  dependencies. Archive is hidden until the workflow is in a terminal state. Abort and Restart use the in-app
+  confirmation modal — never the native `confirm()` dialog. Buttons render in a fixed slot order
+  (primary → secondary → destructive → finalize) with a vertical divider between sides.
+- Batch controls on epic detail — `Pause all`, `Resume all`, and `Abort all` fan out to the child workflows that
+  can react to each action.
+- Header logo links to home — clicking the Litus logo or title returns to the dashboard via SPA navigation.
 
 ### Changed
 
@@ -11,6 +82,60 @@ All notable changes to this project will be documented in this file.
   effect on the next poll instead of being frozen at workflow creation.
 - Retrying a workflow after "CI checks still failing after N fix attempts" now resets the attempt budget to 0 and
   picks up the current config value, so retry is no longer refused immediately.
+- Spec summary timeout raised from 30 s to 60 s — under epic fan-out load, single-call latency was growing past the
+  original budget and silently dropping the flavor.
+- Question content is no longer truncated at 2000 characters — long multi-paragraph questions render in full, and
+  bulleted / numbered lists inside the question panel render with proper indentation.
+- CI-monitor first poll now waits up to 90 s for GitHub to associate workflow runs with the head SHA before treating
+  an empty `gh pr checks` result as "no CI configured", so newly-created PRs no longer skip CI on a fast first poll.
+- Free-form answers at the CI-monitor pause are routed to the Fixing CI agent as guidance — previously only `retry`
+  and `abort` were honoured and any other answer just looped against the same cancelled checks.
+- Merge-conflict resolution streams tool usage and partial assistant text live and updates the active-model panel
+  with the configured model + effort, matching the rest of the pipeline.
+- `gh pr create --fill` re-runs that find an existing PR for the branch now attach to it instead of failing — this
+  unblocks workflow retries on branches that already opened a PR.
+- Detail-view title falls back to `summary || specification`, so it never shows the previously selected workflow's
+  title while the summarizer is still running.
+- Activity summarizer no longer interprets agent output as a prompt addressed to itself — the text is wrapped in
+  `<agent_output>` tags and the summarizer is told the content is opaque and may be truncated. Whitespace-only
+  windows are skipped entirely.
+- "Cancelled" workflow state is renamed `aborted` everywhere in the UI, WS protocol, and orchestrator — matching
+  the Abort button. Existing on-disk state is migrated transparently on load. (GitHub Actions' own "cancelled"
+  terminology is unchanged.)
+- Errored workflows can now be aborted, releasing their managed clone. Error is no longer a one-way trap that
+  pinned the shared repo clone indefinitely.
+
+### Fixed
+
+- Streamed assistant output is no longer duplicated in the output log — the cumulative assistant message and the
+  intermediate deltas were both being forwarded, so every token appeared twice.
+- Git command output is scoped to the originating workflow window — `git fetch origin master` from one workflow
+  no longer appears in another workflow's output stream when two are running concurrently.
+- The thinking indicator no longer spins while the active-invocation panel says "No model in use" during
+  setup / merge / sync steps or in brief between-step windows.
+- `sync-repo` no longer leaves the UI stuck on the thinking indicator with a non-functional Pause button after the
+  worktree is removed. A duplicate post-completion broadcast was racing the in-memory orchestrator teardown and
+  re-broadcasting a pre-completion state; the terminal broadcast now has a single owner.
+- Workflow cwd-missing errors now surface as `Worktree directory missing: <path>` instead of `ENOENT: no such file
+  or directory, uv_spawn 'claude'` falsely blaming the binary.
+- Errored workflows retain their managed-clone refcount, so retrying after a step error no longer fails immediately
+  with a missing-cwd error on URL-sourced workflows.
+- `git worktree move` failures with `EBUSY` / `EACCES` / `EPERM` / "being used by another process" / "Permission
+  denied" on Windows are retried up to 20 × 50 ms — common right after a CLI step exits because of lingering
+  grandchildren and AV inline-scanning the just-written files.
+- Resume after answering a second clarify question no longer fails with `No conversation found with session ID …`.
+  The session id is held stable across resumed streams instead of being overwritten with a transient one.
+- The active-model panel updates when answering a mid-pipeline question — previously the resume routed through a
+  path that did not refresh the panel, so the UI kept displaying the model from the previous step.
+- Implement-review iteration count matches the number of review files surfaced in Artifacts (was off by one), and
+  the implement-review snapshot is no longer silently dropped because of the bumped iteration.
+- Config inputs are no longer wiped while you are typing — a `config:state` broadcast skips the focused input,
+  select, or textarea. Numeric fields select their digits on focus so typing replaces the formatted display.
+- Configured per-step model and effort are honoured on resume and on epic JSON-retry — were previously falling
+  back to the default during those paths.
+- Card-strip selection tracks the URL on every route change.
+- Detail-view title falls back to the spec text when no summary exists (previously continued to show the
+  previously-selected workflow's summary).
 
 ## [1.3.0] — 2026-04-18
 
