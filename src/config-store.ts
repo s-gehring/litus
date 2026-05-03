@@ -37,6 +37,9 @@ export const DEFAULT_CONFIG: AppConfig = {
 		implementReview: "",
 		artifacts: "",
 		commitPushPr: "",
+		askQuestionDecomposition: "",
+		askQuestionResearch: "",
+		askQuestionSynthesis: "",
 	},
 	efforts: {
 		questionDetection: "low",
@@ -55,6 +58,9 @@ export const DEFAULT_CONFIG: AppConfig = {
 		implementReview: "medium",
 		artifacts: "medium",
 		commitPushPr: "medium",
+		askQuestionDecomposition: "medium",
+		askQuestionResearch: "medium",
+		askQuestionSynthesis: "medium",
 	},
 	prompts: {
 		questionDetection:
@@ -213,6 +219,54 @@ Instructions:
 FEEDBACK_IMPLEMENTER_RESULT>>>
 
 Set \`prDescriptionUpdate\` to \`null\` when no PR description update was attempted. When attempted, set \`succeeded\` honestly and include \`errorMessage\` on failure.`,
+		askQuestionDecomposition: `You are decomposing a user's question into independent research aspects so that each aspect can be investigated separately and the results synthesized into a single answer.
+
+QUESTION:
+\${question}
+
+INSTRUCTIONS:
+- Identify between 1 and \${maxAspects} independent research aspects of the question. Prefer fewer, well-scoped aspects over many narrow ones; a simple question may need only one aspect.
+- For each aspect, write a research prompt that an agent could act on without seeing the original question. The research prompt must be self-contained.
+- For each aspect, choose a slug-style file name ending in \`.md\` (e.g. \`01-state-machine.md\`). File names must be unique.
+- Write the manifest to \`\${decompositionFile}\` as a single JSON object matching this schema:
+
+  {
+    "version": 1,
+    "aspects": [
+      {
+        "id": "aspect-NN",
+        "title": "Short human-readable title",
+        "researchPrompt": "Self-contained prompt for the per-aspect agent.",
+        "fileName": "NN-slug.md"
+      }
+    ]
+  }
+
+- Do not write any other files. Do not edit existing files. Once the manifest is written, exit.`,
+		askQuestionResearch: `You are researching one aspect of a larger question. Your output must be a single markdown file written to the working directory.
+
+ASPECT TITLE: \${aspectTitle}
+
+RESEARCH PROMPT:
+\${aspectResearchPrompt}
+
+INSTRUCTIONS:
+- Investigate using the tools available to you. Read source files, run commands, search the web if useful.
+- Write your findings as a self-contained markdown document to \`\${aspectFileName}\`. The document must be coherent on its own (assume the reader has not seen the other aspects).
+- Once the file is written, exit. Do not modify any other files.`,
+		askQuestionSynthesis: `You are synthesizing a single, well-organized answer to a user's question from a set of per-aspect research findings.
+
+USER'S QUESTION:
+\${question}
+
+PER-ASPECT FINDINGS:
+\${aspectFindings}
+
+INSTRUCTIONS:
+- Produce a single markdown answer that draws on the findings above and directly answers the user's question.
+- Prefer structure (headings, bullet lists, code blocks) where it aids reading.
+- Cite specific sources only if the findings already cite them; do not invent citations.
+- Write the answer to \`\${answerFileName}\` as a single markdown file. Do not modify any other files. Once the answer is written, exit.`,
 	},
 	autoMode: "normal",
 	limits: {
@@ -222,6 +276,7 @@ Set \`prDescriptionUpdate\` to \`null\` when no PR description update was attemp
 		maxJsonRetries: 2,
 		artifactsPerFileMaxBytes: 104_857_600,
 		artifactsPerStepMaxBytes: 1_073_741_824,
+		askQuestionMaxAspects: 10,
 	},
 	timing: {
 		ciGlobalTimeoutMs: 1_800_000,
@@ -390,6 +445,9 @@ export class ConfigStore {
 			"implementReview",
 			"artifacts",
 			"commitPushPr",
+			"askQuestionDecomposition",
+			"askQuestionResearch",
+			"askQuestionSynthesis",
 		]);
 
 		if (partial.models) {

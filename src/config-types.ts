@@ -29,6 +29,10 @@ export interface ModelConfig {
 	implementReview: string;
 	artifacts: string;
 	commitPushPr: string;
+	// Ask-question pipeline (optional, empty = use CLI default)
+	askQuestionDecomposition: string;
+	askQuestionResearch: string;
+	askQuestionSynthesis: string;
 }
 
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -52,6 +56,10 @@ export interface EffortConfig {
 	implementReview: EffortLevel;
 	artifacts: EffortLevel;
 	commitPushPr: EffortLevel;
+	// Ask-question pipeline — default "medium"
+	askQuestionDecomposition: EffortLevel;
+	askQuestionResearch: EffortLevel;
+	askQuestionSynthesis: EffortLevel;
 }
 
 export interface PromptConfig {
@@ -63,6 +71,10 @@ export interface PromptConfig {
 	ciFixInstruction: string;
 	epicDecomposition: string;
 	feedbackImplementerInstruction: string;
+	// Ask-question pipeline templates (see contracts/per-step-prompts.md)
+	askQuestionDecomposition: string;
+	askQuestionResearch: string;
+	askQuestionSynthesis: string;
 }
 
 export interface LimitConfig {
@@ -72,6 +84,12 @@ export interface LimitConfig {
 	maxJsonRetries: number;
 	artifactsPerFileMaxBytes: number;
 	artifactsPerStepMaxBytes: number;
+	/**
+	 * Cap on the number of aspects accepted from the decomposition agent
+	 * (FR-006). Decomposition that produces more aspects is silently
+	 * truncated to this length in document order.
+	 */
+	askQuestionMaxAspects: number;
 }
 
 export interface TimingConfig {

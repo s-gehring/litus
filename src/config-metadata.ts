@@ -26,6 +26,34 @@ export const PROMPT_VARIABLES: Record<keyof PromptConfig, PromptVariableInfo[]> 
 		{ name: "latestFeedbackText", description: "The user's most recent feedback text" },
 		{ name: "prUrl", description: "The pull request URL" },
 	],
+	askQuestionDecomposition: [
+		{ name: "question", description: "The user's submitted question text (trimmed)" },
+		{
+			name: "maxAspects",
+			description: "Configured cap on number of aspects (limits.askQuestionMaxAspects)",
+		},
+		{
+			name: "decompositionFile",
+			description:
+				"Sentinel relative path the agent must write the manifest to (.litus/decomposition.json)",
+		},
+	],
+	askQuestionResearch: [
+		{ name: "aspectTitle", description: "Aspect's title from the manifest" },
+		{ name: "aspectResearchPrompt", description: "Aspect's research prompt from the manifest" },
+		{
+			name: "aspectFileName",
+			description: "Relative file name the aspect findings are written to",
+		},
+	],
+	askQuestionSynthesis: [
+		{ name: "question", description: "The user's submitted question text (trimmed)" },
+		{
+			name: "aspectFindings",
+			description: "Concatenation of every per-aspect findings file, prefaced by its aspect title",
+		},
+		{ name: "answerFileName", description: "File name the synthesizer must write the answer to" },
+	],
 };
 
 export const NUMERIC_SETTING_META: NumericSettingMeta[] = [
@@ -151,5 +179,14 @@ export const NUMERIC_SETTING_META: NumericSettingMeta[] = [
 		defaultValue: 1_800_000,
 		unit: "ms",
 		inputKind: "duration",
+	},
+	{
+		key: "limits.askQuestionMaxAspects",
+		label: "Ask Question — Max Aspects",
+		description: "Cap on the number of aspects accepted from the decomposition agent",
+		min: 1,
+		defaultValue: 10,
+		unit: "aspects",
+		inputKind: "scalar",
 	},
 ];
