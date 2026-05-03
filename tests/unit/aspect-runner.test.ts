@@ -95,10 +95,7 @@ describe("AspectRunner.dispatch", () => {
 		const started = runner.dispatch(wf, wf.aspects ?? [], 2, env, cb);
 		expect(started).toEqual(["a", "b"]);
 		expect(cli.start).toHaveBeenCalledTimes(2);
-		expect(cli.processes.map((p) => p.processKey)).toEqual([
-			"wf1::aspect::a",
-			"wf1::aspect::b",
-		]);
+		expect(cli.processes.map((p) => p.processKey)).toEqual(["wf1::aspect::a", "wf1::aspect::b"]);
 		expect(cb.onAspectStart).toHaveBeenCalledTimes(2);
 		expect(runner.inFlightCount("wf1")).toBe(2);
 	});

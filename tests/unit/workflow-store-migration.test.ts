@@ -56,10 +56,7 @@ describe("WorkflowStore: history migration on load", () => {
 				errorMessage: null,
 			},
 		];
-		writeFileSync(
-			join(baseDir, "legacy-aspects.json"),
-			JSON.stringify(persisted, null, 2),
-		);
+		writeFileSync(join(baseDir, "legacy-aspects.json"), JSON.stringify(persisted, null, 2));
 
 		const loaded = await store.load("legacy-aspects");
 		if (!loaded) throw new Error("expected workflow to load");
@@ -92,10 +89,7 @@ describe("WorkflowStore: history migration on load", () => {
 				outputLog: [{ kind: "text", text: "preserved text" }],
 			},
 		];
-		writeFileSync(
-			join(baseDir, "already-migrated.json"),
-			JSON.stringify(persisted, null, 2),
-		);
+		writeFileSync(join(baseDir, "already-migrated.json"), JSON.stringify(persisted, null, 2));
 
 		const loaded = await store.load("already-migrated");
 		if (!loaded) throw new Error("expected workflow to load");
