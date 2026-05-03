@@ -5,6 +5,15 @@ import type { WorkflowClientState, WorkflowState } from "../../types";
 import type { ClientStateManager } from "../client-state-manager";
 import type { RouteHandler, RouteMatch } from "../router";
 import { hideAskAnswerPanel, renderAskAnswerPanel } from "./ask-answer-panel";
+import {
+	applyAspectOutputDelta,
+	applyAspectStateUpdate,
+	applyAspectToolsDelta,
+	hideAspectGridPanel,
+	renderAspectGridPanel,
+	renderAspectSummaryLine,
+	updateAspectProgressLine,
+} from "./aspect-grid-panel";
 import { BACK_TO_EPIC_PREFIX, backToEpicLabel } from "./back-to-epic-label";
 import { type ActionSpec, renderDetailActions } from "./detail-actions";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
@@ -358,6 +367,45 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		const isCurrentStep = index === wf.currentStepIndex;
 		const isLive = isCurrentStep && (wf.status === "running" || wf.status === "waiting_for_input");
 
+		// Ask-question research-aspect step: replace the standard output log
+		// with the per-aspect grid (FR-002). Show a one-line collapsed summary
+		// once the workflow has advanced past research-aspect (FR-007).
+		const outputArea = document.getElementById("output-area");
+		const onResearchStep = wf.workflowKind === "ask-question" && step.name === STEP.RESEARCH_ASPECT;
+		const aspectsExist = (wf.aspects?.length ?? 0) > 0;
+		if (outputArea && onResearchStep && aspectsExist) {
+			const log = document.getElementById("output-log");
+			if (log) log.classList.add("hidden");
+			renderAspectGridPanel(outputArea, wf);
+			renderPipelineSteps(
+				wf,
+				state.getSelectedStepIndex(),
+				doSelectStep,
+				deps.getArtifactContext(wf.id),
+			);
+			syncThinkingIndicatorForStep(wf, index);
+			return;
+		}
+
+		// Past the research-aspect step on an ask-question workflow that has
+		// completed aspects: show the collapsed one-line summary (FR-007).
+		if (
+			outputArea &&
+			wf.workflowKind === "ask-question" &&
+			aspectsExist &&
+			isAspectsAllCompleted(wf) &&
+			isStepIndexPastResearch(wf, index)
+		) {
+			const log = document.getElementById("output-log");
+			if (log) log.classList.remove("hidden");
+			renderAspectSummaryLine(outputArea, wf.aspects?.length ?? 0);
+			// Continue rendering the standard output for the SELECTED step below.
+		} else if (outputArea) {
+			hideAspectGridPanel(outputArea);
+			const log = document.getElementById("output-log");
+			if (log) log.classList.remove("hidden");
+		}
+
 		if (isCurrentStep && entry.outputLines.length > 0) {
 			renderOutputEntries(entry.outputLines);
 			if (!isLive && step.error) appendOutput(`Error: ${step.error}`, "error");
@@ -379,6 +427,32 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		);
 
 		syncThinkingIndicatorForStep(wf, index);
+	}
+
+	function isAspectsAllCompleted(wf: WorkflowState): boolean {
+		if (!wf.aspects || wf.aspects.length === 0) return false;
+		return wf.aspects.every((a) => a.status === "completed");
+	}
+
+	function isStepIndexPastResearch(wf: WorkflowState, index: number): boolean {
+		const researchIdx = wf.steps.findIndex((s) => s.name === STEP.RESEARCH_ASPECT);
+		return researchIdx >= 0 && index > researchIdx;
+	}
+
+	function isViewingAspectGrid(): boolean {
+		if (!currentWorkflowId) return false;
+		const state = deps.getState();
+		const entry = state.getWorkflows().get(currentWorkflowId);
+		if (!entry) return false;
+		const idx = state.getSelectedStepIndex();
+		const wf = entry.state;
+		const step = idx != null ? wf.steps[idx] : null;
+		return (
+			wf.workflowKind === "ask-question" &&
+			step?.name === STEP.RESEARCH_ASPECT &&
+			(wf.aspects?.length ?? 0) > 0 &&
+			idx === wf.currentStepIndex
+		);
 	}
 
 	function syncThinkingIndicatorForStep(wf: WorkflowState, idx: number): void {
@@ -460,6 +534,32 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 					if (!entry) break;
 					if (state.getSelectedStepIndex() === entry.state.currentStepIndex) {
 						appendToolIcons(msg.tools);
+					}
+					break;
+				}
+				case "workflow:aspect:output": {
+					if (msg.workflowId !== currentWorkflowId) break;
+					if (!isViewingAspectGrid()) break;
+					const outputArea = document.getElementById("output-area");
+					if (outputArea) applyAspectOutputDelta(outputArea, msg.aspectId, msg.text);
+					break;
+				}
+				case "workflow:aspect:tools": {
+					if (msg.workflowId !== currentWorkflowId) break;
+					if (!isViewingAspectGrid()) break;
+					const outputArea = document.getElementById("output-area");
+					if (outputArea) applyAspectToolsDelta(outputArea, msg.aspectId, msg.tools);
+					break;
+				}
+				case "workflow:aspect:state": {
+					if (msg.workflowId !== currentWorkflowId) break;
+					if (!isViewingAspectGrid()) break;
+					const outputArea = document.getElementById("output-area");
+					if (outputArea) {
+						applyAspectStateUpdate(outputArea, msg.state);
+						const state = deps.getState();
+						const entry = state.getWorkflows().get(currentWorkflowId);
+						if (entry) updateAspectProgressLine(outputArea, entry.state);
 					}
 					break;
 				}

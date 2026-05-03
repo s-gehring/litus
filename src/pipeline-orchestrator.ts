@@ -1605,8 +1605,13 @@ export class PipelineOrchestrator {
 	 * After any aspect terminates: promote the next pending aspect into the
 	 * freed slot, or — if the pool is empty — settle the step.
 	 */
-	private afterAspectSettled(workflow: Workflow, cap: number, env: AspectDispatchEnv): void {
+	private afterAspectSettled(workflow: Workflow, _cap: number, env: AspectDispatchEnv): void {
 		const aspects = workflow.aspects ?? [];
+
+		// Re-read the cap on every slot-promote opportunity (data-model.md §4):
+		// a user lowering it mid-step takes effect on the next slot opening.
+		const config = configStore.get();
+		const cap = Math.max(1, Math.min(config.limits.askQuestionConcurrentAspects, aspects.length));
 
 		// Try to promote the next pending aspect (in manifest order) — under cap
 		// constraint. The runner enforces the cap; we just supply the candidate set.
