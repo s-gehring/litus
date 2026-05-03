@@ -401,6 +401,111 @@ describe("WorkflowEngine", () => {
 		expect(w.targetRepository).toBe("/custom/repo");
 	});
 
+	describe("moveWorktree retry on Windows file-lock errors", () => {
+		function makeStream(text: string): ReadableStream<Uint8Array> {
+			return new ReadableStream({
+				start(c) {
+					if (text) c.enqueue(new TextEncoder().encode(text));
+					c.close();
+				},
+			});
+		}
+
+		// Build a fake `Bun.spawn` whose successive invocations return the
+		// given exit-code/stderr pairs in order. The N+1th call (and beyond)
+		// reuses the last entry.
+		function spawnSequence(responses: Array<{ code: number; stderr: string }>): {
+			install: () => void;
+			callCount: () => number;
+		} {
+			let calls = 0;
+			const install = () => {
+				BunGlobal.Bun.spawn = () => {
+					const idx = Math.min(calls, responses.length - 1);
+					calls++;
+					const { code, stderr } = responses[idx];
+					return {
+						exited: Promise.resolve(code),
+						stdout: makeStream(""),
+						stderr: makeStream(stderr),
+						kill: () => {},
+						pid: 1,
+					};
+				};
+			};
+			return { install, callCount: () => calls };
+		}
+
+		test("succeeds on the first attempt without retrying", async () => {
+			const { install, callCount } = spawnSequence([{ code: 0, stderr: "" }]);
+			install();
+			const result = await engine.moveWorktree(
+				"/repo/.worktrees/tmp-abc",
+				".worktrees/001-feature",
+				"/repo",
+			);
+			expect(result).toContain("001-feature");
+			expect(callCount()).toBe(1);
+		});
+
+		test("retries on transient 'Permission denied' and succeeds", async () => {
+			const { install, callCount } = spawnSequence([
+				{
+					code: 128,
+					stderr:
+						"fatal: failed to move 'C:/repo/.worktrees/tmp-abc' to '.worktrees/001-feature': Permission denied",
+				},
+				{ code: 0, stderr: "" },
+			]);
+			install();
+			const result = await engine.moveWorktree(
+				"/repo/.worktrees/tmp-abc",
+				".worktrees/001-feature",
+				"/repo",
+			);
+			expect(result).toContain("001-feature");
+			expect(callCount()).toBe(2);
+		});
+
+		test("retries on EBUSY/EACCES/EPERM markers", async () => {
+			for (const marker of ["EBUSY", "EACCES", "EPERM", "being used by another process"]) {
+				const { install, callCount } = spawnSequence([
+					{ code: 1, stderr: `error: ${marker}` },
+					{ code: 0, stderr: "" },
+				]);
+				install();
+				await engine.moveWorktree("/repo/.worktrees/tmp-x", ".worktrees/feat", "/repo");
+				expect(callCount()).toBe(2);
+			}
+		});
+
+		test("does not retry on a non-transient error", async () => {
+			// e.g. `git worktree move` refuses when the destination already exists
+			// — that is a deterministic failure, retrying would not help.
+			const { install, callCount } = spawnSequence([
+				{ code: 128, stderr: "fatal: target '.worktrees/001-feature' already exists" },
+				{ code: 0, stderr: "" }, // would succeed if we retried — we should NOT
+			]);
+			install();
+			await expect(
+				engine.moveWorktree("/repo/.worktrees/tmp-abc", ".worktrees/001-feature", "/repo"),
+			).rejects.toThrow(/already exists/);
+			expect(callCount()).toBe(1);
+		});
+
+		test("throws after exhausting all retries when error stays transient", async () => {
+			const { install, callCount } = spawnSequence([
+				{ code: 128, stderr: "fatal: ... : Permission denied" },
+			]);
+			install();
+			await expect(
+				engine.moveWorktree("/repo/.worktrees/tmp-abc", ".worktrees/001-feature", "/repo"),
+			).rejects.toThrow(/Permission denied/);
+			// 20-attempt cap from MOVE_WORKTREE_MAX_ATTEMPTS
+			expect(callCount()).toBe(20);
+		}, 5000);
+	});
+
 	describe("epic workflow creation", () => {
 		test("createEpicWorkflows returns all workflows with worktreePath null", async () => {
 			const { createEpicWorkflows } = await import("../src/workflow-engine");
