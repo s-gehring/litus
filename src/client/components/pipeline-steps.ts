@@ -31,6 +31,9 @@ function openDropdown(
 	menu.style.position = "fixed";
 	menu.style.top = `${rect.bottom + 4}px`;
 	menu.style.left = `${rect.left}px`;
+	// Visibility temporarily hidden so the post-mount viewport clamp doesn't
+	// flash an offscreen menu before its left/top get corrected.
+	menu.style.visibility = "hidden";
 	const buttons: HTMLButtonElement[] = [];
 	for (const d of items) {
 		const btn = document.createElement("button");
@@ -59,6 +62,17 @@ function openDropdown(
 		buttons.push(btn);
 	}
 	document.body.appendChild(menu);
+	// Clamp the dropdown to the viewport so narrow screens (e.g. iPhone SE
+	// at 375px) don't push items offscreen — Playwright refuses to click
+	// elements rendered outside the viewport, even if visually visible.
+	const margin = 4;
+	const menuRect = menu.getBoundingClientRect();
+	const maxLeft = Math.max(margin, window.innerWidth - menuRect.width - margin);
+	if (menuRect.left > maxLeft) menu.style.left = `${maxLeft}px`;
+	if (menuRect.left < margin) menu.style.left = `${margin}px`;
+	const maxTop = Math.max(margin, window.innerHeight - menuRect.height - margin);
+	if (menuRect.top > maxTop) menu.style.top = `${maxTop}px`;
+	menu.style.visibility = "";
 	const onKey = (e: KeyboardEvent) => {
 		if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Escape") return;
 		if (e.key === "Escape") {
