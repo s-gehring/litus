@@ -1418,6 +1418,14 @@ export class PipelineOrchestrator {
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.sessionId = active.sessionId; // keep most-recent for diagnostics
 
+		// Snapshot per-aspect findings as soon as they're produced so the user
+		// can view/download them as artifacts even if synthesis later fails.
+		try {
+			snapshotAskQuestionArtifacts(workflow);
+		} catch (err) {
+			logger.warn(`[ask-question] per-aspect snapshot failed: ${toErrorMessage(err)}`);
+		}
+
 		// More aspects to do — re-enter the research loop without advancing the
 		// step index. Otherwise advance to synthesize.
 		const remaining = pickNextAspect(aspects);
@@ -1457,7 +1465,7 @@ export class PipelineOrchestrator {
 		}
 		const cwd = requireWorktreePath(workflow);
 		const config = configStore.get();
-		const findingsBlock = buildAspectFindingsBlock(cwd, manifest.aspects);
+		const findingsBlock = buildAspectFindingsBlock(manifest.aspects);
 		const answerFileName = workflow.synthesizedAnswer?.sourceFileName ?? DEFAULT_ANSWER_FILE_NAME;
 		const basePrompt = buildSynthesisPrompt(config.prompts.askQuestionSynthesis, {
 			question: workflow.specification.trim(),

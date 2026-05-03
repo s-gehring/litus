@@ -97,24 +97,18 @@ export function formatAspectHeadline(
 }
 
 /**
- * Concatenate per-aspect findings files into the `${aspectFindings}` block
- * the synthesis prompt expects. Each entry is prefixed with the aspect
- * title so the synthesizer can attribute findings.
+ * Build a manifest of per-aspect findings files for the `${aspectFindings}`
+ * block in the synthesis prompt. The block lists each aspect's title and the
+ * relative file name where its findings live in the synthesizer's working
+ * directory. The synthesizer is expected to read those files via its own
+ * file-reading tools rather than receive their contents inline — passing the
+ * full concatenated bodies through the CLI argv overflows the OS argv limit
+ * (`ENAMETOOLONG`) once research outputs grow.
  */
-export function buildAspectFindingsBlock(
-	worktreePath: string,
-	manifest: AspectManifestEntry[],
-): string {
+export function buildAspectFindingsBlock(manifest: AspectManifestEntry[]): string {
 	const sections: string[] = [];
 	for (const a of manifest) {
-		const abs = join(worktreePath, a.fileName);
-		let body = "";
-		try {
-			if (existsSync(abs)) body = readFileSync(abs, "utf-8");
-		} catch {
-			body = "";
-		}
-		sections.push(`## ${a.title}\n\n_(file: ${a.fileName})_\n\n${body.trim()}`);
+		sections.push(`- ${a.title} — \`${a.fileName}\``);
 	}
-	return sections.join("\n\n---\n\n");
+	return sections.join("\n");
 }
