@@ -1,7 +1,22 @@
 import { streamClaudeOneShot } from "./cli-runner";
 import { configStore } from "./config-store";
+import type { EffortLevel } from "./config-types";
 import { defaultSpawn, readStream, type SpawnLike } from "./spawn-utils";
-import type { MergeResult } from "./types";
+import type { MergeResult, ToolUsage } from "./types";
+
+/**
+ * Optional hooks the orchestrator wires into `resolveConflicts` so the
+ * merge-conflict Claude session lights up the same UI affordances as a
+ * normal pipeline step: tool usages render in the workflow's tool log, and
+ * the active-model panel reflects the model+effort actually being used (vs.
+ * the default "No model in use"). The hooks are optional so unit tests and
+ * other callers can ignore them.
+ */
+export interface ConflictDispatchCallbacks {
+	onTools?: (tools: ToolUsage[]) => void;
+	onClaudeStart?: (info: { model: string; effort: EffortLevel }) => void;
+	onClaudeEnd?: () => void;
+}
 
 /**
  * Outcome of an in-worktree conflict-resolution attempt. The orchestrator
@@ -234,6 +249,7 @@ export async function resolveConflicts(
 	specSummary: string,
 	onOutput: (msg: string) => void,
 	runner?: SpawnLike,
+	dispatchCallbacks?: ConflictDispatchCallbacks,
 ): Promise<ConflictResolutionResult> {
 	const spawn = runner?.spawn ?? defaultSpawn();
 
@@ -294,6 +310,7 @@ export async function resolveConflicts(
 		"--output-format",
 		"stream-json",
 		"--verbose",
+		"--include-partial-messages",
 		"--dangerously-skip-permissions",
 		"--effort",
 		effort,
@@ -309,12 +326,21 @@ export async function resolveConflicts(
 	const preClaudeHead = await readGitHead(worktreePath, spawn as SpawnLike["spawn"]);
 
 	onOutput("Dispatching Claude CLI to resolve conflicts...");
-	const { exitCode: claudeCode, stderr: claudeStderr } = await streamClaudeOneShot(
-		conflictArgs,
-		worktreePath,
-		onOutput,
-		spawn as SpawnLike["spawn"],
-	);
+	dispatchCallbacks?.onClaudeStart?.({ model, effort });
+	let claudeCode: number;
+	let claudeStderr: string;
+	try {
+		const result = await streamClaudeOneShot(
+			conflictArgs,
+			worktreePath,
+			{ onOutput, onTools: dispatchCallbacks?.onTools },
+			spawn as SpawnLike["spawn"],
+		);
+		claudeCode = result.exitCode;
+		claudeStderr = result.stderr;
+	} finally {
+		dispatchCallbacks?.onClaudeEnd?.();
+	}
 	if (claudeCode !== 0) {
 		throw new Error(`Conflict resolution failed: ${claudeStderr || `exit code ${claudeCode}`}`);
 	}

@@ -339,4 +339,30 @@ describe("PipelineOrchestrator.activeInvocation", () => {
 		expect(wf.activeInvocation?.model).toBe("");
 		expect(wf.activeInvocation?.stepName).toBe("specify");
 	});
+
+	test("merge-conflict dispatch handlers set activeInvocation to merge-pr and clear it", async () => {
+		// Regression: while resolving merge conflicts, the active-model panel
+		// would show "No model in use" because the resolver dispatch did not
+		// update activeInvocation. The orchestrator now wires set/clear handlers
+		// through CiMergeFlowController.
+		await startAndFlush();
+		const wf = getWf(engine);
+		// Hand-craft the dispatch by reaching into the orchestrator's private
+		// methods — the test's purpose is to validate the wiring contract, not
+		// drive a full conflict round-trip.
+		// biome-ignore lint/suspicious/noExplicitAny: test-only access to private
+		const o = orchestrator as any;
+		o.handleMergeConflictDispatchStart(wf.id, {
+			model: "claude-opus-4-7",
+			effort: "medium",
+		});
+		expect(wf.activeInvocation).not.toBeNull();
+		expect(wf.activeInvocation?.stepName).toBe("merge-pr");
+		expect(wf.activeInvocation?.model).toBe("claude-opus-4-7");
+		expect(wf.activeInvocation?.effort).toBe("medium");
+		expect(wf.activeInvocation?.role).toBe("main");
+
+		o.handleMergeConflictDispatchEnd(wf.id);
+		expect(wf.activeInvocation).toBeNull();
+	});
 });

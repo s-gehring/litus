@@ -279,6 +279,9 @@ export class PipelineOrchestrator {
 			discoverPrUrl: discoverPrUrlFn,
 			stepOutput: (id, msg) => this.handleStepOutput(id, msg),
 			engine: this.engine,
+			stepTools: (id, tools) => this.handleStepTools(id, tools),
+			mergeConflictDispatchStart: (id, info) => this.handleMergeConflictDispatchStart(id, info),
+			mergeConflictDispatchEnd: (id) => this.handleMergeConflictDispatchEnd(id),
 		});
 	}
 
@@ -3060,6 +3063,41 @@ export class PipelineOrchestrator {
 			this.persistDebounced(workflow);
 		}
 		this.callbacks.onTools(workflowId, tools);
+	}
+
+	/**
+	 * Surface the merge-conflict Claude session in the active-model panel so
+	 * the user sees which model is doing the work instead of "No model in use".
+	 * Mirrors `prepareLlmDispatch` for normal pipeline steps but is called
+	 * outside the CLIStepRunner path because conflict resolution runs through
+	 * `streamClaudeOneShot` rather than `CLIRunner.start`.
+	 */
+	private handleMergeConflictDispatchStart(
+		workflowId: string,
+		info: { model: string; effort: EffortLevel },
+	): void {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
+		const now = new Date().toISOString();
+		workflow.activeInvocation = {
+			model: info.model,
+			effort: info.effort,
+			stepName: STEP.MERGE_PR,
+			startedAt: now,
+			role: "main",
+		};
+		workflow.updatedAt = now;
+		this.persistWorkflow(workflow);
+		this.callbacks.onStateChange(workflowId);
+	}
+
+	private handleMergeConflictDispatchEnd(workflowId: string): void {
+		const workflow = this.getActiveWorkflow(workflowId);
+		if (!workflow) return;
+		workflow.activeInvocation = null;
+		workflow.updatedAt = new Date().toISOString();
+		this.persistWorkflow(workflow);
+		this.callbacks.onStateChange(workflowId);
 	}
 
 	private requireStepIndex(workflow: Workflow, stepName: PipelineStepName): number {
