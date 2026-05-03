@@ -16,12 +16,13 @@ import {
 // Store reference for dependency name resolution
 let allWorkflowsRef: ReadonlyMap<string, WorkflowClientState> | null = null;
 
-type CardKind = "epic" | "spec" | "quick-fix";
+type CardKind = "epic" | "spec" | "quick-fix" | "ask-question";
 
 const CARD_KIND_LABELS: Record<CardKind, string> = {
 	epic: "Epic",
 	spec: "Spec",
 	"quick-fix": "Quick Fix",
+	"ask-question": "Question",
 };
 
 function kindFromWorkflow(workflowKind: WorkflowKind): CardKind {
@@ -30,6 +31,8 @@ function kindFromWorkflow(workflowKind: WorkflowKind): CardKind {
 			return "quick-fix";
 		case "spec":
 			return "spec";
+		case "ask-question":
+			return "ask-question";
 	}
 }
 
