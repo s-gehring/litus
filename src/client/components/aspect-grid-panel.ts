@@ -12,6 +12,7 @@
 
 import { computeAspectProgress, formatAspectProgressLine } from "../../aspect-researcher";
 import type { AspectState, OutputEntry, ToolUsage, WorkflowState } from "../../types";
+import { renderToolIcons } from "./workflow-window";
 
 const GRID_ROOT_ID = "aspect-grid-root";
 const PROGRESS_LINE_ID = "aspect-grid-progress";
@@ -103,7 +104,7 @@ export function applyAspectToolsDelta(
 	if (!out) return;
 	const row = document.createElement("div");
 	row.className = "aspect-tool-row";
-	row.textContent = tools.map((t) => `[${t.name}]`).join(" ");
+	row.appendChild(renderToolIcons(tools));
 	out.appendChild(row);
 	scrollToBottom(out);
 }
@@ -209,7 +210,7 @@ function renderEntries(out: HTMLElement, entries: OutputEntry[]): void {
 		} else {
 			const row = document.createElement("div");
 			row.className = "aspect-tool-row";
-			row.textContent = entry.tools.map((t) => `[${t.name}]`).join(" ");
+			row.appendChild(renderToolIcons(entry.tools));
 			out.appendChild(row);
 		}
 	}

@@ -2695,8 +2695,7 @@ body.artifact-modal-open { overflow: hidden; }
   border: 1px solid var(--border);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.02);
-  min-height: 180px;
-  max-height: 360px;
+  height: 300px;
 }
 
 .aspect-panel-header {
