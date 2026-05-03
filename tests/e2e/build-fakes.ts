@@ -23,7 +23,9 @@ const FAKES_DIR = resolve(HERE, "fakes");
 const FAKES = ["claude", "gh", "git", "uv", "uvx"] as const;
 
 if (process.platform !== "win32") {
-	console.log(`[build-fakes] skip — platform=${process.platform}, only Windows needs the .exe shim`);
+	console.log(
+		`[build-fakes] skip — platform=${process.platform}, only Windows needs the .exe shim`,
+	);
 	process.exit(0);
 }
 
@@ -41,14 +43,7 @@ for (const name of FAKES) {
 		continue;
 	}
 	const proc = Bun.spawnSync(
-		[
-			"bun",
-			"build",
-			"--compile",
-			"--target=bun-windows-x64",
-			`--outfile=${out}`,
-			src,
-		],
+		["bun", "build", "--compile", "--target=bun-windows-x64", `--outfile=${out}`, src],
 		{ stdout: "inherit", stderr: "inherit" },
 	);
 	if (proc.exitCode !== 0) {
