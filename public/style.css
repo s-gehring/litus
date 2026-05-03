@@ -2719,12 +2719,6 @@ body.artifact-modal-open { overflow: hidden; }
   word-break: break-word;
 }
 
-.aspect-tool-row {
-  font-size: 0.72rem;
-  color: #4a9eff;
-  padding: 1px 0;
-}
-
 .aspect-error-line {
   padding: 4px 10px;
   border-top: 1px solid var(--border);
