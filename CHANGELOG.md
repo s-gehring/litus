@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] — 2026-05-03
+
+### Fixed
+
+- Long pastes into spec, epic, quick-fix, ask-question, and feedback inputs no longer fail silently. Inputs up to
+  300,000 characters are accepted consistently across every form.
+- Refreshing the browser while an epic is being analyzed no longer makes the in-progress epic disappear from the
+  list.
+- Epic detail view now shows a thinking indicator while the epic is being analyzed, so it's clear work is in
+  progress.
+- Workflow cards, the epic tree, the archive list, and the detail title now show a short snippet while a summary is
+  still being generated, instead of dumping the full raw spec or question text into the heading.
+- Switching from an ask-question workflow's answer to a different workflow or epic no longer leaves the previous
+  answer visible under the new page.
+- Tool icons in ask-question research panels now sit inline with the text they belong to, instead of being pushed
+  onto their own line.
+
 ## [1.4.0] — 2026-05-03
 
 ### Added
