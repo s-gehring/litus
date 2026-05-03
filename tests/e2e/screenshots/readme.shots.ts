@@ -112,6 +112,12 @@ test.describe("spec workflow screenshots", () => {
 		});
 		await waitForStep(card, "plan", "completed", { timeoutMs: 60_000 });
 		await waitForStep(card, "tasks", "completed", { timeoutMs: 60_000 });
+		// Give the next step's assistant message time to reach the output log
+		// — without this the screenshot can race the review-step events and
+		// land on an empty output area (just the "— Step: review —" header).
+		await expect(page.locator("#output-log")).toContainText("Review complete", {
+			timeout: 30_000,
+		});
 
 		await hideAlertToasts(page);
 		await page.screenshot({ path: shotPath("pipeline-running"), fullPage: false });
@@ -187,8 +193,13 @@ test.describe("epic screenshots", () => {
 		await expect(tree.allChildRows()).toHaveCount(8, { timeout: 30_000 });
 		await hideAlertToasts(page);
 
+		// Full-page shot for the README's Screenshots overview table.
 		await page.screenshot({ path: shotPath("epic-tree"), fullPage: false });
-		await page.screenshot({ path: shotPath("pipeline-epic"), fullPage: false });
+		// Workflow-kinds section wants a tighter shot focused on just the
+		// dependency-graph element, paralleling the cropped pipeline-bar
+		// shots used for the Spec and Quick Fix kinds. Without this, both
+		// PNGs are byte-identical.
+		await tree.container().screenshot({ path: shotPath("pipeline-epic") });
 	});
 });
 

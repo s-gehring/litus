@@ -8,6 +8,14 @@ import { defineConfig } from "@playwright/test";
 // Reuses `tests/e2e/harness/global-setup.ts` for the Chromium-installed
 // pre-flight check and the same fixtures (sandbox, scenario-driven server)
 // as the e2e suite — see `tests/e2e/harness/fixtures.ts`.
+//
+// Default-on demo delay: every fake-claude event holds for this many ms after
+// emit, so the running state of each step is long enough to (a) render in
+// the DOM and (b) survive Playwright's locator polling cadence. Without
+// this, fast steps like `review` complete between polls and their assistant
+// text never makes it into a screenshot.
+process.env.LITUS_E2E_DEMO_DELAY_MS ??= "1500";
+
 export default defineConfig({
 	testDir: "./",
 	testMatch: "**/*.shots.ts",
