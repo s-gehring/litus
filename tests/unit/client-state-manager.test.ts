@@ -305,6 +305,88 @@ describe("ClientStateManager façade — workflow:aspect:* reducer", () => {
 		});
 		expect(sent.some((m) => m.type === "client:warning")).toBe(true);
 	});
+
+	test("unknown aspectId on workflow:aspect:state emits a client:warning, not a crash", () => {
+		const { mgr, sent } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		mgr.handleMessage({
+			type: "workflow:aspect:state",
+			workflowId: "wf-1",
+			aspectId: "ghost",
+			state: {
+				id: "ghost",
+				fileName: "ghost.md",
+				status: "completed",
+				sessionId: null,
+				startedAt: "2026-05-03T00:00:00Z",
+				completedAt: "2026-05-03T00:01:00Z",
+				errorMessage: null,
+				output: "x",
+				outputLog: [{ kind: "text", text: "x" }],
+			},
+		});
+		expect(sent.some((m) => m.type === "client:warning")).toBe(true);
+		// Sibling aspects untouched
+		const wf = mgr.getWorkflows().get("wf-1")?.state;
+		expect(wf?.aspects?.length).toBe(2);
+	});
+
+	test("late joiner: workflow:aspect:state with non-empty outputLog fully replaces local state", () => {
+		const { mgr } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		// Late-joiner snapshot arriving BEFORE any incremental output deltas.
+		mgr.handleMessage({
+			type: "workflow:aspect:state",
+			workflowId: "wf-1",
+			aspectId: "a",
+			state: {
+				id: "a",
+				fileName: "a.md",
+				status: "completed",
+				sessionId: "sess-a",
+				startedAt: "2026-05-03T00:00:00Z",
+				completedAt: "2026-05-03T00:01:00Z",
+				errorMessage: null,
+				output: "full snapshot body",
+				outputLog: [{ kind: "text", text: "full snapshot body" }],
+			},
+		});
+		const wf = mgr.getWorkflows().get("wf-1")?.state;
+		const aspect = wf?.aspects?.find((a) => a.id === "a");
+		expect(aspect?.status).toBe("completed");
+		expect(aspect?.output).toBe("full snapshot body");
+		expect(aspect?.outputLog.length).toBe(1);
+		expect(aspect?.sessionId).toBe("sess-a");
+	});
+
+	test("pure-flip case: workflow:aspect:state with empty outputLog when local mirror is also empty replaces (status flip)", () => {
+		const { mgr } = setup();
+		mgr.handleMessage({ type: "workflow:created", workflow: workflowWithAspects() });
+		// Aspect 'b' starts pending with empty output. Send a status-only flip
+		// snapshot — both incoming and local outputLog are empty, so the local
+		// mirror is replaced (status goes pending → completed).
+		mgr.handleMessage({
+			type: "workflow:aspect:state",
+			workflowId: "wf-1",
+			aspectId: "b",
+			state: {
+				id: "b",
+				fileName: "b.md",
+				status: "completed",
+				sessionId: "sess-b",
+				startedAt: "2026-05-03T00:00:00Z",
+				completedAt: "2026-05-03T00:01:00Z",
+				errorMessage: null,
+				output: "",
+				outputLog: [],
+			},
+		});
+		const wf = mgr.getWorkflows().get("wf-1")?.state;
+		const aspect = wf?.aspects?.find((a) => a.id === "b");
+		expect(aspect?.status).toBe("completed");
+		expect(aspect?.sessionId).toBe("sess-b");
+		expect(aspect?.completedAt).toBe("2026-05-03T00:01:00Z");
+	});
 });
 
 describe("ClientStateManager façade — client:warning forwarding (FR-016)", () => {

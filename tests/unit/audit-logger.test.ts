@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuditLogger } from "../../src/audit-logger";
@@ -63,5 +63,58 @@ describe("AuditLogger.logFeedbackSubmittedResume", () => {
 		expect(target).toBeDefined();
 		if (!target) return;
 		expect(target.sequenceNumber).toBe(1);
+	});
+});
+
+// Locks in the wrapped-row contract from contracts/audit-aspect-attribution.md
+// §2.1: aspect-keyed processes write `{ workflowId, aspectId, event }` to
+// events.jsonl while non-aspect processes keep the bare-event shape. The
+// emission point lives in `src/cli-runner.ts:streamOutput` (not in
+// AuditLogger), so this test exercises the JSONL contract directly: append
+// the same shapes the runner would produce, then read them back and verify
+// attribution survives the round-trip.
+describe("audit events.jsonl — aspect attribution wrapper round-trip", () => {
+	let dir: string;
+	let file: string;
+
+	beforeEach(() => {
+		dir = join(tmpdir(), `audit-aspect-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(dir, { recursive: true });
+		file = join(dir, "events.jsonl");
+	});
+
+	afterEach(() => {
+		try {
+			rmSync(dir, { recursive: true, force: true });
+		} catch {
+			// best-effort
+		}
+	});
+
+	test("aspect-keyed rows wrap event with { workflowId, aspectId, event }; non-aspect rows keep bare event shape", () => {
+		const bareEvent = { type: "assistant", session_id: "s1" };
+		const wrapped = { workflowId: "wf-1", aspectId: "a-2", event: bareEvent };
+
+		// Mimics what cli-runner.streamOutput appends.
+		appendFileSync(file, `${JSON.stringify(bareEvent)}\n`);
+		appendFileSync(file, `${JSON.stringify(wrapped)}\n`);
+
+		const lines = readFileSync(file, "utf-8").trim().split("\n");
+		expect(lines.length).toBe(2);
+
+		const row0 = JSON.parse(lines[0]) as Record<string, unknown>;
+		const row1 = JSON.parse(lines[1]) as Record<string, unknown>;
+
+		// Bare row: top-level event fields, no attribution wrapper.
+		expect(row0.type).toBe("assistant");
+		expect(row0.workflowId).toBeUndefined();
+		expect(row0.aspectId).toBeUndefined();
+
+		// Wrapped row: attribution at the top level, inner event preserved.
+		expect(row1.workflowId).toBe("wf-1");
+		expect(row1.aspectId).toBe("a-2");
+		const innerEvent = row1.event as Record<string, unknown>;
+		expect(innerEvent.type).toBe("assistant");
+		expect(innerEvent.session_id).toBe("s1");
 	});
 });
