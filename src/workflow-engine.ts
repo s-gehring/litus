@@ -9,7 +9,13 @@ import {
 	VALID_TRANSITIONS as transitions,
 	type WorkflowStatus,
 } from "./pipeline-steps";
-import type { EpicAnalysisResult, Question, Workflow, WorkflowKind } from "./types";
+import {
+	ASK_QUESTION_MAX_LENGTH,
+	type EpicAnalysisResult,
+	type Question,
+	type Workflow,
+	type WorkflowKind,
+} from "./types";
 import { clearArtifacts } from "./workflow-artifacts";
 
 /**
@@ -61,6 +67,17 @@ export class WorkflowEngine {
 		const workflowKind: WorkflowKind = options.workflowKind ?? "spec";
 		if (workflowKind === "quick-fix" && specification.trim() === "") {
 			throw new Error("Quick Fix description must not be empty.");
+		}
+		if (workflowKind === "ask-question") {
+			const trimmed = specification.trim();
+			if (trimmed === "") {
+				throw new Error("Please enter a question.");
+			}
+			if (specification.length > ASK_QUESTION_MAX_LENGTH) {
+				throw new Error(
+					`Question is too long. The maximum allowed length is ${ASK_QUESTION_MAX_LENGTH.toLocaleString("en-US")} characters; this is a guardrail against the LLM token budget.`,
+				);
+			}
 		}
 		const id = randomUUID();
 		const shortId = id.slice(0, 8);
@@ -132,6 +149,9 @@ export class WorkflowEngine {
 			updatedAt: now,
 			archived: false,
 			archivedAt: null,
+			aspectManifest: null,
+			aspects: null,
+			synthesizedAnswer: null,
 		};
 
 		return this.workflow;
@@ -516,10 +536,17 @@ export async function resetWorkflow(workflow: Workflow): Promise<ResetOutcome> {
 	workflow.mergeCycle.attempt = 0;
 	workflow.reviewCycle.iteration = 1;
 	workflow.reviewCycle.lastSeverity = null;
+	workflow.aspectManifest = null;
+	workflow.aspects = null;
+	workflow.synthesizedAnswer = null;
 
 	for (let i = 0; i < workflow.steps.length; i++) {
-		const def = PIPELINE_STEP_DEFINITIONS[i];
 		const step = workflow.steps[i];
+		// Look up the step definition by name — `PIPELINE_STEP_DEFINITIONS` is in
+		// spec-pipeline order, but `workflow.steps` follows the kind-specific
+		// ordering (`SPEC_ORDER` / `QUICK_FIX_ORDER` / `ASK_QUESTION_ORDER`),
+		// so positional indexing would assign the wrong prompt for non-spec kinds.
+		const def = PIPELINE_STEP_DEFINITIONS.find((d) => d.name === step.name);
 		step.status = "pending";
 		step.output = "";
 		step.outputLog = [];

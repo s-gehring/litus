@@ -2,7 +2,13 @@ import type { AppConfig, AutoMode } from "../config-types";
 import { looksLikeGitUrl } from "../git-url";
 import type { PipelineStepName } from "../pipeline-steps";
 import type { ClientMessage, ServerMessage } from "../protocol";
-import type { Alert, ArtifactDescriptor, ArtifactListResponse, WorkflowState } from "../types";
+import {
+	type Alert,
+	type ArtifactDescriptor,
+	type ArtifactListResponse,
+	ASK_QUESTION_MAX_LENGTH,
+	type WorkflowState,
+} from "../types";
 import { ClientStateManager } from "./client-state-manager";
 import {
 	hideAlertList,
@@ -800,6 +806,117 @@ function openQuickFixModal(): void {
 	modal.show();
 }
 
+function openAskQuestionModal(): void {
+	const content = document.createElement("div");
+
+	const repoField = document.createElement("div");
+	repoField.className = "modal-field";
+	const repoLabel = document.createElement("label");
+	repoLabel.textContent = "Target Repository";
+	repoField.appendChild(repoLabel);
+	const repoPicker = createFolderPicker("~/git");
+	repoPicker.setValue(stateManager.getLastTargetRepo());
+	repoField.appendChild(repoPicker.element);
+	repoField.appendChild(createRepoHint());
+
+	const questionField = document.createElement("div");
+	questionField.className = "modal-field";
+	const questionLabel = document.createElement("label");
+	questionLabel.textContent = "Your question";
+	questionField.appendChild(questionLabel);
+	const questionInput = document.createElement("textarea");
+	questionInput.placeholder = "Ask a research-style question about this codebase...";
+	questionInput.rows = 6;
+	questionField.appendChild(questionInput);
+
+	const errorEl = document.createElement("div");
+	errorEl.className = "modal-error hidden";
+
+	const actions = document.createElement("div");
+	actions.className = "modal-actions";
+	const btnStart = document.createElement("button");
+	btnStart.className = "btn btn-primary";
+	btnStart.textContent = "Start";
+	btnStart.disabled = true;
+	actions.appendChild(btnStart);
+
+	content.appendChild(repoField);
+	content.appendChild(questionField);
+	content.appendChild(errorEl);
+	content.appendChild(actions);
+
+	const modal = createModal("Ask Question", content);
+
+	const cloneStatus = document.createElement("div");
+	cloneStatus.className = "modal-clone-status hidden";
+	content.appendChild(cloneStatus);
+
+	const folderValidation = attachFolderValidation(repoPicker, repoField);
+
+	function setFormDisabled(disabled: boolean) {
+		questionInput.disabled = disabled;
+		btnStart.disabled = disabled || questionInput.value.trim() === "";
+		repoPicker.element
+			.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input, button")
+			.forEach((el) => {
+				el.disabled = disabled;
+			});
+	}
+
+	questionInput.addEventListener("input", () => {
+		btnStart.disabled = questionInput.value.trim() === "";
+	});
+
+	async function submit() {
+		const question = questionInput.value;
+		if (question.trim() === "") {
+			errorEl.textContent = "Please enter a question.";
+			errorEl.classList.remove("hidden");
+			return;
+		}
+		if (question.length > ASK_QUESTION_MAX_LENGTH) {
+			errorEl.textContent = `Question is too long. The maximum allowed length is ${ASK_QUESTION_MAX_LENGTH.toLocaleString("en-US")} characters; this is a guardrail against the LLM token budget.`;
+			errorEl.classList.remove("hidden");
+			return;
+		}
+		errorEl.classList.add("hidden");
+		const folderOk = await folderValidation.submitCheck();
+		if (!folderOk) return;
+		const targetRepo = repoPicker.getValue();
+
+		if (targetRepo && looksLikeGitUrl(targetRepo)) {
+			const submissionId = crypto.randomUUID();
+			attachCloneSubmission(modal, cloneStatus, errorEl, setFormDisabled, submissionId);
+			send({
+				type: "workflow:start",
+				workflowKind: "ask-question",
+				specification: question.trim(),
+				targetRepository: targetRepo,
+				submissionId,
+			});
+			return;
+		}
+
+		send({
+			type: "workflow:start",
+			workflowKind: "ask-question",
+			specification: question.trim(),
+			...(targetRepo ? { targetRepository: targetRepo } : {}),
+		});
+		modal.hide();
+	}
+
+	btnStart.addEventListener("click", () => void submit());
+	questionInput.addEventListener("keydown", (e) => {
+		if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+			e.preventDefault();
+			void submit();
+		}
+	});
+
+	modal.show();
+}
+
 function openEpicModal(): void {
 	const content = document.createElement("div");
 
@@ -911,6 +1028,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	const btnNewSpec = document.getElementById("btn-new-spec");
 	if (btnNewSpec) btnNewSpec.addEventListener("click", openSpecModal);
+
+	const btnAskQuestion = document.getElementById("btn-ask-question");
+	if (btnAskQuestion) btnAskQuestion.addEventListener("click", openAskQuestionModal);
 
 	const btnNewEpic = document.getElementById("btn-new-epic");
 	if (btnNewEpic) btnNewEpic.addEventListener("click", openEpicModal);

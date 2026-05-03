@@ -62,6 +62,7 @@ import { routeAfterStep as computeRoute, shouldLoopReview } from "./step-router"
 import { Summarizer } from "./summarizer";
 import {
 	type AlertType,
+	type AspectState,
 	type FeedbackEntry,
 	type OutputEntry,
 	type PipelineCallbacks,
@@ -75,9 +76,31 @@ import {
 export type { PipelineCallbacks } from "./types";
 
 import {
+	buildFeedbackPreamble,
+	buildSynthesisPrompt,
+	readSynthesizedAnswer,
+} from "./answer-synthesizer";
+import { removeWorktree } from "./ask-question-finalizer";
+import {
+	buildAspectFindingsBlock,
+	buildResearchPrompt,
+	formatAspectHeadline,
+	inspectAspectFindings,
+	pickNextAspect,
+} from "./aspect-researcher";
+import {
+	buildDecompositionPrompt,
+	buildInitialAspectStates,
+	DECOMPOSITION_FILE_REL,
+	DEFAULT_ANSWER_FILE_NAME,
+	lookupAspectEntry,
+	readAndValidateDecompositionFile,
+} from "./question-decomposer";
+import {
 	type ArtifactsCollectionResult,
 	collectArtifactsFromManifest,
 	getWorkflowBranch,
+	snapshotAskQuestionArtifacts,
 	snapshotStepArtifacts,
 } from "./workflow-artifacts";
 import { runInWorkflowContext } from "./workflow-context";
@@ -96,6 +119,9 @@ const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {
 	[STEP.IMPLEMENT_REVIEW]: "implementReview",
 	[STEP.ARTIFACTS]: "artifacts",
 	[STEP.COMMIT_PUSH_PR]: "commitPushPr",
+	[STEP.DECOMPOSE]: "askQuestionDecomposition",
+	[STEP.RESEARCH_ASPECT]: "askQuestionResearch",
+	[STEP.SYNTHESIZE]: "askQuestionSynthesis",
 };
 
 export type SubmitResumeWithFeedbackResult =
@@ -625,6 +651,33 @@ export class PipelineOrchestrator {
 				// workflow) and its own wall-clock timer; the generic runStep path
 				// would spawn the CLI with the empty static prompt and no budget.
 				this.runArtifactsStep(workflow);
+				return;
+			}
+
+			if (step.name === STEP.DECOMPOSE) {
+				this.runDecomposeStep(workflow);
+				return;
+			}
+			if (step.name === STEP.RESEARCH_ASPECT) {
+				// Reset the errored aspect to pending so pickNextAspect picks it up
+				// first. Already-completed aspects keep their state (per FR-009).
+				if (workflow.aspects) {
+					for (const a of workflow.aspects) {
+						if (a.status === "errored") {
+							a.status = "pending";
+							a.errorMessage = null;
+						}
+					}
+				}
+				this.runResearchAspectStep(workflow);
+				return;
+			}
+			if (step.name === STEP.SYNTHESIZE) {
+				this.runSynthesizeStep(workflow);
+				return;
+			}
+			if (step.name === STEP.FINALIZE) {
+				this.runFinalizeStep(workflow);
 				return;
 			}
 
@@ -1239,6 +1292,392 @@ export class PipelineOrchestrator {
 		this.applyCiFlowOutcome(workflow, this.ciMergeFlow.routeToMergePrPause());
 	}
 
+	// ── Ask-question dispatch ──────────────────────────────
+
+	private runDecomposeStep(workflow: Workflow): void {
+		const cwd = requireWorktreePath(workflow);
+		try {
+			mkdirSync(join(cwd, ".litus"), { recursive: true });
+		} catch (err) {
+			this.handleStepError(
+				workflow.id,
+				`Failed to prepare decomposition output directory: ${toErrorMessage(err)}`,
+			);
+			return;
+		}
+		const config = configStore.get();
+		const prompt = buildDecompositionPrompt(config.prompts.askQuestionDecomposition, {
+			question: workflow.specification.trim(),
+			maxAspects: config.limits.askQuestionMaxAspects,
+			decompositionFile: DECOMPOSITION_FILE_REL,
+		});
+		this.runStep(
+			workflow,
+			prompt,
+			cwd,
+			config.models.askQuestionDecomposition,
+			config.efforts.askQuestionDecomposition,
+		);
+	}
+
+	private completeDecomposeStep(workflow: Workflow): void {
+		const cwd = requireWorktreePath(workflow);
+		const config = configStore.get();
+		const result = readAndValidateDecompositionFile(cwd, config.limits.askQuestionMaxAspects);
+		if (result.kind === "error") {
+			this.handleStepError(workflow.id, result.message);
+			return;
+		}
+		if (result.cappedFrom !== null) {
+			this.handleStepOutput(
+				workflow.id,
+				`Decomposition produced ${result.cappedFrom} aspects; capped at ${config.limits.askQuestionMaxAspects}.`,
+			);
+		}
+		workflow.aspectManifest = result.manifest;
+		workflow.aspects = buildInitialAspectStates(result.manifest);
+		workflow.updatedAt = new Date().toISOString();
+		this.persistWorkflow(workflow);
+		this.advanceAfterStep(workflow.id);
+	}
+
+	private runResearchAspectStep(workflow: Workflow): void {
+		const manifest = workflow.aspectManifest;
+		const aspects = workflow.aspects;
+		if (!manifest || !aspects || manifest.aspects.length !== aspects.length) {
+			this.handleStepError(
+				workflow.id,
+				"Inconsistent aspect state — decompose may not have persisted correctly",
+			);
+			return;
+		}
+		const next = pickNextAspect(aspects);
+		if (!next) {
+			// All aspects already completed (e.g. resume after a stale persist).
+			this.advanceAfterStep(workflow.id);
+			return;
+		}
+		const entry = lookupAspectEntry(workflow, next.id);
+		const idx = aspects.indexOf(next);
+		const cwd = requireWorktreePath(workflow);
+		const config = configStore.get();
+
+		next.status = "in_progress";
+		next.startedAt = new Date().toISOString();
+		next.errorMessage = null;
+		workflow.updatedAt = next.startedAt;
+		this.persistWorkflow(workflow);
+
+		const headline = formatAspectHeadline(idx, aspects.length, entry.title);
+		const step = workflow.steps[workflow.currentStepIndex];
+		step.outputLog.push({ kind: "text", text: headline, type: "system" });
+		step.output += `${headline}\n`;
+		this.callbacks.onOutput(workflow.id, headline);
+
+		const prompt = buildResearchPrompt(config.prompts.askQuestionResearch, {
+			aspectTitle: entry.title,
+			aspectResearchPrompt: entry.researchPrompt,
+			aspectFileName: entry.fileName,
+		});
+		this.runStep(
+			workflow,
+			prompt,
+			cwd,
+			config.models.askQuestionResearch,
+			config.efforts.askQuestionResearch,
+		);
+	}
+
+	private completeResearchAspectStep(workflow: Workflow): void {
+		const aspects = workflow.aspects;
+		if (!aspects) {
+			this.handleStepError(workflow.id, "Inconsistent aspect state — aspects array missing");
+			return;
+		}
+		const active = aspects.find((a) => a.status === "in_progress");
+		if (!active) {
+			this.handleStepError(workflow.id, "Inconsistent aspect state — no aspect was in progress");
+			return;
+		}
+		const cwd = requireWorktreePath(workflow);
+		const findings = inspectAspectFindings(cwd, active.fileName);
+		const now = new Date().toISOString();
+		if (findings.kind === "missing") {
+			this.failResearchAspect(
+				workflow,
+				active,
+				"Per-aspect agent declined to write findings (file not found at expected path)",
+			);
+			return;
+		}
+		if (findings.kind === "empty") {
+			this.failResearchAspect(workflow, active, "Per-aspect agent wrote an empty findings file");
+			return;
+		}
+		active.status = "completed";
+		active.completedAt = now;
+		active.errorMessage = null;
+		workflow.updatedAt = now;
+
+		const step = workflow.steps[workflow.currentStepIndex];
+		step.sessionId = active.sessionId; // keep most-recent for diagnostics
+
+		// More aspects to do — re-enter the research loop without advancing the
+		// step index. Otherwise advance to synthesize.
+		const remaining = pickNextAspect(aspects);
+		if (remaining) {
+			// Mark the just-finished per-aspect run as completed before the
+			// archive/reset, so the archived `PipelineStepRun` carries
+			// `status: "completed"` and a non-null `completedAt` (rather than
+			// the `archivedStatusFor("running")` → `"paused"` fallback).
+			step.status = "completed";
+			step.completedAt = now;
+			this.persistWorkflow(workflow);
+			// Reset the step record (archive prior run, fresh output) before the
+			// next per-aspect run.
+			this.stepRunner.resetStep(step);
+			this.runResearchAspectStep(workflow);
+			return;
+		}
+		this.persistWorkflow(workflow);
+		this.advanceAfterStep(workflow.id);
+	}
+
+	private failResearchAspect(workflow: Workflow, aspect: AspectState, message: string): void {
+		const now = new Date().toISOString();
+		aspect.status = "errored";
+		aspect.completedAt = now;
+		aspect.errorMessage = message;
+		workflow.updatedAt = now;
+		this.persistWorkflow(workflow);
+		this.handleStepError(workflow.id, message);
+	}
+
+	private runSynthesizeStep(workflow: Workflow, opts?: { feedback?: string }): void {
+		const manifest = workflow.aspectManifest;
+		if (!manifest) {
+			this.handleStepError(workflow.id, "Cannot synthesize without an aspect manifest");
+			return;
+		}
+		const cwd = requireWorktreePath(workflow);
+		const config = configStore.get();
+		const findingsBlock = buildAspectFindingsBlock(cwd, manifest.aspects);
+		const answerFileName = workflow.synthesizedAnswer?.sourceFileName ?? DEFAULT_ANSWER_FILE_NAME;
+		const basePrompt = buildSynthesisPrompt(config.prompts.askQuestionSynthesis, {
+			question: workflow.specification.trim(),
+			aspectFindings: findingsBlock,
+			answerFileName,
+		});
+		const finalPrompt = opts?.feedback
+			? `${buildFeedbackPreamble(workflow.synthesizedAnswer?.markdown ?? "", opts.feedback)}\n${basePrompt}`
+			: basePrompt;
+		this.runStep(
+			workflow,
+			finalPrompt,
+			cwd,
+			config.models.askQuestionSynthesis,
+			config.efforts.askQuestionSynthesis,
+		);
+	}
+
+	private completeSynthesizeStep(workflow: Workflow): void {
+		const cwd = requireWorktreePath(workflow);
+		const fileName = workflow.synthesizedAnswer?.sourceFileName ?? DEFAULT_ANSWER_FILE_NAME;
+		const result = readSynthesizedAnswer(cwd, fileName);
+		if (result.kind === "missing") {
+			this.handleStepError(
+				workflow.id,
+				`Synthesizer did not write the answer file \`${fileName}\`.`,
+			);
+			return;
+		}
+		if (result.kind === "empty") {
+			this.handleStepError(
+				workflow.id,
+				`Synthesizer produced an empty answer file \`${fileName}\`.`,
+			);
+			return;
+		}
+		workflow.synthesizedAnswer = result.answer;
+		workflow.updatedAt = result.answer.updatedAt;
+		// Settle the in-flight ask-question feedback iteration (if any) so the
+		// in-flight guard in `submitAskQuestionFeedback` no longer rejects the
+		// next round. Initial-run synthesis has no pending feedback entry, so
+		// this is a no-op there.
+		const pendingFeedback = workflow.feedbackEntries.find(
+			(e) => e.kind === "ask-question-iteration" && e.outcome === null,
+		);
+		if (pendingFeedback) {
+			pendingFeedback.outcome = {
+				value: "success",
+				summary: "",
+				commitRefs: [],
+				warnings: [],
+			};
+		}
+		this.persistWorkflow(workflow);
+		try {
+			snapshotAskQuestionArtifacts(workflow);
+		} catch (err) {
+			logger.warn(`[ask-question] artifact snapshot failed: ${toErrorMessage(err)}`);
+			this.handleStepOutput(
+				workflow.id,
+				`[artifacts] snapshot failed (non-fatal): ${toErrorMessage(err)}`,
+			);
+		}
+		this.advanceAfterStep(workflow.id);
+	}
+
+	private pauseAtAnswerStep(workflow: Workflow): void {
+		const step = workflow.steps[workflow.currentStepIndex];
+		step.status = "waiting_for_input";
+		step.startedAt = step.startedAt ?? new Date().toISOString();
+		workflow.updatedAt = new Date().toISOString();
+		this.tryTransition(workflow.id, "waiting_for_input");
+		this.flushPersistDebounce();
+		this.persistWorkflow(workflow);
+		this.callbacks.onStateChange(workflow.id);
+	}
+
+	private runFinalizeStep(workflow: Workflow): void {
+		if (!workflow.worktreePath) {
+			this.handleStepOutput(
+				workflow.id,
+				"[finalize] Worktree already removed — snapshot is a no-op",
+			);
+		}
+		this.handleStepOutput(workflow.id, "[finalize] Snapshotting markdown artifacts");
+		try {
+			snapshotAskQuestionArtifacts(workflow);
+		} catch (err) {
+			this.handleStepError(
+				workflow.id,
+				`Failed to snapshot ask-question artifacts during finalize: ${toErrorMessage(err)}`,
+			);
+			return;
+		}
+
+		const worktreePath = workflow.worktreePath;
+		const targetRepo = workflow.targetRepository;
+		if (!worktreePath || !targetRepo) {
+			this.finishFinalizeStep(workflow);
+			return;
+		}
+		this.handleStepOutput(workflow.id, "[finalize] Removing working directory");
+		removeWorktree(worktreePath, targetRepo)
+			.then((result) => {
+				const wf = this.getActiveWorkflow(workflow.id);
+				if (!wf) return;
+				if (result.kind === "error") {
+					this.handleStepError(wf.id, `Failed to remove worktree: ${result.message}`);
+					return;
+				}
+				wf.worktreePath = null;
+				this.handleStepOutput(
+					wf.id,
+					result.kind === "missing"
+						? "[finalize] Worktree was already removed"
+						: "[finalize] Worktree removed",
+				);
+				this.finishFinalizeStep(wf);
+			})
+			.catch((err) => {
+				this.handleStepError(workflow.id, `Failed to remove worktree: ${toErrorMessage(err)}`);
+			});
+	}
+
+	private finishFinalizeStep(workflow: Workflow): void {
+		this.persistWorkflow(workflow);
+		this.advanceAfterStep(workflow.id);
+	}
+
+	/**
+	 * Public entry point for the `workflow:finalize` client message. Validates
+	 * preconditions and dispatches the `finalize` step. Returns false if the
+	 * preconditions are not met (caller should not send an error in that case
+	 * — the message is treated as a no-op for an already-completed workflow).
+	 */
+	submitFinalize(workflowId: string): { ok: true } | { ok: false; reason: string } {
+		return runInWorkflowContext(workflowId, () => {
+			const workflow = this.getActiveWorkflow(workflowId);
+			if (!workflow) return { ok: false, reason: "not_found" } as const;
+			if (workflow.workflowKind !== "ask-question") {
+				return {
+					ok: false,
+					reason: "Finalize is only supported for ask-question workflows",
+				} as const;
+			}
+			const step = workflow.steps[workflow.currentStepIndex];
+			if (workflow.status === "completed") {
+				return { ok: true } as const; // idempotent no-op
+			}
+			if (step.name === STEP.FINALIZE && step.status === "running") {
+				return { ok: false, reason: "Finalize is already in progress" } as const;
+			}
+			if (workflow.status !== "waiting_for_input" || step.name !== STEP.ANSWER) {
+				return { ok: false, reason: "Workflow is not paused at the answer step" } as const;
+			}
+			step.status = "completed";
+			step.completedAt = new Date().toISOString();
+			workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.FINALIZE);
+			this.engine.transition(workflow.id, "running");
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflow.id);
+			this.startStep(workflow);
+			return { ok: true } as const;
+		});
+	}
+
+	/**
+	 * Public entry point for ask-question feedback iteration. Appends a new
+	 * `FeedbackEntry` (kind=`ask-question-iteration`) and re-enters the
+	 * synthesize step seeded with the previous answer + the feedback text.
+	 */
+	submitAskQuestionFeedback(
+		workflowId: string,
+		text: string,
+	): { ok: true; feedbackEntryId: string } | { ok: false; reason: string } {
+		return runInWorkflowContext(workflowId, () => {
+			const workflow = this.getActiveWorkflow(workflowId);
+			if (!workflow) return { ok: false, reason: "not_found" } as const;
+			if (workflow.workflowKind !== "ask-question") {
+				return { ok: false, reason: "Not an ask-question workflow" } as const;
+			}
+			const step = workflow.steps[workflow.currentStepIndex];
+			if (workflow.status !== "waiting_for_input" || step.name !== STEP.ANSWER) {
+				return { ok: false, reason: "Workflow is not paused at the answer step" } as const;
+			}
+			if (workflow.feedbackEntries.some((e) => e.outcome === null)) {
+				return { ok: false, reason: "A feedback iteration is already in progress" } as const;
+			}
+
+			const entry: FeedbackEntry = {
+				id: randomUUID(),
+				iteration: workflow.feedbackEntries.length + 1,
+				text,
+				submittedAt: new Date().toISOString(),
+				submittedAtStepName: STEP.ANSWER,
+				outcome: null,
+				kind: "ask-question-iteration",
+			};
+			workflow.feedbackEntries.push(entry);
+			workflow.updatedAt = entry.submittedAt;
+
+			// Rewind to the synthesize step and re-run with feedback context.
+			step.status = "completed";
+			step.completedAt = entry.submittedAt;
+			workflow.currentStepIndex = this.requireStepIndex(workflow, STEP.SYNTHESIZE);
+			const synthStep = workflow.steps[workflow.currentStepIndex];
+			this.stepRunner.resetStep(synthStep);
+
+			this.engine.transition(workflow.id, "running");
+			this.persistWorkflow(workflow);
+			this.callbacks.onStateChange(workflow.id);
+			this.runSynthesizeStep(workflow, { feedback: text });
+			return { ok: true, feedbackEntryId: entry.id } as const;
+		});
+	}
+
 	private startStep(workflow: Workflow): void {
 		const step = workflow.steps[workflow.currentStepIndex];
 		const previousIndex = workflow.currentStepIndex - 1;
@@ -1314,6 +1753,31 @@ export class PipelineOrchestrator {
 
 		if (step.name === STEP.SYNC_REPO) {
 			this.dispatchCiFlow(workflow, this.ciMergeFlow.runSyncRepo(workflow));
+			return;
+		}
+
+		if (step.name === STEP.DECOMPOSE) {
+			this.runDecomposeStep(workflow);
+			return;
+		}
+
+		if (step.name === STEP.RESEARCH_ASPECT) {
+			this.runResearchAspectStep(workflow);
+			return;
+		}
+
+		if (step.name === STEP.SYNTHESIZE) {
+			this.runSynthesizeStep(workflow);
+			return;
+		}
+
+		if (step.name === STEP.ANSWER) {
+			this.pauseAtAnswerStep(workflow);
+			return;
+		}
+
+		if (step.name === STEP.FINALIZE) {
+			this.runFinalizeStep(workflow);
 			return;
 		}
 
@@ -1583,6 +2047,13 @@ export class PipelineOrchestrator {
 	private initSpeckitInWorktree(workflow: Workflow): void {
 		if (workflow.workflowKind === "quick-fix") {
 			this.initQuickFixBranch(workflow);
+			return;
+		}
+		if (workflow.workflowKind === "ask-question") {
+			// Ask-question workflows have no spec-kit / branch initialization step;
+			// the worktree is detached on master and the agents write their files
+			// directly under the worktree root. Advance straight to `decompose`.
+			this.advanceAfterStep(workflow.id);
 			return;
 		}
 		const cwd = requireWorktreePath(workflow);
@@ -2061,6 +2532,25 @@ export class PipelineOrchestrator {
 		// driven by the manifest file on disk, not by the step's transcript.
 		if (step.name === STEP.ARTIFACTS) {
 			this.completeArtifactsStep(workflow);
+			return;
+		}
+
+		// Ask-question steps: their success signal is a file written to the
+		// worktree, not the chat transcript. The empty-output guard would
+		// reject them here even on a perfectly successful run, so they short-
+		// circuit to dedicated completion handlers that read the produced
+		// files. The question classifier is also bypassed for the same reason
+		// — the agent text isn't addressed to the user.
+		if (step.name === STEP.DECOMPOSE) {
+			this.completeDecomposeStep(workflow);
+			return;
+		}
+		if (step.name === STEP.RESEARCH_ASPECT) {
+			this.completeResearchAspectStep(workflow);
+			return;
+		}
+		if (step.name === STEP.SYNTHESIZE) {
+			this.completeSynthesizeStep(workflow);
 			return;
 		}
 
@@ -2598,6 +3088,23 @@ export class PipelineOrchestrator {
 			});
 			step.outcome = null;
 			error = finalMessage;
+		}
+
+		// Ask-question feedback iteration failure: settle the pending feedback
+		// entry's outcome so the in-flight guard in `submitAskQuestionFeedback`
+		// does not lock the user out of submitting a second round.
+		if (step.name === STEP.SYNTHESIZE) {
+			const pendingFeedback = workflow.feedbackEntries.find(
+				(e) => e.kind === "ask-question-iteration" && e.outcome === null,
+			);
+			if (pendingFeedback) {
+				pendingFeedback.outcome = {
+					value: "failed",
+					summary: error,
+					commitRefs: [],
+					warnings: [],
+				};
+			}
 		}
 
 		// Feedback-implementer pre-commit failure: record failed outcome and rewind
