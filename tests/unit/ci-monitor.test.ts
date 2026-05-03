@@ -3,8 +3,10 @@ import {
 	allChecksComplete,
 	allChecksPassed,
 	allFailuresCancelled,
+	EMPTY_CHECKS_GRACE_MS,
 	isValidPrUrl,
 	parseCiChecks,
+	shouldPassWithEmptyChecks,
 } from "../../src/ci-monitor";
 
 describe("parseCiChecks", () => {
@@ -162,6 +164,29 @@ describe("allFailuresCancelled", () => {
 
 	test("returns false for empty array", () => {
 		expect(allFailuresCancelled([])).toBe(false);
+	});
+});
+
+describe("shouldPassWithEmptyChecks", () => {
+	test("returns false during the grace period — keep polling, GitHub may still be registering checks", () => {
+		expect(shouldPassWithEmptyChecks(0)).toBe(false);
+		expect(shouldPassWithEmptyChecks(1_000)).toBe(false);
+		expect(shouldPassWithEmptyChecks(EMPTY_CHECKS_GRACE_MS - 1)).toBe(false);
+	});
+
+	test("returns true once the grace period has elapsed — treat empty as no CI configured", () => {
+		expect(shouldPassWithEmptyChecks(EMPTY_CHECKS_GRACE_MS)).toBe(true);
+		expect(shouldPassWithEmptyChecks(EMPTY_CHECKS_GRACE_MS + 1)).toBe(true);
+		expect(shouldPassWithEmptyChecks(10 * EMPTY_CHECKS_GRACE_MS)).toBe(true);
+	});
+
+	test("respects an explicit graceMs override", () => {
+		expect(shouldPassWithEmptyChecks(50, 100)).toBe(false);
+		expect(shouldPassWithEmptyChecks(150, 100)).toBe(true);
+	});
+
+	test("default grace is large enough to cover typical GitHub queueing latency (>=60s)", () => {
+		expect(EMPTY_CHECKS_GRACE_MS).toBeGreaterThanOrEqual(60_000);
 	});
 });
 
