@@ -66,15 +66,6 @@ See `scenarios/ci-failure-and-fix.json` (`pr checks` key) for a concrete example
 - No raw selectors in `tests/*.e2e.ts`. Selectors live in `pages/*.ts`; user-facing actions live in `helpers/*.ts`.
 - Uncovered invocations fail loudly: any unknown `claude` index or unknown `gh` subcommand key emits `[litus-e2e-fake:<name>] ...` on stderr and exits non-zero.
 
-## Failure artifacts
-
-On a failing test:
-
-- `tests/e2e/test-results/<test>/trace.zip` — open with `bunx playwright show-trace <path>`
-- `tests/e2e/test-results/<test>/test-failed-*.png` — final screenshot
-- `tests/e2e/test-results/<test>/video.webm`
-- `server.log` attached to the test — the captured server stdout/stderr
-
 ## Local recordings
 
 Local (non-CI) runs of `bun run test:e2e` always produce the full set of recordings for **every** test, passing or failing, under `tests/e2e/test-results/<test>/`:
@@ -83,9 +74,18 @@ Local (non-CI) runs of `bun run test:e2e` always produce the full set of recordi
 - `*.png` — final-state screenshot (`use.screenshot: "on"`)
 - `trace.zip` — Playwright trace, viewable with `bunx playwright show-trace <path>` (`use.trace: "on"`)
 
-The toggle is `process.env.CI` in `playwright.config.ts`: when `CI` is unset (the default on a developer workstation), all three keys resolve to `"on"`. When `CI` is truthy (GitHub Actions sets `CI=true` automatically), they resolve to the CI values described in **Failure artifacts** above — `screenshot: only-on-failure`, `video: retain-on-failure`, `trace: retain-on-failure` — so CI keeps artifacts only for failing tests, exactly as before.
+The toggle is `process.env.CI` in `playwright.config.ts`: when `CI` is unset (the default on a developer workstation), all three keys resolve to `"on"`. When `CI` is truthy (GitHub Actions sets `CI=true` automatically), they resolve to the CI values described in **CI failure artifacts** below — `screenshot: only-on-failure`, `video: retain-on-failure`, `trace: retain-on-failure` — so CI keeps artifacts only for failing tests, exactly as before.
 
 The output directory (`tests/e2e/test-results/`) is gitignored, so local recordings never leak into commits.
+
+## CI failure artifacts
+
+On CI (`process.env.CI` truthy), a failing test produces:
+
+- `tests/e2e/test-results/<test>/trace.zip` — open with `bunx playwright show-trace <path>`
+- `tests/e2e/test-results/<test>/test-failed-*.png` — final screenshot (this exact filename is specific to `screenshot: "only-on-failure"`; locally, see **Local recordings** above for the differing filename pattern)
+- `tests/e2e/test-results/<test>/video.webm`
+- `server.log` attached to the test — the captured server stdout/stderr
 
 ## CI
 
