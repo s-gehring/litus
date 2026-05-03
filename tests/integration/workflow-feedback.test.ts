@@ -8,7 +8,12 @@ import { configStore, DEFAULT_CONFIG } from "../../src/config-store";
 import type { EffortLevel } from "../../src/config-types";
 import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import { getStepDefinitionsForKind, STEP, type WorkflowStatus } from "../../src/pipeline-steps";
-import type { PipelineCallbacks, ToolUsage, Workflow } from "../../src/types";
+import {
+	type PipelineCallbacks,
+	RESUME_WITH_FEEDBACK_MAX_LENGTH,
+	type ToolUsage,
+	type Workflow,
+} from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
 import { WorktreeBranchManager } from "../../src/worktree-branch-manager";
 
@@ -352,7 +357,7 @@ describe("Resume-with-feedback — integration", () => {
 		expect(submitted).toHaveLength(0);
 	});
 
-	test("10k-char cap server-side: rejects with reason text-length, no persistence, no audit (T010, FR-014)", async () => {
+	test("length cap server-side: rejects with reason text-length, no persistence, no audit (T010, FR-014)", async () => {
 		const { orch, engine } = createOrch();
 		const wf = await seedPausedWithSession(engine, STEP.IMPLEMENT);
 		// biome-ignore lint/suspicious/noExplicitAny: test-only access
@@ -360,7 +365,7 @@ describe("Resume-with-feedback — integration", () => {
 		// biome-ignore lint/suspicious/noExplicitAny: test-only access
 		(orch as any).pipelineName = "len-cap";
 
-		const oversized = "x".repeat(10001);
+		const oversized = "x".repeat(RESUME_WITH_FEEDBACK_MAX_LENGTH + 1);
 		const result = orch.submitResumeWithFeedback(wf.id, oversized);
 		expect(result.ok).toBe(false);
 		if (result.ok) return;

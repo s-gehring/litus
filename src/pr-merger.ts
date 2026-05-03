@@ -306,7 +306,6 @@ export async function resolveConflicts(
 	const effort = config.efforts.mergeConflictResolution;
 	const conflictArgs = [
 		"-p",
-		prompt,
 		"--output-format",
 		"stream-json",
 		"--verbose",
@@ -335,6 +334,7 @@ export async function resolveConflicts(
 			worktreePath,
 			{ onOutput, onTools: dispatchCallbacks?.onTools },
 			spawn as SpawnLike["spawn"],
+			prompt,
 		);
 		claudeCode = result.exitCode;
 		claudeStderr = result.stderr;

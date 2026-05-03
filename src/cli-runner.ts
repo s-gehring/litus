@@ -41,8 +41,9 @@ export async function streamClaudeOneShot(
 	cwd: string,
 	callbacks: OneShotStreamCallbacks,
 	spawn?: SpawnLike["spawn"],
+	promptStdin?: string,
 ): Promise<OneShotStreamResult> {
-	const proc = spawnClaude(args, { cwd, spawn });
+	const proc = spawnClaude(args, { cwd, spawn, promptStdin });
 
 	const stdout = proc.stdout;
 	if (stdout && typeof stdout !== "number") {
@@ -154,7 +155,6 @@ export class CLIRunner {
 		const cwd = workflow.worktreePath;
 		const args = [
 			"-p",
-			workflow.specification,
 			"--output-format",
 			"stream-json",
 			"--verbose",
@@ -185,7 +185,7 @@ export class CLIRunner {
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
 			logger.info(`[cli-runner] Starting CLI for key ${processKey} | cwd=${cwd}`);
-			proc = spawnClaude(args, { cwd, extraEnv });
+			proc = spawnClaude(args, { cwd, extraEnv, promptStdin: workflow.specification });
 		} catch (err) {
 			const msg = toErrorMessage(err);
 			logger.error(`[cli-runner] Failed to spawn process: ${msg}`);
@@ -243,7 +243,6 @@ export class CLIRunner {
 		const usedPrompt = prompt ?? defaultPrompt;
 		const args = [
 			"-p",
-			usedPrompt,
 			"--output-format",
 			"stream-json",
 			"--verbose",
@@ -271,7 +270,7 @@ export class CLIRunner {
 		let proc: ReturnType<typeof Bun.spawn>;
 		try {
 			logger.info(`[cli-runner] Resuming ${sessionId} for workflow ${workflowId}`);
-			proc = spawnClaude(args, { cwd, extraEnv });
+			proc = spawnClaude(args, { cwd, extraEnv, promptStdin: usedPrompt });
 		} catch (err) {
 			const msg = toErrorMessage(err);
 			logger.error(`[cli-runner] Failed to spawn resume process: ${msg}`);

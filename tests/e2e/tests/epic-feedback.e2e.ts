@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { EPIC_FEEDBACK_MAX_LENGTH } from "../../../src/types";
 import { expect, test } from "../harness/fixtures";
 import { createEpic } from "../helpers";
 import { submitEpicFeedbackRaw } from "../helpers/submit-epic-feedback";
@@ -132,7 +133,7 @@ test.describe("Epic decomposition feedback", () => {
 		expect(whitespace.reasonCode).toBe("validation");
 	});
 
-	test("rejects raw epic:feedback with reasonCode=validation when text exceeds 10 000 chars", async ({
+	test("rejects raw epic:feedback with reasonCode=validation when text exceeds the max length", async ({
 		page,
 		server,
 		sandbox,
@@ -154,7 +155,7 @@ test.describe("Epic decomposition feedback", () => {
 		await expect(tree.allChildRows()).toHaveCount(2, { timeout: 15_000 });
 		const epicId = readEpicId(sandbox);
 
-		const tooLong = "x".repeat(10_001);
+		const tooLong = "x".repeat(EPIC_FEEDBACK_MAX_LENGTH + 1);
 		const result = await submitEpicFeedbackRaw(page, epicId, tooLong);
 		expect(result.type).toBe("epic:feedback:rejected");
 		expect(result.reasonCode).toBe("validation");

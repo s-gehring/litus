@@ -12,8 +12,19 @@ const originalSpawn = Bun.spawn;
 const originalSetTimeout = globalThis.setTimeout;
 const originalWarn = console.warn;
 
+// Production code pipes the prompt via stdin (post-stdin migration), so the
+// per-test prompt assertions read the captured chunks rather than scraping
+// argv. Cleared in `beforeEach`.
+const stdinChunks: string[] = [];
+
 function mockSpawnResponse(stdout: string, stderr = "", exitCode = 0) {
 	return {
+		stdin: {
+			write: (chunk: string) => {
+				stdinChunks.push(chunk);
+			},
+			end: () => {},
+		},
 		stdout: new ReadableStream<Uint8Array>({
 			start(c) {
 				c.enqueue(new TextEncoder().encode(stdout));
@@ -32,10 +43,8 @@ function mockSpawnResponse(stdout: string, stderr = "", exitCode = 0) {
 	};
 }
 
-function getPrompt(args: string[]): string {
-	const idx = args.indexOf("-p");
-	expect(idx).toBeGreaterThanOrEqual(0);
-	return args[idx + 1];
+function getPrompt(_args: string[]): string {
+	return stdinChunks.join("");
 }
 
 function defaultSelector(
@@ -56,6 +65,7 @@ describe("runConfiguredHelper", () => {
 	let setTimeoutMock: ReturnType<typeof mock>;
 
 	beforeEach(() => {
+		stdinChunks.length = 0;
 		spawnMock = mock(() => mockSpawnResponse(""));
 		warnMock = mock(() => {});
 		setTimeoutMock = mock((fn: (...a: unknown[]) => void, delay: number) =>

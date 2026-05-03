@@ -7,6 +7,7 @@ import {
 	type ArtifactDescriptor,
 	type ArtifactListResponse,
 	ASK_QUESTION_MAX_LENGTH,
+	RESUME_WITH_FEEDBACK_MAX_LENGTH,
 	type WorkflowState,
 } from "../types";
 import { ClientStateManager } from "./client-state-manager";
@@ -350,7 +351,7 @@ function handleMessage(msg: ServerMessage): void {
 			const reasonMessages: Record<typeof msg.reason, string> = {
 				"workflow-not-paused": "Workflow is no longer paused — feedback was discarded.",
 				"step-not-resumable": "Current step does not support feedback resume.",
-				"text-length": "Feedback text is empty or exceeds 10,000 characters.",
+				"text-length": `Feedback text is empty or exceeds ${RESUME_WITH_FEEDBACK_MAX_LENGTH.toLocaleString("en-US")} characters.`,
 				"workflow-not-found": "Workflow not found.",
 			};
 			appendOutput(`Feedback rejected: ${reasonMessages[msg.reason]}`, "error");

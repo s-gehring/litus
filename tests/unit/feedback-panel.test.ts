@@ -5,7 +5,7 @@ import {
 	renderFeedbackHistory,
 	showFeedbackPanel,
 } from "../../src/client/components/feedback-panel";
-import type { FeedbackEntry } from "../../src/types";
+import { type FeedbackEntry, MAX_LLM_INPUT_LENGTH } from "../../src/types";
 import { makeWorkflowState } from "../helpers";
 
 const PANEL_HTML = `
@@ -149,7 +149,7 @@ describe("feedback-panel", () => {
 		expect(submitted).toEqual([]);
 	});
 
-	test("over-10000-character text disables Submit (FR-014)", () => {
+	test("over-limit text disables Submit (FR-014)", () => {
 		const wf = makeWorkflowState();
 		wf.feedbackEntries = [];
 		const submitted: string[] = [];
@@ -158,7 +158,7 @@ describe("feedback-panel", () => {
 		});
 
 		const input = document.querySelector("#feedback-input") as HTMLTextAreaElement;
-		input.value = "a".repeat(10001);
+		input.value = "a".repeat(MAX_LLM_INPUT_LENGTH + 1);
 		input.dispatchEvent(new Event("input"));
 		const submitBtn = document.querySelector("#btn-submit-feedback") as HTMLButtonElement;
 		expect(submitBtn.disabled).toBe(true);

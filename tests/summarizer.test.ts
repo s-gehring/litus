@@ -4,6 +4,10 @@ import { Summarizer } from "../src/summarizer";
 const originalSpawn = Bun.spawn;
 const originalDateNow = Date.now;
 
+// Captures the prompt that production code now pipes via stdin so the
+// per-test assertions can read it back without round-tripping through argv.
+const stdinChunks: string[][] = [];
+
 function mockSpawnResponse(text: string, exitCode = 0) {
 	const stream = new ReadableStream({
 		start(controller) {
@@ -11,7 +15,15 @@ function mockSpawnResponse(text: string, exitCode = 0) {
 			controller.close();
 		},
 	});
+	const myChunks: string[] = [];
+	stdinChunks.push(myChunks);
 	return {
+		stdin: {
+			write: (chunk: string) => {
+				myChunks.push(chunk);
+			},
+			end: () => {},
+		},
 		stdout: stream,
 		stderr: new ReadableStream({
 			start(c) {
@@ -22,6 +34,16 @@ function mockSpawnResponse(text: string, exitCode = 0) {
 		pid: 1,
 		kill: () => {},
 	};
+}
+
+/**
+ * Returns the prompt for the Nth spawned process — production code pipes
+ * the prompt via stdin (post-stdin migration), so each spawn is the
+ * concatenation of its captured stdin chunks. Defaults to the first call.
+ */
+function capturedPrompt(index = 0): string {
+	const chunks = stdinChunks[index] ?? [];
+	return chunks.join("");
 }
 
 function mockSpawnWithDeferred(text: string) {
@@ -66,6 +88,7 @@ describe("Summarizer", () => {
 
 	beforeEach(() => {
 		summarizer = new Summarizer();
+		stdinChunks.length = 0;
 		spawnMock = mock(() => mockSpawnResponse("Setting up project"));
 		Bun.spawn = spawnMock as typeof Bun.spawn;
 		now = 100_000;
@@ -135,14 +158,13 @@ describe("Summarizer", () => {
 			// Only the chunk that crosses the threshold (8th chunk, at 200 chars) should trigger
 			expect(spawnMock).toHaveBeenCalledTimes(1);
 			// Verify spawn happened with content from 8 chunks (not fewer or more at trigger time)
-			const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
-			const promptArg = args[args.indexOf("-p") + 1];
-			expect(promptArg).toBeDefined();
+			const promptArg = capturedPrompt(0);
+			expect(promptArg.length).toBeGreaterThan(0);
 		});
 	});
 
 	describe("Sliding window", () => {
-		test("after 15 chunks, only last 10 chunks' content appears in spawn args", async () => {
+		test("after 15 chunks, only last 10 chunks' content appears in the prompt", async () => {
 			const callback = mock(() => {});
 			// 15 chunks of 14 chars each = 210 total; threshold (200) crossed on chunk 15
 			for (let i = 0; i < 15; i++) {
@@ -153,8 +175,7 @@ describe("Summarizer", () => {
 			await flushAsync();
 
 			expect(spawnMock).toHaveBeenCalledTimes(1);
-			const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
-			const promptArg = args[args.indexOf("-p") + 1];
+			const promptArg = capturedPrompt(0);
 
 			// Chunks C00-C04 should NOT appear (evicted from window)
 			for (let i = 0; i < 5; i++) {
@@ -166,7 +187,7 @@ describe("Summarizer", () => {
 			}
 		});
 
-		test("when joined chunks exceed 1000 chars, only last 1000 chars sent in spawn args", async () => {
+		test("when joined chunks exceed 1000 chars, only last 1000 chars sent in the prompt", async () => {
 			const callback = mock(() => {});
 			// Send a single chunk of 1500 '#' chars (not in prompt template)
 			summarizer.maybeSummarize("w1", "#".repeat(1500), callback);
@@ -174,15 +195,14 @@ describe("Summarizer", () => {
 			await flushAsync();
 
 			expect(spawnMock).toHaveBeenCalledTimes(1);
-			const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
-			const promptArg = args[args.indexOf("-p") + 1];
+			const promptArg = capturedPrompt(0);
 
 			// The text portion should be at most 1000 '#' chars
 			const hashCount = (promptArg.match(/#/g) || []).length;
 			expect(hashCount).toBe(1000);
 		});
 
-		test("when fewer than 10 chunks exist, all chunks are included in spawn args", async () => {
+		test("when fewer than 10 chunks exist, all chunks are included in the prompt", async () => {
 			const callback = mock(() => {});
 			summarizer.maybeSummarize("w1", "alpha-", callback);
 			summarizer.maybeSummarize("w1", "beta-", callback);
@@ -191,8 +211,7 @@ describe("Summarizer", () => {
 			await flushAsync();
 
 			expect(spawnMock).toHaveBeenCalledTimes(1);
-			const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
-			const promptArg = args[args.indexOf("-p") + 1];
+			const promptArg = capturedPrompt(0);
 
 			expect(promptArg).toContain("alpha-");
 			expect(promptArg).toContain("beta-");
@@ -387,9 +406,11 @@ describe("Summarizer", () => {
 			// Should trigger: enough chars AND past interval (lastSummaryTime preserved from original)
 			expect(spawnMock).toHaveBeenCalledTimes(1);
 
-			// Verify pre-reset content is absent and post-reset content is present
-			const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
-			const promptArg = args[args.indexOf("-p") + 1];
+			// Verify pre-reset content is absent and post-reset content is present.
+			// The first spawn (pre-reset) was at index 0; the post-reset spawn is
+			// the one we just observed via mockClear-then-call, so it lives at the
+			// last index of `stdinChunks`.
+			const promptArg = stdinChunks[stdinChunks.length - 1].join("");
 			expect(promptArg).not.toContain("PRERESETCONTENT");
 			expect(promptArg).toContain("POSTRESETONLY");
 		});
@@ -441,7 +462,7 @@ describe("Summarizer", () => {
 			expect(spawnMock).toHaveBeenCalledTimes(1);
 		});
 
-		test("single 10000-char chunk triggers summary and only last 1000 chars appear in spawn args", async () => {
+		test("single 10000-char chunk triggers summary and only last 1000 chars appear in the prompt", async () => {
 			const callback = mock(() => {});
 			// 10000 chars: first 9000 are '@', last 1000 are '#'
 			const chunk = "@".repeat(9000) + "#".repeat(1000);
@@ -450,8 +471,7 @@ describe("Summarizer", () => {
 			await flushAsync();
 
 			expect(spawnMock).toHaveBeenCalledTimes(1);
-			const args = (spawnMock.mock.calls as unknown[][])[0][0] as string[];
-			const promptArg = args[args.indexOf("-p") + 1];
+			const promptArg = capturedPrompt(0);
 
 			// Only last 1000 chars should be present — all '#'s, no '@'s
 			expect(promptArg).not.toContain("@");
