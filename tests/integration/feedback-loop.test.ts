@@ -10,6 +10,7 @@ import { getStepDefinitionsForKind, STEP, type WorkflowStatus } from "../../src/
 import type { ServerMessage } from "../../src/protocol";
 import type { PipelineCallbacks, ToolUsage, Workflow } from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
+import { WorktreeBranchManager } from "../../src/worktree-branch-manager";
 
 // ── Minimal fakes (similar to pipeline-orchestrator.test.ts but self-contained) ──
 
@@ -202,9 +203,10 @@ describe("Manual-mode feedback loop — integration", () => {
 
 		const engine = createFakeEngine();
 		const cli = createFakeCli();
+		const typedEngine = engine as unknown as import("../../src/workflow-engine").WorkflowEngine;
 
 		const orch = new PipelineOrchestrator(callbacks, {
-			engine: engine as unknown as import("../../src/workflow-engine").WorkflowEngine,
+			engine: typedEngine,
 			cliRunner: cli as unknown as import("../../src/cli-runner").CLIRunner,
 			workflowStore: store,
 			runSetupChecks: async () => ({
@@ -213,10 +215,12 @@ describe("Manual-mode feedback loop — integration", () => {
 				requiredFailures: [],
 				optionalWarnings: [],
 			}),
-			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
-			checkoutMaster: async () => ({ code: 0, stderr: "" }),
-			getGitHead: async () => "pre-run-head",
-			detectNewCommits: async () => commitRefs,
+			worktreeManager: new WorktreeBranchManager(typedEngine, {
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: async () => "pre-run-head",
+				detectNewCommits: async () => commitRefs,
+			}),
 		});
 
 		return { orch, engine, cli, broadcasts, outputs };

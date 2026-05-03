@@ -10,6 +10,7 @@ import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import { getStepDefinitionsForKind, STEP, type WorkflowStatus } from "../../src/pipeline-steps";
 import type { PipelineCallbacks, ToolUsage, Workflow } from "../../src/types";
 import { WorkflowStore } from "../../src/workflow-store";
+import { WorktreeBranchManager } from "../../src/worktree-branch-manager";
 
 /**
  * T023 (User Story 2): Plain Resume must remain byte-for-byte unchanged.
@@ -181,8 +182,9 @@ describe("Plain Resume regression — User Story 2", () => {
 		};
 		const engine = createFakeEngine();
 		const cli = createFakeCli();
+		const typedEngine = engine as unknown as import("../../src/workflow-engine").WorkflowEngine;
 		const orch = new PipelineOrchestrator(callbacks, {
-			engine: engine as unknown as import("../../src/workflow-engine").WorkflowEngine,
+			engine: typedEngine,
 			cliRunner: cli as unknown as import("../../src/cli-runner").CLIRunner,
 			workflowStore: store,
 			auditLogger,
@@ -192,10 +194,12 @@ describe("Plain Resume regression — User Story 2", () => {
 				requiredFailures: [],
 				optionalWarnings: [],
 			}),
-			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
-			checkoutMaster: async () => ({ code: 0, stderr: "" }),
-			getGitHead: async () => "head-sha",
-			detectNewCommits: async () => [],
+			worktreeManager: new WorktreeBranchManager(typedEngine, {
+				ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+				checkoutMaster: async () => ({ code: 0, stderr: "" }),
+				getGitHead: async () => "head-sha",
+				detectNewCommits: async () => [],
+			}),
 		});
 
 		const wf = await engine.createWorkflow("plain resume spec", "/tmp/resume-repo");

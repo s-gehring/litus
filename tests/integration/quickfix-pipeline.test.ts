@@ -16,6 +16,7 @@ import { routeAfterStep } from "../../src/step-router";
 import type { PipelineCallbacks, Workflow } from "../../src/types";
 import { WorkflowEngine } from "../../src/workflow-engine";
 import { WorkflowStore } from "../../src/workflow-store";
+import { WorktreeBranchManager } from "../../src/worktree-branch-manager";
 
 // ── Structural contract tests ─────────────────────────────────────────────
 
@@ -354,12 +355,15 @@ describe("T015: fix-implement empty-diff routes to error and blocks advance", ()
 
 		const cli = makeFakeCli();
 		const engine = makeFakeEngine(wf);
+		const typedEngine = engine as unknown as WorkflowEngine;
 		const orch = new PipelineOrchestrator(callbacks, {
-			engine: engine as unknown as WorkflowEngine,
+			engine: typedEngine,
 			cliRunner: cli as unknown as import("../../src/cli-runner").CLIRunner,
 			workflowStore: store,
-			getGitHead: async () => "same-sha",
-			detectNewCommits: async () => [],
+			worktreeManager: new WorktreeBranchManager(typedEngine, {
+				getGitHead: async () => "same-sha",
+				detectNewCommits: async () => [],
+			}),
 		});
 
 		// Drive: startStep runs fix-implement → runFixImplement → CLI (fake) →
@@ -399,12 +403,15 @@ describe("T015: fix-implement empty-diff routes to error and blocks advance", ()
 		};
 		const cli = makeFakeCli();
 		const engine = makeFakeEngine(wf);
+		const typedEngine = engine as unknown as WorkflowEngine;
 		const orch = new PipelineOrchestrator(callbacks, {
-			engine: engine as unknown as WorkflowEngine,
+			engine: typedEngine,
 			cliRunner: cli as unknown as import("../../src/cli-runner").CLIRunner,
 			workflowStore: store,
-			getGitHead: async () => "same-sha",
-			detectNewCommits: async () => [],
+			worktreeManager: new WorktreeBranchManager(typedEngine, {
+				getGitHead: async () => "same-sha",
+				detectNewCommits: async () => [],
+			}),
 		});
 
 		orch.submitFeedback(wf.id, "retry with extra context");

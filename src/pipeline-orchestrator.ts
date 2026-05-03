@@ -1,18 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { buildArtifactsPrompt } from "./artifacts-prompt";
 import { AuditLogger } from "./audit-logger";
 import { type CiFlowOutcome, CiMergeFlowController } from "./ci-merge-flow-controller";
 import { startMonitoring } from "./ci-monitor";
 import { CIMonitorCoordinator } from "./ci-monitor-coordinator";
-import { type ClaudeMdGuardResult, guardClaudeMd as defaultGuardClaudeMd } from "./claude-md-guard";
-import {
-	type AppendResult,
-	appendProjectClaudeMd as defaultAppendProjectClaudeMd,
-	markClaudeMdSkipWorktree as defaultMarkClaudeMdSkipWorktree,
-	type SkipWorktreeResult,
-} from "./claude-md-merger";
 import type { CLICallbacks } from "./cli-runner";
 import { CLIRunner } from "./cli-runner";
 import { CLIStepRunner, prepareLlmDispatch } from "./cli-step-runner";
@@ -25,12 +18,7 @@ import {
 } from "./config-types";
 import { computeDependencyStatus } from "./dependency-resolver";
 import { toErrorMessage } from "./errors";
-import {
-	buildFeedbackPrompt,
-	detectNewCommits,
-	parseAgentResult,
-	reconcileOutcome,
-} from "./feedback-implementer";
+import { buildFeedbackPrompt, parseAgentResult, reconcileOutcome } from "./feedback-implementer";
 import { buildFeedbackContext } from "./feedback-injector";
 import {
 	buildFixImplementPrompt,
@@ -54,10 +42,7 @@ import {
 import { QuestionDetector } from "./question-detector";
 import { syncRepo as defaultSyncRepo } from "./repo-syncer";
 import { ReviewClassifier } from "./review-classifier";
-import {
-	ensureSpeckitSkills as defaultEnsureSpeckitSkills,
-	runSetupChecks as defaultRunSetupChecks,
-} from "./setup-checker";
+import { runSetupChecks as defaultRunSetupChecks } from "./setup-checker";
 import { routeAfterStep as computeRoute, shouldLoopReview } from "./step-router";
 import { Summarizer } from "./summarizer";
 import {
@@ -104,9 +89,10 @@ import {
 	snapshotStepArtifacts,
 } from "./workflow-artifacts";
 import { runInWorkflowContext } from "./workflow-context";
-import { nextFixBranchName, WorkflowEngine } from "./workflow-engine";
+import { WorkflowEngine } from "./workflow-engine";
 import { requireTargetRepository, requireWorktreePath } from "./workflow-paths";
 import { WorkflowStore } from "./workflow-store";
+import { WorktreeBranchManager, type WorktreeOpResult } from "./worktree-branch-manager";
 
 // Only steps that invoke the CLI with a configurable model
 const STEP_CONFIG_KEY: Record<string, keyof ModelConfig> = {
@@ -148,6 +134,9 @@ interface ArtifactsStepState {
 	perStepMaxBytes: number;
 }
 
+type GitPushFn = (cwd: string, branch: string) => Promise<{ code: number; stderr: string }>;
+type GhPrCreateFn = (cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
+
 export interface PipelineDeps {
 	engine?: WorkflowEngine;
 	cliRunner?: CLIRunner;
@@ -163,22 +152,13 @@ export interface PipelineDeps {
 	discoverPrUrl?: (workflow: Workflow) => Promise<string | null>;
 	syncRepo?: typeof defaultSyncRepo;
 	runSetupChecks?: (targetDir: string) => Promise<SetupResult>;
-	ensureSpeckitSkills?: typeof defaultEnsureSpeckitSkills;
-	appendProjectClaudeMd?: (specWorktree: string) => Promise<AppendResult>;
-	markClaudeMdSkipWorktree?: (specWorktree: string) => Promise<SkipWorktreeResult>;
-	checkoutMaster?: (cwd: string) => Promise<{ code: number; stderr: string }>;
-	/** Returns the git HEAD SHA at the worktree, or null on failure. Overridable in tests. */
-	getGitHead?: (cwd: string) => Promise<string | null>;
-	/** Returns new commit SHAs in `preRunHead..HEAD` order. Overridable in tests. */
-	detectNewCommits?: (preRunHead: string, cwd: string) => Promise<string[]>;
 	/** Override per-step output cap (default `MAX_STEP_OUTPUT_CHARS`). Test-only. */
 	maxStepOutputChars?: number;
-	/** Pre-push CLAUDE.md guard. Overridable in tests. */
-	guardClaudeMd?: (cwd: string) => Promise<ClaudeMdGuardResult>;
+	worktreeManager?: WorktreeBranchManager;
 	/** `git push -u origin <branch>`. Overridable in tests. */
-	gitPushFeatureBranch?: (cwd: string, branch: string) => Promise<{ code: number; stderr: string }>;
+	gitPushFeatureBranch?: GitPushFn;
 	/** `gh pr create --fill`. Overridable in tests. */
-	ghPrCreate?: (cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
+	ghPrCreate?: GhPrCreateFn;
 }
 
 const PR_URL_PATTERN = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/g;
@@ -241,6 +221,7 @@ function findAskUserQuestion(outputLog: OutputEntry[]): string | null {
 
 export class PipelineOrchestrator {
 	private engine: WorkflowEngine;
+	private worktreeManager: WorktreeBranchManager;
 	private cliRunner: CLIRunner;
 	private stepRunner: CLIStepRunner;
 	private ciMonitor: CIMonitorCoordinator;
@@ -260,23 +241,14 @@ export class PipelineOrchestrator {
 	private pipelineName: string | null = null;
 	private persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 	private runSetupChecksFn: (targetDir: string) => Promise<SetupResult>;
-	private ensureSpeckitSkillsFn: typeof defaultEnsureSpeckitSkills;
-	private appendProjectClaudeMdFn: (specWorktree: string) => Promise<AppendResult>;
-	private markClaudeMdSkipWorktreeFn: (specWorktree: string) => Promise<SkipWorktreeResult>;
-	private checkoutMasterFn: (cwd: string) => Promise<{ code: number; stderr: string }>;
-	private getGitHeadFn: (cwd: string) => Promise<string | null>;
-	private detectNewCommitsFn: (preRunHead: string, cwd: string) => Promise<string[]>;
-	private guardClaudeMdFn: (cwd: string) => Promise<ClaudeMdGuardResult>;
-	private gitPushFeatureBranchFn: (
-		cwd: string,
-		branch: string,
-	) => Promise<{ code: number; stderr: string }>;
-	private ghPrCreateFn: (cwd: string) => Promise<{ code: number; stdout: string; stderr: string }>;
+	private gitPushFeatureBranchFn: GitPushFn;
+	private ghPrCreateFn: GhPrCreateFn;
 	private maxStepOutputChars: number;
 	private artifactsState: Map<string, ArtifactsStepState> = new Map();
 
 	constructor(callbacks: PipelineCallbacks, deps?: PipelineDeps) {
 		this.engine = deps?.engine ?? new WorkflowEngine();
+		this.worktreeManager = deps?.worktreeManager ?? new WorktreeBranchManager(this.engine);
 		this.cliRunner = deps?.cliRunner ?? new CLIRunner();
 		this.stepRunner = new CLIStepRunner(this.cliRunner);
 		const discoverPrUrlFn =
@@ -289,40 +261,14 @@ export class PipelineOrchestrator {
 		this.store = deps?.workflowStore ?? new WorkflowStore();
 		this.managedRepoStore = deps?.managedRepoStore ?? null;
 		this.runSetupChecksFn = deps?.runSetupChecks ?? defaultRunSetupChecks;
-		this.ensureSpeckitSkillsFn = deps?.ensureSpeckitSkills ?? defaultEnsureSpeckitSkills;
-		this.appendProjectClaudeMdFn = deps?.appendProjectClaudeMd ?? defaultAppendProjectClaudeMd;
-		this.markClaudeMdSkipWorktreeFn =
-			deps?.markClaudeMdSkipWorktree ?? defaultMarkClaudeMdSkipWorktree;
-		this.checkoutMasterFn =
-			deps?.checkoutMaster ??
-			(async (cwd: string) => {
-				await gitSpawn(["git", "fetch", "origin", "master"], { cwd });
-				const result = await gitSpawn(["git", "checkout", "--detach", "origin/master"], {
-					cwd,
-				});
-				return { code: result.code, stderr: result.stderr };
-			});
-		this.getGitHeadFn =
-			deps?.getGitHead ??
-			(async (cwd: string) => {
-				try {
-					const r = await gitSpawn(["git", "rev-parse", "HEAD"], { cwd });
-					return r.code === 0 ? r.stdout.trim() : null;
-				} catch {
-					return null;
-				}
-			});
-		this.detectNewCommitsFn = deps?.detectNewCommits ?? detectNewCommits;
-		this.guardClaudeMdFn = deps?.guardClaudeMd ?? defaultGuardClaudeMd;
 		this.gitPushFeatureBranchFn =
 			deps?.gitPushFeatureBranch ??
-			(async (cwd: string, branch: string) => {
+			(async (cwd, branch) => {
 				const res = await gitSpawn(["git", "push", "-u", "origin", branch], { cwd });
 				return { code: res.code, stderr: res.stderr };
 			});
 		this.ghPrCreateFn =
-			deps?.ghPrCreate ??
-			(async (cwd: string) => gitSpawn(["gh", "pr", "create", "--fill"], { cwd }));
+			deps?.ghPrCreate ?? ((cwd) => gitSpawn(["gh", "pr", "create", "--fill"], { cwd }));
 		this.maxStepOutputChars = deps?.maxStepOutputChars ?? MAX_STEP_OUTPUT_CHARS;
 		this.callbacks = callbacks;
 		this.ciMergeFlow = new CiMergeFlowController({
@@ -347,7 +293,7 @@ export class PipelineOrchestrator {
 			this.engine.transition(workflow.id, "running");
 
 			const branchCwd = requireTargetRepository(workflow);
-			this.getBranch(branchCwd).then((branch) => {
+			this.worktreeManager.getBranch(branchCwd).then((branch) => {
 				this.pipelineName = branch ?? workflow.worktreeBranch;
 				this.currentAuditRunId = this.auditLogger.startRun(
 					this.pipelineName,
@@ -389,7 +335,8 @@ export class PipelineOrchestrator {
 			this.engine.transition(workflow.id, "running");
 
 			const branchCwd = targetRepository;
-			this.pipelineName = (await this.getBranch(branchCwd)) ?? workflow.worktreeBranch;
+			this.pipelineName =
+				(await this.worktreeManager.getBranch(branchCwd)) ?? workflow.worktreeBranch;
 			this.currentAuditRunId = this.auditLogger.startRun(
 				this.pipelineName,
 				workflow.worktreeBranch,
@@ -413,15 +360,6 @@ export class PipelineOrchestrator {
 
 			return workflow;
 		});
-	}
-
-	private async getBranch(cwd: string): Promise<string | null> {
-		try {
-			const result = await gitSpawn(["git", "rev-parse", "--abbrev-ref", "HEAD"], { cwd });
-			return result.code === 0 && result.stdout ? result.stdout : null;
-		} catch {
-			return null;
-		}
 	}
 
 	answerQuestion(workflowId: string, questionId: string, answer: string): void {
@@ -533,8 +471,8 @@ export class PipelineOrchestrator {
 
 			const cwd = requireWorktreePath(workflow);
 			const targetDir = requireTargetRepository(workflow);
-			const pipelineName =
-				this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
+			const branch = this.pipelineName ?? (await this.worktreeManager.getBranch(targetDir));
+			const pipelineName = branch ?? workflow.worktreeBranch;
 			this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
 
 			this.resetStepState();
@@ -586,8 +524,8 @@ export class PipelineOrchestrator {
 			workflow.updatedAt = new Date().toISOString();
 
 			const targetDir = requireTargetRepository(workflow);
-			const pipelineName =
-				this.pipelineName ?? (await this.getBranch(targetDir)) ?? workflow.worktreeBranch;
+			const branch = this.pipelineName ?? (await this.worktreeManager.getBranch(targetDir));
+			const pipelineName = branch ?? workflow.worktreeBranch;
 			this.currentAuditRunId = this.auditLogger.startRun(pipelineName, workflow.worktreeBranch);
 
 			this.engine.transition(workflowId, "running");
@@ -875,7 +813,8 @@ export class PipelineOrchestrator {
 					const preRunHead = workflow.feedbackPreRunHead;
 					const cwd = workflow.worktreePath;
 					if (preRunHead && cwd) {
-						this.detectNewCommitsFn(preRunHead, cwd)
+						this.worktreeManager
+							.detectNewCommits(preRunHead, cwd)
 							.then((commits) => {
 								if (latest.outcome && commits.length > 0) {
 									latest.outcome.commitRefs = commits;
@@ -1175,7 +1114,7 @@ export class PipelineOrchestrator {
 
 	private async runFixImplement(workflow: Workflow): Promise<void> {
 		const cwd = requireWorktreePath(workflow);
-		const preRunHead = await this.getGitHeadFn(cwd);
+		const preRunHead = await this.worktreeManager.getGitHead(cwd);
 		workflow.feedbackPreRunHead = preRunHead;
 		this.persistWorkflow(workflow);
 
@@ -1213,7 +1152,7 @@ export class PipelineOrchestrator {
 
 		const cwd = workflow.worktreePath;
 		const preRunHead = workflow.feedbackPreRunHead;
-		const postRunHead = cwd ? await this.getGitHeadFn(cwd) : null;
+		const postRunHead = cwd ? await this.worktreeManager.getGitHead(cwd) : null;
 		workflow.feedbackPreRunHead = null;
 
 		const diff = classifyFixImplementDiff(preRunHead, postRunHead);
@@ -1255,7 +1194,7 @@ export class PipelineOrchestrator {
 		// workflow so it also survives server restart — commits pushed before a
 		// pause/restart are still counted in `commitRefs` when the run resumes.
 		if (!workflow.feedbackPreRunHead) {
-			workflow.feedbackPreRunHead = await this.getGitHeadFn(cwd);
+			workflow.feedbackPreRunHead = await this.worktreeManager.getGitHead(cwd);
 			this.persistWorkflow(workflow);
 		}
 
@@ -1291,7 +1230,8 @@ export class PipelineOrchestrator {
 	private async completeFeedbackImplementer(workflow: Workflow): Promise<void> {
 		const cwd = workflow.worktreePath;
 		const preRunHead = workflow.feedbackPreRunHead;
-		const commits = preRunHead && cwd ? await this.detectNewCommitsFn(preRunHead, cwd) : [];
+		const commits =
+			preRunHead && cwd ? await this.worktreeManager.detectNewCommits(preRunHead, cwd) : [];
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		const parsed = parseAgentResult(step.output);
@@ -1896,73 +1836,19 @@ export class PipelineOrchestrator {
 		const config = configStore.get();
 		const configKey = STEP_CONFIG_KEY[step.name];
 
+		const model = configKey ? config.models[configKey] : undefined;
+		const effort = configKey ? config.efforts[configKey] : undefined;
 		if (step.name === STEP.COMMIT_PUSH_PR) {
-			this.ensureBranchBeforeCommitPushPr(workflow, cwd)
-				.then(() => {
-					this.runStep(
-						workflow,
-						step.prompt,
-						cwd,
-						configKey ? config.models[configKey] : undefined,
-						configKey ? config.efforts[configKey] : undefined,
-					);
-				})
-				.catch((err) => {
-					this.handleStepError(workflow.id, toErrorMessage(err));
-				});
+			(async () => {
+				const r = await this.worktreeManager.ensureBranchBeforeCommitPushPr(workflow, cwd);
+				for (const msg of r.messages) this.handleStepOutput(workflow.id, msg);
+				if ("ok" in r && !r.ok) throw new Error(r.error);
+				this.runStep(workflow, step.prompt, cwd, model, effort);
+			})().catch((err) => this.handleStepError(workflow.id, toErrorMessage(err)));
 			return;
 		}
 
-		this.runStep(
-			workflow,
-			step.prompt,
-			cwd,
-			configKey ? config.models[configKey] : undefined,
-			configKey ? config.efforts[configKey] : undefined,
-		);
-	}
-
-	/**
-	 * Safety net: if the worktree is on detached HEAD when commit-push-pr starts,
-	 * switch to (or create) the feature branch. Only acts when detached — logged
-	 * to both server logger and client step output so the fallback is visible.
-	 */
-	private async ensureBranchBeforeCommitPushPr(workflow: Workflow, cwd: string): Promise<void> {
-		const branch = await this.getBranch(cwd);
-		// null → git query failed (missing dir / unavailable git); leave state alone
-		// anything other than "HEAD" → already on a branch, nothing to do
-		if (branch !== "HEAD") return;
-
-		const targetBranch = workflow.featureBranch ?? workflow.worktreeBranch;
-		if (!targetBranch) {
-			throw new Error(
-				"Worktree is on detached HEAD and no feature branch name is available to recover",
-			);
-		}
-
-		const warnMsg = `[safety] Worktree on detached HEAD — switching to branch '${targetBranch}' before creating PR`;
-		logger.warn(`[pipeline] ${warnMsg}`);
-		this.handleStepOutput(workflow.id, warnMsg);
-
-		const switchExisting = await gitSpawn(["git", "switch", targetBranch], { cwd });
-		if (switchExisting.code === 0) {
-			const okMsg = `[safety] Switched to existing branch '${targetBranch}'`;
-			logger.info(`[pipeline] ${okMsg}`);
-			this.handleStepOutput(workflow.id, okMsg);
-			return;
-		}
-
-		const createBranch = await gitSpawn(["git", "switch", "-c", targetBranch], { cwd });
-		if (createBranch.code === 0) {
-			const okMsg = `[safety] Created branch '${targetBranch}' from detached HEAD`;
-			logger.info(`[pipeline] ${okMsg}`);
-			this.handleStepOutput(workflow.id, okMsg);
-			return;
-		}
-
-		throw new Error(
-			`Failed to recover from detached HEAD: could not switch to or create branch '${targetBranch}': ${createBranch.stderr || `exit ${createBranch.code}`}`,
-		);
+		this.runStep(workflow, step.prompt, cwd, model, effort);
 	}
 
 	/**
@@ -1974,21 +1860,8 @@ export class PipelineOrchestrator {
 	private async completeCommitPushPr(workflow: Workflow): Promise<void> {
 		const cwd = requireWorktreePath(workflow);
 
-		const guardResult = await this.guardClaudeMdFn(cwd);
-		if (guardResult.outcome === "unchanged") {
-			this.handleStepOutput(workflow.id, "✓ CLAUDE.md unchanged vs merge-base — no restore needed");
-		} else if (guardResult.outcome === "restored") {
-			this.handleStepOutput(
-				workflow.id,
-				`✓ Restored CLAUDE.md (${guardResult.action}) in ${guardResult.commitSha.slice(0, 7)}`,
-			);
-		} else {
-			const warnMsg = "⚠ No merge-base with origin/master — skipping CLAUDE.md restore";
-			this.handleStepOutput(workflow.id, warnMsg);
-			// Also surface to the server log for postmortem — this path is rare
-			// (disjoint histories) and matches the in-guard warn pattern.
-			logger.warn(`[claude-md-guard] ${warnMsg} (workflow=${workflow.id})`);
-		}
+		const guardResult = await this.worktreeManager.restoreClaudeMdBeforePush(workflow);
+		for (const msg of guardResult.messages) this.handleStepOutput(workflow.id, msg);
 
 		const branch = workflow.featureBranch ?? workflow.worktreeBranch;
 		if (!branch) {
@@ -2097,69 +1970,31 @@ export class PipelineOrchestrator {
 			});
 	}
 
+	private async _surface<T>(workflow: Workflow, p: Promise<WorktreeOpResult<T>>) {
+		const r = await p;
+		const live = this.getActiveWorkflow(workflow.id);
+		if (!live || live.status !== "running") return null;
+		for (const msg of r.messages) this.handleStepOutput(live.id, msg);
+		if ("aborted" in r) return null;
+		if (r.ok) return { wf: live, data: r.data };
+		this.handleStepError(live.id, r.error);
+		return null;
+	}
+
 	private createWorktreeAndCheckout(workflow: Workflow): void {
-		const targetDir = requireTargetRepository(workflow);
-		const shortId = workflow.worktreeBranch.replace("tmp-", "");
-
-		this.engine
-			.createWorktree(shortId, targetDir)
-			.then(async (worktreePath) => {
-				const wf = this.getActiveWorkflow(workflow.id);
-				if (!wf) return;
-
-				wf.worktreePath = worktreePath;
-				try {
-					await this.engine.copyGitignoredFiles(targetDir, worktreePath);
-				} catch (copyErr) {
-					// Clean up the worktree that was already created on disk
-					try {
-						await this.engine.removeWorktree(worktreePath, targetDir);
-					} catch {
-						// Best-effort cleanup
-					}
-					wf.worktreePath = null;
-					throw copyErr;
-				}
-				this.persistWorkflow(wf);
-				this.checkoutMasterInWorktree(wf);
-			})
-			.catch((err) => {
-				this.handleStepError(workflow.id, `Failed to create git worktree: ${toErrorMessage(err)}`);
-			});
+		const isLive = () => this.getActiveWorkflow(workflow.id)?.status === "running";
+		const m = this.worktreeManager;
+		(async () => {
+			const c = await this._surface(workflow, m.createWorktreeAndCheckout(workflow, isLive));
+			if (!c) return;
+			this.persistWorkflow(c.wf);
+			const co = await this._surface(c.wf, m.checkoutMasterInWorktree(c.wf, isLive));
+			if (!co) return;
+			await this.initSpeckitInWorktree(co.wf);
+		})().catch((e) => this.handleStepError(workflow.id, `Bootstrap: ${toErrorMessage(e)}`));
 	}
 
-	private checkoutMasterInWorktree(workflow: Workflow): void {
-		const cwd = requireWorktreePath(workflow);
-		this.handleStepOutput(
-			workflow.id,
-			"[git] fetch + checkout --detach origin/master | cwd=worktree",
-		);
-		this.checkoutMasterFn(cwd)
-			.then((result) => {
-				const wf = this.getActiveWorkflow(workflow.id);
-				if (!wf) return;
-
-				if (result.code !== 0) {
-					const errMsg = result.stderr || `exit code ${result.code}`;
-					this.handleStepError(wf.id, `Failed to checkout master in worktree: ${errMsg}`);
-					return;
-				}
-				this.handleStepOutput(wf.id, "✓ Checked out latest master in worktree");
-				this.initSpeckitInWorktree(wf);
-			})
-			.catch((err) => {
-				this.handleStepError(
-					workflow.id,
-					`Failed to checkout master in worktree: ${toErrorMessage(err)}`,
-				);
-			});
-	}
-
-	private initSpeckitInWorktree(workflow: Workflow): void {
-		if (workflow.workflowKind === "quick-fix") {
-			this.initQuickFixBranch(workflow);
-			return;
-		}
+	private async initSpeckitInWorktree(workflow: Workflow): Promise<void> {
 		if (workflow.workflowKind === "ask-question") {
 			// Ask-question workflows have no spec-kit / branch initialization step;
 			// the worktree is detached on master and the agents write their files
@@ -2167,141 +2002,20 @@ export class PipelineOrchestrator {
 			this.advanceAfterStep(workflow.id);
 			return;
 		}
-		const cwd = requireWorktreePath(workflow);
-		this.handleStepOutput(workflow.id, "[speckit] Ensuring spec-kit skills in worktree");
-
-		this.ensureSpeckitSkillsFn(cwd)
-			.then(async ({ installed, initResult }) => {
-				const wf = this.getActiveWorkflow(workflow.id);
-				if (!wf) return;
-
-				if (!installed) {
-					const errMsg = initResult?.stderr || `exit code ${initResult?.code}`;
-					this.handleStepError(wf.id, `Failed to initialize spec-kit: ${errMsg}`);
-					return;
-				}
-
-				if (initResult) {
-					this.handleStepOutput(wf.id, "✓ Spec-kit initialized via uvx");
-				} else {
-					this.handleStepOutput(wf.id, "✓ Spec-kit skills already present");
-				}
-
-				if (wf.workflowKind === "spec") {
-					const append = await this.appendProjectClaudeMdFn(cwd);
-					const stillActive = this.getActiveWorkflow(workflow.id);
-					if (!stillActive) return;
-					switch (append.outcome) {
-						case "appended":
-							this.handleStepOutput(stillActive.id, "✓ Appended project CLAUDE.md");
-							break;
-						case "skipped":
-							this.handleStepOutput(stillActive.id, "✓ Project CLAUDE.md already appended");
-							break;
-						case "no-project":
-							this.handleStepOutput(
-								stillActive.id,
-								"• No project CLAUDE.md in main worktree — skipping append",
-							);
-							break;
-						case "no-main":
-							logger.warn("[pipeline] Could not resolve main worktree; skipping CLAUDE.md append");
-							this.handleStepOutput(
-								stillActive.id,
-								"• Could not resolve main worktree — skipping project CLAUDE.md append",
-							);
-							break;
-					}
-
-					// Mark CLAUDE.md skip-worktree so the assembled file (and any
-					// later modification by an agent) cannot be staged or
-					// committed on the spec branch. claude-md-guard only fires
-					// at commit-push-pr and is bypassed if the workflow is
-					// merged before that step runs.
-					const skip = await this.markClaudeMdSkipWorktreeFn(cwd);
-					const stillActive2 = this.getActiveWorkflow(workflow.id);
-					if (!stillActive2) return;
-					if (skip.outcome === "marked") {
-						this.handleStepOutput(stillActive2.id, "✓ CLAUDE.md marked skip-worktree");
-					} else {
-						this.handleStepOutput(
-							stillActive2.id,
-							"• CLAUDE.md not tracked in index — skip-worktree not applicable",
-						);
-					}
-
-					this.advanceAfterStep(stillActive2.id);
-					return;
-				}
-
-				this.advanceAfterStep(wf.id);
-			})
-			.catch((err) => {
-				this.handleStepError(workflow.id, `Failed to initialize spec-kit: ${toErrorMessage(err)}`);
-			});
-	}
-
-	private async initQuickFixBranch(workflow: Workflow): Promise<void> {
+		const isLive = () => this.getActiveWorkflow(workflow.id)?.status === "running";
+		const m = this.worktreeManager;
 		try {
-			const cwd = requireWorktreePath(workflow);
-			const targetRepo = requireTargetRepository(workflow);
-			this.handleStepOutput(workflow.id, "[quick-fix] Allocating fix branch name");
-
-			const branchList = await gitSpawn(["git", "branch", "-a"], { cwd });
-			// Pause/abort race: matches the pattern used by every sibling setup
-			// continuation — after each await, bail if the workflow is no longer
-			// running so we don't mutate featureBranch / worktree on disk behind a
-			// user who has already paused or aborted.
-			{
-				const wf = this.getActiveWorkflow(workflow.id);
-				if (!wf || wf.status !== "running") return;
-			}
-			const existing = branchList.code === 0 ? branchList.stdout.split(/\r?\n/) : [];
-			const branchName = nextFixBranchName(workflow.specification, existing);
-
-			const checkout = await gitSpawn(["git", "checkout", "-b", branchName], { cwd });
-			{
-				const wf = this.getActiveWorkflow(workflow.id);
-				if (!wf || wf.status !== "running") return;
-			}
-			if (checkout.code !== 0) {
-				this.handleStepError(
-					workflow.id,
-					`Failed to create fix branch ${branchName}: ${checkout.stderr || checkout.code}`,
-				);
-				return;
-			}
-			this.handleStepOutput(workflow.id, `✓ Created fix branch ${branchName}`);
-
-			workflow.featureBranch = branchName;
-			workflow.worktreeBranch = branchName;
-
-			// Rename worktree dir to match the branch (non-fatal on failure).
-			if (workflow.worktreePath) {
-				const newRelativePath = `.worktrees/${branchName.replace(/\//g, "-")}`;
-				try {
-					const newAbsPath = await this.engine.moveWorktree(
-						workflow.worktreePath,
-						newRelativePath,
-						targetRepo,
-					);
-					const wf = this.getActiveWorkflow(workflow.id);
-					if (!wf || wf.status !== "running") return;
-					workflow.worktreePath = newAbsPath;
-				} catch (err) {
-					logger.warn(
-						`[pipeline] Quick-fix worktree rename failed (non-fatal): ${toErrorMessage(err)}`,
-					);
-				}
-			}
-			this.persistWorkflow(workflow);
-			this.callbacks.onStateChange(workflow.id);
-			this.advanceAfterStep(workflow.id);
-		} catch (err) {
-			this.handleStepError(
-				workflow.id,
-				`Failed to initialize quick-fix branch: ${toErrorMessage(err)}`,
-			);
+			const s = await this._surface(workflow, m.initSpeckitInWorktree(workflow, isLive));
+			if (!s) return;
+			if (s.data.kind === "spec-ready") return this.advanceAfterStep(s.wf.id);
+			const q = await this._surface(s.wf, m.initQuickFixBranch(s.wf, isLive));
+			if (!q) return;
+			q.wf.updatedAt = new Date().toISOString();
+			this.persistWorkflow(q.wf);
+			this.callbacks.onStateChange(q.wf.id);
+			this.advanceAfterStep(q.wf.id);
+		} catch (e) {
+			this.handleStepError(workflow.id, `Failed to initialize spec-kit: ${toErrorMessage(e)}`);
 		}
 	}
 
@@ -2818,9 +2532,14 @@ export class PipelineOrchestrator {
 		// the worktree directory to match the feature branch name.
 		// Await rename before routing to next step so worktreePath is settled.
 		if (step.name === STEP.SPECIFY && workflow.worktreePath) {
-			this.detectFeatureBranch(workflow);
-			if (this.shouldRenameWorktree(workflow)) {
-				this.renameWorktreeToFeatureBranch(workflow).then(() => {
+			const { detected } = this.worktreeManager.detectFeatureBranch(workflow);
+			if (detected) workflow.featureBranch = detected;
+			if (this.worktreeManager.shouldRenameWorktree(workflow)) {
+				this.worktreeManager.renameWorktreeToFeatureBranch(workflow).then(({ renamed }) => {
+					if (renamed) {
+						this.persistWorkflow(workflow);
+						this.callbacks.onStateChange(workflow.id);
+					}
 					this.routeAfterStep(workflow);
 				});
 				return;
@@ -3073,75 +2792,6 @@ export class PipelineOrchestrator {
 				epicId: triggerWorkflow.epicId,
 				targetRoute: `/epic/${triggerWorkflow.epicId}`,
 			});
-		}
-	}
-
-	/**
-	 * Scan the worktree's specs/ directory for the newest feature directory
-	 * and store its name as the feature branch.  This is used to set
-	 * SPECIFY_FEATURE for subsequent steps and to rename the worktree.
-	 */
-	private detectFeatureBranch(workflow: Workflow): void {
-		const specsDir = join(workflow.worktreePath as string, "specs");
-		try {
-			const entries = readdirSync(specsDir, { withFileTypes: true });
-			let best: string | null = null;
-			let bestNum = -1;
-			let bestTs = "";
-			for (const entry of entries) {
-				if (!entry.isDirectory()) continue;
-				const seqMatch = entry.name.match(/^(\d{3,})-/);
-				const tsMatch = entry.name.match(/^(\d{8}-\d{6})-/);
-				if (tsMatch) {
-					if (tsMatch[1] > bestTs) {
-						bestTs = tsMatch[1];
-						best = entry.name;
-					}
-				} else if (seqMatch) {
-					const num = Number.parseInt(seqMatch[1], 10);
-					if (num > bestNum) {
-						bestNum = num;
-						if (!bestTs) best = entry.name; // timestamp dirs win
-					}
-				}
-			}
-			if (best) {
-				workflow.featureBranch = best;
-				logger.info(`[pipeline] Detected feature branch: ${best}`);
-			}
-		} catch (err) {
-			logger.warn("[pipeline] Failed to scan specs/ directory:", err);
-		}
-	}
-
-	/** Check whether a worktree rename is needed (synchronous precondition check). */
-	private shouldRenameWorktree(workflow: Workflow): boolean {
-		if (!workflow.featureBranch || !workflow.worktreePath || !workflow.targetRepository)
-			return false;
-		const dirName = workflow.worktreePath.split(/[/\\]/).pop() ?? "";
-		return dirName.startsWith("tmp-");
-	}
-
-	/**
-	 * After detectFeatureBranch() sets workflow.featureBranch, rename the
-	 * worktree directory from its temp name (tmp-{uuid}) to match the branch.
-	 * Non-fatal: if the rename fails, the workflow continues with the old path.
-	 * Caller must check shouldRenameWorktree() first.
-	 */
-	private async renameWorktreeToFeatureBranch(workflow: Workflow): Promise<void> {
-		const worktreePath = workflow.worktreePath as string;
-		const targetRepo = workflow.targetRepository as string;
-		const newRelativePath = `.worktrees/${workflow.featureBranch}`;
-
-		try {
-			const newAbsPath = await this.engine.moveWorktree(worktreePath, newRelativePath, targetRepo);
-			workflow.worktreePath = newAbsPath;
-			workflow.worktreeBranch = workflow.featureBranch as string;
-			this.persistWorkflow(workflow);
-			this.callbacks.onStateChange(workflow.id);
-			logger.info(`[pipeline] Renamed worktree to ${newRelativePath}`);
-		} catch (err) {
-			logger.warn(`[pipeline] Worktree rename failed (non-fatal): ${toErrorMessage(err)}`);
 		}
 	}
 

@@ -47,6 +47,25 @@ function isBranchMissing(stderr: string): boolean {
 	return /not found/i.test(stderr) || /No such/i.test(stderr);
 }
 
+// On Windows, `git worktree move` (which calls MoveFileEx underneath) fails with
+// "Permission denied" if any process holds an open handle to a file in the
+// source dir. Right after a CLI step exits, lingering grandchildren (speckit
+// shell scripts, git subprocesses) and AV inline-scanning the just-written
+// `.md` files routinely keep handles open for ~tens of ms. Same race the
+// `rmWithRetry` helper in `tests/integration/pipeline-spec-setup-claudemd.test.ts`
+// already documents for `rmSync`.
+function isTransientMoveError(stderr: string): boolean {
+	return (
+		/Permission denied/i.test(stderr) ||
+		/EBUSY|EACCES|EPERM/i.test(stderr) ||
+		/being used by another process/i.test(stderr) ||
+		/resource busy/i.test(stderr)
+	);
+}
+
+const MOVE_WORKTREE_MAX_ATTEMPTS = 20;
+const MOVE_WORKTREE_RETRY_DELAY_MS = 50;
+
 export class WorkflowEngine {
 	private workflow: Workflow | null = null;
 
@@ -252,14 +271,20 @@ export class WorkflowEngine {
 		newRelativePath: string,
 		targetRepo: string,
 	): Promise<string> {
-		const result = await gitSpawn(["git", "worktree", "move", oldPath, newRelativePath], {
-			cwd: targetRepo,
-			extra: { from: oldPath, to: newRelativePath },
-		});
-		if (result.code !== 0) {
-			throw new Error(result.stderr || `git worktree move failed with code ${result.code}`);
+		let lastResult: { code: number; stderr: string } | null = null;
+		for (let attempt = 0; attempt < MOVE_WORKTREE_MAX_ATTEMPTS; attempt++) {
+			const result = await gitSpawn(["git", "worktree", "move", oldPath, newRelativePath], {
+				cwd: targetRepo,
+				extra: { from: oldPath, to: newRelativePath },
+			});
+			if (result.code === 0) return resolve(targetRepo, newRelativePath);
+			lastResult = result;
+			if (!isTransientMoveError(result.stderr)) break;
+			await new Promise((r) => setTimeout(r, MOVE_WORKTREE_RETRY_DELAY_MS));
 		}
-		return resolve(targetRepo, newRelativePath);
+		throw new Error(
+			lastResult?.stderr || `git worktree move failed with code ${lastResult?.code ?? "?"}`,
+		);
 	}
 
 	async createWorktree(shortId: string, cwd: string): Promise<string> {

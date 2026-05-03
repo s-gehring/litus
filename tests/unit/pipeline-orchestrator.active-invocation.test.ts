@@ -4,6 +4,7 @@ import { configStore, DEFAULT_CONFIG } from "../../src/config-store";
 import { PipelineOrchestrator } from "../../src/pipeline-orchestrator";
 import { getStepDefinitionsForKind, type WorkflowStatus } from "../../src/pipeline-steps";
 import type { PipelineCallbacks, Workflow } from "../../src/types";
+import { WorktreeBranchManager } from "../../src/worktree-branch-manager";
 
 function createFakeEngine() {
 	let workflow: Workflow | null = null;
@@ -211,12 +212,17 @@ describe("PipelineOrchestrator.activeInvocation", () => {
 				requiredFailures: [],
 				optionalWarnings: [],
 			}),
-			ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
-			appendProjectClaudeMd: async () => ({ outcome: "no-project" as const }),
-			markClaudeMdSkipWorktree: async () => ({ outcome: "not-tracked" as const }),
-			checkoutMaster: async () => ({ code: 0, stderr: "" }),
-			getGitHead: async () => "head-sha",
-			detectNewCommits: async () => [],
+			worktreeManager: new WorktreeBranchManager(
+				engine as unknown as import("../../src/workflow-engine").WorkflowEngine,
+				{
+					ensureSpeckitSkills: async () => ({ installed: true, initResult: null }),
+					appendProjectClaudeMd: async () => ({ outcome: "no-project" as const }),
+					markClaudeMdSkipWorktree: async () => ({ outcome: "not-tracked" as const }),
+					checkoutMaster: async () => ({ code: 0, stderr: "" }),
+					getGitHead: async () => "head-sha",
+					detectNewCommits: async () => [],
+				},
+			),
 		};
 		orchestrator = new PipelineOrchestrator(callbacks, deps);
 	});
