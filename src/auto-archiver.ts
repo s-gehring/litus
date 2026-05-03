@@ -6,12 +6,20 @@ import type { PersistedEpic, Workflow } from "./types";
 export const AUTO_ARCHIVE_THRESHOLD_MS = 30_000;
 export const AUTO_ARCHIVE_SWEEP_INTERVAL_MS = 10_000;
 
-function isTerminalWorkflow(status: Workflow["status"]): boolean {
-	return status === "completed" || status === "aborted" || status === "error";
+// Auto-archive applies ONLY to "Done" items: a workflow whose status is
+// `completed` (and not an ask-question workflow), and an epic whose status is
+// `completed`. Errored / aborted / infeasible items are deliberately left for
+// the user to triage and manually archive — silently filing failures away
+// would hide them. Ask-question workflows are exempt entirely (FR for fix/020).
+function isAutoArchiveEligibleWorkflow(
+	workflow: Pick<Workflow, "status" | "workflowKind">,
+): boolean {
+	if (workflow.workflowKind === "ask-question") return false;
+	return workflow.status === "completed";
 }
 
-function isTerminalEpic(status: PersistedEpic["status"]): boolean {
-	return status === "completed" || status === "error" || status === "infeasible";
+function isAutoArchiveEligibleEpic(status: PersistedEpic["status"]): boolean {
+	return status === "completed";
 }
 
 export class AutoArchiver {
@@ -74,7 +82,7 @@ export class AutoArchiver {
 			for (const epic of epics) {
 				if (epic.archived) continue;
 				if (epic.autoArchiveExempt) continue;
-				if (!isTerminalEpic(epic.status)) continue;
+				if (!isAutoArchiveEligibleEpic(epic.status)) continue;
 				if (!epic.completedAt) continue;
 				const completedMs = Date.parse(epic.completedAt);
 				if (!Number.isFinite(completedMs)) continue;
@@ -82,10 +90,10 @@ export class AutoArchiver {
 				const children = workflows.filter((w) => w.epicId === epic.epicId);
 				// `epic.status === "completed"` only means analysis finished —
 				// freshly-decomposed specs sit at `idle` until the user starts
-				// them. Archiving here would silently file away work the user
-				// hasn't even kicked off yet. Skip unless every (non-archived)
-				// child is itself in a terminal workflow state.
-				if (children.some((c) => !c.archived && !isTerminalWorkflow(c.status))) continue;
+				// them, and erroring/aborted children should not be silently
+				// filed away. Only auto-archive when every non-archived child
+				// is itself auto-archive-eligible.
+				if (children.some((c) => !c.archived && !isAutoArchiveEligibleWorkflow(c))) continue;
 				const ok = await this.archiveEpic(epic, children);
 				if (ok) archivedEpicIds.add(epic.epicId);
 			}
@@ -95,7 +103,7 @@ export class AutoArchiver {
 				if (w.archived) continue;
 				if (w.autoArchiveExempt) continue;
 				if (w.epicId !== null) continue;
-				if (!isTerminalWorkflow(w.status)) continue;
+				if (!isAutoArchiveEligibleWorkflow(w)) continue;
 				const updatedAtMs = Date.parse(w.updatedAt);
 				if (!Number.isFinite(updatedAtMs)) continue;
 				if (now - updatedAtMs < this.thresholdMs) continue;
@@ -114,7 +122,7 @@ export class AutoArchiver {
 		if (workflow.archived) return;
 		if (workflow.autoArchiveExempt) return;
 		if (workflow.epicId !== null) return;
-		if (!isTerminalWorkflow(workflow.status)) return;
+		if (!isAutoArchiveEligibleWorkflow(workflow)) return;
 		const archivedAt = new Date().toISOString();
 		try {
 			await persistArchiveFlip(
