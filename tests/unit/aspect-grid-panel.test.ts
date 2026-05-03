@@ -34,8 +34,8 @@ function mountWorkflow(): { container: HTMLElement; workflow: WorkflowState } {
 	const container = document.getElementById("output-area") as HTMLElement;
 	const workflow = makeWorkflowState({ id: "wf-1" });
 	workflow.aspectManifest = {
-		question: "q",
-		aspects: [{ id: "a1", title: "Aspect 1", fileName: "a1.md" }],
+		version: 1,
+		aspects: [{ id: "a1", title: "Aspect 1", researchPrompt: "Prompt 1", fileName: "a1.md" }],
 	};
 	workflow.aspects = [makeAspect()];
 	return { container, workflow };
