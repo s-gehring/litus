@@ -254,7 +254,7 @@ function positionTooltip(anchor: HTMLElement, tooltip: HTMLElement): void {
 	tooltip.style.top = `${top}px`;
 }
 
-function renderToolIcons(tools: ToolUsage[]): HTMLDivElement {
+export function renderToolIcons(tools: ToolUsage[]): HTMLDivElement {
 	const row = document.createElement("div");
 	row.className = "tool-icons";
 	for (const usage of tools) {
