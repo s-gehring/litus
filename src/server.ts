@@ -72,7 +72,7 @@ import {
 import { getMimeType, resolveStaticPath } from "./static-files";
 import { Summarizer } from "./summarizer";
 import { normalizePath } from "./target-repo-validator";
-import type { ToolUsage, Workflow, WorkflowState } from "./types";
+import type { AspectState, ToolUsage, Workflow, WorkflowState } from "./types";
 import { WorkflowStore } from "./workflow-store";
 
 const BASE_PORT = parseInt(process.env.PORT || "3000", 10);
@@ -133,6 +133,15 @@ function createCallbacks() {
 		},
 		onTools: (workflowId: string, tools: ToolUsage[]) => {
 			broadcast({ type: "workflow:tools", workflowId, tools });
+		},
+		onAspectOutput: (workflowId: string, aspectId: string, text: string) => {
+			broadcast({ type: "workflow:aspect:output", workflowId, aspectId, text });
+		},
+		onAspectTools: (workflowId: string, aspectId: string, tools: ToolUsage[]) => {
+			broadcast({ type: "workflow:aspect:tools", workflowId, aspectId, tools });
+		},
+		onAspectState: (workflowId: string, aspectId: string, state: AspectState) => {
+			broadcast({ type: "workflow:aspect:state", workflowId, aspectId, state });
 		},
 		onComplete: (workflowId: string) => {
 			broadcastWorkflowState(workflowId);

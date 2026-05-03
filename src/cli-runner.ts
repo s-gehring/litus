@@ -344,9 +344,7 @@ export class CLIRunner {
 		const startTime = Date.now();
 		const stdout = proc.stdout;
 		if (!stdout || typeof stdout === "number") {
-			logger.warn(
-				`[cli-runner] No stdout pipe for key ${processKey} (stdout=${typeof stdout})`,
-			);
+			logger.warn(`[cli-runner] No stdout pipe for key ${processKey} (stdout=${typeof stdout})`);
 			return;
 		}
 
@@ -369,9 +367,7 @@ export class CLIRunner {
 						// Wrap with workflow + aspect attribution only for aspect-keyed
 						// processes; non-aspect rows keep their pre-spec wire shape so
 						// existing audit consumers continue to parse them unchanged.
-						const row = aspectId
-							? { workflowId, aspectId, event }
-							: event;
+						const row = aspectId ? { workflowId, aspectId, event } : event;
 						appendFileSync(eventsFile, `${JSON.stringify(row)}\n`);
 					} catch (err) {
 						logger.warn("[cli-runner] Failed to write audit event:", err);

@@ -565,6 +565,17 @@ export interface PipelineCallbacks {
 	onComplete: (workflowId: string) => void;
 	onError: (workflowId: string, error: string) => void;
 	onStateChange: (workflowId: string) => void;
+	/**
+	 * Per-aspect output during a parallel research-aspect step. Routed to a
+	 * dedicated wire channel (`workflow:aspect:output`) so the per-aspect grid
+	 * can attribute deltas without parsing free text. Step-level meta-text
+	 * still flows through `onOutput`.
+	 */
+	onAspectOutput?: (workflowId: string, aspectId: string, text: string) => void;
+	/** Per-aspect tool usage during a parallel research-aspect step. */
+	onAspectTools?: (workflowId: string, aspectId: string, tools: ToolUsage[]) => void;
+	/** Per-aspect full-state snapshot on every aspect status transition. */
+	onAspectState?: (workflowId: string, aspectId: string, state: AspectState) => void;
 	onEpicDependencyUpdate?: (
 		dependentWorkflowId: string,
 		status: EpicDependencyStatus,
