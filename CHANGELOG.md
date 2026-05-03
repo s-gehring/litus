@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Ask Question workflow — a new workflow kind. Submit a question against a target repository (local path or
   GitHub URL) and Litus decomposes it into research aspects, runs them as parallel research streams that each
-  dig into one aspect, and synthesises a single answer. Per-aspect output streams live into a grid panel;
+  dig into one aspect, and synthesizes a single answer. Per-aspect output streams live into a grid panel;
   partial findings are saved as artifacts even if synthesis later fails. Supports a Provide-Feedback loop on
   the answer, configurable decomposition / research / synthesis models and prompts, and an
   `askQuestionConcurrentAspects` cap (default 10).
@@ -97,15 +97,22 @@ All notable changes to this project will be documented in this file.
   terminology is unchanged.)
 - Errored workflows can now be aborted, releasing their managed clone. Error is no longer a one-way trap that
   pinned the shared repo clone indefinitely.
-- Ask-question Finalize and Provide Feedback actions live in the standard detail-action bar; the synthesised answer
+- Ask-question Finalize and Provide Feedback actions live in the standard detail-action bar; the synthesized answer
   is no longer pushed to the bottom of the viewport by an empty output-log area.
 
 ### Fixed
 
 - Streamed assistant output is no longer duplicated in the output log — the cumulative assistant message and the
   intermediate deltas were both being forwarded, so every token appeared twice.
+- Git command output is scoped to the originating workflow window — `git fetch origin master` from one workflow
+  no longer appears in another workflow's output stream when two are running concurrently.
 - The thinking indicator no longer spins while the active-invocation panel says "No model in use" during
   setup / merge / sync steps or in brief between-step windows.
+- `sync-repo` no longer leaves the UI stuck on the thinking indicator with a non-functional Pause button after the
+  worktree is removed. A duplicate post-completion broadcast was racing the in-memory orchestrator teardown and
+  re-broadcasting a pre-completion state; the terminal broadcast now has a single owner.
+- Errored workflows render their error message in a dedicated banner on the detail pane instead of forcing the
+  operator to dig through the output log to find the failure.
 - Workflow cwd-missing errors now surface as `Worktree directory missing: <path>` instead of `ENOENT: no such file
   or directory, uv_spawn 'claude'` falsely blaming the binary.
 - Errored workflows retain their managed-clone refcount, so retrying after a step error no longer fails immediately
