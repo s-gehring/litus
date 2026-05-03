@@ -30,6 +30,7 @@
     "test": "bun test tests/unit tests/integration tests/client",
     "build:e2e-fakes": "bun run tests/e2e/build-fakes.ts",
     "test:e2e": "bun run build:e2e-fakes && bun run build:client && bunx playwright test -c tests/e2e/playwright.config.ts",
+    "capture:screenshots": "bun run build:e2e-fakes && bun run build:client && bunx playwright test -c tests/e2e/screenshots/screenshots.config.ts",
     "lint": "bunx biome lint .",
     "format": "bunx biome format .",
     "format:check": "bunx biome format --check ."

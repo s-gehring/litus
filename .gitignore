@@ -15,5 +15,6 @@ tests/e2e/test-results/
 tests/e2e/.sandbox-*
 tests/e2e/playwright-report/
 tests/e2e/fakes/*.exe
+tests/e2e/screenshots/output/
 test-results/
 *.stackdump

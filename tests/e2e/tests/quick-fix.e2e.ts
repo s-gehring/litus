@@ -1,20 +1,22 @@
 import { expect, test } from "../harness/fixtures";
-import { mergePullRequest, startQuickFix, waitForStep } from "../helpers";
+import { demoPause, mergePullRequest, startQuickFix, waitForStep } from "../helpers";
 import { AppPage, WorkflowCardPage } from "../pages";
 
 test.use({ scenarioName: "quick-fix-happy-path", autoMode: "manual" });
 
 test("quick-fix happy path: description through merged PR", async ({ page, server, sandbox }) => {
-	test.setTimeout(180_000);
+	test.setTimeout(360_000);
 
 	const app = new AppPage(page);
 	await app.goto(server.baseUrl);
 	await app.waitConnected();
+	await demoPause(page);
 
 	await startQuickFix(app, {
 		description: "Fix typo in the greeting helper.",
 		repo: sandbox.targetRepo,
 	});
+	await demoPause(page);
 
 	const card = new WorkflowCardPage(page);
 
@@ -31,12 +33,15 @@ test("quick-fix happy path: description through merged PR", async ({ page, serve
 
 	await expect(card.prLink()).toBeVisible();
 	await expect(card.prLink()).toHaveAttribute("href", /github\.com\/example\/repo\/pull\/77/);
+	await demoPause(page); // viewer reads the PR link before the merge click
 
 	await mergePullRequest(card);
+	await demoPause(page);
 
 	await waitForStep(card, "merge-pr", "completed", { timeoutMs: 60_000 });
 	await waitForStep(card, "sync-repo", "completed", { timeoutMs: 60_000 });
 	await expect(card.statusBadge()).toHaveClass(/completed/, { timeout: 60_000 });
+	await demoPause(page); // final state lingers for the viewer
 
 	// Spec-kit-only steps must remain absent from the rendered pipeline for a
 	// quick-fix workflow (the UI derives the step list from workflowKind via

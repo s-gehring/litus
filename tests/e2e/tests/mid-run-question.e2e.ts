@@ -1,6 +1,6 @@
 import { promptOf, readCapturedClaudeCalls } from "../harness/claude-captures";
 import { expect, test } from "../harness/fixtures";
-import { answerClarifyingQuestion, createSpecification, waitForStep } from "../helpers";
+import { answerClarifyingQuestion, createSpecification, demoPause, waitForStep } from "../helpers";
 import { AppPage, QuestionPromptPage, WorkflowCardPage } from "../pages";
 
 test.describe("mid-run question handling", () => {
@@ -10,15 +10,17 @@ test.describe("mid-run question handling", () => {
 		test.use({ autoMode: "manual" });
 
 		test("panel renders, answer advances the pipeline", async ({ page, server, sandbox }) => {
-			test.setTimeout(120_000);
+			test.setTimeout(240_000);
 			const app = new AppPage(page);
 			await app.goto(server.baseUrl);
 			await app.waitConnected();
+			await demoPause(page);
 
 			await createSpecification(app, {
 				specification: "Add a dark mode toggle to the application settings.",
 				repo: sandbox.targetRepo,
 			});
+			await demoPause(page);
 
 			const card = new WorkflowCardPage(page);
 			await waitForStep(card, "clarify", "waiting", { timeoutMs: 60_000 });
@@ -26,13 +28,16 @@ test.describe("mid-run question handling", () => {
 			const prompt = new QuestionPromptPage(page);
 			await expect(prompt.panel()).toBeVisible({ timeout: 10_000 });
 			await expect(prompt.questionContent()).toContainText("dark mode");
+			await demoPause(page); // viewer reads the question before the answer is typed
 
 			await answerClarifyingQuestion(card, "yes", {
 				expectQuestionContains: "dark mode",
 			});
+			await demoPause(page);
 
 			await waitForStep(card, "clarify", "completed", { timeoutMs: 60_000 });
 			await waitForStep(card, "plan", "completed", { timeoutMs: 60_000 });
+			await demoPause(page); // final state lingers for the viewer
 
 			// The resume call that carries the operator answer spawns claude with
 			// `--resume <sessionId>` plus a non-empty `-p` prompt. The session id

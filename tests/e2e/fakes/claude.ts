@@ -75,6 +75,21 @@ function readOutputFormat(argv: string[]): string {
 }
 
 /**
+ * Demo recording knob: when `LITUS_E2E_DEMO_DELAY_MS` is set, the fake pauses
+ * for that many ms after each emitted event so the recorded video has time
+ * for a viewer to follow what's happening. CI never sets this. Capped at
+ * MAX_DEMO_DELAY_MS to keep a runaway value from stalling a real test.
+ */
+const MAX_DEMO_DELAY_MS = 10_000;
+function readDemoDelay(): number {
+	const raw = process.env.LITUS_E2E_DEMO_DELAY_MS;
+	if (!raw) return 0;
+	const n = Number(raw);
+	if (!Number.isFinite(n) || n <= 0) return 0;
+	return Math.min(n, MAX_DEMO_DELAY_MS);
+}
+
+/**
  * Resolve a scenario file path against the fake's CWD and reject any path
  * that escapes it. `..` anywhere in the path, absolute paths, and paths that
  * normalise outside CWD all fail fast. Paths that stay inside return the
@@ -203,7 +218,13 @@ async function main() {
 					result: "No artifacts to collect.",
 				},
 			];
-			for (const event of events) process.stdout.write(`${JSON.stringify(event)}\n`);
+			const artifactsDemoDelay = readDemoDelay();
+			for (const event of events) {
+				process.stdout.write(`${JSON.stringify(event)}\n`);
+				if (artifactsDemoDelay > 0) {
+					await new Promise((r) => setTimeout(r, artifactsDemoDelay));
+				}
+			}
 		} else {
 			process.stdout.write("No artifacts to collect.\n");
 		}
@@ -285,12 +306,18 @@ async function main() {
 		// session_id has already been captured (init fired) but the step has
 		// not yet completed — required for paused-with-sessionId E2Es. Capped
 		// at MAX_EVENT_DELAY_MS so a stray scenario can't blow the e2e budget.
+		// `LITUS_E2E_DEMO_DELAY_MS` adds a global pause on top, used only when
+		// recording demo videos so each step is visible in the playback.
 		const MAX_EVENT_DELAY_MS = 5000;
+		const demoDelay = readDemoDelay();
 		for (const event of script.events) {
 			const rawDelay = (event as { delayMs?: number }).delayMs;
 			process.stdout.write(`${JSON.stringify(event)}\n`);
-			if (typeof rawDelay === "number" && rawDelay > 0) {
-				await new Promise((r) => setTimeout(r, Math.min(rawDelay, MAX_EVENT_DELAY_MS)));
+			const scenarioDelay =
+				typeof rawDelay === "number" && rawDelay > 0 ? Math.min(rawDelay, MAX_EVENT_DELAY_MS) : 0;
+			const totalDelay = scenarioDelay + demoDelay;
+			if (totalDelay > 0) {
+				await new Promise((r) => setTimeout(r, totalDelay));
 			}
 		}
 	} else if (outputFormat === "text") {
