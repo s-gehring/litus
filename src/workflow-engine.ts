@@ -4,8 +4,8 @@ import { join, resolve } from "node:path";
 import { configStore } from "./config-store";
 import { gitSpawn } from "./git-logger";
 import {
+	getStepDefinitionByName,
 	getStepDefinitionsForKind,
-	PIPELINE_STEP_DEFINITIONS,
 	VALID_TRANSITIONS as transitions,
 	type WorkflowStatus,
 } from "./pipeline-steps";
@@ -542,11 +542,11 @@ export async function resetWorkflow(workflow: Workflow): Promise<ResetOutcome> {
 
 	for (let i = 0; i < workflow.steps.length; i++) {
 		const step = workflow.steps[i];
-		// Look up the step definition by name — `PIPELINE_STEP_DEFINITIONS` is in
-		// spec-pipeline order, but `workflow.steps` follows the kind-specific
-		// ordering (`SPEC_ORDER` / `QUICK_FIX_ORDER` / `ASK_QUESTION_ORDER`),
-		// so positional indexing would assign the wrong prompt for non-spec kinds.
-		const def = PIPELINE_STEP_DEFINITIONS.find((d) => d.name === step.name);
+		// Look up by name — `workflow.steps` follows the kind-specific ordering
+		// (`SPEC_ORDER` / `QUICK_FIX_ORDER` / `ASK_QUESTION_ORDER`), so positional
+		// indexing into `PIPELINE_STEP_DEFINITIONS` (spec-pipeline order) would
+		// assign the wrong prompt for non-spec kinds.
+		const def = getStepDefinitionByName(step.name);
 		step.status = "pending";
 		step.output = "";
 		step.outputLog = [];

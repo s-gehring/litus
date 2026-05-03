@@ -93,7 +93,6 @@ import {
 	buildInitialAspectStates,
 	DECOMPOSITION_FILE_REL,
 	DEFAULT_ANSWER_FILE_NAME,
-	lookupAspectEntry,
 	readAndValidateDecompositionFile,
 } from "./question-decomposer";
 import {
@@ -708,6 +707,21 @@ export class PipelineOrchestrator {
 			step.pid = null;
 			workflow.updatedAt = new Date().toISOString();
 
+			// Per `aspect-retry.md` "Pause / abort interaction": pausing during a
+			// per-aspect run resets the active aspect to `pending` so resume retries
+			// it from scratch. Without this the aspect stays `in_progress` and
+			// neither the resume path nor the retry path can re-dispatch it cleanly.
+			if (step.name === STEP.RESEARCH_ASPECT && workflow.aspects) {
+				const active = workflow.aspects.find((a) => a.status === "in_progress");
+				if (active) {
+					active.status = "pending";
+					active.startedAt = null;
+					active.completedAt = null;
+					active.errorMessage = null;
+					active.sessionId = null;
+				}
+			}
+
 			this.engine.transition(workflowId, "paused");
 			this.flushPersistDebounce();
 			this.persistWorkflow(workflow);
@@ -776,6 +790,22 @@ export class PipelineOrchestrator {
 				// dir state are gone. Restart the step from scratch with a fresh
 				// wall-clock budget and manifest.
 				this.runArtifactsStep(workflow);
+			} else if (step.name === STEP.DECOMPOSE) {
+				// Ask-question steps are file-based, not session-based: the agent
+				// writes a manifest / per-aspect findings / answer file and exits.
+				// Resuming the captured session would skip the prompt rebuild that
+				// the dedicated runner performs from current workflow state, so we
+				// re-dispatch the runner instead.
+				step.sessionId = null;
+				this.runDecomposeStep(workflow);
+			} else if (step.name === STEP.RESEARCH_ASPECT) {
+				step.sessionId = null;
+				this.runResearchAspectStep(workflow);
+			} else if (step.name === STEP.SYNTHESIZE) {
+				step.sessionId = null;
+				this.runSynthesizeStep(workflow);
+			} else if (step.name === STEP.FINALIZE) {
+				this.runFinalizeStep(workflow);
 			} else if (step.sessionId) {
 				const resumedConfig = configStore.get();
 				const resumedConfigKey = STEP_CONFIG_KEY[step.name];
@@ -1357,7 +1387,17 @@ export class PipelineOrchestrator {
 			this.advanceAfterStep(workflow.id);
 			return;
 		}
-		const entry = lookupAspectEntry(workflow, next.id);
+		const entry = workflow.aspectManifest?.aspects.find((a) => a.id === next.id);
+		if (!entry) {
+			// Mirror the explicit handleStepError pattern used elsewhere in this file
+			// instead of letting `lookupAspectEntry`'s throw bubble up — this surfaces
+			// the failure in the step's client output (FR-034) rather than the server log.
+			this.handleStepError(
+				workflow.id,
+				`Inconsistent aspect state — no manifest entry for id ${next.id}`,
+			);
+			return;
+		}
 		const idx = aspects.indexOf(next);
 		const cwd = requireWorktreePath(workflow);
 		const config = configStore.get();
@@ -1369,10 +1409,7 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 
 		const headline = formatAspectHeadline(idx, aspects.length, entry.title);
-		const step = workflow.steps[workflow.currentStepIndex];
-		step.outputLog.push({ kind: "text", text: headline, type: "system" });
-		step.output += `${headline}\n`;
-		this.callbacks.onOutput(workflow.id, headline);
+		this.handleStepOutput(workflow.id, headline, { type: "system" });
 
 		const prompt = buildResearchPrompt(config.prompts.askQuestionResearch, {
 			aspectTitle: entry.title,
@@ -1541,10 +1578,16 @@ export class PipelineOrchestrator {
 
 	private runFinalizeStep(workflow: Workflow): void {
 		if (!workflow.worktreePath) {
+			// Snapshot is gated on `existsSync(worktreePath)` inside
+			// `snapshotAskQuestionArtifacts`, so calling it here would silently
+			// no-op. Skip the snapshot + the misleading "Snapshotting…" line and
+			// finish the step directly.
 			this.handleStepOutput(
 				workflow.id,
-				"[finalize] Worktree already removed — snapshot is a no-op",
+				"[finalize] Worktree already removed — nothing to snapshot or clean up",
 			);
+			this.finishFinalizeStep(workflow);
+			return;
 		}
 		this.handleStepOutput(workflow.id, "[finalize] Snapshotting markdown artifacts");
 		try {
@@ -1557,9 +1600,20 @@ export class PipelineOrchestrator {
 			return;
 		}
 
-		const worktreePath = workflow.worktreePath;
+		// `worktreePath` is non-null here — the no-snapshot branch above already
+		// returned for null. Narrow once for the removeWorktree call.
+		const worktreePath = workflow.worktreePath as string;
 		const targetRepo = workflow.targetRepository;
-		if (!worktreePath || !targetRepo) {
+		if (!targetRepo) {
+			// `worktreePath` is set but no target repository to drive
+			// `removeWorktree`. Surface the diagnostic and clear `worktreePath`
+			// so the persisted state honours data-model §12 item 6
+			// ("`worktreePath = null` after finalize").
+			this.handleStepOutput(
+				workflow.id,
+				"[finalize] Skipping worktree removal — no target repository configured",
+			);
+			workflow.worktreePath = null;
 			this.finishFinalizeStep(workflow);
 			return;
 		}
@@ -1647,7 +1701,18 @@ export class PipelineOrchestrator {
 			if (workflow.status !== "waiting_for_input" || step.name !== STEP.ANSWER) {
 				return { ok: false, reason: "Workflow is not paused at the answer step" } as const;
 			}
-			if (workflow.feedbackEntries.some((e) => e.outcome === null)) {
+			if (!workflow.synthesizedAnswer) {
+				// Defensive: pauseAtAnswerStep is only entered after
+				// completeSynthesizeStep populates `synthesizedAnswer`. Without an
+				// existing answer the feedback preamble would be empty and the
+				// agent would have no prior context to update.
+				return { ok: false, reason: "No answer to iterate on" } as const;
+			}
+			if (
+				workflow.feedbackEntries.some(
+					(e) => e.outcome === null && e.kind === "ask-question-iteration",
+				)
+			) {
 				return { ok: false, reason: "A feedback iteration is already in progress" } as const;
 			}
 
@@ -2330,13 +2395,19 @@ export class PipelineOrchestrator {
 		);
 	}
 
-	private handleStepOutput(workflowId: string, text: string): void {
+	private handleStepOutput(
+		workflowId: string,
+		text: string,
+		opts?: { type?: "normal" | "error" | "system" },
+	): void {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 
 		const step = workflow.steps[workflow.currentStepIndex];
 		step.output += `${text}\n`;
-		step.outputLog.push({ kind: "text", text });
+		step.outputLog.push(
+			opts?.type ? { kind: "text", text, type: opts.type } : { kind: "text", text },
+		);
 		enforceStepOutputCap(step, this.maxStepOutputChars);
 		workflow.updatedAt = new Date().toISOString();
 

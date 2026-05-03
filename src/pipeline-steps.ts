@@ -53,7 +53,13 @@ export type PipelineStepName =
 	| "fix-ci"
 	| "feedback-implementer"
 	| "merge-pr"
-	| "sync-repo";
+	| "sync-repo"
+	// Ask-question pipeline:
+	| "decompose"
+	| "research-aspect"
+	| "synthesize"
+	| "answer"
+	| "finalize";
 
 // Pipeline step status
 export type PipelineStepStatus =
@@ -139,6 +145,15 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	{ name: "feedback-implementer", displayName: "Applying Feedback", prompt: "" },
 	{ name: "merge-pr", displayName: "Merging PR", prompt: "" },
 	{ name: "sync-repo", displayName: "Syncing Repository", prompt: "" },
+	// Ask-question steps. Prompts come from `config.prompts.askQuestion*`
+	// after per-step variable substitution; the PIPELINE_STEP_DEFINITIONS
+	// `prompt` field is left empty for these. The `answer` and `finalize`
+	// steps don't dispatch an agent at all.
+	{ name: "decompose", displayName: "Decomposing Question", prompt: "" },
+	{ name: "research-aspect", displayName: "Researching Aspect", prompt: "" },
+	{ name: "synthesize", displayName: "Synthesizing Answer", prompt: "" },
+	{ name: "answer", displayName: "Answer", prompt: "" },
+	{ name: "finalize", displayName: "Finalizing", prompt: "" },
 ];
 
 const SPEC_ORDER: ReadonlyArray<PipelineStepName> = [
@@ -170,13 +185,41 @@ const QUICK_FIX_ORDER: ReadonlyArray<PipelineStepName> = [
 	"sync-repo",
 ];
 
+const ASK_QUESTION_ORDER: ReadonlyArray<PipelineStepName> = [
+	"setup",
+	"decompose",
+	"research-aspect",
+	"synthesize",
+	"answer",
+	"finalize",
+];
+
+// Indexed view of `PIPELINE_STEP_DEFINITIONS` for O(1) lookup by name.
+// Built once at module load so callers (`getStepDefinitionsForKind`,
+// `resetWorkflow`) avoid repeated O(N) `find` scans.
+const STEP_DEFINITION_BY_NAME: ReadonlyMap<
+	PipelineStepName,
+	{ name: PipelineStepName; displayName: string; prompt: string }
+> = new Map(PIPELINE_STEP_DEFINITIONS.map((d) => [d.name, d]));
+
+export function getStepDefinitionByName(
+	name: PipelineStepName,
+): { name: PipelineStepName; displayName: string; prompt: string } | undefined {
+	return STEP_DEFINITION_BY_NAME.get(name);
+}
+
 // Ordered step list for each workflow kind.
 export function getStepDefinitionsForKind(
 	kind: WorkflowKind,
 ): ReadonlyArray<{ name: PipelineStepName; displayName: string; prompt: string }> {
-	const order = kind === "quick-fix" ? QUICK_FIX_ORDER : SPEC_ORDER;
+	const order =
+		kind === "quick-fix"
+			? QUICK_FIX_ORDER
+			: kind === "ask-question"
+				? ASK_QUESTION_ORDER
+				: SPEC_ORDER;
 	return order.map((name) => {
-		const def = PIPELINE_STEP_DEFINITIONS.find((d) => d.name === name);
+		const def = STEP_DEFINITION_BY_NAME.get(name);
 		if (!def) throw new Error(`Missing step definition for ${name}`);
 		return def;
 	});
@@ -200,4 +243,9 @@ export const STEP = {
 	FEEDBACK_IMPLEMENTER: "feedback-implementer",
 	MERGE_PR: "merge-pr",
 	SYNC_REPO: "sync-repo",
+	DECOMPOSE: "decompose",
+	RESEARCH_ASPECT: "research-aspect",
+	SYNTHESIZE: "synthesize",
+	ANSWER: "answer",
+	FINALIZE: "finalize",
 } as const satisfies Record<string, PipelineStepName>;
