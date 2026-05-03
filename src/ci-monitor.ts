@@ -69,6 +69,28 @@ export function isValidPrUrl(url: string): boolean {
 	return PR_URL_REGEX.test(url);
 }
 
+/**
+ * GitHub may take 30–90s after PR creation to associate workflow runs with
+ * the head SHA, so `gh pr checks` legitimately returns `[]` for a brief
+ * window even when checks are queued. Without a grace period the very first
+ * poll would prematurely conclude the PR has no CI and pass it. Tuned to
+ * 90s — long enough to cover normal queueing, short enough not to stall a
+ * truly check-less PR for too long.
+ */
+export const EMPTY_CHECKS_GRACE_MS = 90_000;
+
+/**
+ * Decide whether an empty `gh pr checks` result means "no CI configured"
+ * (so monitoring can pass) or "checks not registered yet" (keep polling).
+ * Returns true once `elapsedMs` has exceeded the grace period.
+ */
+export function shouldPassWithEmptyChecks(
+	elapsedMs: number,
+	graceMs: number = EMPTY_CHECKS_GRACE_MS,
+): boolean {
+	return elapsedMs >= graceMs;
+}
+
 export async function startMonitoring(
 	prUrl: string,
 	ciCycle: CiCycle,
@@ -106,11 +128,18 @@ export async function startMonitoring(
 			onOutput(`[poll ${pollCount}/${maxPolls}] ${statusLine || "No checks found"}`);
 
 			if (results.length === 0) {
-				onOutput(`[poll ${pollCount}/${maxPolls}] No checks registered — treating as passed`);
-				return { passed: true, timedOut: false, results };
-			}
-
-			if (allChecksComplete(results)) {
+				const elapsedMs = Date.now() - startedAt;
+				if (shouldPassWithEmptyChecks(elapsedMs)) {
+					onOutput(
+						`[poll ${pollCount}/${maxPolls}] No checks registered after ${Math.round(EMPTY_CHECKS_GRACE_MS / 1000)}s — treating as no CI configured`,
+					);
+					return { passed: true, timedOut: false, results };
+				}
+				const remainingSec = Math.ceil((EMPTY_CHECKS_GRACE_MS - elapsedMs) / 1000);
+				onOutput(
+					`[poll ${pollCount}/${maxPolls}] No checks registered yet — waiting up to ${remainingSec}s for CI to start`,
+				);
+			} else if (allChecksComplete(results)) {
 				if (allChecksPassed(results)) {
 					onOutput(`[poll ${pollCount}/${maxPolls}] All ${results.length} checks passed`);
 					return { passed: true, timedOut: false, results };
