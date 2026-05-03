@@ -91,6 +91,24 @@ On CI (`process.env.CI` truthy), a failing test produces:
 
 A dedicated GitHub Actions workflow (`.github/workflows/e2e.yml`) runs the suite on pull requests. It is configured as a **required status check** on the default branch (`master`); this is a repo-admin setting and lives outside this repo's tree.
 
+> [!IMPORTANT]
+> CI currently runs on `ubuntu-latest` only. Tests that exercise multi-line agent prompts (e.g. the `artifacts` and `fix-implement` step prompts) can pass on Linux but fail on Windows because of how the fake CLI shims forward arguments — see **Fake CLI shims (Windows vs POSIX)** below. Adding a `windows-latest` job to `.github/workflows/e2e.yml` would close this coverage gap; until then, regressions in multi-line argument handling are only caught by local Windows runs.
+
+## Fake CLI shims (Windows vs POSIX)
+
+The fakes (`claude`, `gh`, `git`, `uv`, `uvx`) are TypeScript files invoked through a thin platform-specific shim placed on `PATH`:
+
+- **POSIX** (Linux, macOS): an extensionless shell script (`#!/usr/bin/env bash` + `exec bun run "$(dirname "$0")/<name>.ts" "$@"`). Bash's `"$@"` preserves every argument byte-for-byte, including embedded newlines.
+- **Windows**: a compiled `.exe` produced by `bun build --compile --target=bun-windows-x64`, generated on demand by `tests/e2e/build-fakes.ts` and dropped next to the `.cmd` shim. `PATHEXT` defaults to `.COM;.EXE;.BAT;.CMD;…`, so the `.exe` always wins over the `.cmd` when both are present.
+
+The build runs automatically as part of `bun run test:e2e` (via the `build:e2e-fakes` script) and is a no-op on non-Windows platforms. Compiled `.exe` files are gitignored.
+
+### Why the `.cmd` shim is not enough
+
+The original Windows shim (`@bun run "%~dp0<name>.ts" %*`) forwards arguments via `cmd.exe`'s `%*` expansion. cmd.exe re-tokenises the command line text it received from the OS, and its tokeniser splits on newline — so any multi-line argument is truncated at the first newline AND every argument that follows is dropped. The `fix-implement` and `artifacts` step prompts are multi-line, so their full payload (including the manifest path embedded later in the prompt) never reached the fake — the steps errored with `"artifacts prompt missing manifest path"` and `"called with --output-format text but scenario entry has no \`text\`"` respectively. The `.exe` route bypasses cmd.exe entirely; arguments flow through libuv's `CreateProcess` argv unmodified.
+
+The `.cmd` files remain in the tree as a fallback so a fresh checkout that hasn't run the build script still produces a recognisable error from the fake instead of a confusing "command not found".
+
 ## Troubleshooting
 
 - **Real `claude` / `gh` was invoked** — ensure `bunx playwright install chromium` is run and that `PATH` in the spawned server env starts with the fakes dir (the harness enforces this).

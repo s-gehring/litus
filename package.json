@@ -28,7 +28,8 @@
     "start": "bun run src/server.ts",
     "build:client": "bun run src/build.ts",
     "test": "bun test tests/unit tests/integration tests/client",
-    "test:e2e": "bun run build:client && bunx playwright test -c tests/e2e/playwright.config.ts",
+    "build:e2e-fakes": "bun run tests/e2e/build-fakes.ts",
+    "test:e2e": "bun run build:e2e-fakes && bun run build:client && bunx playwright test -c tests/e2e/playwright.config.ts",
     "lint": "bunx biome lint .",
     "format": "bunx biome format .",
     "format:check": "bunx biome format --check ."
