@@ -304,6 +304,79 @@ describe("parseClaudeStream", () => {
 			expect(outputs).toEqual(["abc", "done"]);
 		});
 
+		test("drops the result string when it pure-echoes the prior assistant text", async () => {
+			// Real claude (and the e2e fake) typically emit the final assistant
+			// content twice: once as an `assistant` event and again as the
+			// `result` event's `result` field. Without dedup, every step's
+			// output renders twice in the workflow window.
+			const outputs: string[] = [];
+			const stream = createReadableStream(
+				ndjson([
+					{
+						type: "assistant",
+						message: { content: [{ type: "text", text: "Review complete. LGTM." }] },
+					},
+					{ type: "result", result: "Review complete. LGTM." },
+				]),
+			);
+
+			await parseClaudeStream(stream, {
+				onText: (t) => {
+					outputs.push(t);
+				},
+				onTools: () => {},
+				onSessionId: () => {},
+			});
+
+			expect(outputs).toEqual(["Review complete. LGTM."]);
+		});
+
+		test("emits only the unsent tail when the result extends the prior assistant text", async () => {
+			const outputs: string[] = [];
+			const stream = createReadableStream(
+				ndjson([
+					{
+						type: "assistant",
+						message: { content: [{ type: "text", text: "Hello" }] },
+					},
+					{ type: "result", result: "Hello world" },
+				]),
+			);
+
+			await parseClaudeStream(stream, {
+				onText: (t) => {
+					outputs.push(t);
+				},
+				onTools: () => {},
+				onSessionId: () => {},
+			});
+
+			expect(outputs).toEqual(["Hello", "world"]);
+		});
+
+		test("emits the full result string when it is independent of the assistant text", async () => {
+			const outputs: string[] = [];
+			const stream = createReadableStream(
+				ndjson([
+					{
+						type: "assistant",
+						message: { content: [{ type: "text", text: "Implementing the change…" }] },
+					},
+					{ type: "result", result: "Done. Modified 3 files." },
+				]),
+			);
+
+			await parseClaudeStream(stream, {
+				onText: (t) => {
+					outputs.push(t);
+				},
+				onTools: () => {},
+				onSessionId: () => {},
+			});
+
+			expect(outputs).toEqual(["Implementing the change…", "Done. Modified 3 files."]);
+		});
+
 		test("flushes pending delta but emits no extra onText when result is non-string (B-6)", async () => {
 			// Asserts both halves of B-6: the internal delta flush still fires
 			// (so the buffered "abc" reaches onText), but the non-string `result`
