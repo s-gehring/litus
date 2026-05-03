@@ -1,3 +1,4 @@
+import { hideAskAnswerPanel } from "./ask-answer-panel";
 import { hideEpicFeedbackPanel } from "./epic-feedback-panel";
 import { hideFeedbackPanel } from "./feedback-panel";
 import { hideQuestion } from "./question-panel";
@@ -39,6 +40,8 @@ export function hideDetailLayout(): void {
 	hideQuestion();
 	hideFeedbackPanel();
 	hideEpicFeedbackPanel();
+	const detailArea = document.getElementById("detail-area");
+	if (detailArea) hideAskAnswerPanel(detailArea);
 }
 
 /**
