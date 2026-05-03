@@ -176,9 +176,17 @@ export class AspectRunner {
 			},
 		};
 
-		this.cliRunner.start(dispatchWorkflow, cliCallbacks, env.extraEnv, env.model, env.effort, {
-			processKey: aspectProcessKey(workflow.id, aspect.id),
-			aspectId: aspect.id,
-		});
+		// Defend against a synchronous throw from cli-runner.start (e.g. mkdirSync
+		// failures). Without this guard the aspect would remain in `active` forever
+		// with no paired onComplete/onError, blocking slot promotion.
+		try {
+			this.cliRunner.start(dispatchWorkflow, cliCallbacks, env.extraEnv, env.model, env.effort, {
+				processKey: aspectProcessKey(workflow.id, aspect.id),
+				aspectId: aspect.id,
+			});
+		} catch (err) {
+			active.delete(aspect.id);
+			callbacks.onAspectError(aspect.id, `cli-runner start threw: ${String(err)}`);
+		}
 	}
 }

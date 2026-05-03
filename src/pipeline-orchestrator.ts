@@ -683,10 +683,13 @@ export class PipelineOrchestrator {
 			if (!workflow || workflow.status !== "running") return;
 
 			this.clearArtifactsTimer(workflowId);
-			this.stepRunner.killProcess(workflowId);
-			this.ciMonitor.abort();
-
 			const step = workflow.steps[workflow.currentStepIndex];
+			// research-aspect uses aspect-keyed CLI processes (killed below); the
+			// workflow-keyed kill is a no-op there, so skip it to keep the path clean.
+			if (step.name !== STEP.RESEARCH_ASPECT) {
+				this.stepRunner.killProcess(workflowId);
+			}
+			this.ciMonitor.abort();
 			step.status = "paused";
 			step.pid = null;
 			workflow.updatedAt = new Date().toISOString();
@@ -1464,12 +1467,12 @@ export class PipelineOrchestrator {
 			effort: config.efforts.askQuestionResearch,
 			extraEnv: this.buildStepEnv(workflow),
 		};
-		const callbacks = this.buildAspectRunnerCallbacks(workflow.id, cap, env);
+		const callbacks = this.buildAspectRunnerCallbacks(workflow.id, env);
 
 		this.aspectRunner.dispatch(workflow, pendingAspects, cap, env, callbacks);
 	}
 
-	private buildAspectRunnerCallbacks(workflowId: string, cap: number, env: AspectDispatchEnv) {
+	private buildAspectRunnerCallbacks(workflowId: string, env: AspectDispatchEnv) {
 		return {
 			onAspectStart: (aspectId: string) => this.handleAspectStart(workflowId, aspectId),
 			onAspectOutput: (aspectId: string, text: string) =>
@@ -1478,10 +1481,9 @@ export class PipelineOrchestrator {
 				this.handleAspectTools(workflowId, aspectId, tools),
 			onAspectSessionId: (aspectId: string, sessionId: string) =>
 				this.handleAspectSessionId(workflowId, aspectId, sessionId),
-			onAspectComplete: (aspectId: string) =>
-				this.handleAspectComplete(workflowId, aspectId, cap, env),
+			onAspectComplete: (aspectId: string) => this.handleAspectComplete(workflowId, aspectId, env),
 			onAspectError: (aspectId: string, message: string) =>
-				this.handleAspectError(workflowId, aspectId, message, cap, env),
+				this.handleAspectError(workflowId, aspectId, message, env),
 		};
 	}
 
@@ -1504,9 +1506,8 @@ export class PipelineOrchestrator {
 		aspect.completedAt = null;
 		aspect.errorMessage = null;
 		aspect.sessionId = null;
-		// dispatch already wiped output/outputLog; defensive reset
-		aspect.output = "";
-		aspect.outputLog = [];
+		// runResearchAspectStep wiped output/outputLog at dispatch entry
+		// (data-model.md §3.7) — no second wipe needed here.
 		workflow.updatedAt = now;
 		this.persistDebounced(workflow);
 		this.broadcastAspectState(workflowId, aspect);
@@ -1545,18 +1546,16 @@ export class PipelineOrchestrator {
 		this.persistDebounced(workflow);
 	}
 
-	private handleAspectComplete(
-		workflowId: string,
-		aspectId: string,
-		cap: number,
-		env: AspectDispatchEnv,
-	): void {
+	private handleAspectComplete(workflowId: string, aspectId: string, env: AspectDispatchEnv): void {
 		const workflow = this.getActiveWorkflow(workflowId);
 		if (!workflow) return;
 		const aspect = this.getAspect(workflow, aspectId);
 		if (!aspect) return;
 		const now = new Date().toISOString();
-		const findings = inspectAspectFindings(env.cwd, aspect.fileName);
+		// Re-resolve worktree path live rather than trusting the captured env.cwd,
+		// so a future caller that mutates worktreePath mid-step cannot misroute the
+		// findings inspection.
+		const findings = inspectAspectFindings(requireWorktreePath(workflow), aspect.fileName);
 		if (findings.kind !== "ok") {
 			const reason =
 				findings.kind === "missing"
@@ -1568,23 +1567,25 @@ export class PipelineOrchestrator {
 			workflow.updatedAt = now;
 			this.persistWorkflow(workflow);
 			this.broadcastAspectState(workflowId, aspect);
-			this.afterAspectSettled(workflow, cap, env);
+			this.afterAspectSettled(workflow, env);
 			return;
 		}
 		aspect.status = "completed";
 		aspect.completedAt = now;
+		// Defensive: an aspect can only reach `in_progress` via `pending`, and the
+		// retry path already nulls errorMessage when flipping back to pending. This
+		// clears any residual message a future state machine change might leak.
 		aspect.errorMessage = null;
 		workflow.updatedAt = now;
 		this.persistWorkflow(workflow);
 		this.broadcastAspectState(workflowId, aspect);
-		this.afterAspectSettled(workflow, cap, env);
+		this.afterAspectSettled(workflow, env);
 	}
 
 	private handleAspectError(
 		workflowId: string,
 		aspectId: string,
 		message: string,
-		cap: number,
 		env: AspectDispatchEnv,
 	): void {
 		const workflow = this.getActiveWorkflow(workflowId);
@@ -1593,19 +1594,26 @@ export class PipelineOrchestrator {
 		if (!aspect) return;
 		const now = new Date().toISOString();
 		aspect.status = "errored";
+		// Stamp startedAt defensively: aspect-runner can fire onAspectError
+		// without a paired onAspectStart on early-error paths (e.g. missing
+		// manifest entry). The contract requires both timestamps when status
+		// is "errored" (contracts/aspect-state-shape.md §2).
+		if (!aspect.startedAt) aspect.startedAt = now;
 		aspect.completedAt = now;
 		aspect.errorMessage = message;
 		workflow.updatedAt = now;
 		this.persistWorkflow(workflow);
 		this.broadcastAspectState(workflowId, aspect);
-		this.afterAspectSettled(workflow, cap, env);
+		this.afterAspectSettled(workflow, env);
 	}
 
 	/**
 	 * After any aspect terminates: promote the next pending aspect into the
-	 * freed slot, or — if the pool is empty — settle the step.
+	 * freed slot, or — if the pool is empty — settle the step. Re-reads the cap
+	 * on every promotion so a mid-step config change takes effect on the next
+	 * slot opening (data-model.md §4).
 	 */
-	private afterAspectSettled(workflow: Workflow, _cap: number, env: AspectDispatchEnv): void {
+	private afterAspectSettled(workflow: Workflow, env: AspectDispatchEnv): void {
 		const aspects = workflow.aspects ?? [];
 
 		// Re-read the cap on every slot-promote opportunity (data-model.md §4):
@@ -1617,7 +1625,7 @@ export class PipelineOrchestrator {
 		// constraint. The runner enforces the cap; we just supply the candidate set.
 		const stillPending = aspects.filter((a) => a.status === "pending");
 		if (stillPending.length > 0 && this.aspectRunner.inFlightCount(workflow.id) < cap) {
-			const callbacks = this.buildAspectRunnerCallbacks(workflow.id, cap, env);
+			const callbacks = this.buildAspectRunnerCallbacks(workflow.id, env);
 			this.aspectRunner.promoteNext(workflow, stillPending, cap, env, callbacks);
 			return;
 		}

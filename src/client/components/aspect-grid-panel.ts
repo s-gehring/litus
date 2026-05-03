@@ -49,13 +49,26 @@ export function renderAspectGridPanel(container: HTMLElement, workflow: Workflow
 		grid.className = "aspect-grid";
 		root.appendChild(grid);
 	}
-	grid.innerHTML = "";
 
+	// Idempotent re-render: leave existing panels alone and update them in place
+	// (preserves scroll position and avoids reflow when a coarse `workflow:state`
+	// triggers a full re-render mid-stream). Panels for aspects that no longer
+	// exist are removed; new aspects are appended in manifest order.
+	const seen = new Set<string>();
 	for (let i = 0; i < aspects.length; i++) {
 		const aspect = aspects[i];
 		const title = manifest?.aspects[i]?.title ?? aspect.id;
-		const panel = renderPanel(aspect, title);
-		grid.appendChild(panel);
+		seen.add(aspect.id);
+		const existing = grid.querySelector<HTMLElement>(`#${PANEL_PREFIX}${cssId(aspect.id)}`);
+		if (existing) {
+			applyAspectStateUpdate(grid, aspect);
+		} else {
+			grid.appendChild(renderPanel(aspect, title));
+		}
+	}
+	for (const panel of Array.from(grid.querySelectorAll<HTMLElement>(".aspect-panel"))) {
+		const id = panel.id.startsWith(PANEL_PREFIX) ? panel.id.slice(PANEL_PREFIX.length) : "";
+		if (id && !seen.has(id)) panel.remove();
 	}
 }
 
