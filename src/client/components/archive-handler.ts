@@ -2,6 +2,7 @@ import type { ClientMessage, ServerMessage } from "../../protocol";
 import type { EpicClientState, PersistedEpic, WorkflowState } from "../../types";
 import type { ClientStateManager } from "../client-state-manager";
 import type { RouteHandler } from "../router";
+import { shortenSummary } from "../short-summary";
 import { showFullPageLayout } from "./detail-layout";
 
 export interface ArchiveHandlerDeps {
@@ -97,7 +98,7 @@ export function createArchiveHandler(deps: ArchiveHandlerDeps): RouteHandler {
 
 		const summary = document.createElement("span");
 		summary.className = "archive-summary";
-		summary.textContent = wf.summary || wf.specification;
+		summary.textContent = wf.summary || shortenSummary(wf.specification);
 		row.appendChild(summary);
 
 		const date = document.createElement("span");
