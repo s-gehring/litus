@@ -171,20 +171,29 @@ export class WorkflowStore {
 	async loadAll(): Promise<Workflow[]> {
 		const index = await this.loadIndex();
 		const workflows: Workflow[] = [];
-		const validIds: string[] = [];
-
+		// Only prune index entries whose backing file is verifiably missing.
+		// `load()` returns null for any read failure — corrupt JSON, transient
+		// EPERM/EBUSY on Windows mid-rename, antivirus locks, anything. Pruning
+		// on every null permanently nukes the entry from the index, so a single
+		// transient I/O race during heavy concurrent writes (e.g. siblings of
+		// an epic each persisting steps while one fires checkEpicDependencies →
+		// loadAll) made specs vanish from the UI even though the .json file was
+		// still on disk. Restrict prune to ENOENT — a corrupt-but-present file
+		// stays indexed so a future load attempt can recover it (or the user
+		// can inspect/repair).
+		const prunableIds: string[] = [];
 		for (const entry of index) {
 			const workflow = await this.load(entry.id);
 			if (workflow) {
 				workflows.push(workflow);
-				validIds.push(entry.id);
+			} else if (!existsSync(this.workflowPath(entry.id))) {
+				prunableIds.push(entry.id);
 			}
 		}
 
-		// Prune invalid entries from index if any were skipped
-		if (validIds.length < index.length) {
-			const validSet = new Set(validIds);
-			const prunedIndex = index.filter((e) => validSet.has(e.id));
+		if (prunableIds.length > 0) {
+			const prunable = new Set(prunableIds);
+			const prunedIndex = index.filter((e) => !prunable.has(e.id));
 			await atomicWrite(this.indexPath(), JSON.stringify(prunedIndex, null, 2));
 		}
 

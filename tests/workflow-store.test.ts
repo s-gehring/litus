@@ -124,11 +124,14 @@ describe("WorkflowStore", () => {
 		expect(result).toBeNull();
 	});
 
-	test("T008: loadAll skips corrupted files and prunes orphaned index entries", async () => {
+	test("T008: loadAll skips corrupted files but keeps the index entry for recovery", async () => {
 		const good = makeWorkflow({ id: "good-1" });
 		await store.save(good);
 
-		// Write a corrupted file and add it to index
+		// Write a corrupted file and add it to index. A corrupt-but-present
+		// file may be a transient artefact (Windows rename race, antivirus
+		// hold, mid-write observation) — pruning the index permanently strands
+		// the workflow from the UI even though the file is still on disk.
 		writeFileSync(join(baseDir, "corrupt-2.json"), "broken json!!!");
 		const indexPath = join(baseDir, "index.json");
 		const index: WorkflowIndexEntry[] = JSON.parse(await Bun.file(indexPath).text());
@@ -150,10 +153,73 @@ describe("WorkflowStore", () => {
 		expect(all).toHaveLength(1);
 		expect(all[0].id).toBe("good-1");
 
-		// Index should be pruned — corrupted entry removed
+		// Index entry for the corrupt-but-present file is preserved so a
+		// later load attempt (after the transient condition clears) can
+		// surface the workflow again.
+		const updatedIndex = await store.loadIndex();
+		const ids = updatedIndex.map((e) => e.id).sort();
+		expect(ids).toEqual(["corrupt-2", "good-1"]);
+	});
+
+	test("loadAll prunes index entries whose .json file is missing", async () => {
+		const good = makeWorkflow({ id: "present" });
+		await store.save(good);
+
+		// Inject an index entry that points to a workflow file that does not
+		// exist on disk. This is the only condition that should trigger an
+		// index prune.
+		const indexPath = join(baseDir, "index.json");
+		const index: WorkflowIndexEntry[] = JSON.parse(await Bun.file(indexPath).text());
+		index.push({
+			id: "ghost",
+			workflowKind: "spec",
+			branch: "test",
+			status: "running",
+			summary: "",
+			epicId: null,
+			createdAt: new Date().toISOString(),
+			updatedAt: new Date().toISOString(),
+			archived: false,
+			archivedAt: null,
+		});
+		writeFileSync(indexPath, JSON.stringify(index, null, 2));
+
+		const all = await store.loadAll();
+		expect(all).toHaveLength(1);
+		expect(all[0].id).toBe("present");
+
 		const updatedIndex = await store.loadIndex();
 		expect(updatedIndex).toHaveLength(1);
-		expect(updatedIndex[0].id).toBe("good-1");
+		expect(updatedIndex[0].id).toBe("present");
+	});
+
+	test("transient load failure does not strand the workflow once it recovers", async () => {
+		// Repro for the "specs vanish after a sibling errored" bug: a transient
+		// read failure during heavy concurrent writes used to prune the index
+		// entry permanently. With the fix, the entry survives so the next
+		// loadAll re-surfaces the workflow once the file is readable again.
+		const wf = makeWorkflow({ id: "transient-1" });
+		await store.save(wf);
+
+		const filePath = join(baseDir, "transient-1.json");
+		const goodContent = await Bun.file(filePath).text();
+
+		// Simulate a transient mid-rename observation: the file briefly
+		// contains junk that fails JSON.parse.
+		writeFileSync(filePath, "<<garbled>>");
+
+		const firstPass = await store.loadAll();
+		expect(firstPass.map((w) => w.id)).toEqual([]);
+
+		// Index entry must still be there — that is the regression guard.
+		const indexAfterFailedLoad = await store.loadIndex();
+		expect(indexAfterFailedLoad.map((e) => e.id)).toEqual(["transient-1"]);
+
+		// Restore the file (transient condition clears) and reload.
+		writeFileSync(filePath, goodContent);
+
+		const secondPass = await store.loadAll();
+		expect(secondPass.map((w) => w.id)).toEqual(["transient-1"]);
 	});
 
 	test("T009: save creates baseDir if missing", async () => {
