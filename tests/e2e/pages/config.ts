@@ -18,7 +18,7 @@ export class ConfigPage {
 	}
 
 	/** Click the tab whose label matches `id` (e.g. `"models"`, `"prompts"`). */
-	async activateTab(id: "models" | "limits" | "timing" | "prompts"): Promise<void> {
+	async activateTab(id: "models" | "limits" | "timing" | "prompts" | "telegram"): Promise<void> {
 		await this.page.locator(`.cfg-tab[data-tab="${id}"]`).click();
 		await this.page.locator(`.cfg-tab[data-tab="${id}"].cfg-tab--active`).waitFor();
 	}

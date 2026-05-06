@@ -122,6 +122,12 @@ export function shouldPauseBeforeMerge(mode: AutoMode): boolean {
 	return mode === "manual";
 }
 
+export interface TelegramSettings {
+	botToken: string;
+	chatId: string;
+	active: boolean;
+}
+
 export interface AppConfig {
 	models: ModelConfig;
 	efforts: EffortConfig;
@@ -129,6 +135,7 @@ export interface AppConfig {
 	limits: LimitConfig;
 	timing: TimingConfig;
 	autoMode: AutoMode;
+	telegram: TelegramSettings;
 }
 
 export interface PromptVariableInfo {

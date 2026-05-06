@@ -23,10 +23,14 @@ import { createArchiveHandler } from "./components/archive-handler";
 import {
 	createConfigPageHandler,
 	hidePurgeProgress,
+	reportTelegramConfigError,
+	reportTelegramStatus,
+	reportTelegramTestResult,
 	showPurgeProgress,
 	updateConfigPage,
 	updatePurgeProgress,
 } from "./components/config-page";
+import type { TelegramStatusProjection } from "./components/config-page-telegram";
 import { createModal, type Modal } from "./components/creation-modal";
 import { createDashboardHandler } from "./components/dashboard-handler";
 import { epicCreatedTarget } from "./components/epic-created-route";
@@ -108,6 +112,7 @@ let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let currentAutoMode: AutoMode = "normal";
 let latestConfig: AppConfig | null = null;
+let cachedTelegramStatus: TelegramStatusProjection | null = null;
 
 function getWsUrl(): string {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -323,6 +328,24 @@ function handleMessage(msg: ServerMessage): void {
 			if (msg.errors.length > 0) {
 				appendOutput(`Config error: ${msg.errors[0].path} — ${msg.errors[0].message}`, "error");
 			}
+			reportTelegramConfigError(msg.errors);
+			break;
+		}
+
+		case "telegram:status": {
+			cachedTelegramStatus = {
+				unacknowledgedCount: msg.unacknowledgedCount,
+				lastFailureReason: msg.lastFailureReason,
+				lastFailureAt: msg.lastFailureAt,
+			};
+			reportTelegramStatus(cachedTelegramStatus);
+			break;
+		}
+
+		case "telegram:test-result": {
+			reportTelegramTestResult(
+				msg.ok ? { ok: true } : { ok: false, errorCode: msg.errorCode, reason: msg.reason },
+			);
 			break;
 		}
 
@@ -1126,6 +1149,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				send,
 				(path) => appRouter?.navigate(path),
 				() => latestConfig,
+				() => cachedTelegramStatus,
 			),
 		);
 		appRouter.register(
