@@ -99,7 +99,10 @@ describe("epic feedback alert suppression — call-site contract (FR-001)", () =
 
 		expect(abortCalls.length).toBe(2);
 		for (const call of abortCalls) {
-			expect(call.opts).toEqual({ suppressEpicFinishedAlert: true });
+			expect(call.opts).toEqual({
+				suppressEpicFinishedAlert: true,
+				skipEpicDependencyCheck: true,
+			});
 		}
 	});
 });
