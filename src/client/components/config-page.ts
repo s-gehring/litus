@@ -1,7 +1,17 @@
 import { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "../../config-metadata";
-import type { AppConfig, ConfigWarning } from "../../config-types";
+import type { AppConfig, ConfigValidationError, ConfigWarning } from "../../config-types";
 import type { ClientMessage } from "../../protocol";
 import type { RouteHandler } from "../router";
+import {
+	applyTelegramConfigError,
+	applyTelegramTestResult,
+	buildTelegramSection,
+	disposeTelegramSection,
+	type TelegramStatusProjection,
+	type TelegramTestResult,
+	updateTelegramSection,
+	updateTelegramStatus,
+} from "./config-page-telegram";
 import { showFullPageLayout } from "./detail-layout";
 import { EFFORT_LEVELS_ORDER, formatEffortLabel } from "./effort-label";
 
@@ -618,9 +628,27 @@ export function updateConfigPage(config: AppConfig, warnings?: ConfigWarning[]):
 		}
 	}
 
+	updateTelegramSection(config.telegram);
+
 	if (warnings && warnings.length > 0) {
 		showConfigWarning(warnings);
 	}
+}
+
+/** Forward server-side telegram errors to the Telegram tab so per-field
+ *  messages render under the right input. */
+export function reportTelegramConfigError(errors: ConfigValidationError[]): void {
+	applyTelegramConfigError(errors);
+}
+
+/** Forward `telegram:status` projections to the Telegram tab. */
+export function reportTelegramStatus(status: TelegramStatusProjection): void {
+	updateTelegramStatus(status);
+}
+
+/** Forward `telegram:test-result` outcomes to the Telegram tab. */
+export function reportTelegramTestResult(result: TelegramTestResult): void {
+	applyTelegramTestResult(result);
 }
 
 export function showConfigWarning(warnings: ConfigWarning[]): void {
@@ -671,6 +699,7 @@ function createConfigPage(
 		{ id: "limits", label: "Limits", content: buildNumericSection("limits") },
 		{ id: "timing", label: "Timing", content: buildNumericSection("timing") },
 		{ id: "prompts", label: "Prompts", content: buildPromptsSection() },
+		{ id: "telegram", label: "Telegram", content: buildTelegramSection(send) },
 	];
 	const validTabIds = new Set(tabDefs.map((t) => t.id));
 
@@ -740,6 +769,7 @@ export function createConfigPageHandler(
 	send: (msg: ClientMessage) => void,
 	navigate: (path: string) => void,
 	getLatestConfig: () => AppConfig | null,
+	getLatestTelegramStatus?: () => TelegramStatusProjection | null,
 ): RouteHandler {
 	return {
 		mount(container: HTMLElement) {
@@ -757,6 +787,8 @@ export function createConfigPageHandler(
 			// form from the cached AppConfig the app layer already owns.
 			const cached = getLatestConfig();
 			if (cached) updateConfigPage(cached);
+			const cachedStatus = getLatestTelegramStatus?.();
+			if (cachedStatus) reportTelegramStatus(cachedStatus);
 		},
 		unmount() {
 			if (pageRoot) {
@@ -764,6 +796,7 @@ export function createConfigPageHandler(
 				pageRoot = null;
 			}
 			sendFn = null;
+			disposeTelegramSection();
 		},
 	};
 }

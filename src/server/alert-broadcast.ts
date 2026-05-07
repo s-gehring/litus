@@ -4,6 +4,13 @@ import type { Alert } from "../types";
 
 export type BroadcastFn = (msg: ServerMessage) => void;
 
+export interface AlertBroadcastListeners {
+	/** Forward every alert that survives queue dedup AFTER the in-app
+	 *  broadcast has fired. Errors are swallowed by the listener; the alert
+	 *  pipeline never blocks on this. (Wires the Telegram notifier; FR-008.) */
+	onAlertAccepted?: (alert: Alert) => void;
+}
+
 /**
  * Build the `onAlertEmit` pair plus the `markSeenWhere` helper that `server.ts`
  * wires into every orchestrator and the route-changed handler. Extracted so
@@ -16,6 +23,7 @@ export function createAlertBroadcasters(
 	queue: AlertQueue,
 	broadcast: BroadcastFn,
 	getActivePaths: () => Iterable<string>,
+	listeners?: AlertBroadcastListeners,
 ) {
 	const emitAlert = (input: Omit<Alert, "id" | "createdAt" | "seen">): void => {
 		let seen = false;
@@ -32,6 +40,13 @@ export function createAlertBroadcasters(
 		broadcast({ type: "alert:created", alert: result.alert });
 		if (result.evictedId) {
 			broadcast({ type: "alert:dismissed", alertIds: [result.evictedId] });
+		}
+		if (listeners?.onAlertAccepted) {
+			try {
+				listeners.onAlertAccepted(result.alert);
+			} catch {
+				// Listener faults must never break the in-app alert path (FR-008).
+			}
 		}
 	};
 

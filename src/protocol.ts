@@ -25,6 +25,13 @@ import type {
 // perceptible to the UI.
 export const DELTA_FLUSH_TIMEOUT_MS = 50;
 
+/** Sentinel sent in place of a saved Telegram bot token so the plaintext value
+ *  never leaves the server. Re-saving the form with this value preserves the
+ *  stored token; any other value (including "") replaces it. Shared between
+ *  server (config-store / config-handlers) and client (config-page-telegram)
+ *  to prevent silent drift. */
+export const TELEGRAM_TOKEN_SENTINEL = "***configured***";
+
 /**
  * Routing target for a free-text server→client message.
  *
@@ -102,7 +109,24 @@ export type ServerMessage =
 			skipped: string[];
 			failed: { workflowId: string; message: string }[];
 	  }
-	| { type: "config:state"; config: AppConfig; warnings?: ConfigWarning[] }
+	| {
+			type: "config:state";
+			config: AppConfig; // `config.telegram.botToken` is masked to "***configured***" or "" before broadcast
+			warnings?: ConfigWarning[];
+	  }
+	| { type: "telegram:test-result"; ok: true }
+	| {
+			type: "telegram:test-result";
+			ok: false;
+			errorCode: number | null;
+			reason: string;
+	  }
+	| {
+			type: "telegram:status";
+			unacknowledgedCount: number;
+			lastFailureReason: string | null;
+			lastFailureAt: number | null;
+	  }
 	| {
 			type: "default-model:info";
 			modelInfo: { modelId: string; displayName: string } | null;
@@ -228,6 +252,8 @@ export type ClientMessage =
 	| { type: "config:get" }
 	| { type: "config:save"; config: DeepPartial<AppConfig> }
 	| { type: "config:reset"; key?: string }
+	| { type: "telegram:test"; botToken: string; chatId: string }
+	| { type: "telegram:acknowledge" }
 	| { type: "alert:list" }
 	| { type: "alert:dismiss"; alertId: string }
 	| { type: "alert:clear-all" }

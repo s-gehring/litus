@@ -18,6 +18,9 @@ import type {
 } from "./config-types";
 import { configFile } from "./litus-paths";
 import { logger } from "./logger";
+import { TELEGRAM_TOKEN_SENTINEL } from "./protocol";
+
+export { TELEGRAM_TOKEN_SENTINEL } from "./protocol";
 
 export const DEFAULT_CONFIG: AppConfig = {
 	models: {
@@ -291,6 +294,7 @@ INSTRUCTIONS:
 		cliIdleTimeoutMs: 600_000,
 		artifactsTimeoutMs: 1_800_000,
 	},
+	telegram: { botToken: "", chatId: "", active: false },
 };
 
 export { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "./config-metadata";
@@ -313,6 +317,7 @@ export class ConfigStore {
 			limits: { ...DEFAULT_CONFIG.limits, ...(saved.limits ?? {}) },
 			timing: { ...DEFAULT_CONFIG.timing, ...(saved.timing ?? {}) },
 			autoMode: saved.autoMode ?? DEFAULT_CONFIG.autoMode,
+			telegram: { ...DEFAULT_CONFIG.telegram, ...(saved.telegram ?? {}) },
 		};
 	}
 
@@ -320,6 +325,9 @@ export class ConfigStore {
 		errors: ConfigValidationError[];
 		warnings: ConfigWarning[];
 	} {
+		// Validate BEFORE merging. validateTelegram peeks at this.savedConfig as
+		// the "previously persisted" baseline to resolve the bot-token sentinel;
+		// merging first would short-circuit that check incorrectly.
 		const errors = this.validate(partial);
 		if (errors.length > 0) {
 			return { errors, warnings: [] };
@@ -333,6 +341,23 @@ export class ConfigStore {
 			if (src[key]) {
 				obj[key] = { ...(obj[key] ?? {}), ...src[key] };
 			}
+		}
+		if (partial.telegram) {
+			const incoming = { ...partial.telegram } as Record<string, unknown>;
+			// V2/V3: trim string fields before storage so whitespace-only saves can't
+			// pass V1 yet store empty creds.
+			if (typeof incoming.botToken === "string") {
+				incoming.botToken = (incoming.botToken as string).trim();
+			}
+			if (typeof incoming.chatId === "string") {
+				incoming.chatId = (incoming.chatId as string).trim();
+			}
+			// V4: sentinel preserves the previously stored token rather than overwriting it.
+			const existing = (obj.telegram ?? {}) as Record<string, unknown>;
+			if (incoming.botToken === TELEGRAM_TOKEN_SENTINEL) {
+				incoming.botToken = existing.botToken ?? "";
+			}
+			obj.telegram = { ...existing, ...incoming };
 		}
 		if (partial.autoMode !== undefined) {
 			current.autoMode = partial.autoMode;
@@ -512,7 +537,49 @@ export class ConfigStore {
 			);
 		}
 
+		if (partial.telegram) {
+			this.validateTelegram(partial.telegram, errors);
+		}
+
 		return errors;
+	}
+
+	private validateTelegram(
+		partial: NonNullable<DeepPartial<AppConfig>["telegram"]>,
+		errors: ConfigValidationError[],
+	): void {
+		// V1 (FR-003): if active is being set true, the EFFECTIVE creds (after
+		// sentinel substitution and trim) must be non-empty. We compute "effective"
+		// by overlaying the incoming partial onto whatever is already stored.
+		const stored = (this.savedConfig?.telegram ?? {}) as Partial<AppConfig["telegram"]>;
+		const willActive = partial.active ?? stored.active ?? false;
+		if (!willActive) return;
+
+		const incomingToken = partial.botToken;
+		const effectiveTokenRaw =
+			incomingToken === undefined || incomingToken === TELEGRAM_TOKEN_SENTINEL
+				? (stored.botToken ?? "")
+				: incomingToken;
+		const effectiveToken = typeof effectiveTokenRaw === "string" ? effectiveTokenRaw.trim() : "";
+
+		const incomingChat = partial.chatId;
+		const effectiveChatRaw = incomingChat === undefined ? (stored.chatId ?? "") : incomingChat;
+		const effectiveChat = typeof effectiveChatRaw === "string" ? effectiveChatRaw.trim() : "";
+
+		if (effectiveToken === "") {
+			errors.push({
+				path: "telegram.botToken",
+				message: "Bot token is required when notifications are active",
+				value: incomingToken,
+			});
+		}
+		if (effectiveChat === "") {
+			errors.push({
+				path: "telegram.chatId",
+				message: "Chat identifier is required when notifications are active",
+				value: incomingChat,
+			});
+		}
 	}
 
 	private validateNumericSection(

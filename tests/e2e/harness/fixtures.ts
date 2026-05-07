@@ -33,6 +33,9 @@ export interface Fixtures {
 	 * mutated.
 	 */
 	scenarioOverride: Record<string, unknown> | null;
+	/** Extra env merged into the spawned server. Used by the Telegram E2E to
+	 *  inject a per-test stub-transport log path. Null for all other tests. */
+	serverExtraEnv: Record<string, string> | null;
 	sandbox: Sandbox;
 	scenario: { path: string; name: string };
 	server: ServerHandle;
@@ -45,6 +48,7 @@ export const test = base.extend<Fixtures>({
 	purgeSeed: [null, { option: true }],
 	autoArchiveSeed: [null, { option: true }],
 	scenarioOverride: [null, { option: true }],
+	serverExtraEnv: [null, { option: true }],
 
 	sandbox: async ({ autoMode, configOverrides }, use) => {
 		const sandbox = await createSandbox({
@@ -76,7 +80,7 @@ export const test = base.extend<Fixtures>({
 	},
 
 	server: [
-		async ({ sandbox, scenario, purgeSeed, autoArchiveSeed }, use, testInfo) => {
+		async ({ sandbox, scenario, purgeSeed, autoArchiveSeed, serverExtraEnv }, use, testInfo) => {
 			if (purgeSeed) {
 				await seedPurgeState(sandbox.homeDir, purgeSeed);
 			}
@@ -90,6 +94,7 @@ export const test = base.extend<Fixtures>({
 				logPath: sandbox.serverLogPath,
 				repoRoot: REPO_ROOT,
 				cloneTemplate: sandbox.cloneTemplate,
+				extraEnv: serverExtraEnv ?? undefined,
 			});
 			try {
 				await use(server);

@@ -134,6 +134,7 @@ function makeAppConfig(): AppConfig {
 			artifactsTimeoutMs: 1_800_000,
 		},
 		autoMode: "normal",
+		telegram: { botToken: "", chatId: "", active: false },
 	};
 }
 
@@ -1094,9 +1095,9 @@ describe("Config types", () => {
 		expect(Object.keys(config)).toHaveLength(9);
 	});
 
-	test("AppConfig shape (6 fields)", () => {
+	test("AppConfig shape (7 fields)", () => {
 		const config: AppConfig = makeAppConfig();
-		expect(Object.keys(config)).toHaveLength(6);
+		expect(Object.keys(config)).toHaveLength(7);
 		expect(Object.keys(config.models)).toHaveLength(19);
 	});
 

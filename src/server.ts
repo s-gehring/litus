@@ -49,6 +49,12 @@ import {
 import type { HandlerDeps, WsData } from "./server/handler-types";
 import { MessageRouter } from "./server/message-router";
 import { handlePurgeAll } from "./server/purge-handlers";
+import {
+	handleTelegramAcknowledge,
+	handleTelegramTest,
+	sendTelegramStatusTo,
+	setTelegramHandlerDeps,
+} from "./server/telegram-handlers";
 import { broadcastPersistedWorkflowState } from "./server/workflow-broadcaster";
 import {
 	handleAbort,
@@ -72,6 +78,10 @@ import {
 import { getMimeType, resolveStaticPath } from "./static-files";
 import { Summarizer } from "./summarizer";
 import { normalizePath } from "./target-repo-validator";
+import { TelegramFailureState } from "./telegram/telegram-failure-state";
+import { TelegramNotifier } from "./telegram/telegram-notifier";
+import { fetchTelegramTransport } from "./telegram/telegram-transport";
+import { maybeBuildE2ETransport } from "./telegram/telegram-transport-e2e";
 import type { AspectState, ToolUsage, Workflow, WorkflowState } from "./types";
 import { WorkflowStore } from "./workflow-store";
 
@@ -104,10 +114,49 @@ const activeWebSockets: Set<ServerWebSocket<WsData>> | null = process.env.LITUS_
 	? new Set<ServerWebSocket<WsData>>()
 	: null;
 
+// ── Telegram integration ────────────────────────────────
+const telegramTransport = maybeBuildE2ETransport() ?? fetchTelegramTransport;
+const telegramFailureState = new TelegramFailureState();
+/**
+ * Resolve the public base URL embedded in Telegram alert links. `LITUS_PUBLIC_URL`
+ * (trailing slashes stripped) overrides the default `http://localhost:<port>`;
+ * set it when Litus runs behind a reverse proxy or tunnel so recipients can
+ * actually reach the linked workflow.
+ */
+function getTelegramBaseUrl(): string {
+	const fromEnv = process.env.LITUS_PUBLIC_URL?.trim();
+	if (fromEnv) return fromEnv.replace(/\/+$/, "");
+	// Cannot use optional chaining here: `server` is declared with `let server!` and
+	// referencing it before assignment throws at runtime. The `typeof` guard
+	// short-circuits so we never touch the binding before initialization.
+	const port = typeof server !== "undefined" && server ? server.port : BASE_PORT;
+	return `http://localhost:${port}`;
+}
+const telegramNotifier = new TelegramNotifier({
+	getSettings: () => configStore.get().telegram,
+	getBaseUrl: getTelegramBaseUrl,
+	transport: telegramTransport,
+	failureState: telegramFailureState,
+});
+setTelegramHandlerDeps({
+	failureState: telegramFailureState,
+	transport: telegramTransport,
+	configStore,
+	broadcast: (msg) => broadcast(msg),
+	sendTo: (ws, msg) => sendTo(ws, msg),
+});
+
 const { emitAlert, markAlertsSeenWhere } = createAlertBroadcasters(
 	sharedAlertQueue,
 	(msg) => broadcast(msg),
 	() => clientRoutes.values(),
+	{
+		onAlertAccepted: (alert) => {
+			// `notify` is a fire-and-forget that never rejects (it swallows its
+			// own dispatch error). `void` discards the chained promise.
+			void telegramNotifier.notify(alert);
+		},
+	},
 );
 
 function createCallbacks() {
@@ -336,6 +385,8 @@ router.register("alert:dismiss", handleAlertDismiss);
 router.register("alert:clear-all", handleAlertClearAll);
 router.register("alert:route-changed", handleAlertRouteChanged);
 router.register("client:warning", handleClientWarning);
+router.register("telegram:test", handleTelegramTest);
+router.register("telegram:acknowledge", handleTelegramAcknowledge);
 
 // ── HTTP/WS server ──────────────────────────────────────
 async function listSubdirectories(parentDir: string): Promise<string[]> {
@@ -515,6 +566,10 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 					sendTo(ws, { type: "epic:list", epics });
 				}
 				sendTo(ws, { type: "alert:list", alerts: sharedAlertQueue.list() });
+				sendTelegramStatusTo(ws, {
+					sendTo,
+					failureState: telegramFailureState,
+				});
 			},
 			message(ws: ServerWebSocket<WsData>, message: string | Buffer) {
 				router.dispatch(ws, message, deps);
@@ -551,6 +606,15 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 		logger.warn(`Port ${port} in use, trying ${port + 1}...`);
 	}
 }
+
+// Wire failure-state broadcasts after `server` is assigned: `broadcast`
+// dereferences `server`, and listener invocations would otherwise depend on a
+// runtime-ordering coincidence (recordFailure can only fire from `notify`,
+// which only fires from emitAlert, which only fires after orchestrators are
+// wired up). Subscribing here removes that hidden contract.
+telegramFailureState.subscribe((status) => {
+	broadcast({ type: "telegram:status", ...status });
+});
 
 // E2E-only: stdin line-protocol reader for harness-driven control commands.
 // Gated on LITUS_E2E_SCENARIO — in production this block never registers.

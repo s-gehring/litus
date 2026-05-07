@@ -40,6 +40,10 @@ export interface SpawnServerOptions {
 	 * `clone.useTemplate` side-effect in the `git` fake. Exposed via
 	 * `LITUS_E2E_CLONE_TEMPLATE` to the spawned server. */
 	cloneTemplate: string;
+	/** Extra environment variables to merge into the server subprocess. Used by
+	 * the Telegram E2E to point the in-process stub transport at a per-test log
+	 * file via `LITUS_TELEGRAM_E2E_LOG`. */
+	extraEnv?: Record<string, string>;
 }
 
 const READY_MARKER = "Litus running at http://localhost:";
@@ -80,6 +84,7 @@ async function spawnOnce(opts: SpawnServerOptions): Promise<RawSpawn> {
 		LITUS_E2E_REAL_GIT: discoverRealGit(process.env.PATH ?? process.env.Path),
 		LITUS_E2E_CLONE_TEMPLATE: opts.cloneTemplate,
 		PORT: "0",
+		...(opts.extraEnv ?? {}),
 	};
 
 	const proc = spawn("bun", ["run", resolve(opts.repoRoot, "src/server.ts")], {
