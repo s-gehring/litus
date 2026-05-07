@@ -140,11 +140,12 @@ header h1 {
 
 .workflow-card:hover {
   border-color: var(--accent-blue);
+  box-shadow: 0 0 0 1px var(--accent-blue), 0 4px 16px rgba(74, 158, 255, 0.35);
 }
 
 .workflow-card.card-expanded {
   border-color: var(--accent-blue);
-  box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
+  box-shadow: 0 0 0 2px var(--accent-blue), 0 0 18px rgba(74, 158, 255, 0.5);
 }
 
 /* Per-kind size envelopes — scale is the only size channel (FR-013) */
@@ -161,6 +162,7 @@ header h1 {
 /* Preserve Quick Fix warm-accent identity on hover (FR-005/R3) */
 .workflow-card--quick-fix:hover {
   border-color: var(--accent-orange);
+  box-shadow: 0 0 0 1px var(--accent-orange), 0 4px 16px rgba(240, 148, 60, 0.35);
 }
 
 .card-type-badge--quick-fix {
@@ -176,6 +178,7 @@ header h1 {
 
 .workflow-card--ask-question:hover {
   border-color: var(--accent-violet);
+  box-shadow: 0 0 0 1px var(--accent-violet), 0 4px 16px rgba(178, 136, 255, 0.35);
 }
 
 .card-type-badge--ask-question {
@@ -207,7 +210,8 @@ header h1 {
 
 .workflow-card--epic.card-expanded {
   border-color: var(--accent-blue);
-  box-shadow: 0 0 calc(var(--epic-glow-radius) + var(--epic-glow-expanded-delta)) var(--epic-glow-color);
+  box-shadow: 0 0 0 2px var(--accent-blue),
+              0 0 calc(var(--epic-glow-radius) + var(--epic-glow-expanded-delta) + 8px) var(--epic-glow-color);
 }
 
 .workflow-card--epic.card-error-glow {
@@ -1643,7 +1647,7 @@ body::-webkit-scrollbar-track {
 
 .tree-node:hover {
   border-color: var(--accent-blue);
-  box-shadow: 0 0 6px rgba(74, 158, 255, 0.2);
+  box-shadow: 0 0 0 1px var(--accent-blue), 0 0 14px rgba(74, 158, 255, 0.4);
 }
 
 .tree-node-dimmed {
@@ -1653,7 +1657,7 @@ body::-webkit-scrollbar-track {
 
 .tree-node-highlighted {
   border-color: var(--accent-blue);
-  box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
+  box-shadow: 0 0 0 2px var(--accent-blue), 0 0 16px rgba(74, 158, 255, 0.5);
   transition: opacity 0.15s;
 }
 
