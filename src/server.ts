@@ -20,6 +20,7 @@ import { logger } from "./logger";
 import { createDefaultManagedRepoStore } from "./managed-repo-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { type PipelineStepName, STEP } from "./pipeline-steps";
+import { validateOutgoingInDev } from "@litus/protocol";
 import type { ServerMessage } from "./protocol";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -288,6 +289,7 @@ async function getAllWorkflowStates(): Promise<WorkflowState[]> {
 }
 
 function broadcast(msg: ServerMessage) {
+	validateOutgoingInDev(msg);
 	server.publish(WS_TOPIC, JSON.stringify(msg));
 }
 
@@ -298,6 +300,7 @@ setGitLogCallback((text, workflowId) => {
 });
 
 function sendTo(ws: ServerWebSocket<WsData>, msg: ServerMessage) {
+	validateOutgoingInDev(msg);
 	ws.send(JSON.stringify(msg));
 }
 

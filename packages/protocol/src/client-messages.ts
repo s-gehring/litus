@@ -1,54 +1,72 @@
-// Client → Server messages. TS-only union for now; Zod schemas land in US2.
+// Client → Server messages. Zod schemas + TS types via `z.infer<>`.
+//
+// Complex nested fields (`config: DeepPartial<AppConfig>`) use
+// `z.record(z.unknown())` for v1; tightening these to fully-typed
+// nested schemas is a follow-up under the same FR-016 contract suite.
 
-import type { AppConfig, DeepPartial, WorkflowKind } from "./shared-types";
+import { z } from "zod";
 
-export type ClientMessage =
-	| {
-			type: "workflow:start";
-			specification: string;
-			targetRepository?: string;
-			submissionId?: string;
-			workflowKind?: WorkflowKind;
-	  }
-	| { type: "workflow:answer"; workflowId: string; questionId: string; answer: string }
-	| { type: "workflow:skip"; workflowId: string; questionId: string }
-	| { type: "workflow:pause"; workflowId: string }
-	| { type: "workflow:resume"; workflowId: string }
-	| { type: "workflow:abort"; workflowId: string }
-	| { type: "workflow:retry"; workflowId: string }
-	| { type: "workflow:retry-workflow"; workflowId: string }
-	| { type: "workflow:finalize"; workflowId: string }
-	| {
-			type: "epic:start";
-			description: string;
-			targetRepository?: string;
-			autoStart: boolean;
-			submissionId?: string;
-	  }
-	| { type: "epic:abort" }
-	| { type: "epic:feedback"; epicId: string; text: string }
-	| { type: "epic:feedback:ack-context-lost"; epicId: string }
-	| { type: "epic:start-first-level"; epicId: string }
-	| { type: "epic:pause-all"; epicId: string }
-	| { type: "epic:resume-all"; epicId: string }
-	| { type: "epic:abort-all"; epicId: string }
-	| { type: "workflow:start-existing"; workflowId: string }
-	| { type: "workflow:force-start"; workflowId: string }
-	| { type: "workflow:feedback"; workflowId: string; text: string }
-	| { type: "config:get" }
-	| { type: "config:save"; config: DeepPartial<AppConfig> }
-	| { type: "config:reset"; key?: string }
-	| { type: "telegram:test"; botToken: string; chatId: string }
-	| { type: "telegram:acknowledge" }
-	| { type: "alert:list" }
-	| { type: "alert:dismiss"; alertId: string }
-	| { type: "alert:clear-all" }
-	| { type: "alert:route-changed"; path: string }
-	| { type: "workflow:archive"; workflowId: string }
-	| { type: "workflow:unarchive"; workflowId: string }
-	| { type: "epic:archive"; epicId: string }
-	| { type: "epic:unarchive"; epicId: string }
-	| { type: "auto-archive:stop" }
-	| { type: "auto-archive:start" }
-	| { type: "purge:all" }
-	| { type: "client:warning"; source: string; message: string };
+const workflowKindSchema = z.enum(["spec", "quick-fix", "ask-question"]);
+
+export const clientMessageSchema = z.discriminatedUnion("type", [
+	z.object({
+		type: z.literal("workflow:start"),
+		specification: z.string(),
+		targetRepository: z.string().optional(),
+		submissionId: z.string().optional(),
+		workflowKind: workflowKindSchema.optional(),
+	}),
+	z.object({
+		type: z.literal("workflow:answer"),
+		workflowId: z.string(),
+		questionId: z.string(),
+		answer: z.string(),
+	}),
+	z.object({
+		type: z.literal("workflow:skip"),
+		workflowId: z.string(),
+		questionId: z.string(),
+	}),
+	z.object({ type: z.literal("workflow:pause"), workflowId: z.string() }),
+	z.object({ type: z.literal("workflow:resume"), workflowId: z.string() }),
+	z.object({ type: z.literal("workflow:abort"), workflowId: z.string() }),
+	z.object({ type: z.literal("workflow:retry"), workflowId: z.string() }),
+	z.object({ type: z.literal("workflow:retry-workflow"), workflowId: z.string() }),
+	z.object({ type: z.literal("workflow:finalize"), workflowId: z.string() }),
+	z.object({
+		type: z.literal("epic:start"),
+		description: z.string(),
+		targetRepository: z.string().optional(),
+		autoStart: z.boolean(),
+		submissionId: z.string().optional(),
+	}),
+	z.object({ type: z.literal("epic:abort") }),
+	z.object({ type: z.literal("epic:feedback"), epicId: z.string(), text: z.string() }),
+	z.object({ type: z.literal("epic:feedback:ack-context-lost"), epicId: z.string() }),
+	z.object({ type: z.literal("epic:start-first-level"), epicId: z.string() }),
+	z.object({ type: z.literal("epic:pause-all"), epicId: z.string() }),
+	z.object({ type: z.literal("epic:resume-all"), epicId: z.string() }),
+	z.object({ type: z.literal("epic:abort-all"), epicId: z.string() }),
+	z.object({ type: z.literal("workflow:start-existing"), workflowId: z.string() }),
+	z.object({ type: z.literal("workflow:force-start"), workflowId: z.string() }),
+	z.object({ type: z.literal("workflow:feedback"), workflowId: z.string(), text: z.string() }),
+	z.object({ type: z.literal("config:get") }),
+	z.object({ type: z.literal("config:save"), config: z.record(z.string(), z.unknown()) }),
+	z.object({ type: z.literal("config:reset"), key: z.string().optional() }),
+	z.object({ type: z.literal("telegram:test"), botToken: z.string(), chatId: z.string() }),
+	z.object({ type: z.literal("telegram:acknowledge") }),
+	z.object({ type: z.literal("alert:list") }),
+	z.object({ type: z.literal("alert:dismiss"), alertId: z.string() }),
+	z.object({ type: z.literal("alert:clear-all") }),
+	z.object({ type: z.literal("alert:route-changed"), path: z.string() }),
+	z.object({ type: z.literal("workflow:archive"), workflowId: z.string() }),
+	z.object({ type: z.literal("workflow:unarchive"), workflowId: z.string() }),
+	z.object({ type: z.literal("epic:archive"), epicId: z.string() }),
+	z.object({ type: z.literal("epic:unarchive"), epicId: z.string() }),
+	z.object({ type: z.literal("auto-archive:stop") }),
+	z.object({ type: z.literal("auto-archive:start") }),
+	z.object({ type: z.literal("purge:all") }),
+	z.object({ type: z.literal("client:warning"), source: z.string(), message: z.string() }),
+]);
+
+export type ClientMessage = z.infer<typeof clientMessageSchema>;
