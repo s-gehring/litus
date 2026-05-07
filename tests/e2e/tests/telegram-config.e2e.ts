@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "../harness/fixtures";
-import { readConfigJson } from "../helpers/config-actions";
+import { readConfigJson, setAndSave } from "../helpers/config-actions";
 import { ServerMessageObserver } from "../helpers/server-messages";
 import { AppPage, ConfigPage } from "../pages";
 
@@ -67,15 +67,15 @@ test.describe("Telegram notifications config", () => {
 		const tokenInput = page.locator('input[data-cfg-path="telegram.botToken"]');
 		const chatInput = page.locator('input[data-cfg-path="telegram.chatId"]');
 		const activeToggle = page.locator('input[data-cfg-path="telegram.active"]');
-		const saveBtn = page.locator(".cfg-tg-save-btn");
 
-		await tokenInput.fill("real-bot-token-xyz");
-		await chatInput.fill("@my-chat");
+		// Auto-save flow: each control commits its own change. Token + chat
+		// must be saved BEFORE flipping active=true, otherwise activation fails
+		// validation (FR-003: active requires non-empty creds).
+		await setAndSave(observer, tokenInput, "real-bot-token-xyz");
+		await setAndSave(observer, chatInput, "@my-chat");
+		const activeBroadcast = observer.waitFor((m) => m.type === "config:state");
 		await activeToggle.check();
-
-		const broadcast = observer.waitFor((m) => m.type === "config:state");
-		await saveBtn.click();
-		await broadcast;
+		await activeBroadcast;
 
 		// Reload — masked sentinel must come back, not the raw token.
 		await page.reload();
@@ -111,7 +111,8 @@ test.describe("Telegram notifications config", () => {
 		const testBtn = page.locator(".cfg-tg-test-btn");
 		const status = page.locator(".cfg-tg-test-status");
 
-		// Happy path.
+		// Happy path. The test-message path reads creds straight from the
+		// inputs, so a plain `fill` is enough — no save needed.
 		setStubMode("ok");
 		await tokenInput.fill("any");
 		await chatInput.fill("@chat");
@@ -134,7 +135,7 @@ test.describe("Telegram notifications config", () => {
 		await expect(status).toContainText("401");
 	});
 
-	test("US2: Acknowledge round-trip clears unacknowledgedCount and badge stays hidden when count=0", async ({
+	test("US2: failure badge stays hidden when there are no unacknowledged failures", async ({
 		page,
 		server,
 	}) => {
@@ -149,41 +150,23 @@ test.describe("Telegram notifications config", () => {
 		await cfg.root().waitFor();
 		await cfg.activateTab("telegram");
 
-		// Save active+creds first so the notifier dispatches.
+		// Save active+creds via auto-save so the notifier would dispatch on
+		// future alerts. The failure-state mutation path itself is exhaustively
+		// covered by tests/unit/telegram-notifier.test.ts and
+		// tests/integration/alert-telegram-pipeline.test.ts; here we just
+		// validate the resting UI state.
 		const tokenInput = page.locator('input[data-cfg-path="telegram.botToken"]');
 		const chatInput = page.locator('input[data-cfg-path="telegram.chatId"]');
 		const activeToggle = page.locator('input[data-cfg-path="telegram.active"]');
-		const saveBtn = page.locator(".cfg-tg-save-btn");
-		await tokenInput.fill("tok");
-		await chatInput.fill("@chat");
+		await setAndSave(observer, tokenInput, "tok");
+		await setAndSave(observer, chatInput, "@chat");
+		const activeBroadcast = observer.waitFor((m) => m.type === "config:state");
 		await activeToggle.check();
-		const savedBroadcast = observer.waitFor((m) => m.type === "config:state");
-		await saveBtn.click();
-		await savedBroadcast;
+		await activeBroadcast;
 
-		// E2E coverage scope: the failure-state mutation path itself is
-		// exhaustively covered by tests/unit/telegram-notifier.test.ts and
-		// tests/integration/alert-telegram-pipeline.test.ts. Driving a real
-		// in-app alert from the browser would require completing a full workflow,
-		// which is far beyond this feature's scope. Here we validate the UI
-		// surface end-to-end: the badge starts hidden, and the Acknowledge
-		// round-trip works (server replies with a fresh telegram:status).
-
-		// Verify the badge is initially hidden (unacknowledgedCount === 0).
+		// Badge is hidden whenever unacknowledgedCount === 0.
 		const badge = page.locator(".cfg-tg-failure-badge");
 		await expect(badge).toHaveClass(/cfg-tg-failure-badge--hidden/);
-
-		// Click Acknowledge anyway — must round-trip without throwing and the
-		// server should re-broadcast a fresh telegram:status.
-		const ackBtn = page.locator(".cfg-tg-ack-btn");
-		const statusFrame = observer.waitFor((m) => m.type === "telegram:status");
-		await ackBtn.click();
-		const status = (await statusFrame) as {
-			type: string;
-			unacknowledgedCount: number;
-			lastFailureReason: string | null;
-		};
-		expect(status.unacknowledgedCount).toBe(0);
 	});
 
 	test("transport hook: test-message path reaches the real stub transport with configured chat", async ({
@@ -203,13 +186,11 @@ test.describe("Telegram notifications config", () => {
 		const tokenInput = page.locator('input[data-cfg-path="telegram.botToken"]');
 		const chatInput = page.locator('input[data-cfg-path="telegram.chatId"]');
 		const activeToggle = page.locator('input[data-cfg-path="telegram.active"]');
-		const saveBtn = page.locator(".cfg-tg-save-btn");
-		await tokenInput.fill("tok");
-		await chatInput.fill("@chat-real");
+		await setAndSave(observer, tokenInput, "tok");
+		await setAndSave(observer, chatInput, "@chat-real");
+		const activeBroadcast = observer.waitFor((m) => m.type === "config:state");
 		await activeToggle.check();
-		const broadcast = observer.waitFor((m) => m.type === "config:state");
-		await saveBtn.click();
-		await broadcast;
+		await activeBroadcast;
 
 		// Use the test-message path to drive the transport (US3 guarantees the
 		// stub is hit). The stub log records every send call regardless of mode.

@@ -51,6 +51,13 @@ export function buildTelegramSection(send: (msg: ClientMessage) => void): HTMLEl
 	);
 	section.appendChild(intro);
 
+	// Auto-save matches the rest of the config page: every control commits its
+	// own change as a partial `config:save`, the server validates+persists, and
+	// the resulting `config:state` broadcast re-syncs the form.
+	const saveTelegram = (patch: Partial<TelegramSettings>): void => {
+		send({ type: "config:save", config: { telegram: patch } });
+	};
+
 	// ── Token ────────────────────────────────────────────────
 	const tokenRow = el("div", "cfg-field-row");
 	const tokenLabel = el("label", "cfg-label", "Bot token");
@@ -59,6 +66,9 @@ export function buildTelegramSection(send: (msg: ClientMessage) => void): HTMLEl
 	tokenInput.autocomplete = "off";
 	tokenInput.placeholder = "123456789:ABC-...";
 	tokenInput.dataset.cfgPath = "telegram.botToken";
+	tokenInput.addEventListener("change", () => {
+		saveTelegram({ botToken: tokenInput.value });
+	});
 	const tokenWrap = el("div", "cfg-input-wrap");
 	tokenWrap.appendChild(tokenInput);
 	tokenRow.appendChild(tokenLabel);
@@ -77,6 +87,9 @@ export function buildTelegramSection(send: (msg: ClientMessage) => void): HTMLEl
 	chatInput.autocomplete = "off";
 	chatInput.placeholder = "123456789 or @channelusername";
 	chatInput.dataset.cfgPath = "telegram.chatId";
+	chatInput.addEventListener("change", () => {
+		saveTelegram({ chatId: chatInput.value });
+	});
 	const chatWrap = el("div", "cfg-input-wrap");
 	chatWrap.appendChild(chatInput);
 	chatRow.appendChild(chatLabel);
@@ -88,37 +101,32 @@ export function buildTelegramSection(send: (msg: ClientMessage) => void): HTMLEl
 	section.appendChild(chatError);
 
 	// ── Activation toggle ───────────────────────────────────
-	const toggleRow = el("div", "cfg-field-row");
-	const toggleLabel = el("label", "cfg-label", "Send notifications to Telegram");
+	const toggleRow = el("div", "cfg-field-row cfg-field-row--toggle");
 	const toggleInput = el("input", "cfg-tg-active") as HTMLInputElement;
 	toggleInput.type = "checkbox";
+	toggleInput.id = "cfg-tg-active";
 	toggleInput.dataset.cfgPath = "telegram.active";
-	const toggleWrap = el("div", "cfg-input-wrap");
-	toggleWrap.appendChild(toggleInput);
+	toggleInput.addEventListener("change", () => {
+		saveTelegram({ active: toggleInput.checked });
+	});
+	const toggleLabel = el(
+		"label",
+		"cfg-label cfg-tg-toggle-label",
+		"Send notifications to Telegram",
+	);
+	toggleLabel.htmlFor = "cfg-tg-active";
+	toggleRow.appendChild(toggleInput);
 	toggleRow.appendChild(toggleLabel);
-	toggleRow.appendChild(toggleWrap);
 	section.appendChild(toggleRow);
 
-	// ── Buttons ─────────────────────────────────────────────
+	// ── Test action ─────────────────────────────────────────
 	const actions = el("div", "cfg-tg-actions");
 
-	const saveBtn = el("button", "cfg-tg-save-btn", "Save") as HTMLButtonElement;
-	saveBtn.type = "button";
-	saveBtn.addEventListener("click", () => {
-		send({
-			type: "config:save",
-			config: {
-				telegram: {
-					botToken: tokenInput.value,
-					chatId: chatInput.value,
-					active: toggleInput.checked,
-				},
-			},
-		});
-	});
-	actions.appendChild(saveBtn);
-
-	const testBtn = el("button", "cfg-tg-test-btn", "Send test message") as HTMLButtonElement;
+	const testBtn = el(
+		"button",
+		"btn btn-secondary cfg-tg-test-btn",
+		"Send test message",
+	) as HTMLButtonElement;
 	testBtn.type = "button";
 	testBtn.addEventListener("click", () => {
 		setTestStatus("pending", "Sending…");
@@ -144,13 +152,7 @@ export function buildTelegramSection(send: (msg: ClientMessage) => void): HTMLEl
 	// ── Failure indicator ───────────────────────────────────
 	const failureBadge = el("div", "cfg-tg-failure-badge cfg-tg-failure-badge--hidden");
 	const failureText = el("span", "cfg-tg-failure-text");
-	const ackBtn = el("button", "cfg-tg-ack-btn", "Acknowledge") as HTMLButtonElement;
-	ackBtn.type = "button";
-	ackBtn.addEventListener("click", () => {
-		send({ type: "telegram:acknowledge" });
-	});
 	failureBadge.appendChild(failureText);
-	failureBadge.appendChild(ackBtn);
 	section.appendChild(failureBadge);
 
 	function applyConfig(telegram: TelegramSettings): void {
