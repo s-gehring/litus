@@ -130,7 +130,10 @@ self-contained implementation specifications.
 2. Decompose the epic into a set of specifications that together deliver the
    full scope of the epic. Prefer fewer, meatier specs over many tiny ones —
    specs may be substantial in scope (multiple tasks, non-trivial complexity);
-   small size is explicitly not a goal.
+   small size is explicitly not a goal. However, each spec must be sized so a
+   single developer can complete it in one or two days of focused work, with
+   four days as the absolute maximum. If a spec exceeds that, split it into
+   self-contained sibling specs (each still satisfying rule 3 below).
 3. Every spec you emit MUST satisfy ALL of the following:
    a. **Self-contained** — implementable on its own branch without waiting for
       a sibling spec to land first. The spec's description must stand alone.

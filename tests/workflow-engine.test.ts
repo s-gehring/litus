@@ -343,7 +343,7 @@ describe("WorkflowEngine", () => {
 		test("non-specify steps have bare prompts", async () => {
 			const w = await engine.createWorkflow("test", "/tmp/test-repo");
 			expect(w.steps[2].prompt).toBe("/speckit-clarify");
-			expect(w.steps[3].prompt).toBe("/speckit-plan");
+			expect(w.steps[3].prompt).toMatch(/^\/speckit-plan(\s|$)/);
 		});
 
 		test("currentStepIndex starts at 0", async () => {

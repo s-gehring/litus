@@ -123,9 +123,27 @@ export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	{ name: "setup", displayName: "Setup", prompt: "" },
 	{ name: "specify", displayName: "Specifying", prompt: "/speckit-specify" },
 	{ name: "clarify", displayName: "Clarifying", prompt: "/speckit-clarify" },
-	{ name: "plan", displayName: "Planning", prompt: "/speckit-plan" },
+	{
+		name: "plan",
+		displayName: "Planning",
+		prompt: `/speckit-plan
+
+Additional directions:
+- Do not extend scope beyond what the specification calls for. Plan exactly what is specified, nothing more.
+- The entire plan must fit within a single pull request — do not split work across multiple PRs.
+- The plan must not require any manual steps from the user. Every action must be performable by an automated agent.`,
+	},
 	{ name: "tasks", displayName: "Generating Tasks", prompt: "/speckit-tasks" },
-	{ name: "implement", displayName: "Implementing", prompt: "/speckit-implement" },
+	{
+		name: "implement",
+		displayName: "Implementing",
+		prompt: `/speckit-implement
+
+Additional directions:
+- Do not extend scope beyond the specification. Implement exactly what is specified — no extra features, refactors, or speculative work.
+- Only ask the user a question if you genuinely need an answer to proceed; otherwise make a reasonable decision and continue.
+- When you are done, do not end your output with a question. State what was implemented and exit.`,
+	},
 	{ name: "review", displayName: "Reviewing", prompt: "/speckit-review" },
 	{ name: "implement-review", displayName: "Fixing Review", prompt: "/speckit-implementreview" },
 	{
