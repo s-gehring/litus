@@ -1399,6 +1399,116 @@ body::-webkit-scrollbar-track {
   border-color: rgba(220, 38, 38, 0.7);
 }
 
+/* Telegram config */
+.cfg-section--telegram {
+  max-width: 560px;
+}
+
+.cfg-section--telegram .cfg-subgroup-desc {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.cfg-field-row--toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.cfg-tg-active {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.cfg-tg-active:hover {
+  border-color: var(--accent-blue);
+}
+
+.cfg-tg-active:checked {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+.cfg-tg-active:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0;
+  width: 5px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.cfg-tg-active:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.cfg-tg-toggle-label {
+  cursor: pointer;
+}
+
+.cfg-tg-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.cfg-tg-test-status {
+  font-size: 0.78rem;
+  min-height: 1.2em;
+  color: var(--text-dim);
+}
+
+.cfg-tg-test-status--ok {
+  color: var(--accent-green);
+}
+
+.cfg-tg-test-status--error {
+  color: var(--accent);
+}
+
+.cfg-tg-test-status--pending {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.cfg-field-error {
+  font-size: 0.72rem;
+  color: var(--accent);
+  min-height: 1em;
+}
+
+.cfg-tg-failure-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(233, 69, 96, 0.4);
+  background: rgba(233, 69, 96, 0.1);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-size: 0.78rem;
+  margin-top: 8px;
+}
+
+.cfg-tg-failure-badge--hidden {
+  display: none;
+}
+
 .purge-progress {
   position: fixed;
   inset: 0;
