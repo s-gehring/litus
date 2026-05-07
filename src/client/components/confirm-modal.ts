@@ -33,11 +33,11 @@ export function showConfirmModal(options: ConfirmModalOptions): Promise<boolean>
 		actions.className = "confirm-modal-actions";
 		const cancelBtn = document.createElement("button");
 		cancelBtn.type = "button";
-		cancelBtn.className = "btn-secondary";
+		cancelBtn.className = "btn btn-secondary";
 		cancelBtn.textContent = options.cancelLabel ?? "Cancel";
 		const confirmBtn = document.createElement("button");
 		confirmBtn.type = "button";
-		confirmBtn.className = "btn-primary";
+		confirmBtn.className = "btn btn-primary";
 		confirmBtn.textContent = options.confirmLabel ?? "Confirm";
 		actions.appendChild(cancelBtn);
 		actions.appendChild(confirmBtn);
