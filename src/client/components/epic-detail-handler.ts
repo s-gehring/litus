@@ -12,6 +12,7 @@ import type { ClientStateManager } from "../client-state-manager";
 import { $ } from "../dom";
 import { renderMarkdown } from "../render-markdown";
 import type { RouteHandler, RouteMatch } from "../router";
+import { shortenSummary } from "../short-summary";
 import { type ActionSpec, renderDetailActions } from "./detail-actions";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
 import {
@@ -196,7 +197,7 @@ export function createEpicDetailHandler(deps: EpicDetailDeps): RouteHandler {
 		updateEpicStatus(epic.status);
 		updateActiveModelPanelForEpic(epic);
 		renderPipelineSteps(null);
-		updateSummary(epic.title || epic.description);
+		updateSummary(epic.title || shortenSummary(epic.description));
 		updateStepSummary("");
 		updateFlavor("");
 		updateUserInput(epic.description);

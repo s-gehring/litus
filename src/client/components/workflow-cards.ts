@@ -269,7 +269,7 @@ function createEpicAnalysisCard(
 	// Summary or description
 	const summary = document.createElement("span");
 	summary.className = "card-summary";
-	summary.textContent = epic.title || epic.description;
+	summary.textContent = epic.title || shortenSummary(epic.description);
 	card.appendChild(summary);
 
 	// Timer — compute elapsed ms for completed/error epics, live for analyzing
