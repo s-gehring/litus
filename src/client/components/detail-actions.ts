@@ -42,13 +42,6 @@ const ABORT_ALL_CONFIRM: ConfirmModalOptions = {
 	cancelLabel: "Cancel",
 };
 
-const RETRY_WORKFLOW_CONFIRM: ConfirmModalOptions = {
-	title: "Restart this workflow?",
-	body: "This resets the workflow to Setup and deletes its branch, worktree, and artifacts. Uncommitted changes in the managed worktree will be lost.",
-	confirmLabel: "Restart",
-	cancelLabel: "Cancel",
-};
-
 export const ACTION_REGISTRY: Record<ActionKey, ActionRegistryEntry> = {
 	start: { label: "Start", slot: "primary", className: "btn-primary" },
 	"force-start": { label: "Force start", slot: "primary", className: "btn-primary" },
@@ -77,7 +70,6 @@ export const ACTION_REGISTRY: Record<ActionKey, ActionRegistryEntry> = {
 		label: "Restart",
 		slot: "destructive",
 		className: "btn-warning",
-		confirm: RETRY_WORKFLOW_CONFIRM,
 	},
 	abort: {
 		label: "Abort",

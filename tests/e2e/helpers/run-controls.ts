@@ -23,11 +23,10 @@ export async function retryStep(card: WorkflowCardPage): Promise<void> {
 
 /**
  * Confirm the `showConfirmModal` dialog that the action-bar opens for
- * destructive buttons (abort, abort-all, retry-workflow, archive of an
- * unfinished workflow). The modal is a DOM element under
- * `.confirm-modal`, NOT a native `confirm()` dialog — the legacy native
- * dialog handlers were removed when the action bar unified onto the
- * registry-driven renderer.
+ * destructive buttons (abort, abort-all, archive of an unfinished
+ * workflow). The modal is a DOM element under `.confirm-modal`, NOT a
+ * native `confirm()` dialog — the legacy native dialog handlers were
+ * removed when the action bar unified onto the registry-driven renderer.
  */
 async function confirmModal(card: WorkflowCardPage): Promise<void> {
 	const modal = card.page.locator(".confirm-modal");
@@ -37,14 +36,15 @@ async function confirmModal(card: WorkflowCardPage): Promise<void> {
 }
 
 /**
- * Click the whole-workflow "Restart" button and confirm the modal
- * the action-bar opens.
+ * Click the whole-workflow "Restart" button. Restart is unconfirmed —
+ * the user already confirmed the abort that put the workflow into a
+ * non-resumable terminal state, so re-confirming the reset is just
+ * friction.
  */
 export async function retryWorkflow(card: WorkflowCardPage): Promise<void> {
 	const btn = card.retryWorkflowAction();
 	await expect(btn).toBeVisible({ timeout: 30_000 });
 	await btn.click();
-	await confirmModal(card);
 }
 
 export async function abortRun(card: WorkflowCardPage): Promise<void> {
