@@ -1,8 +1,4 @@
-import {
-	CLOSE_CODE_PROTOCOL,
-	clientMessageSchema,
-	PROTOCOL_VERSION,
-} from "@litus/protocol";
+import { CLOSE_CODE_PROTOCOL, clientMessageSchema, PROTOCOL_VERSION } from "@litus/protocol";
 import type { ServerWebSocket } from "bun";
 import { toErrorMessage } from "../errors";
 import { logger } from "../logger";

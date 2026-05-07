@@ -3,7 +3,7 @@
 // ArtifactsStepOutcome) live in `@litus/protocol`. Server-internal
 // runtime constants and helpers stay here.
 
-import type { PipelineStepName, WorkflowStatus, WorkflowKind } from "@litus/protocol";
+import type { PipelineStepName, WorkflowKind, WorkflowStatus } from "@litus/protocol";
 
 export type {
 	ArtifactsStepOutcome,

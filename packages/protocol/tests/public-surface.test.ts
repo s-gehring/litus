@@ -6,6 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+	type Channel,
 	CLOSE_CODE_PROTOCOL,
 	type ClientMessage,
 	channelSchema,
@@ -33,12 +34,14 @@ const _change: StateChange = { scope: { entity: "global" }, action: "updated" };
 const _action: StateChangeAction = "appended";
 const _scope: StateChangeScope = { entity: "none" };
 const _listener: StateChangeListener = () => {};
+const _channel: Channel = { kind: "console" };
 void _serverMsg;
 void _clientMsg;
 void _change;
 void _action;
 void _scope;
 void _listener;
+void _channel;
 
 describe("public surface", () => {
 	test("constants have expected runtime values", () => {

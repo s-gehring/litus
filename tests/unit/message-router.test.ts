@@ -170,3 +170,110 @@ describe("MessageRouter", () => {
 		expect(err.code).toBe("message_too_large");
 	});
 });
+
+// Version-handshake gate (FR-010..FR-014, R-3). The default `setup()` flips
+// `helloReceived` to true so the dispatcher tests can target steady-state
+// behavior; this block flips it back to false to drive the gate itself.
+function setupPreHandshake() {
+	const router = new MessageRouter();
+	const { mock: ws } = createMockWebSocket();
+	ws.data.helloReceived = false;
+	const { deps, sentMessages } = createMockHandlerDeps();
+	return {
+		router,
+		ws: ws as unknown as Parameters<typeof router.dispatch>[0],
+		rawWs: ws,
+		deps,
+		sentMessages,
+	};
+}
+
+describe("MessageRouter version handshake", () => {
+	test("non-hello first frame -> missing_protocol_version error + close 4001", () => {
+		const { router, ws, rawWs, deps, sentMessages } = setupPreHandshake();
+		const closeCalls: number[] = [];
+		rawWs.close = (code?: number) => {
+			closeCalls.push(code ?? 0);
+		};
+
+		router.dispatch(ws, JSON.stringify({ type: "alert:list" }), deps);
+
+		const msgs = sentMessages.get(ws) ?? [];
+		expect(msgs).toHaveLength(1);
+		const err = msgs[0] as { type: string; code?: string };
+		expect(err.type).toBe("error");
+		expect(err.code).toBe("missing_protocol_version");
+		expect(closeCalls).toEqual([4001]);
+		expect(rawWs.data.helloReceived).toBe(false);
+	});
+
+	test("client:hello with major mismatch -> version_mismatch + close 4001", () => {
+		const { router, ws, rawWs, deps, sentMessages } = setupPreHandshake();
+		const closeCalls: number[] = [];
+		rawWs.close = (code?: number) => {
+			closeCalls.push(code ?? 0);
+		};
+
+		router.dispatch(
+			ws,
+			JSON.stringify({
+				type: "client:hello",
+				protocolVersion: { major: 99, minor: 0 },
+			}),
+			deps,
+		);
+
+		const msgs = sentMessages.get(ws) ?? [];
+		expect(msgs).toHaveLength(1);
+		const err = msgs[0] as {
+			type: string;
+			code?: string;
+			details?: { observed?: unknown; expected?: unknown };
+		};
+		expect(err.type).toBe("error");
+		expect(err.code).toBe("version_mismatch");
+		expect(err.details?.observed).toEqual({ major: 99, minor: 0 });
+		expect(closeCalls).toEqual([4001]);
+	});
+
+	test("client:hello with matching major sets helloReceived and does not dispatch", () => {
+		const { router, ws, rawWs, deps, sentMessages } = setupPreHandshake();
+		let dispatched = false;
+		router.register("client:hello", () => {
+			dispatched = true;
+		});
+
+		router.dispatch(
+			ws,
+			JSON.stringify({
+				type: "client:hello",
+				protocolVersion: { major: 1, minor: 7 },
+			}),
+			deps,
+		);
+
+		expect(rawWs.data.helloReceived).toBe(true);
+		expect(sentMessages.get(ws) ?? []).toHaveLength(0);
+		expect(dispatched).toBe(false);
+	});
+
+	test("duplicate client:hello after handshake is a no-op", () => {
+		const { router, ws, deps, sentMessages } = setup();
+		let dispatched = false;
+		router.register("client:hello", () => {
+			dispatched = true;
+		});
+
+		router.dispatch(
+			ws,
+			JSON.stringify({
+				type: "client:hello",
+				protocolVersion: { major: 1, minor: 0 },
+			}),
+			deps,
+		);
+
+		expect(sentMessages.get(ws) ?? []).toHaveLength(0);
+		expect(dispatched).toBe(false);
+	});
+});

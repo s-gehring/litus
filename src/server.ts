@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { PROTOCOL_VERSION, type ServerMessage, validateOutgoingInDev } from "@litus/protocol";
 import type { ServerWebSocket } from "bun";
 import { AlertQueue } from "./alert-queue";
 import { AlertStore } from "./alert-store";
@@ -20,8 +21,6 @@ import { logger } from "./logger";
 import { createDefaultManagedRepoStore } from "./managed-repo-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { type PipelineStepName, STEP } from "./pipeline-steps";
-import { PROTOCOL_VERSION, validateOutgoingInDev } from "@litus/protocol";
-import type { ServerMessage } from "./protocol";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
 import { createAlertBroadcasters } from "./server/alert-broadcast";

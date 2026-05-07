@@ -5,15 +5,11 @@
 // surface. Always emitted regardless of `NODE_ENV` — production drift
 // remains observable.
 
+import type { ErrorCode } from "@litus/protocol";
 import { logger } from "../logger";
 
 export interface ProtocolFailure {
-	code:
-		| "schema_violation"
-		| "version_mismatch"
-		| "missing_protocol_version"
-		| "message_too_large"
-		| "internal";
+	code: ErrorCode;
 	originalType?: string;
 	socketId?: string;
 	issues?: ReadonlyArray<unknown>;
