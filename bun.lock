@@ -5,6 +5,7 @@
     "": {
       "name": "litus",
       "dependencies": {
+        "@litus/protocol": "workspace:*",
         "dompurify": "^3.4.0",
         "marked": "^18.0.3",
       },
