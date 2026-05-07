@@ -44,4 +44,22 @@ describe("responsive layout CSS rules", () => {
 		const mobileQuery = css.slice(css.indexOf("@media (max-width: 768px)"));
 		expect(mobileQuery).toContain("width: 100%");
 	});
+
+	test(".ci-pipeline-status-view caps height with internal vertical scroll (B-9)", () => {
+		const idx = css.indexOf(".ci-pipeline-status-view");
+		expect(idx).not.toBe(-1);
+		// Use the standalone rule (selector immediately followed by `{`).
+		const ruleRegex = /\.ci-pipeline-status-view\s*\{/;
+		const match = ruleRegex.exec(css);
+		expect(match).not.toBeNull();
+		const start = match?.index ?? -1;
+		const ruleBlock = css.slice(start, css.indexOf("}", start));
+		expect(ruleBlock).toContain("flex-wrap: wrap");
+		expect(ruleBlock).toContain("max-height:");
+		expect(ruleBlock).toContain("overflow-y: auto");
+	});
+
+	test("@keyframes ci-entry-pulse exists for the poll-driven pulse (FR-008)", () => {
+		expect(css).toContain("@keyframes ci-entry-pulse");
+	});
 });

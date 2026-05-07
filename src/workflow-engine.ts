@@ -144,6 +144,7 @@ export class WorkflowEngine {
 				monitorStartedAt: null,
 				globalTimeoutMs: configStore.get().timing.ciGlobalTimeoutMs,
 				lastCheckResults: [],
+				pollCount: 0,
 				failureLogs: [],
 				userFixGuidance: null,
 			},
