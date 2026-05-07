@@ -60,6 +60,15 @@ export interface CiMergeFlowControllerOptions {
 		info: { model: string; effort: EffortLevel },
 	) => void;
 	mergeConflictDispatchEnd?: (workflowId: string) => void;
+	/**
+	 * Optional broadcast hook the orchestrator wires to its `onStateChange`
+	 * callback. Called once per successful CI poll inside the monitor-ci
+	 * `onPollComplete` adapter, and once at attempt rollover after
+	 * `lastCheckResults` has been cleared. Backs contract O-1, O-3 in
+	 * `specs/001-ci-pipeline-status-view/contracts/poll-update-broadcast.md`.
+	 * Skipped on poll error (contract O-2).
+	 */
+	onStateChange?: (workflowId: string) => void;
 }
 
 export class CiMergeFlowController {
@@ -76,6 +85,7 @@ export class CiMergeFlowController {
 		info: { model: string; effort: EffortLevel },
 	) => void;
 	private readonly mergeConflictDispatchEnd?: (workflowId: string) => void;
+	private readonly onStateChange?: (workflowId: string) => void;
 
 	constructor(options: CiMergeFlowControllerOptions) {
 		this.ciMonitor = options.ciMonitor;
@@ -88,6 +98,7 @@ export class CiMergeFlowController {
 		this.stepTools = options.stepTools;
 		this.mergeConflictDispatchStart = options.mergeConflictDispatchStart;
 		this.mergeConflictDispatchEnd = options.mergeConflictDispatchEnd;
+		this.onStateChange = options.onStateChange;
 	}
 
 	async runMonitorCi(workflow: Workflow): Promise<CiFlowOutcome> {
@@ -103,11 +114,22 @@ export class CiMergeFlowController {
 	}
 
 	async startCiMonitoring(workflow: Workflow): Promise<CiFlowOutcome> {
-		workflow.ciCycle.monitorStartedAt =
-			workflow.ciCycle.monitorStartedAt ?? new Date().toISOString();
+		// Fresh-attempt entry (`monitorStartedAt === null`) means we just
+		// re-entered monitor-ci either from initial setup or after fix-ci.
+		// Clear `lastCheckResults` so the icon row's per-attempt slot cache
+		// resets and stale icons from the previous attempt don't leak through
+		// the first poll. Backs contract O-3 / FR-011.
+		const isFreshAttempt = workflow.ciCycle.monitorStartedAt === null;
+		if (isFreshAttempt) {
+			workflow.ciCycle.lastCheckResults = [];
+			workflow.ciCycle.monitorStartedAt = new Date().toISOString();
+			this.onStateChange?.(workflow.id);
+		}
 
-		const result = await this.ciMonitor.startMonitoring(workflow, (msg) =>
-			this.stepOutput(workflow.id, msg),
+		const result = await this.ciMonitor.startMonitoring(
+			workflow,
+			(msg) => this.stepOutput(workflow.id, msg),
+			() => this.onStateChange?.(workflow.id),
 		);
 
 		// Cache the latest check results and refresh maxAttempts so subsequent

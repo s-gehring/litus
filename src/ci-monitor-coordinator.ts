@@ -6,6 +6,7 @@ type StartMonitoringFn = (
 	ciCycle: CiCycle,
 	onOutput: (msg: string) => void,
 	signal?: AbortSignal,
+	onPollComplete?: () => void,
 ) => Promise<MonitorResult>;
 
 type DiscoverPrUrlFn = (workflow: Workflow) => Promise<string | null>;
@@ -23,6 +24,7 @@ export class CIMonitorCoordinator {
 	async startMonitoring(
 		workflow: Workflow,
 		onOutput: (msg: string) => void,
+		onPollComplete?: () => void,
 	): Promise<MonitorResult> {
 		this.abortController = new AbortController();
 
@@ -32,6 +34,7 @@ export class CIMonitorCoordinator {
 				workflow.ciCycle,
 				onOutput,
 				this.abortController.signal,
+				onPollComplete,
 			);
 			return result;
 		} finally {

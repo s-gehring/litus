@@ -221,6 +221,14 @@ export interface CiCycle {
 	monitorStartedAt: string | null;
 	globalTimeoutMs: number;
 	lastCheckResults: CiCheckResult[];
+	/**
+	 * Monotonically increasing count of completed `gh pr checks` polls. The
+	 * UI layer reads this to gate the icon-row pulse on actual poll
+	 * completion (versus any non-poll `workflow:state` broadcast). Optional
+	 * for backward compatibility with workflow JSON saved before this field
+	 * existed; treat `undefined` as 0.
+	 */
+	pollCount?: number;
 	failureLogs: CiFailureLog[];
 	/**
 	 * Free-form text supplied by the user when answering the "all CI checks

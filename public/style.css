@@ -2846,3 +2846,101 @@ body.artifact-modal-open { overflow: hidden; }
   font-style: italic;
   color: var(--text-dim);
 }
+
+/* ── CI Pipeline Status View (icon row above #output-log) ── */
+
+/* Reflow the output area when the icon row is present so #output-log
+   shrinks to fit beside the row (B-9 cap at ~3 wrapped rows). Without
+   this, #output-log's height: 100% would push the row off-screen. */
+.output-area:has(.ci-pipeline-status-view) {
+  display: flex;
+  flex-direction: column;
+}
+
+.output-area:has(.ci-pipeline-status-view) > .output-log {
+  height: auto;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.ci-pipeline-status-view {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  /* ~3 wrapped rows at the current capsule line-height (≈26px each plus
+     gap), then internal scroll. Backs FR / Many checks edge case, B-9. */
+  max-height: 96px;
+  overflow-y: auto;
+  align-content: flex-start;
+}
+
+.ci-pipeline-status-placeholder {
+  font-style: italic;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  padding: 2px 0;
+}
+
+.ci-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  max-width: 220px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+}
+
+.ci-entry-icon {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.ci-entry-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ci-entry-in-progress .ci-entry-icon {
+  background: #4a9eff;
+}
+
+.ci-entry-succeeded .ci-entry-icon {
+  background: #50c878;
+}
+
+.ci-entry-failed .ci-entry-icon {
+  background: var(--accent);
+}
+
+.ci-entry-cancelled .ci-entry-icon {
+  background: #aa6644;
+}
+
+.ci-entry-skipped .ci-entry-icon {
+  background: var(--text-dim);
+}
+
+/* One-shot pulse: ~600 ms (300 ms ramp up + 300 ms ramp down). Triggered
+   per poll for non-terminal entries; removed on `animationend` so the
+   next poll can re-fire it. Backs FR-008, B-6. */
+@keyframes ci-entry-pulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.ci-entry-pulse .ci-entry-icon {
+  animation: ci-entry-pulse 600ms ease-in-out 1;
+}

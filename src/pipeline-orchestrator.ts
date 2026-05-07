@@ -318,6 +318,7 @@ export class PipelineOrchestrator {
 			stepTools: (id, tools) => this.handleStepTools(id, tools),
 			mergeConflictDispatchStart: (id, info) => this.handleMergeConflictDispatchStart(id, info),
 			mergeConflictDispatchEnd: (id) => this.handleMergeConflictDispatchEnd(id),
+			onStateChange: (id) => this.callbacks.onStateChange(id),
 		});
 	}
 

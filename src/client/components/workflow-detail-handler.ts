@@ -16,6 +16,10 @@ import {
 	updateAspectProgressLine,
 } from "./aspect-grid-panel";
 import { BACK_TO_EPIC_PREFIX, backToEpicLabel } from "./back-to-epic-label";
+import {
+	type CiPipelineStatusViewHandle,
+	createCiPipelineStatusView,
+} from "./ci-pipeline-status-view";
 import { type ActionSpec, renderDetailActions } from "./detail-actions";
 import { hideDetailLayout, showDetailLayout } from "./detail-layout";
 import {
@@ -67,6 +71,7 @@ export interface WorkflowDetailDeps {
 
 export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHandler {
 	let currentWorkflowId: string | null = null;
+	let ciStatusView: CiPipelineStatusViewHandle | null = null;
 
 	function renderFull(): void {
 		if (!currentWorkflowId) return;
@@ -389,6 +394,12 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		const outputArea = document.getElementById("output-area");
 		const onResearchStep = wf.workflowKind === "ask-question" && step.name === STEP.RESEARCH_ASPECT;
 		const aspectsExist = (wf.aspects?.length ?? 0) > 0;
+		// Drive the CI icon row on every step-selection change so it
+		// detaches when the user clicks away from monitor-ci (B-1, FR-002).
+		if (outputArea) {
+			if (!ciStatusView) ciStatusView = createCiPipelineStatusView(outputArea);
+			ciStatusView.render(wf, index);
+		}
 		if (outputArea && onResearchStep && aspectsExist) {
 			const log = document.getElementById("output-log");
 			if (log) log.classList.add("hidden");
@@ -517,6 +528,8 @@ export function createWorkflowDetailHandler(deps: WorkflowDetailDeps): RouteHand
 		unmount() {
 			currentWorkflowId = null;
 			deps.setSelectStep?.(null);
+			ciStatusView?.destroy();
+			ciStatusView = null;
 			hideLayout();
 		},
 		onMessage(msg: ServerMessage) {

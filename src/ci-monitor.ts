@@ -96,6 +96,7 @@ export async function startMonitoring(
 	ciCycle: CiCycle,
 	onOutput: (msg: string) => void,
 	signal?: AbortSignal,
+	onPollComplete?: () => void,
 ): Promise<MonitorResult> {
 	if (!isValidPrUrl(prUrl)) {
 		throw new Error(`Invalid PR URL: ${prUrl}`);
@@ -123,6 +124,11 @@ export async function startMonitoring(
 		try {
 			const results = await pollCiChecks(prUrl);
 			ciCycle.lastCheckResults = results;
+			ciCycle.pollCount = (ciCycle.pollCount ?? 0) + 1;
+			// Fire AFTER `lastCheckResults = results` so the orchestrator can
+			// broadcast a fresh `workflow:state` carrying the new poll. Skipped
+			// on poll error (catch block below) per contract O-2.
+			onPollComplete?.();
 
 			const statusLine = results.map((r) => `${r.name}: ${r.state} (${r.bucket})`).join(" | ");
 			onOutput(`[poll ${pollCount}/${maxPolls}] ${statusLine || "No checks found"}`);
