@@ -7,8 +7,9 @@
 // without a corresponding fixture is therefore a hard CI failure.
 
 import { describe, expect, test } from "bun:test";
+import "./frontend-agnostic-guard";
 import { clientMessageSchema, serverMessageSchema } from "../src/index";
-import { FIXTURE_TYPES } from "./round-trip.test";
+import { FIXTURE_TYPES } from "./fixtures";
 
 function variantKeys(schema: typeof serverMessageSchema | typeof clientMessageSchema): string[] {
 	const def = (schema as { _def: { optionsMap?: Map<string, unknown> } })._def;

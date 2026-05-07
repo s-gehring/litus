@@ -115,7 +115,6 @@ let currentAutoMode: AutoMode = "normal";
 let latestConfig: AppConfig | null = null;
 let cachedTelegramStatus: TelegramStatusProjection | null = null;
 let serverProtocolVersion: ProtocolVersion | null = null;
-void serverProtocolVersion; // Currently informational; future clients can fast-fail on major mismatch.
 
 function getWsUrl(): string {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -456,10 +455,19 @@ function handleMessage(msg: ServerMessage): void {
 		}
 
 		case "hello": {
-			// US3 acceptance #3: record the server's protocolVersion. Future
-			// clients that fast-fail on major mismatch will read this; the
-			// legacy client is permissive and just notes the value.
+			// US3 acceptance #3: record the server's protocolVersion and
+			// surface a minor-version drift to the console so a deployed
+			// client running against a newer server is observable. Major
+			// mismatches are handled server-side via CLOSE_CODE_PROTOCOL.
 			serverProtocolVersion = msg.protocolVersion;
+			if (
+				serverProtocolVersion.major === PROTOCOL_VERSION.major &&
+				serverProtocolVersion.minor !== PROTOCOL_VERSION.minor
+			) {
+				console.info(
+					`[protocol] server minor=${serverProtocolVersion.minor}, client minor=${PROTOCOL_VERSION.minor}`,
+				);
+			}
 			break;
 		}
 	}

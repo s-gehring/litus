@@ -42,6 +42,11 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
 		autoStart: z.boolean(),
 		submissionId: z.string().optional(),
 	}),
+	// `epic:abort` targets the process-level "current epic analysis"
+	// singleton — no `epicId` by design. The `*-all` variants below
+	// require `epicId` because they target a specific epic's workflows.
+	// Pre-existing scope; do not "symmetrize" by adding `epicId` here
+	// without changing the handler semantics.
 	z.object({ type: z.literal("epic:abort") }),
 	z.object({ type: z.literal("epic:feedback"), epicId: z.string(), text: z.string() }),
 	z.object({ type: z.literal("epic:feedback:ack-context-lost"), epicId: z.string() }),

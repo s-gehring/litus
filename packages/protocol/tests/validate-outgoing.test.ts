@@ -6,6 +6,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
+import "./frontend-agnostic-guard";
 
 const helperUrl = new URL("../src/validate.ts", import.meta.url);
 const helperPath = fileURLToPath(helperUrl).replace(/\\/g, "/");
@@ -47,6 +48,23 @@ describe("validateOutgoingInDev env gating", () => {
 		// exit code that varies between runs).
 		expect(stderr).toContain("ZodError");
 		expect(stderr).toContain("invalid_union_discriminator");
+	});
+
+	test("NODE_ENV=test: throw is synchronous (not a logged-and-swallowed safeParse)", () => {
+		// Locks in `parse` (throwing) over `safeParse` + `console.error`. A
+		// regression to safeParse would still surface "ZodError" in stderr,
+		// so this catches the malformed frame inside the subprocess and
+		// asserts the THROW marker reached stderr — proving control flow
+		// took the throw path, not a logged-and-swallowed path.
+		const { stderr } = runWithEnv(
+			"test",
+			`import { validateOutgoingInDev } from ${JSON.stringify(helperPath)};
+			try { validateOutgoingInDev({ type: "not-a-real-variant" }); console.error("DID_NOT_THROW"); }
+			catch (e) { console.error("THREW:", (e as Error).constructor.name); }`,
+		);
+		expect(stderr).toContain("THREW:");
+		expect(stderr).toContain("ZodError");
+		expect(stderr).not.toContain("DID_NOT_THROW");
 	});
 
 	test("NODE_ENV=development: well-formed frame does not throw", () => {

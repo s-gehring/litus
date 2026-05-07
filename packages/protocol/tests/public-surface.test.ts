@@ -5,17 +5,23 @@
 // renamed export fails `bun run tsc --noEmit` (and therefore CI).
 
 import { describe, expect, test } from "bun:test";
+import "./frontend-agnostic-guard";
 import {
 	type Channel,
 	CLOSE_CODE_PROTOCOL,
+	type ClientHello,
 	type ClientMessage,
 	channelSchema,
 	clientMessageSchema,
 	DELTA_FLUSH_TIMEOUT_MS,
+	type ErrorCode,
+	type ErrorFrame,
 	errorCodeSchema,
 	errorFrameSchema,
 	PROTOCOL_VERSION,
+	type ProtocolVersion,
 	protocolVersionSchema,
+	type ServerHello,
 	type ServerMessage,
 	type StateChange,
 	type StateChangeAction,
@@ -35,6 +41,14 @@ const _action: StateChangeAction = "appended";
 const _scope: StateChangeScope = { entity: "none" };
 const _listener: StateChangeListener = () => {};
 const _channel: Channel = { kind: "console" };
+const _protocolVersion: ProtocolVersion = { major: 1, minor: 0 };
+const _errorCode: ErrorCode = "schema_violation";
+const _errorFrame: ErrorFrame = { type: "error", message: "x" };
+const _serverHello: ServerHello = { type: "hello", protocolVersion: { major: 1, minor: 0 } };
+const _clientHello: ClientHello = {
+	type: "client:hello",
+	protocolVersion: { major: 1, minor: 0 },
+};
 void _serverMsg;
 void _clientMsg;
 void _change;
@@ -42,6 +56,11 @@ void _action;
 void _scope;
 void _listener;
 void _channel;
+void _protocolVersion;
+void _errorCode;
+void _errorFrame;
+void _serverHello;
+void _clientHello;
 
 describe("public surface", () => {
 	test("constants have expected runtime values", () => {
