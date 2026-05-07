@@ -129,7 +129,7 @@ export function createArchiveHandler(deps: ArchiveHandlerDeps): RouteHandler {
 
 		const summary = document.createElement("span");
 		summary.className = "archive-summary";
-		summary.textContent = epic.title ?? epic.description;
+		summary.textContent = epic.title ?? shortenSummary(epic.description);
 		row.appendChild(summary);
 
 		const date = document.createElement("span");
