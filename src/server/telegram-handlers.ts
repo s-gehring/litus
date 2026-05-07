@@ -59,7 +59,12 @@ export const handleTelegramTest: MessageHandler = async (ws, data, _deps) => {
 	});
 
 	if (response.kind === "ok") {
-		telegramDeps.sendTo(ws, { type: "telegram:test-result", ok: true });
+		telegramDeps.sendTo(ws, {
+			type: "telegram:test-result",
+			ok: true,
+			errorCode: null,
+			reason: "",
+		});
 		return;
 	}
 

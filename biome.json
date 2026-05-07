@@ -42,6 +42,12 @@
 	},
 	"files": {
 		"includes": [
+			"packages/**/*.ts",
+			"packages/**/*.js",
+			"packages/**/*.json",
+			"apps/**/*.ts",
+			"apps/**/*.js",
+			"apps/**/*.json",
 			"src/**/*.ts",
 			"src/**/*.js",
 			"src/**/*.json",
@@ -49,6 +55,8 @@
 			"tests/**/*.js",
 			"tests/**/*.json",
 			"biome.json",
+			"!**/node_modules",
+			"!**/dist",
 			"!tests/e2e/test-results",
 			"!tests/e2e/playwright-report"
 		],

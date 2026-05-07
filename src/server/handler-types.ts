@@ -1,3 +1,4 @@
+import type { Channel, ClientMessage, ServerMessage } from "@litus/protocol";
 import type { ServerWebSocket } from "bun";
 import type { AlertQueue } from "../alert-queue";
 import type { AuditLogger } from "../audit-logger";
@@ -8,14 +9,16 @@ import type { EpicStore } from "../epic-store";
 import { logger } from "../logger";
 import type { ManagedRepoStore } from "../managed-repo-store";
 import type { PipelineOrchestrator } from "../pipeline-orchestrator";
-import type { Channel, ClientMessage, ServerMessage } from "../protocol";
 import type { Summarizer } from "../summarizer";
 import { validateTargetRepository } from "../target-repo-validator";
 import type { Alert, Workflow, WorkflowState } from "../types";
 import { MAX_LLM_INPUT_LENGTH } from "../types";
 import type { WorkflowStore } from "../workflow-store";
 
-export type WsData = Record<string, never>;
+export interface WsData {
+	helloReceived?: boolean;
+	socketId?: string;
+}
 
 export interface HandlerDeps {
 	orchestrators: Map<string, PipelineOrchestrator>;

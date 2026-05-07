@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { PROTOCOL_VERSION, type ServerMessage, validateOutgoingInDev } from "@litus/protocol";
 import type { ServerWebSocket } from "bun";
 import { AlertQueue } from "./alert-queue";
 import { AlertStore } from "./alert-store";
@@ -20,7 +21,6 @@ import { logger } from "./logger";
 import { createDefaultManagedRepoStore } from "./managed-repo-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { type PipelineStepName, STEP } from "./pipeline-steps";
-import type { ServerMessage } from "./protocol";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
 import { createAlertBroadcasters } from "./server/alert-broadcast";
@@ -288,6 +288,7 @@ async function getAllWorkflowStates(): Promise<WorkflowState[]> {
 }
 
 function broadcast(msg: ServerMessage) {
+	validateOutgoingInDev(msg);
 	server.publish(WS_TOPIC, JSON.stringify(msg));
 }
 
@@ -298,6 +299,7 @@ setGitLogCallback((text, workflowId) => {
 });
 
 function sendTo(ws: ServerWebSocket<WsData>, msg: ServerMessage) {
+	validateOutgoingInDev(msg);
 	ws.send(JSON.stringify(msg));
 }
 
@@ -555,6 +557,8 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 			async open(ws: ServerWebSocket<WsData>) {
 				ws.subscribe(WS_TOPIC);
 				if (activeWebSockets) activeWebSockets.add(ws);
+				// FR-011 / R-3: hello frame is the FIRST frame on every socket.
+				sendTo(ws, { type: "hello", protocolVersion: PROTOCOL_VERSION });
 				const workflows = await getAllWorkflowStates();
 				sendTo(ws, { type: "workflow:list", workflows });
 				sendTo(ws, {

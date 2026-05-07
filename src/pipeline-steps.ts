@@ -1,30 +1,19 @@
-// ── Pipeline-step taxonomy ─────────────────────────────────
-//
-// Names, ordering, status, definitions, and per-step run records for the
-// workflow pipeline. The single source of truth for what steps exist, what
-// they're called in the UI, and what prompt template feeds the agent. Keep
-// the workflow status enum here too — it's tightly coupled to step lifecycle.
+// Pipeline-step taxonomy. Wire-relevant type aliases (PipelineStepName,
+// PipelineStepStatus, WorkflowStatus, PipelineStep, PipelineStepRun,
+// ArtifactsStepOutcome) live in `@litus/protocol`. Server-internal
+// runtime constants and helpers stay here.
 
-import type { OutputEntry, WorkflowKind } from "./types";
+import type { PipelineStepName, WorkflowKind, WorkflowStatus } from "@litus/protocol";
 
-// Workflow status enum
-export type WorkflowStatus =
-	| "idle"
-	| "running"
-	| "waiting_for_input"
-	| "waiting_for_dependencies"
-	| "paused"
-	| "completed"
-	| "aborted"
-	| "error";
+export type {
+	ArtifactsStepOutcome,
+	PipelineStep,
+	PipelineStepName,
+	PipelineStepRun,
+	PipelineStepStatus,
+	WorkflowStatus,
+} from "@litus/protocol";
 
-// Valid state transitions.
-//
-// NOTE: `resetWorkflow` (src/workflow-engine.ts) intentionally bypasses this
-// table and sets `status = "idle"` directly. That path introduces two edges
-// not listed here — `aborted → idle` and `error → idle` — which are only
-// legal via the reset flow. `transition()` itself must continue to treat
-// `aborted`/`error` as terminal with respect to `running`/`aborted` only.
 export const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
 	idle: ["running", "waiting_for_dependencies"],
 	running: ["waiting_for_input", "completed", "error", "paused"],
@@ -36,85 +25,6 @@ export const VALID_TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
 	error: ["running", "aborted"],
 };
 
-// Pipeline step names in execution order
-export type PipelineStepName =
-	| "setup"
-	| "specify"
-	| "clarify"
-	| "plan"
-	| "tasks"
-	| "implement"
-	| "review"
-	| "implement-review"
-	| "artifacts"
-	| "fix-implement"
-	| "commit-push-pr"
-	| "monitor-ci"
-	| "fix-ci"
-	| "feedback-implementer"
-	| "merge-pr"
-	| "sync-repo"
-	// Ask-question pipeline:
-	| "decompose"
-	| "research-aspect"
-	| "synthesize"
-	| "answer"
-	| "finalize";
-
-// Pipeline step status
-export type PipelineStepStatus =
-	| "pending"
-	| "running"
-	| "waiting_for_input"
-	| "paused"
-	| "completed"
-	| "error";
-
-// Archived run of a repeatable pipeline step. Created when `resetStep` is
-// called on a step that already ran (`startedAt != null`). Immutable once
-// appended; the only mutation is whole-entry removal when the global per-step
-// output cap is exceeded.
-export interface PipelineStepRun {
-	runNumber: number;
-	status: "completed" | "error" | "paused";
-	output: string;
-	// Structured log preserving text+tool interleaving. Empty for pre-migration runs.
-	outputLog: OutputEntry[];
-	error: string | null;
-	startedAt: string;
-	completedAt: string | null;
-}
-
-// Terminal outcome refinement for the `artifacts` step only. Distinguishes
-// "LLM succeeded and at least one manifest-listed file was kept" from "LLM
-// succeeded and declared zero artifacts" so the UI can render the two paths
-// differently (FR-011). Null for all other steps and for artifacts runs that
-// haven't terminated yet.
-export type ArtifactsStepOutcome = "with-files" | "empty";
-
-// Pipeline step entity
-export interface PipelineStep {
-	name: PipelineStepName;
-	displayName: string;
-	status: PipelineStepStatus;
-	prompt: string;
-	sessionId: string | null;
-	output: string;
-	// Structured log preserving text+tool interleaving. The `output` string
-	// mirrors all text entries for parsers (`parseAgentResult`, `extractPrUrl`).
-	outputLog: OutputEntry[];
-	error: string | null;
-	startedAt: string | null;
-	completedAt: string | null;
-	pid: number | null;
-	history: PipelineStepRun[];
-	outcome?: ArtifactsStepOutcome | null;
-}
-
-// Step definitions: name → display name and prompt template.
-// Order here is NOT semantically meaningful — pipeline execution order is
-// driven by `SPEC_ORDER` / `QUICK_FIX_ORDER` below. Consumers (`STEP`,
-// `getStepDefinitionsForKind`) look up by name, not by position.
 export const PIPELINE_STEP_DEFINITIONS: ReadonlyArray<{
 	name: PipelineStepName;
 	displayName: string;
@@ -163,10 +73,6 @@ Additional directions:
 	{ name: "feedback-implementer", displayName: "Applying Feedback", prompt: "" },
 	{ name: "merge-pr", displayName: "Merging PR", prompt: "" },
 	{ name: "sync-repo", displayName: "Syncing Repository", prompt: "" },
-	// Ask-question steps. Prompts come from `config.prompts.askQuestion*`
-	// after per-step variable substitution; the PIPELINE_STEP_DEFINITIONS
-	// `prompt` field is left empty for these. The `answer` and `finalize`
-	// steps don't dispatch an agent at all.
 	{ name: "decompose", displayName: "Decomposing Question", prompt: "" },
 	{ name: "research-aspect", displayName: "Researching Aspect", prompt: "" },
 	{ name: "synthesize", displayName: "Synthesizing Answer", prompt: "" },
@@ -212,9 +118,6 @@ const ASK_QUESTION_ORDER: ReadonlyArray<PipelineStepName> = [
 	"finalize",
 ];
 
-// Indexed view of `PIPELINE_STEP_DEFINITIONS` for O(1) lookup by name.
-// Built once at module load so callers (`getStepDefinitionsForKind`,
-// `resetWorkflow`) avoid repeated O(N) `find` scans.
 const STEP_DEFINITION_BY_NAME: ReadonlyMap<
 	PipelineStepName,
 	{ name: PipelineStepName; displayName: string; prompt: string }
@@ -226,7 +129,6 @@ export function getStepDefinitionByName(
 	return STEP_DEFINITION_BY_NAME.get(name);
 }
 
-// Ordered step list for each workflow kind.
 export function getStepDefinitionsForKind(
 	kind: WorkflowKind,
 ): ReadonlyArray<{ name: PipelineStepName; displayName: string; prompt: string }> {
@@ -243,7 +145,6 @@ export function getStepDefinitionsForKind(
 	});
 }
 
-// Typed step name constants — compile-time checked via `satisfies`
 export const STEP = {
 	SETUP: "setup",
 	SPECIFY: "specify",

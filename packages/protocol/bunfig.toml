@@ -1,0 +1,3 @@
+# No `[test] preload` — the `@litus/protocol` contract suite runs WITHOUT
+# happy-dom or any other server-side preload (FR-017). The suite asserts
+# `globalThis.window === undefined` to lock this in.

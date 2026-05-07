@@ -1,4 +1,4 @@
-import type { Channel, ServerMessage } from "../protocol";
+import type { Channel, ServerMessage } from "@litus/protocol";
 
 /**
  * Map a `Channel` + free text to its corresponding `ServerMessage` wire frame.

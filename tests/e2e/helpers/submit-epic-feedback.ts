@@ -21,6 +21,13 @@ export async function submitEpicFeedbackRaw(
 				const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 				const ws = new WebSocket(url);
 				ws.onopen = () => {
+					// Server enforces a `client:hello` handshake on the first frame.
+					ws.send(
+						JSON.stringify({
+							type: "client:hello",
+							protocolVersion: { major: 1, minor: 0 },
+						}),
+					);
 					ws.send(JSON.stringify({ type: "epic:feedback", epicId, text }));
 				};
 				ws.onmessage = (ev) => {

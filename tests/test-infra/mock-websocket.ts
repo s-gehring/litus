@@ -3,9 +3,10 @@ import { type CallTracker, createCallTracker } from "./call-tracker";
 export interface MockWebSocket {
 	mock: {
 		send(message: string): void;
-		close(): void;
+		close(code?: number): void;
 		publish(topic: string, message: string): void;
 		subscribe(topic: string): void;
+		data: { helloReceived: boolean; socketId?: string };
 	};
 	tracker: CallTracker;
 	sentMessages: string[];
@@ -21,8 +22,8 @@ export function createMockWebSocket(): MockWebSocket {
 			tracker.calls.push({ method: "send", args: [message] });
 			sentMessages.push(message);
 		},
-		close(): void {
-			tracker.calls.push({ method: "close", args: [] });
+		close(code?: number): void {
+			tracker.calls.push({ method: "close", args: code === undefined ? [] : [code] });
 		},
 		publish(topic: string, message: string): void {
 			tracker.calls.push({ method: "publish", args: [topic, message] });
@@ -30,6 +31,9 @@ export function createMockWebSocket(): MockWebSocket {
 		subscribe(topic: string): void {
 			tracker.calls.push({ method: "subscribe", args: [topic] });
 		},
+		// Default mock state: past the version handshake. Tests that
+		// exercise the handshake itself flip this to false.
+		data: { helloReceived: true } as { helloReceived: boolean; socketId?: string },
 	};
 
 	return { mock, tracker, sentMessages };

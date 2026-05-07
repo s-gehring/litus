@@ -1,3 +1,4 @@
+import { PROTOCOL_VERSION, type ProtocolVersion } from "@litus/protocol";
 import type { AppConfig, AutoMode } from "../config-types";
 import { looksLikeGitUrl } from "../git-url";
 import type { PipelineStepName } from "../pipeline-steps";
@@ -113,6 +114,7 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let currentAutoMode: AutoMode = "normal";
 let latestConfig: AppConfig | null = null;
 let cachedTelegramStatus: TelegramStatusProjection | null = null;
+let serverProtocolVersion: ProtocolVersion | null = null;
 
 function getWsUrl(): string {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -136,6 +138,9 @@ function connect(): void {
 			reconnectTimer = null;
 		}
 
+		// FR-012 / R-3: emit `client:hello` as the first frame
+		// (concurrent send — does not wait for the server's hello).
+		send({ type: "client:hello", protocolVersion: PROTOCOL_VERSION });
 		send({ type: "config:get" });
 		const path = appRouter?.currentPath;
 		if (path) send({ type: "alert:route-changed", path });
@@ -446,6 +451,23 @@ function handleMessage(msg: ServerMessage): void {
 			// disappear on explicit dismissal (`alert:dismissed`).
 			renderAlertBell();
 			refreshAlertList();
+			break;
+		}
+
+		case "hello": {
+			// US3 acceptance #3: record the server's protocolVersion and
+			// surface a minor-version drift to the console so a deployed
+			// client running against a newer server is observable. Major
+			// mismatches are handled server-side via CLOSE_CODE_PROTOCOL.
+			serverProtocolVersion = msg.protocolVersion;
+			if (
+				serverProtocolVersion.major === PROTOCOL_VERSION.major &&
+				serverProtocolVersion.minor !== PROTOCOL_VERSION.minor
+			) {
+				console.info(
+					`[protocol] server minor=${serverProtocolVersion.minor}, client minor=${PROTOCOL_VERSION.minor}`,
+				);
+			}
 			break;
 		}
 	}

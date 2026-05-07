@@ -1,0 +1,17 @@
+{
+	"name": "@litus/server",
+	"version": "1.0.0",
+	"private": true,
+	"description": "Litus HTTP/WebSocket server",
+	"type": "module",
+	"scripts": {
+		"dev": "bun run --watch src/server.ts",
+		"start": "bun run src/server.ts",
+		"test": "bun test tests/unit tests/integration tests/client"
+	},
+	"dependencies": {
+		"@litus/protocol": "workspace:*",
+		"dompurify": "^3.4.0",
+		"marked": "^18.0.3"
+	}
+}
