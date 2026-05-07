@@ -170,7 +170,7 @@ describe("detail-actions / slot-based renderer", () => {
 
 	test("registry-confirmed action does NOT fire onClick on cancel", async () => {
 		const onClick = mock(() => {});
-		renderDetailActions([{ key: "retry-workflow", onClick }]);
+		renderDetailActions([{ key: "abort", onClick }]);
 		buttons()[0].click();
 		expect(document.querySelector(".confirm-modal")).not.toBeNull();
 		clickConfirmModalCancel();
@@ -230,10 +230,13 @@ describe("detail-actions / slot-based renderer", () => {
 		expect(ACTION_REGISTRY.resume.className).toBe("btn-primary");
 	});
 
-	test("registry guarantees retry-workflow uses warning style + modal confirm", () => {
+	test("registry guarantees retry-workflow uses warning style without modal confirm", () => {
+		// No confirm modal: abort already gates the destructive transition
+		// into the aborted state, and a workflow can't continue from there —
+		// re-confirming Restart adds friction without protecting the user.
 		expect(ACTION_REGISTRY["retry-workflow"].className).toBe("btn-warning");
 		expect(ACTION_REGISTRY["retry-workflow"].slot).toBe("destructive");
-		expect(ACTION_REGISTRY["retry-workflow"].confirm).toBeDefined();
+		expect(ACTION_REGISTRY["retry-workflow"].confirm).toBeUndefined();
 	});
 
 	test("registry guarantees abort uses danger style + modal confirm", () => {
