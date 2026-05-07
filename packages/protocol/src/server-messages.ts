@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 import { errorFrameSchema } from "./error-frame";
+import { serverHelloSchema } from "./hello-frame";
 import type {
 	Alert,
 	AppConfig,
@@ -79,6 +80,7 @@ const telegramTestResultSchema = z.object({
 });
 
 export const serverMessageSchema = z.discriminatedUnion("type", [
+	serverHelloSchema,
 	z.object({
 		type: z.literal("workflow:state"),
 		workflow: z.union([workflowStateLikeSchema, z.null()]),

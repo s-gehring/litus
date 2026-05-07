@@ -15,7 +15,10 @@ import type { Alert, Workflow, WorkflowState } from "../types";
 import { MAX_LLM_INPUT_LENGTH } from "../types";
 import type { WorkflowStore } from "../workflow-store";
 
-export type WsData = Record<string, never>;
+export interface WsData {
+	helloReceived?: boolean;
+	socketId?: string;
+}
 
 export interface HandlerDeps {
 	orchestrators: Map<string, PipelineOrchestrator>;

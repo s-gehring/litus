@@ -20,7 +20,7 @@ import { logger } from "./logger";
 import { createDefaultManagedRepoStore } from "./managed-repo-store";
 import { PipelineOrchestrator } from "./pipeline-orchestrator";
 import { type PipelineStepName, STEP } from "./pipeline-steps";
-import { validateOutgoingInDev } from "@litus/protocol";
+import { PROTOCOL_VERSION, validateOutgoingInDev } from "@litus/protocol";
 import type { ServerMessage } from "./protocol";
 import { QuestionDetector } from "./question-detector";
 import { ReviewClassifier } from "./review-classifier";
@@ -558,6 +558,8 @@ function startServer(port: number): ReturnType<typeof Bun.serve<WsData>> {
 			async open(ws: ServerWebSocket<WsData>) {
 				ws.subscribe(WS_TOPIC);
 				if (activeWebSockets) activeWebSockets.add(ws);
+				// FR-011 / R-3: hello frame is the FIRST frame on every socket.
+				sendTo(ws, { type: "hello", protocolVersion: PROTOCOL_VERSION });
 				const workflows = await getAllWorkflowStates();
 				sendTo(ws, { type: "workflow:list", workflows });
 				sendTo(ws, {

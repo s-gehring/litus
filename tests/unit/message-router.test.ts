@@ -6,6 +6,9 @@ import { createMockWebSocket } from "../test-infra/mock-websocket";
 function setup() {
 	const router = new MessageRouter();
 	const { mock: ws } = createMockWebSocket();
+	// `createMockWebSocket` defaults `data.helloReceived = true`, so
+	// these dispatches start past the version-handshake gate. Handshake
+	// behavior has its own dedicated tests.
 	const { deps, sentMessages } = createMockHandlerDeps();
 	return { router, ws: ws as unknown as Parameters<typeof router.dispatch>[0], deps, sentMessages };
 }

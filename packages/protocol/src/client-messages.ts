@@ -5,10 +5,12 @@
 // nested schemas is a follow-up under the same FR-016 contract suite.
 
 import { z } from "zod";
+import { clientHelloSchema } from "./hello-frame";
 
 const workflowKindSchema = z.enum(["spec", "quick-fix", "ask-question"]);
 
 export const clientMessageSchema = z.discriminatedUnion("type", [
+	clientHelloSchema,
 	z.object({
 		type: z.literal("workflow:start"),
 		specification: z.string(),

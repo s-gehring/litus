@@ -1,3 +1,4 @@
+import { PROTOCOL_VERSION, type ProtocolVersion } from "@litus/protocol";
 import type { AppConfig, AutoMode } from "../config-types";
 import { looksLikeGitUrl } from "../git-url";
 import type { PipelineStepName } from "../pipeline-steps";
@@ -113,6 +114,8 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let currentAutoMode: AutoMode = "normal";
 let latestConfig: AppConfig | null = null;
 let cachedTelegramStatus: TelegramStatusProjection | null = null;
+let serverProtocolVersion: ProtocolVersion | null = null;
+void serverProtocolVersion; // Currently informational; future clients can fast-fail on major mismatch.
 
 function getWsUrl(): string {
 	const protocol = location.protocol === "https:" ? "wss:" : "ws:";
@@ -136,6 +139,9 @@ function connect(): void {
 			reconnectTimer = null;
 		}
 
+		// FR-012 / R-3: emit `client:hello` as the first frame
+		// (concurrent send — does not wait for the server's hello).
+		send({ type: "client:hello", protocolVersion: PROTOCOL_VERSION });
 		send({ type: "config:get" });
 		const path = appRouter?.currentPath;
 		if (path) send({ type: "alert:route-changed", path });
@@ -446,6 +452,14 @@ function handleMessage(msg: ServerMessage): void {
 			// disappear on explicit dismissal (`alert:dismissed`).
 			renderAlertBell();
 			refreshAlertList();
+			break;
+		}
+
+		case "hello": {
+			// US3 acceptance #3: record the server's protocolVersion. Future
+			// clients that fast-fail on major mismatch will read this; the
+			// legacy client is permissive and just notes the value.
+			serverProtocolVersion = msg.protocolVersion;
 			break;
 		}
 	}

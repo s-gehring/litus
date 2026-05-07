@@ -1,4 +1,8 @@
-import { clientMessageSchema } from "@litus/protocol";
+import {
+	CLOSE_CODE_PROTOCOL,
+	clientMessageSchema,
+	PROTOCOL_VERSION,
+} from "@litus/protocol";
 import type { ServerWebSocket } from "bun";
 import { toErrorMessage } from "../errors";
 import { logger } from "../logger";
@@ -70,6 +74,58 @@ export class MessageRouter {
 		}
 
 		const msg = result.data;
+
+		// FR-010..FR-014, R-3: enforce the version handshake on the
+		// first inbound frame. After `helloReceived = true`, dispatch
+		// proceeds normally; a duplicate `client:hello` is accepted as
+		// a no-op.
+		if (!ws.data?.helloReceived) {
+			if (msg.type !== "client:hello") {
+				logProtocolFailure({
+					code: "missing_protocol_version",
+					socketId: ws.data?.socketId,
+					originalType: msg.type,
+				});
+				deps.sendTo(ws, {
+					type: "error",
+					code: "missing_protocol_version",
+					message: "Expected `client:hello` as the first frame",
+				});
+				ws.close(CLOSE_CODE_PROTOCOL);
+				return;
+			}
+			if (msg.protocolVersion.major !== PROTOCOL_VERSION.major) {
+				logProtocolFailure({
+					code: "version_mismatch",
+					socketId: ws.data?.socketId,
+					details: {
+						observed: msg.protocolVersion,
+						expected: PROTOCOL_VERSION,
+					},
+				});
+				deps.sendTo(ws, {
+					type: "error",
+					code: "version_mismatch",
+					message: `Protocol version mismatch (server major=${PROTOCOL_VERSION.major}, client major=${msg.protocolVersion.major})`,
+					details: {
+						observed: msg.protocolVersion,
+						expected: PROTOCOL_VERSION,
+					},
+				});
+				ws.close(CLOSE_CODE_PROTOCOL);
+				return;
+			}
+			if (ws.data) {
+				ws.data.helloReceived = true;
+			}
+			return;
+		}
+
+		// Steady state: duplicate hello is a no-op.
+		if (msg.type === "client:hello") {
+			return;
+		}
+
 		const handler = this.handlers.get(msg.type);
 		if (!handler) {
 			// Unreachable in practice because clientMessageSchema rejects
