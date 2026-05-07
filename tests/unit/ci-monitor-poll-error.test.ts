@@ -28,7 +28,10 @@ mock.module("../../src/git-logger", () => ({
 // `mock.module` is process-wide in bun, so this mock can leak into sibling
 // tests that read other prompts via configStore. Populate prompts.* with
 // non-empty placeholders so consumers like buildFixPrompt don't crash on
-// `undefined.replaceAll`.
+// `undefined.replaceAll`. Re-export the real DEFAULT_CONFIG and provide
+// no-op save/reset so sibling tests using configStore.save() don't crash.
+import { DEFAULT_CONFIG as REAL_DEFAULT_CONFIG } from "../../src/config-store";
+
 mock.module("../../src/config-store", () => {
 	const config = {
 		models: {},
@@ -41,7 +44,26 @@ mock.module("../../src/config-store", () => {
 		autoMode: "normal",
 		telegram: {},
 	};
-	return { configStore: { get: () => config } };
+	return {
+		configStore: {
+			get: () => config,
+			save: (partial: Record<string, unknown>) => {
+				for (const [k, v] of Object.entries(partial)) {
+					if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+						(config as Record<string, unknown>)[k] = {
+							...((config as Record<string, unknown>)[k] as Record<string, unknown>),
+							...(v as Record<string, unknown>),
+						};
+					} else {
+						(config as Record<string, unknown>)[k] = v;
+					}
+				}
+				return { errors: [], warnings: [] };
+			},
+			reset: () => {},
+		},
+		DEFAULT_CONFIG: REAL_DEFAULT_CONFIG,
+	};
 });
 
 import { startMonitoring } from "../../src/ci-monitor";
