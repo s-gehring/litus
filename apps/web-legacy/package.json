@@ -1,0 +1,16 @@
+{
+	"name": "@litus/web-legacy",
+	"version": "1.0.0",
+	"private": true,
+	"description": "Litus legacy web client (vanilla TS)",
+	"type": "module",
+	"scripts": {
+		"build": "bun run src/build.ts",
+		"test": "bun test tests"
+	},
+	"dependencies": {
+		"@litus/protocol": "workspace:*",
+		"dompurify": "^3.4.0",
+		"marked": "^18.0.3"
+	}
+}
