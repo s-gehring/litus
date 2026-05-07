@@ -8,6 +8,7 @@ FROM oven/bun:${BUN_VERSION}-slim AS build
 WORKDIR /app
 
 COPY package.json bun.lock ./
+COPY packages/ packages/
 RUN bun install --frozen-lockfile
 
 COPY tsconfig.json ./
@@ -48,6 +49,7 @@ RUN groupadd -g 1001 litus \
     && chown -R litus:litus /home/litus/.litus
 
 COPY --from=build --chown=litus:litus /app/node_modules node_modules/
+COPY --from=build --chown=litus:litus /app/packages packages/
 COPY --from=build --chown=litus:litus /app/public public/
 COPY --from=build --chown=litus:litus /app/src src/
 COPY --from=build --chown=litus:litus /app/package.json .
