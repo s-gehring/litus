@@ -80,8 +80,11 @@ import { Summarizer } from "./summarizer";
 import { normalizePath } from "./target-repo-validator";
 import { TelegramFailureState } from "./telegram/telegram-failure-state";
 import { TelegramNotifier } from "./telegram/telegram-notifier";
+import { TelegramQuestionForwarder } from "./telegram/telegram-question-forwarder";
+import { TelegramQuestionStore } from "./telegram/telegram-question-store";
 import { fetchTelegramTransport } from "./telegram/telegram-transport";
 import { maybeBuildE2ETransport } from "./telegram/telegram-transport-e2e";
+import { TelegramUpdatePoller } from "./telegram/telegram-update-poller";
 import type { AspectState, ToolUsage, Workflow, WorkflowState } from "./types";
 import { WorkflowStore } from "./workflow-store";
 
@@ -145,6 +148,41 @@ setTelegramHandlerDeps({
 	broadcast: (msg) => broadcast(msg),
 	sendTo: (ws, msg) => sendTo(ws, msg),
 });
+
+// Question-forwarding: persisted store + forwarder + long-poll driver.
+const telegramQuestionStore = new TelegramQuestionStore();
+telegramQuestionStore.loadOnStartup();
+const telegramQuestionForwarder = new TelegramQuestionForwarder({
+	transport: telegramTransport,
+	store: telegramQuestionStore,
+	getSettings: () => configStore.get().telegram,
+	failureState: telegramFailureState,
+	answerQuestion: (workflowId, questionId, answer) => {
+		const orch = orchestrators.get(workflowId);
+		if (!orch) return;
+		orch.answerQuestion(workflowId, questionId, answer);
+	},
+});
+const telegramUpdatePoller = new TelegramUpdatePoller({
+	transport: telegramTransport,
+	getSettings: () => configStore.get().telegram,
+	failureState: telegramFailureState,
+	forwarder: telegramQuestionForwarder,
+});
+
+function syncTelegramPoller(): void {
+	const s = configStore.get().telegram;
+	const shouldRun =
+		s.active &&
+		s.botToken.trim() !== "" &&
+		s.chatId.trim() !== "" &&
+		(s.forwardQuestions || telegramQuestionStore.hasPending());
+	if (shouldRun) {
+		telegramUpdatePoller.start();
+	} else {
+		void telegramUpdatePoller.stop();
+	}
+}
 
 const { emitAlert, markAlertsSeenWhere } = createAlertBroadcasters(
 	sharedAlertQueue,
@@ -233,6 +271,16 @@ function createCallbacks() {
 		},
 		onAlertEmit: emitAlert,
 		onAlertMarkSeenWhere: markAlertsSeenWhere,
+		onQuestionForward: (workflowId: string, question: import("./types").Question) => {
+			void telegramQuestionForwarder.forwardQuestion(workflowId, question);
+			syncTelegramPoller();
+		},
+		onQuestionAnswered: (workflowId: string, questionId: string) => {
+			void telegramQuestionForwarder.handleAnswered(workflowId, questionId);
+		},
+		onQuestionAborted: (workflowId: string, questionId: string) => {
+			void telegramQuestionForwarder.handleAborted(workflowId, questionId);
+		},
 	};
 }
 
@@ -359,7 +407,10 @@ router.register("workflow:finalize", handleFinalize);
 router.register("workflow:archive", handleArchiveWorkflow);
 router.register("workflow:unarchive", handleUnarchiveWorkflow);
 router.register("config:get", handleConfigGet);
-router.register("config:save", handleConfigSave);
+router.register("config:save", async (ws, data, depsArg) => {
+	await handleConfigSave(ws, data, depsArg);
+	syncTelegramPoller();
+});
 router.register("config:reset", handleConfigReset);
 router.register("epic:start", handleEpicStart);
 router.register("epic:abort", handleEpicAbort);
@@ -606,6 +657,10 @@ for (let i = 0; i < MAX_PORT_RETRIES; i++) {
 		logger.warn(`Port ${port} in use, trying ${port + 1}...`);
 	}
 }
+
+// Resume the Telegram update poller if forwarding is enabled or there are
+// persisted forwarded questions awaiting an answer (FR-016 / SC-007).
+syncTelegramPoller();
 
 // Wire failure-state broadcasts after `server` is assigned: `broadcast`
 // dereferences `server`, and listener invocations would otherwise depend on a

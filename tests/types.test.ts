@@ -134,7 +134,7 @@ function makeAppConfig(): AppConfig {
 			artifactsTimeoutMs: 1_800_000,
 		},
 		autoMode: "normal",
-		telegram: { botToken: "", chatId: "", active: false },
+		telegram: { botToken: "", chatId: "", active: false, forwardQuestions: false },
 	};
 }
 

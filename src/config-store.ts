@@ -297,7 +297,7 @@ INSTRUCTIONS:
 		cliIdleTimeoutMs: 600_000,
 		artifactsTimeoutMs: 1_800_000,
 	},
-	telegram: { botToken: "", chatId: "", active: false },
+	telegram: { botToken: "", chatId: "", active: false, forwardQuestions: false },
 };
 
 export { NUMERIC_SETTING_META, PROMPT_VARIABLES } from "./config-metadata";
@@ -551,6 +551,14 @@ export class ConfigStore {
 		partial: NonNullable<DeepPartial<AppConfig>["telegram"]>,
 		errors: ConfigValidationError[],
 	): void {
+		if (partial.forwardQuestions !== undefined && typeof partial.forwardQuestions !== "boolean") {
+			errors.push({
+				path: "telegram.forwardQuestions",
+				message: "Must be a boolean",
+				value: partial.forwardQuestions,
+			});
+		}
+
 		// V1 (FR-003): if active is being set true, the EFFECTIVE creds (after
 		// sentinel substitution and trim) must be non-empty. We compute "effective"
 		// by overlaying the incoming partial onto whatever is already stored.

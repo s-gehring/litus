@@ -119,6 +119,29 @@ export function buildTelegramSection(send: (msg: ClientMessage) => void): HTMLEl
 	toggleRow.appendChild(toggleLabel);
 	section.appendChild(toggleRow);
 
+	// ── Forward-questions toggle ────────────────────────────
+	const forwardRow = el("div", "cfg-field-row cfg-field-row--toggle");
+	const forwardInput = el("input", "cfg-tg-forward-questions") as HTMLInputElement;
+	forwardInput.type = "checkbox";
+	forwardInput.id = "cfg-tg-forward-questions";
+	forwardInput.dataset.cfgPath = "telegram.forwardQuestions";
+	forwardInput.addEventListener("change", () => {
+		saveTelegram({ forwardQuestions: forwardInput.checked });
+	});
+	const forwardLabel = el(
+		"label",
+		"cfg-label cfg-tg-forward-questions-label",
+		"Forward questions to Telegram",
+	);
+	forwardLabel.htmlFor = "cfg-tg-forward-questions";
+	forwardRow.appendChild(forwardInput);
+	forwardRow.appendChild(forwardLabel);
+	section.appendChild(forwardRow);
+
+	const forwardError = el("div", "cfg-field-error cfg-tg-error-forward-questions");
+	forwardError.dataset.errorFor = "telegram.forwardQuestions";
+	section.appendChild(forwardError);
+
 	// ── Test action ─────────────────────────────────────────
 	const actions = el("div", "cfg-tg-actions");
 
@@ -160,6 +183,9 @@ export function buildTelegramSection(send: (msg: ClientMessage) => void): HTMLEl
 		if (document.activeElement !== tokenInput) tokenInput.value = telegram.botToken;
 		if (document.activeElement !== chatInput) chatInput.value = telegram.chatId;
 		if (document.activeElement !== toggleInput) toggleInput.checked = telegram.active;
+		if (document.activeElement !== forwardInput) {
+			forwardInput.checked = telegram.forwardQuestions;
+		}
 		// Sentinel value in the token field is the cue that something is stored.
 		tokenInput.placeholder =
 			telegram.botToken === TELEGRAM_TOKEN_SENTINEL
@@ -168,6 +194,7 @@ export function buildTelegramSection(send: (msg: ClientMessage) => void): HTMLEl
 		// Clear stale field errors after a successful broadcast.
 		tokenError.textContent = "";
 		chatError.textContent = "";
+		forwardError.textContent = "";
 	}
 
 	function applyStatus(status: TelegramStatusProjection): void {
@@ -186,8 +213,10 @@ export function buildTelegramSection(send: (msg: ClientMessage) => void): HTMLEl
 	function applyConfigError(errors: ConfigValidationError[]): void {
 		const tokErr = errors.find((e) => e.path === "telegram.botToken");
 		const chatErrItem = errors.find((e) => e.path === "telegram.chatId");
+		const fwdErr = errors.find((e) => e.path === "telegram.forwardQuestions");
 		tokenError.textContent = tokErr?.message ?? "";
 		chatError.textContent = chatErrItem?.message ?? "";
+		forwardError.textContent = fwdErr?.message ?? "";
 	}
 
 	function applyTestResult(result: TelegramTestResult): void {

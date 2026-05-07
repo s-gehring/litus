@@ -417,6 +417,7 @@ export class PipelineOrchestrator {
 
 			this.engine.clearQuestion(workflowId);
 			this.markQuestionAlertSeen(workflowId);
+			this.callbacks.onQuestionAnswered?.(workflowId, questionId);
 			const step = workflow.steps[workflow.currentStepIndex];
 
 			// Append the user's answer to step output so it is visible and persisted
@@ -854,8 +855,12 @@ export class PipelineOrchestrator {
 			this.ciMonitor.abort();
 			this.summarizer.cleanup(workflowId);
 			this.resetStepState();
+			const abortedQuestionId = workflow.pendingQuestion?.id ?? null;
 			this.engine.clearQuestion(workflowId);
 			this.markQuestionAlertSeen(workflowId);
+			if (abortedQuestionId !== null) {
+				this.callbacks.onQuestionAborted?.(workflowId, abortedQuestionId);
+			}
 
 			const step = workflow.steps[workflow.currentStepIndex];
 
@@ -2708,6 +2713,8 @@ export class PipelineOrchestrator {
 		this.persistWorkflow(workflow);
 		this.callbacks.onStateChange(workflowId);
 
+		this.callbacks.onQuestionForward?.(workflowId, question);
+
 		const summary = question.content.slice(0, 200);
 		this.emitAlert(
 			"question-asked",
@@ -3153,8 +3160,12 @@ export class PipelineOrchestrator {
 		// Drop any outstanding question-asked alert: the workflow is terminal
 		// and the question panel is hidden, so a lingering alert would navigate
 		// the user to a dead-end (FR-013 parity for the error path).
+		const erroredQuestionId = workflow.pendingQuestion?.id ?? null;
 		this.engine.clearQuestion(workflowId);
 		this.markQuestionAlertSeen(workflowId);
+		if (erroredQuestionId !== null) {
+			this.callbacks.onQuestionAborted?.(workflowId, erroredQuestionId);
+		}
 
 		this.flushPersistDebounce();
 		this.persistWorkflow(workflow);

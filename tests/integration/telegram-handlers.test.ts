@@ -14,7 +14,7 @@ import {
 import { TelegramFailureState } from "../../src/telegram/telegram-failure-state";
 import type {
 	TelegramRequest,
-	TelegramResponse,
+	TelegramSendResponse,
 	TelegramTransport,
 } from "../../src/telegram/telegram-transport";
 import { createMockHandlerDeps } from "../test-infra/mock-handler-deps";
@@ -104,6 +104,30 @@ describe("config:save — telegram section (US1 contract scenarios 6 & 7)", () =
 		expect(broadcastedMessages.some((m) => m.type === "config:state")).toBe(false);
 	});
 
+	test("config:save with forwardQuestions=true round-trips through config:state", () => {
+		const realStore = new ConfigStore(join(dir, "config.json"));
+		const { mock: ws } = createMockWebSocket();
+		const mockWs = ws as unknown as Parameters<typeof handleConfigSave>[0];
+		const { deps, broadcastedMessages, sentMessages } = createMockHandlerDeps({
+			configStore: realStore as unknown as Parameters<typeof handleConfigSave>[2]["configStore"],
+		});
+
+		handleConfigSave(
+			mockWs,
+			{
+				type: "config:save",
+				config: { telegram: { forwardQuestions: true } },
+			} as ClientMessage,
+			deps,
+		);
+
+		expect((sentMessages.get(mockWs) ?? []).some((m) => m.type === "config:error")).toBe(false);
+		const broadcast = broadcastedMessages.find(
+			(m): m is Extract<ServerMessage, { type: "config:state" }> => m.type === "config:state",
+		);
+		expect(broadcast?.config.telegram.forwardQuestions).toBe(true);
+	});
+
 	test("config:state always masks the bot token (never plaintext)", () => {
 		const realStore = new ConfigStore(join(dir, "config.json"));
 		expect(
@@ -137,16 +161,25 @@ describe("config:save — telegram section (US1 contract scenarios 6 & 7)", () =
 
 interface ScriptedTransport extends TelegramTransport {
 	calls: TelegramRequest[];
-	response: TelegramResponse;
+	response: TelegramSendResponse;
 }
 
-function makeScriptedTransport(response: TelegramResponse): ScriptedTransport {
+function makeScriptedTransport(response: TelegramSendResponse): ScriptedTransport {
 	const t: ScriptedTransport = {
 		calls: [],
 		response,
 		async send(req) {
 			t.calls.push(req);
 			return t.response;
+		},
+		async deleteMessage() {
+			return { kind: "ok" };
+		},
+		async answerCallbackQuery() {
+			return { kind: "ok" };
+		},
+		async getUpdates() {
+			return { kind: "ok", updates: [] };
 		},
 	};
 	return t;
@@ -166,7 +199,7 @@ describe("telegram:test handler (US3 contract scenarios 1–4)", () => {
 	});
 
 	test("scenario 1: empty creds → reason set, transport not called", async () => {
-		const transport = makeScriptedTransport({ kind: "ok" });
+		const transport = makeScriptedTransport({ kind: "ok", messageId: 1 });
 		const failureState = new TelegramFailureState();
 		const realStore = new ConfigStore(join(dir, "config.json"));
 
@@ -202,7 +235,7 @@ describe("telegram:test handler (US3 contract scenarios 1–4)", () => {
 	});
 
 	test("scenario 2: sentinel botToken → transport called with stored token, not the sentinel", async () => {
-		const transport = makeScriptedTransport({ kind: "ok" });
+		const transport = makeScriptedTransport({ kind: "ok", messageId: 1 });
 		const failureState = new TelegramFailureState();
 		const realStore = new ConfigStore(join(dir, "config.json"));
 		expect(
@@ -242,7 +275,7 @@ describe("telegram:test handler (US3 contract scenarios 1–4)", () => {
 	});
 
 	test("scenario 3: happy path → transport called once and { ok: true }", async () => {
-		const transport = makeScriptedTransport({ kind: "ok" });
+		const transport = makeScriptedTransport({ kind: "ok", messageId: 1 });
 		const failureState = new TelegramFailureState();
 		const realStore = new ConfigStore(join(dir, "config.json"));
 
@@ -339,7 +372,16 @@ describe("telegram:acknowledge handler", () => {
 	test("acknowledge zeros unacknowledgedCount and broadcasts telegram:status", async () => {
 		const transport: TelegramTransport = {
 			async send() {
+				return { kind: "ok", messageId: 1 };
+			},
+			async deleteMessage() {
 				return { kind: "ok" };
+			},
+			async answerCallbackQuery() {
+				return { kind: "ok" };
+			},
+			async getUpdates() {
+				return { kind: "ok", updates: [] };
 			},
 		};
 		const failureState = new TelegramFailureState();

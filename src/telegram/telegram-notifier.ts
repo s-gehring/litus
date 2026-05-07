@@ -4,7 +4,7 @@ import type { Alert } from "../types";
 import { appendTelegramDelivery } from "./telegram-audit";
 import type { TelegramFailureState } from "./telegram-failure-state";
 import { formatAlertForTelegram } from "./telegram-formatter";
-import type { TelegramResponse, TelegramTransport } from "./telegram-transport";
+import type { TelegramSendResponse, TelegramTransport } from "./telegram-transport";
 
 const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 1000;
@@ -23,7 +23,9 @@ function defaultSleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function categorizeRetry(response: TelegramResponse): "ok" | "retryable" | "fatal" {
+export function categorizeRetry(
+	response: { kind: "ok" } | { kind: "error"; httpStatus: number | null },
+): "ok" | "retryable" | "fatal" {
 	if (response.kind === "ok") return "ok";
 	const status = response.httpStatus;
 	if (status === null) return "retryable"; // network throw
@@ -32,7 +34,10 @@ function categorizeRetry(response: TelegramResponse): "ok" | "retryable" | "fata
 	return "fatal";
 }
 
-function describeFailure(response: Extract<TelegramResponse, { kind: "error" }>): string {
+export function describeFailure(response: {
+	httpStatus: number | null;
+	description: string;
+}): string {
 	if (response.httpStatus === null) {
 		return response.description.startsWith("network:")
 			? response.description
@@ -92,11 +97,11 @@ export class TelegramNotifier {
 		const text = formatAlertForTelegram(alert, this.opts.getBaseUrl());
 
 		let attempts = 0;
-		let lastFailure: Extract<TelegramResponse, { kind: "error" }> | null = null;
+		let lastFailure: Extract<TelegramSendResponse, { kind: "error" }> | null = null;
 
 		for (let attempt = 1; attempt <= this.opts.maxAttempts; attempt++) {
 			attempts = attempt;
-			let response: TelegramResponse;
+			let response: TelegramSendResponse;
 			try {
 				response = await this.opts.transport.send({
 					botToken: token,
@@ -127,7 +132,7 @@ export class TelegramNotifier {
 				return;
 			}
 
-			lastFailure = response as Extract<TelegramResponse, { kind: "error" }>;
+			lastFailure = response as Extract<TelegramSendResponse, { kind: "error" }>;
 			if (category === "fatal") break;
 
 			if (attempt < this.opts.maxAttempts) {

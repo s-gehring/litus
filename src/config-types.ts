@@ -126,6 +126,7 @@ export interface TelegramSettings {
 	botToken: string;
 	chatId: string;
 	active: boolean;
+	forwardQuestions: boolean;
 }
 
 export interface AppConfig {
