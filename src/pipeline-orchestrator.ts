@@ -834,7 +834,10 @@ export class PipelineOrchestrator {
 		});
 	}
 
-	abortPipeline(workflowId: string, opts?: { suppressEpicFinishedAlert?: boolean }): void {
+	abortPipeline(
+		workflowId: string,
+		opts?: { suppressEpicFinishedAlert?: boolean; skipEpicDependencyCheck?: boolean },
+	): void {
 		runInWorkflowContext(workflowId, () => {
 			const workflow = this.getWorkflowOrThrow(workflowId);
 
@@ -934,7 +937,12 @@ export class PipelineOrchestrator {
 
 			// Update epic dependency status for siblings if this workflow was aborted,
 			// and emit `epic-finished` when every sibling has reached a terminal state.
-			if (workflow.epicId) {
+			// Skip entirely when the caller is about to delete every sibling (epic
+			// feedback): checkEpicDependencies treats the trigger as completed and
+			// would mark siblings whose only dep is this workflow as `satisfied`,
+			// auto-starting them via `onEpicDependencyUpdate` before they can be
+			// removed.
+			if (workflow.epicId && !opts?.skipEpicDependencyCheck) {
 				this.checkEpicDependencies(workflow, {
 					suppressEpicFinishedAlert: opts?.suppressEpicFinishedAlert === true,
 				}).catch((err) => {

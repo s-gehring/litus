@@ -321,7 +321,7 @@ async function findChildWorkflowsOfEpic(
 async function deleteChildWorkflows(
 	epic: PersistedEpic,
 	deps: HandlerDeps,
-	opts: { suppressEpicFinishedAlert?: boolean } = {},
+	opts: { suppressEpicFinishedAlert?: boolean; skipEpicDependencyCheck?: boolean } = {},
 ): Promise<void> {
 	for (const wfId of epic.workflowIds) {
 		const orch = deps.orchestrators.get(wfId);
@@ -522,7 +522,15 @@ async function runFeedbackAttempt(
 	// picks up any survivors via the same loop over `initialEpic.workflowIds`.
 	// Suppress `epic-finished`: the cascade aborts already-terminal siblings,
 	// which would otherwise re-trigger the alert mid-feedback (FR-001).
-	await deleteChildWorkflows(initialEpic, deps, { suppressEpicFinishedAlert: true });
+	// Skip the per-abort dependency check too: it treats the just-aborted
+	// workflow as completed and can flip a sibling whose only dep is this
+	// workflow to `satisfied`, auto-starting it through onEpicDependencyUpdate
+	// before deleteChildWorkflows reaches it (the original "first spec
+	// vanishes, the rest start" symptom).
+	await deleteChildWorkflows(initialEpic, deps, {
+		suppressEpicFinishedAlert: true,
+		skipEpicDependencyCheck: true,
+	});
 
 	epic = {
 		...epic,
