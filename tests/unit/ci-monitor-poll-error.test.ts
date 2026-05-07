@@ -25,11 +25,17 @@ mock.module("../../src/git-logger", () => ({
 	},
 }));
 
+// `mock.module` is process-wide in bun, so this mock can leak into sibling
+// tests that read other prompts via configStore. Populate prompts.* with
+// non-empty placeholders so consumers like buildFixPrompt don't crash on
+// `undefined.replaceAll`.
 mock.module("../../src/config-store", () => {
 	const config = {
 		models: {},
 		efforts: {},
-		prompts: {},
+		prompts: {
+			ciFixInstruction: "PR ${prUrl}\n${logSections}",
+		},
 		limits: { ciFixMaxAttempts: 3, mergeMaxAttempts: 3, reviewCycleMaxIterations: 3 },
 		timing: { ciPollIntervalMs: 1, ciGlobalTimeoutMs: 60_000, rateLimitBackoffMs: 1 },
 		autoMode: "normal",

@@ -219,10 +219,10 @@ function renderEntries(
 			});
 		}
 		node.dataset.stableKey = entry.stableKey;
-		const statusLabel = humanizeCategory(entry.category);
-		const accessible = `${entry.name} — ${statusLabel}`;
-		node.title = accessible;
-		node.setAttribute("aria-label", accessible);
+		// Per UI contract B-5, both `title` and `aria-label` carry the full
+		// `result.name`. Status is conveyed via the category class on the icon.
+		node.title = entry.name;
+		node.setAttribute("aria-label", entry.name);
 
 		const icon = document.createElement("span");
 		icon.className = "ci-entry-icon";
@@ -235,21 +235,6 @@ function renderEntries(
 		node.appendChild(label);
 
 		root.appendChild(node);
-	}
-}
-
-function humanizeCategory(category: CiStatusCategory): string {
-	switch (category) {
-		case "in_progress":
-			return "in progress";
-		case "succeeded":
-			return "succeeded";
-		case "failed":
-			return "failed";
-		case "cancelled":
-			return "cancelled";
-		case "skipped":
-			return "skipped";
 	}
 }
 

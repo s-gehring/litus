@@ -132,7 +132,7 @@ describe("ci-pipeline-status-view — view-model & mount (B-1, B-2, B-5)", () =>
 		expect(outputArea.querySelector(ROOT)).toBeNull();
 	});
 
-	test("aria-label and title carry name + status category for screen readers and colorblind users", () => {
+	test("aria-label and title carry the full check name (B-5)", () => {
 		const { outputArea } = setup();
 		const view = createCiPipelineStatusView(outputArea);
 		const longName = "really-very-long-matrix-job-name-that-will-be-truncated-1.2.3";
@@ -144,9 +144,10 @@ describe("ci-pipeline-status-view — view-model & mount (B-1, B-2, B-5)", () =>
 
 		const entry = outputArea.querySelector<HTMLElement>(".ci-entry");
 		expect(entry).not.toBeNull();
-		const expected = `${longName} — in progress`;
-		expect(entry?.getAttribute("title")).toBe(expected);
-		expect(entry?.getAttribute("aria-label")).toBe(expected);
+		// Status category is conveyed via the `ci-entry-*` class on the icon,
+		// not the aria-label (per UI contract B-5).
+		expect(entry?.getAttribute("title")).toBe(longName);
+		expect(entry?.getAttribute("aria-label")).toBe(longName);
 	});
 });
 
