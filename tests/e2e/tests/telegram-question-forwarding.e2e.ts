@@ -98,6 +98,11 @@ test.describe("Telegram question forwarding", () => {
 		await forwardToggle.check();
 		await fwdBroadcast;
 
+		// Back to the dashboard before creating a workflow — the New Spec button
+		// only exists on the dashboard route, not /config.
+		await app.goto(server.baseUrl);
+		await app.waitConnected();
+
 		// Drive a workflow that produces a multi-choice clarify question.
 		await createSpecification(app, {
 			specification: "Add a dark mode toggle to the application settings.",
@@ -195,6 +200,9 @@ test.describe("Telegram question forwarding", () => {
 		);
 		await forwardToggle.check();
 		await fwdBroadcast;
+
+		await app.goto(server.baseUrl);
+		await app.waitConnected();
 
 		await createSpecification(app, {
 			specification: "Add a dark mode toggle to the application settings.",
