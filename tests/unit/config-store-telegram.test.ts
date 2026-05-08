@@ -125,7 +125,12 @@ describe("ConfigStore — telegram sentinel substitution (V4)", () => {
 describe("ConfigStore — telegram defaults", () => {
 	test("default telegram section is dormant with empty creds", () => {
 		const store = new ConfigStore(join(makeTempDir(), "nonexistent", "config.json"));
-		expect(store.get().telegram).toEqual({ botToken: "", chatId: "", active: false });
+		expect(store.get().telegram).toEqual({
+			botToken: "",
+			chatId: "",
+			active: false,
+			forwardQuestions: false,
+		});
 	});
 
 	test("telegram section round-trips through disk via a fresh store", () => {
@@ -145,9 +150,63 @@ describe("ConfigStore — telegram defaults", () => {
 				botToken: "real-token",
 				chatId: "@chat",
 				active: true,
+				forwardQuestions: false,
 			});
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("ConfigStore — forwardQuestions field", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = makeTempDir();
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	test("default is false", () => {
+		const store = new ConfigStore(configPath(dir));
+		expect(store.get().telegram.forwardQuestions).toBe(false);
+	});
+
+	test("forwardQuestions=true persists and round-trips through disk", () => {
+		const path = configPath(dir);
+		const writer = new ConfigStore(path);
+		expect(
+			writer.save({
+				telegram: { forwardQuestions: true },
+			}).errors,
+		).toHaveLength(0);
+		expect(writer.get().telegram.forwardQuestions).toBe(true);
+
+		const reader = new ConfigStore(path);
+		expect(reader.get().telegram.forwardQuestions).toBe(true);
+	});
+
+	test("forwardQuestions can be enabled while parent active is off (no cross-field rule)", () => {
+		const store = new ConfigStore(configPath(dir));
+		const { errors } = store.save({
+			telegram: { active: false, forwardQuestions: true },
+		});
+		expect(errors).toHaveLength(0);
+		expect(store.get().telegram).toEqual({
+			botToken: "",
+			chatId: "",
+			active: false,
+			forwardQuestions: true,
+		});
+	});
+
+	test("non-boolean forwardQuestions is rejected with telegram.forwardQuestions error", () => {
+		const store = new ConfigStore(configPath(dir));
+		const { errors } = store.save({
+			telegram: { forwardQuestions: "yes" as unknown as boolean },
+		});
+		expect(errors.find((e) => e.path === "telegram.forwardQuestions")).toBeDefined();
 	});
 });

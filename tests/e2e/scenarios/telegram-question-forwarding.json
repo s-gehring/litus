@@ -1,0 +1,70 @@
+{
+	"name": "telegram-question-forwarding",
+	"claude": [
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-specify" },
+				{
+					"type": "assistant",
+					"session_id": "sess-specify",
+					"message": {
+						"content": [{ "type": "text", "text": "Specification drafted." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-specify",
+					"result": "Specification drafted."
+				}
+			]
+		},
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-clarify" },
+				{
+					"type": "assistant",
+					"session_id": "sess-clarify",
+					"message": {
+						"content": [
+							{
+								"type": "text",
+								"text": "Should the dark mode toggle apply globally or per workspace?\n\n| Key | Description |\n| --- | --- |\n| A | Apply globally |\n| B | Per workspace |"
+							}
+						]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-clarify",
+					"result": "Should the dark mode toggle apply globally or per workspace?\n\n| Key | Description |\n| --- | --- |\n| A | Apply globally |\n| B | Per workspace |"
+				}
+			]
+		},
+		{ "text": "yes\n" },
+		{
+			"events": [
+				{ "type": "system", "subtype": "init", "session_id": "sess-clarify-2" },
+				{
+					"type": "assistant",
+					"session_id": "sess-clarify-2",
+					"message": {
+						"content": [{ "type": "text", "text": "Clarifications complete." }]
+					}
+				},
+				{
+					"type": "result",
+					"subtype": "success",
+					"session_id": "sess-clarify-2",
+					"result": "Clarifications complete."
+				}
+			]
+		}
+	],
+	"gh": {
+		"--version": { "exitCode": 0, "stdout": "gh version 2.60.0 (litus-e2e-fake)\n" },
+		"auth status": { "exitCode": 0, "stdout": "Logged in to github.com as e2e-fake-user\n" },
+		"pr list": { "exitCode": 0, "stdout": "[]" }
+	}
+}

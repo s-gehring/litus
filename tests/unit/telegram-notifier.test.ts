@@ -8,7 +8,7 @@ import { TelegramFailureState } from "../../src/telegram/telegram-failure-state"
 import { TelegramNotifier } from "../../src/telegram/telegram-notifier";
 import type {
 	TelegramRequest,
-	TelegramResponse,
+	TelegramSendResponse,
 	TelegramTransport,
 } from "../../src/telegram/telegram-transport";
 import type { Alert } from "../../src/types";
@@ -29,25 +29,40 @@ function makeAlert(overrides: Partial<Alert> = {}): Alert {
 }
 
 function makeSettings(overrides: Partial<TelegramSettings> = {}): TelegramSettings {
-	return { botToken: "TOKEN", chatId: "@chat", active: true, ...overrides };
+	return {
+		botToken: "TOKEN",
+		chatId: "@chat",
+		active: true,
+		forwardQuestions: false,
+		...overrides,
+	};
 }
 
 interface ScriptedTransport extends TelegramTransport {
 	calls: TelegramRequest[];
-	responses: TelegramResponse[];
+	responses: TelegramSendResponse[];
 	idx: number;
 }
 
-function makeScriptedTransport(responses: TelegramResponse[]): ScriptedTransport {
+function makeScriptedTransport(responses: TelegramSendResponse[]): ScriptedTransport {
 	const t: ScriptedTransport = {
 		calls: [],
 		responses,
 		idx: 0,
-		async send(req: TelegramRequest): Promise<TelegramResponse> {
+		async send(req: TelegramRequest): Promise<TelegramSendResponse> {
 			t.calls.push(req);
 			const r = t.responses[Math.min(t.idx, t.responses.length - 1)];
 			t.idx++;
 			return r;
+		},
+		async deleteMessage() {
+			return { kind: "ok" };
+		},
+		async answerCallbackQuery() {
+			return { kind: "ok" };
+		},
+		async getUpdates() {
+			return { kind: "ok", updates: [] };
 		},
 	};
 	return t;
@@ -66,7 +81,7 @@ describe("TelegramNotifier", () => {
 	});
 
 	test("does nothing when active=false", async () => {
-		const transport = makeScriptedTransport([{ kind: "ok" }]);
+		const transport = makeScriptedTransport([{ kind: "ok", messageId: 1 }]);
 		const failureState = new TelegramFailureState();
 		const notifier = new TelegramNotifier({
 			getSettings: () => makeSettings({ active: false }),
@@ -80,7 +95,7 @@ describe("TelegramNotifier", () => {
 	});
 
 	test("does nothing when creds are empty even if active=true", async () => {
-		const transport = makeScriptedTransport([{ kind: "ok" }]);
+		const transport = makeScriptedTransport([{ kind: "ok", messageId: 1 }]);
 		const failureState = new TelegramFailureState();
 		const notifier = new TelegramNotifier({
 			getSettings: () => makeSettings({ botToken: "", active: true }),
@@ -94,7 +109,7 @@ describe("TelegramNotifier", () => {
 	});
 
 	test("success on first attempt — no retry, transport hit once", async () => {
-		const transport = makeScriptedTransport([{ kind: "ok" }]);
+		const transport = makeScriptedTransport([{ kind: "ok", messageId: 1 }]);
 		const failureState = new TelegramFailureState();
 		const notifier = new TelegramNotifier({
 			getSettings: makeSettings,
@@ -125,7 +140,7 @@ describe("TelegramNotifier", () => {
 				description: "Bad Gateway",
 				retryAfterSeconds: null,
 			},
-			{ kind: "ok" },
+			{ kind: "ok", messageId: 1 },
 		]);
 		const failureState = new TelegramFailureState();
 		const notifier = new TelegramNotifier({
@@ -154,7 +169,7 @@ describe("TelegramNotifier", () => {
 				description: "Too Many",
 				retryAfterSeconds: 7,
 			},
-			{ kind: "ok" },
+			{ kind: "ok", messageId: 1 },
 		]);
 		const failureState = new TelegramFailureState();
 		const notifier = new TelegramNotifier({
@@ -224,6 +239,15 @@ describe("TelegramNotifier", () => {
 			send() {
 				throw new Error("boom");
 			},
+			async deleteMessage() {
+				return { kind: "ok" };
+			},
+			async answerCallbackQuery() {
+				return { kind: "ok" };
+			},
+			async getUpdates() {
+				return { kind: "ok", updates: [] };
+			},
 		};
 		const notifier = new TelegramNotifier({
 			getSettings: makeSettings,
@@ -247,7 +271,7 @@ describe("TelegramNotifier", () => {
 				description: "network: connect ETIMEDOUT",
 				retryAfterSeconds: null,
 			},
-			{ kind: "ok" },
+			{ kind: "ok", messageId: 1 },
 		]);
 		const failureState = new TelegramFailureState();
 		const notifier = new TelegramNotifier({
@@ -267,7 +291,7 @@ describe("TelegramNotifier", () => {
 	});
 
 	test("audit log records success and final failure entries on disk", async () => {
-		const okTransport = makeScriptedTransport([{ kind: "ok" }]);
+		const okTransport = makeScriptedTransport([{ kind: "ok", messageId: 1 }]);
 		const failureState = new TelegramFailureState();
 		const okNotifier = new TelegramNotifier({
 			getSettings: makeSettings,
@@ -323,7 +347,16 @@ describe("TelegramNotifier", () => {
 			async send(req) {
 				order.push(req.text);
 				await new Promise((r) => setTimeout(r, 5));
+				return { kind: "ok", messageId: 1 };
+			},
+			async deleteMessage() {
 				return { kind: "ok" };
+			},
+			async answerCallbackQuery() {
+				return { kind: "ok" };
+			},
+			async getUpdates() {
+				return { kind: "ok", updates: [] };
 			},
 		};
 		const failureState = new TelegramFailureState();

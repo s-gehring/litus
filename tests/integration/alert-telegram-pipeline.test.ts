@@ -22,7 +22,7 @@ function makeStubTransport(mode: "ok" | "401" = "ok"): StubTransport {
 		calls: [],
 		async send(req) {
 			stub.calls.push(req);
-			if (mode === "ok") return { kind: "ok" };
+			if (mode === "ok") return { kind: "ok", messageId: 1 };
 			return {
 				kind: "error",
 				httpStatus: 401,
@@ -30,6 +30,15 @@ function makeStubTransport(mode: "ok" | "401" = "ok"): StubTransport {
 				description: "Unauthorized",
 				retryAfterSeconds: null,
 			};
+		},
+		async deleteMessage() {
+			return { kind: "ok" };
+		},
+		async answerCallbackQuery() {
+			return { kind: "ok" };
+		},
+		async getUpdates() {
+			return { kind: "ok", updates: [] };
 		},
 	};
 	return stub;
@@ -97,7 +106,12 @@ describe("alert pipeline → TelegramNotifier integration", () => {
 
 	test("active=true + creds → accepted alert is forwarded with correct payload", async () => {
 		const transport = makeStubTransport("ok");
-		const settings: TelegramSettings = { active: true, botToken: "T", chatId: "@c" };
+		const settings: TelegramSettings = {
+			active: true,
+			botToken: "T",
+			chatId: "@c",
+			forwardQuestions: false,
+		};
 		const { emitAlert, broadcasted, notifier } = buildPipeline(settings, transport);
 
 		emitAlert(alertInput());
@@ -112,7 +126,12 @@ describe("alert pipeline → TelegramNotifier integration", () => {
 
 	test("active=false → in-app alert still broadcast, transport NOT called", async () => {
 		const transport = makeStubTransport("ok");
-		const settings: TelegramSettings = { active: false, botToken: "T", chatId: "@c" };
+		const settings: TelegramSettings = {
+			active: false,
+			botToken: "T",
+			chatId: "@c",
+			forwardQuestions: false,
+		};
 		const { emitAlert, broadcasted, notifier } = buildPipeline(settings, transport);
 
 		emitAlert(alertInput());
@@ -124,7 +143,12 @@ describe("alert pipeline → TelegramNotifier integration", () => {
 
 	test("queue-deduplicated alert is NOT forwarded a second time", async () => {
 		const transport = makeStubTransport("ok");
-		const settings: TelegramSettings = { active: true, botToken: "T", chatId: "@c" };
+		const settings: TelegramSettings = {
+			active: true,
+			botToken: "T",
+			chatId: "@c",
+			forwardQuestions: false,
+		};
 		// Default-ish window: long enough that the second emission is dedup'd.
 		const queue = new AlertQueue(new AlertStore(alertStoreDir), { dedupWindowMs: 60_000 });
 		const broadcasted: ServerMessage[] = [];
@@ -157,7 +181,12 @@ describe("alert pipeline → TelegramNotifier integration", () => {
 
 	test("transport rejection (401) does NOT break in-app broadcast", async () => {
 		const transport = makeStubTransport("401");
-		const settings: TelegramSettings = { active: true, botToken: "T", chatId: "@c" };
+		const settings: TelegramSettings = {
+			active: true,
+			botToken: "T",
+			chatId: "@c",
+			forwardQuestions: false,
+		};
 		const { emitAlert, broadcasted, failureState, notifier } = buildPipeline(settings, transport);
 
 		emitAlert(alertInput());

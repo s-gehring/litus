@@ -614,4 +614,21 @@ export interface PipelineCallbacks {
 	 * broadcaster filters `type === "error"` defensively.
 	 */
 	onAlertMarkSeenWhere?: (predicate: (alert: Alert) => boolean) => void;
+	/**
+	 * Fired when a workflow pauses for a pending question (after
+	 * `engine.setQuestion`). The Telegram question forwarder consumes this to
+	 * mirror the question into the configured chat.
+	 */
+	onQuestionForward?: (workflowId: string, question: Question) => void;
+	/**
+	 * Fired after a pending question has been answered (any source — UI,
+	 * Telegram button, Telegram quote-reply). The forwarder uses this to clean
+	 * up any forwarded Telegram messages.
+	 */
+	onQuestionAnswered?: (workflowId: string, questionId: string) => void;
+	/**
+	 * Fired when a workflow with a pending question is aborted or errored. The
+	 * forwarder uses this to clean up any forwarded Telegram messages.
+	 */
+	onQuestionAborted?: (workflowId: string, questionId: string) => void;
 }

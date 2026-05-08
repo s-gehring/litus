@@ -85,6 +85,10 @@ export function configFile(): string {
 	return join(litusHome(), "config.json");
 }
 
+export function telegramQuestionsFile(): string {
+	return join(litusHome(), "telegram-questions.json");
+}
+
 export function defaultModelCacheFile(): string {
 	return join(litusHome(), "default-model.json");
 }
